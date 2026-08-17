@@ -186,6 +186,72 @@ export function SparkleIcon({ className }: IconProps) {
   );
 }
 
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path
+        d="M8 3.25v9.5M3.25 8h9.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function LinkIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path
+        d="M6.4 9.6l3.2-3.2M7 4.6l1.2-1.2a2.55 2.55 0 013.6 3.6L10.6 8.2M9 11.4l-1.2 1.2a2.55 2.55 0 01-3.6-3.6L5.4 7.8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function ShieldIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path
+        d="M8 1.9l4.75 1.7v4.05c0 2.6-1.85 4.85-4.75 6.45-2.9-1.6-4.75-3.85-4.75-6.45V3.6z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.9 7.9l1.6 1.6 2.8-3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function UsersIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <circle cx="6.2" cy="5.6" r="2.35" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M2.2 13.4c0-2.1 1.8-3.5 4-3.5s4 1.4 4 3.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M11 3.6a2.2 2.2 0 010 4.2M12.4 13.4c0-1.5-.5-2.6-1.5-3.3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function UserPlusIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>

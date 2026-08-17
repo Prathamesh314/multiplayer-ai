@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { PickedSource } from "../../lib/folder";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
+import { takeFolder } from "../../lib/session/handoff";
 import type { Session } from "../../lib/session/types";
-import type { ScanResult, ScanSource } from "../../lib/types";
+import type { ScanResult } from "../../lib/types";
 import { ActivityBar } from "./ActivityBar";
 import { AiPanel } from "./AiPanel";
 import type { Caret } from "./CodeEditor";
@@ -19,11 +21,6 @@ import { TeamChatPanel } from "./TeamChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WelcomeView } from "./WelcomeView";
-
-/** Kept so toggling "include ignored folders" can rescan without re-picking. */
-type PickedSource =
-  | { kind: "handle"; handle: FileSystemDirectoryHandle; origin: ScanSource }
-  | { kind: "files"; files: File[]; origin: ScanSource };
 
 // The File System Access API only exists on the client, so the value has to
 // come through a store that reports `false` during server rendering.
@@ -113,6 +110,16 @@ export function Workspace({ session }: { session: Session }) {
     },
     [includeIgnored, scan],
   );
+
+  // A folder chosen in the create dialog is waiting for this session. Reading it
+  // is a pull from an external store; the scan is deferred a microtask so it
+  // does not set state inside the effect body. `takeFolder` clears the entry, so
+  // a repeated effect run (StrictMode, or a rescan toggle) will not scan twice.
+  useEffect(() => {
+    const handed = takeFolder(session.id);
+    if (!handed) return;
+    queueMicrotask(() => void start(handed));
+  }, [session.id, start]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
