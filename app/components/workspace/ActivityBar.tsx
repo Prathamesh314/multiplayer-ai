@@ -1,23 +1,27 @@
 "use client";
 
-import { ChatIcon, FilesIcon, SparkleIcon } from "../icons";
+import { ChatIcon, FilesIcon, SparkleIcon, TerminalIcon } from "../icons";
 
 type ActivityBarProps = {
   chatOpen: boolean;
   explorerOpen: boolean;
   aiOpen: boolean;
+  terminalOpen: boolean;
   onToggleChat: () => void;
   onToggleExplorer: () => void;
   onToggleAi: () => void;
+  onToggleTerminal: () => void;
 };
 
 export function ActivityBar({
   chatOpen,
   explorerOpen,
   aiOpen,
+  terminalOpen,
   onToggleChat,
   onToggleExplorer,
   onToggleAi,
+  onToggleTerminal,
 }: ActivityBarProps) {
   return (
     <nav
@@ -32,6 +36,9 @@ export function ActivityBar({
       </Item>
       <Item label="AI" active={aiOpen} onClick={onToggleAi}>
         <SparkleIcon className="h-5 w-5" />
+      </Item>
+      <Item label="Terminal (Ctrl+Shift+Z)" active={terminalOpen} onClick={onToggleTerminal}>
+        <TerminalIcon className="h-5 w-5" />
       </Item>
     </nav>
   );

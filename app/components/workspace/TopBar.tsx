@@ -1,7 +1,7 @@
 "use client";
 
 import { TEAM } from "../../lib/members";
-import { ChatIcon, GitBranchIcon, LayoutIcon, SparkleIcon } from "../icons";
+import { ChatIcon, GitBranchIcon, LayoutIcon, SparkleIcon, TerminalIcon } from "../icons";
 import { Avatar } from "./chat";
 
 type TopBarProps = {
@@ -11,9 +11,11 @@ type TopBarProps = {
   chatOpen: boolean;
   explorerOpen: boolean;
   aiOpen: boolean;
+  terminalOpen: boolean;
   onToggleChat: () => void;
   onToggleExplorer: () => void;
   onToggleAi: () => void;
+  onToggleTerminal: () => void;
   onOpenFolder: () => void;
 };
 
@@ -24,9 +26,11 @@ export function TopBar({
   chatOpen,
   explorerOpen,
   aiOpen,
+  terminalOpen,
   onToggleChat,
   onToggleExplorer,
   onToggleAi,
+  onToggleTerminal,
   onOpenFolder,
 }: TopBarProps) {
   return (
@@ -70,6 +74,13 @@ export function TopBar({
         </ToggleButton>
         <ToggleButton label="Toggle explorer" active={explorerOpen} onClick={onToggleExplorer}>
           <LayoutIcon side="left" className="h-4 w-4" />
+        </ToggleButton>
+        <ToggleButton
+          label="Toggle terminal (Ctrl+Shift+Z)"
+          active={terminalOpen}
+          onClick={onToggleTerminal}
+        >
+          <TerminalIcon className="h-4 w-4" />
         </ToggleButton>
         <ToggleButton label="Toggle AI panel" active={aiOpen} onClick={onToggleAi}>
           <LayoutIcon side="right" className="h-4 w-4" />

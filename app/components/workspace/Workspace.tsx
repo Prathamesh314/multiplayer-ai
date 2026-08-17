@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
 import type { ScanResult, ScanSource } from "../../lib/types";
 import { ActivityBar } from "./ActivityBar";
@@ -10,8 +10,10 @@ import type { Buffer } from "./EditorArea";
 import { EditorArea } from "./EditorArea";
 import { ExplorerPanel } from "./ExplorerPanel";
 import { Resizer } from "./Resizer";
+import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
 import { TeamChatPanel } from "./TeamChatPanel";
+import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WelcomeView } from "./WelcomeView";
 
@@ -46,9 +48,31 @@ export function Workspace() {
   const [chatOpen, setChatOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(250);
   const [explorerWidth, setExplorerWidth] = useState(270);
   const [aiWidth, setAiWidth] = useState(320);
+  const [terminalHeight, setTerminalHeight] = useState(260);
+
+  // Ctrl+Shift+Z toggles the terminal; Ctrl+` also works, as in VS Code.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Ctrl only, never Cmd: ⇧⌘Z is redo on macOS and stays that way.
+      if (!event.ctrlKey || event.altKey) return;
+
+      // `code` rather than `key`: Shift turns the key into "Z" and non-US
+      // layouts can report something else entirely.
+      const isToggle =
+        (event.shiftKey && event.code === "KeyZ") || (!event.shiftKey && event.key === "`");
+      if (!isToggle) return;
+
+      event.preventDefault();
+      setTerminalOpen((previous) => !previous);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const scan = useCallback(async (source: PickedSource, withIgnored: boolean) => {
     setScanning(true);
@@ -207,9 +231,11 @@ export function Workspace() {
         chatOpen={chatOpen}
         explorerOpen={explorerOpen}
         aiOpen={aiOpen}
+        terminalOpen={terminalOpen}
         onToggleChat={() => setChatOpen(!chatOpen)}
         onToggleExplorer={() => setExplorerOpen(!explorerOpen)}
         onToggleAi={() => setAiOpen(!aiOpen)}
+        onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
       />
 
@@ -228,9 +254,11 @@ export function Workspace() {
           chatOpen={chatOpen}
           explorerOpen={explorerOpen}
           aiOpen={aiOpen}
+          terminalOpen={terminalOpen}
           onToggleChat={() => setChatOpen(!chatOpen)}
           onToggleExplorer={() => setExplorerOpen(!explorerOpen)}
           onToggleAi={() => setAiOpen(!aiOpen)}
+          onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         />
 
         {chatOpen && (
@@ -261,30 +289,41 @@ export function Workspace() {
           </>
         )}
 
-        <EditorArea
-          tabs={tabs}
-          activePath={activePath}
-          buffers={buffers}
-          onSelectTab={(path) => {
-            setActivePath(path);
-            setCaret({ line: 1, column: 1 });
-          }}
-          onCloseTab={closeTab}
-          onChange={editBuffer}
-          onCaretChange={setCaret}
-          emptyState={
-            <WelcomeView
-              dragging={dragging}
-              scanning={scanning}
-              progress={progress}
-              supportsPicker={supportsPicker}
-              error={error}
-              hasFolder={!!result}
-              onOpenPicker={openPicker}
-              onOpenInput={() => inputRef.current?.click()}
-            />
-          }
-        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <EditorArea
+            tabs={tabs}
+            activePath={activePath}
+            buffers={buffers}
+            onSelectTab={(path) => {
+              setActivePath(path);
+              setCaret({ line: 1, column: 1 });
+            }}
+            onCloseTab={closeTab}
+            onChange={editBuffer}
+            onCaretChange={setCaret}
+            emptyState={
+              <WelcomeView
+                dragging={dragging}
+                scanning={scanning}
+                progress={progress}
+                supportsPicker={supportsPicker}
+                error={error}
+                hasFolder={!!result}
+                onOpenPicker={openPicker}
+                onOpenInput={() => inputRef.current?.click()}
+              />
+            }
+          />
+
+          {terminalOpen && (
+            <>
+              <RowResizer height={terminalHeight} onResize={setTerminalHeight} />
+              <div style={{ height: terminalHeight }} className="flex min-h-0 shrink-0">
+                <TerminalPanel onClose={() => setTerminalOpen(false)} />
+              </div>
+            </>
+          )}
+        </div>
 
         {aiOpen && (
           <>
