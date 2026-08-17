@@ -186,6 +186,26 @@ export function SparkleIcon({ className }: IconProps) {
   );
 }
 
+export function UserPlusIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <circle cx="10" cy="8" r="3.25" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M4.25 19.5c0-3 2.6-5 5.75-5 1.3 0 2.5.35 3.45.95"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M17.5 14v5.5M14.75 16.75h5.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function TerminalIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>

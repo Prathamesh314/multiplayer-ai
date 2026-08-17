@@ -1,10 +1,21 @@
 "use client";
 
 import { TEAM } from "../../lib/members";
-import { ChatIcon, GitBranchIcon, LayoutIcon, SparkleIcon, TerminalIcon } from "../icons";
+import type { Session } from "../../lib/session/types";
+import {
+  ChatIcon,
+  GitBranchIcon,
+  LayoutIcon,
+  SparkleIcon,
+  TerminalIcon,
+  UserPlusIcon,
+} from "../icons";
 import { Avatar } from "./chat";
 
 type TopBarProps = {
+  session: Session;
+  onInvite: () => void;
+  onLeave: () => void;
   folderName: string | null;
   branch: string | null;
   isGit: boolean;
@@ -20,6 +31,9 @@ type TopBarProps = {
 };
 
 export function TopBar({
+  session,
+  onInvite,
+  onLeave,
   folderName,
   branch,
   isGit,
@@ -35,17 +49,29 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="flex h-9 shrink-0 items-center gap-3 border-b border-vs-border bg-vs-chrome px-3">
-      <span className="flex shrink-0 items-center gap-1.5 text-[13px] font-semibold text-vs-fg">
+      <button
+        type="button"
+        onClick={onLeave}
+        title="Back to all sessions"
+        className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[13px] font-semibold text-vs-fg transition hover:bg-vs-hover"
+      >
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
         <span className="whitespace-nowrap">
           multiplayer<span className="text-vs-muted">-ai</span>
         </span>
+      </button>
+
+      <span
+        title={`Session ${session.id}`}
+        className="max-w-48 shrink-0 truncate rounded bg-vs-hover px-2 py-0.5 text-xs text-vs-fg"
+      >
+        {session.name}
       </span>
 
       <button
         type="button"
         onClick={onOpenFolder}
-        className="rounded px-2 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+        className="shrink-0 rounded px-2 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
       >
         Open folder…
       </button>
@@ -67,6 +93,15 @@ export function TopBar({
           <Avatar key={member.id} member={member} size="sm" />
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={onInvite}
+        className="flex shrink-0 items-center gap-1.5 rounded bg-vs-accent px-2.5 py-1 text-xs font-medium text-vs-accent-fg transition hover:opacity-90"
+      >
+        <UserPlusIcon className="h-3.5 w-3.5" />
+        Invite
+      </button>
 
       <div className="flex items-center gap-0.5">
         <ToggleButton label="Toggle team chat" active={chatOpen} onClick={onToggleChat}>

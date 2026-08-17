@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
+import type { Session } from "../../lib/session/types";
 import type { ScanResult, ScanSource } from "../../lib/types";
 import { ActivityBar } from "./ActivityBar";
 import { AiPanel } from "./AiPanel";
@@ -9,6 +11,7 @@ import type { Caret } from "./CodeEditor";
 import type { Buffer } from "./EditorArea";
 import { EditorArea } from "./EditorArea";
 import { ExplorerPanel } from "./ExplorerPanel";
+import { InviteDialog } from "./InviteDialog";
 import { Resizer } from "./Resizer";
 import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
@@ -28,9 +31,11 @@ const noopSubscribe = () => () => {};
 const hasPicker = () => !!window.showDirectoryPicker;
 const noPicker = () => false;
 
-export function Workspace() {
+export function Workspace({ session }: { session: Session }) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const [picked, setPicked] = useState<PickedSource | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -225,6 +230,9 @@ export function Workspace() {
       onDrop={onDrop}
     >
       <TopBar
+        session={session}
+        onInvite={() => setInviteOpen(true)}
+        onLeave={() => router.push("/")}
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
@@ -341,6 +349,8 @@ export function Workspace() {
         activeText={activeBuffer && !activeBuffer.loading && !activeBuffer.binary ? activeBuffer.text : null}
         caret={caret}
       />
+
+      {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}
     </div>
   );
 }

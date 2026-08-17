@@ -1,5 +1,5 @@
-import { Workspace } from "./components/workspace/Workspace";
+import { SessionLauncher } from "./components/launcher/SessionLauncher";
 
 export default function Home() {
-  return <Workspace />;
+  return <SessionLauncher />;
 }
