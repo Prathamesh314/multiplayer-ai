@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Workspace chrome — modelled on VS Code Light+ */
+  --vs-editor: #ffffff;
+  --vs-panel: #f8f8f8;
+  --vs-chrome: #f0f0f0;
+  --vs-border: #e2e2e2;
+  --vs-fg: #3b3b3b;
+  --vs-muted: #767676;
+  --vs-hover: rgb(0 0 0 / 0.045);
+  --vs-active: #e4e6f1;
+  --vs-accent: #005fb8;
+  --vs-accent-fg: #ffffff;
+  --vs-gutter: #6e7681;
+  --vs-shadow: rgb(0 0 0 / 0.08);
+
+  /* Syntax */
+  --syn-plain: #3b3b3b;
+  --syn-keyword: #0000ff;
+  --syn-control: #af00db;
+  --syn-string: #a31515;
+  --syn-number: #098658;
+  --syn-comment: #008000;
+  --syn-function: #795e26;
+  --syn-type: #267f99;
+  --syn-variable: #001080;
+  --syn-punct: #6c6c6c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+
+    /* VS Code Dark Modern */
+    --vs-editor: #1f1f1f;
+    --vs-panel: #181818;
+    --vs-chrome: #181818;
+    --vs-border: #2b2b2b;
+    --vs-fg: #cccccc;
+    --vs-muted: #8b8b8b;
+    --vs-hover: rgb(255 255 255 / 0.06);
+    --vs-active: #04395e;
+    --vs-accent: #0078d4;
+    --vs-accent-fg: #ffffff;
+    --vs-gutter: #6e7681;
+    --vs-shadow: rgb(0 0 0 / 0.4);
+
+    --syn-plain: #cccccc;
+    --syn-keyword: #569cd6;
+    --syn-control: #c586c0;
+    --syn-string: #ce9178;
+    --syn-number: #b5cea8;
+    --syn-comment: #6a9955;
+    --syn-function: #dcdcaa;
+    --syn-type: #4ec9b0;
+    --syn-variable: #9cdcfe;
+    --syn-punct: #cccccc;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-vs-editor: var(--vs-editor);
+  --color-vs-panel: var(--vs-panel);
+  --color-vs-chrome: var(--vs-chrome);
+  --color-vs-border: var(--vs-border);
+  --color-vs-fg: var(--vs-fg);
+  --color-vs-muted: var(--vs-muted);
+  --color-vs-hover: var(--vs-hover);
+  --color-vs-active: var(--vs-active);
+  --color-vs-accent: var(--vs-accent);
+  --color-vs-accent-fg: var(--vs-accent-fg);
+  --color-vs-gutter: var(--vs-gutter);
+
+  --color-syn-plain: var(--syn-plain);
+  --color-syn-keyword: var(--syn-keyword);
+  --color-syn-control: var(--syn-control);
+  --color-syn-string: var(--syn-string);
+  --color-syn-number: var(--syn-number);
+  --color-syn-comment: var(--syn-comment);
+  --color-syn-function: var(--syn-function);
+  --color-syn-type: var(--syn-type);
+  --color-syn-variable: var(--syn-variable);
+  --color-syn-punct: var(--syn-punct);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Thin, VS Code-ish scrollbars inside the workspace panes. */
+.vs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--vs-fg) 22%, transparent) transparent;
+}
+
+.vs-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.vs-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vs-fg) 20%, transparent);
+}
+
+.vs-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vs-fg) 34%, transparent);
+}
+
+.vs-scroll::-webkit-scrollbar-corner,
+.vs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
