@@ -1,7 +1,6 @@
 "use client";
 
-import { TEAM } from "../../lib/members";
-import type { Session } from "../../lib/session/types";
+import type { Session, SessionMember } from "../../lib/session/types";
 import {
   ChatIcon,
   GitBranchIcon,
@@ -10,7 +9,7 @@ import {
   TerminalIcon,
   UserPlusIcon,
 } from "../icons";
-import { Avatar } from "./chat";
+import { PeopleStack } from "./People";
 
 type TopBarProps = {
   session: Session;
@@ -30,6 +29,7 @@ type TopBarProps = {
   onOpenFolder: () => void;
   /** False once this session owns a repo — a session is seeded exactly once. */
   canOpenFolder: boolean;
+  members: SessionMember[];
 };
 
 export function TopBar({
@@ -49,6 +49,7 @@ export function TopBar({
   onToggleTerminal,
   onOpenFolder,
   canOpenFolder,
+  members,
 }: TopBarProps) {
   return (
     <header className="flex h-9 shrink-0 items-center gap-3 border-b border-vs-border bg-vs-chrome px-3">
@@ -93,11 +94,7 @@ export function TopBar({
         </span>
       </div>
 
-      <div className="flex -space-x-1.5">
-        {TEAM.filter((member) => member.status !== "offline").map((member) => (
-          <Avatar key={member.id} member={member} size="sm" />
-        ))}
-      </div>
+      <PeopleStack members={members} />
 
       <button
         type="button"

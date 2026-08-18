@@ -21,6 +21,7 @@ type ExplorerPanelProps = {
   onOpenFile: (path: string) => void;
   onOpenFolder: () => void;
   onClose: () => void;
+  editing: Map<string, import("./usePeople").FilePresence[]>;
 };
 
 export function ExplorerPanel({
@@ -33,6 +34,7 @@ export function ExplorerPanel({
   onOpenFile,
   onOpenFolder,
   onClose,
+  editing,
 }: ExplorerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
@@ -90,6 +92,7 @@ export function ExplorerPanel({
           expanded={expanded}
           onToggle={toggle}
           onOpenFile={onOpenFile}
+          editing={editing}
         />
       </div>
 

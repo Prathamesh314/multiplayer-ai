@@ -14,6 +14,8 @@ type StatusBarProps = {
   /** Null when this session has no repo yet. */
   headSha: string | null;
   saveState: "idle" | "saving" | "saved" | "error";
+  /** Whether the event stream is currently connected. */
+  live: boolean;
 };
 
 export function StatusBar({
@@ -23,6 +25,7 @@ export function StatusBar({
   caret,
   headSha,
   saveState,
+  live,
 }: StatusBarProps) {
   const git = result?.git;
 
@@ -35,6 +38,24 @@ export function StatusBar({
         </span>
       ) : (
         <span>{result ? "No source control" : "No folder open"}</span>
+      )}
+
+      {headSha && (
+        <span
+          title={
+            live
+              ? "Connected — changes from other people appear as they are saved."
+              : "Reconnecting. Changes made elsewhere will not appear until this recovers."
+          }
+          className="flex items-center gap-1.5"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              live ? "bg-emerald-500" : "bg-amber-500"
+            }`}
+          />
+          {live ? "live" : "reconnecting"}
+        </span>
       )}
 
       {headSha && (

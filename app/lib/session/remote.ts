@@ -1,4 +1,5 @@
 import { collectStats } from "../scan";
+import { currentTabId } from "../tab-id";
 import type { GitInfo, ScanResult, TreeNode } from "../types";
 import type {
   FileResponse,
@@ -194,7 +195,7 @@ export async function saveSessionFile(
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text }),
+    body: JSON.stringify({ path, text, originId: currentTabId() }),
   });
   if (!response.ok) throw new Error(await readError(response, "Could not save this file."));
   return (await response.json()) as SaveFileResponse;

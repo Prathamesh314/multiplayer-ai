@@ -1,3 +1,4 @@
+import { currentTabId } from "../tab-id";
 import { isJoinCode } from "./share";
 import type {
   CreateShareLinkResponse,
@@ -150,4 +151,34 @@ export async function revokeShareLink(id: string, linkId: string): Promise<void>
     { method: "DELETE" },
   );
   if (!response.ok) throw new Error(await readError(response, "Could not revoke that link."));
+}
+
+
+// ---------------------------------------------------------------------------
+// Typing activity
+// ---------------------------------------------------------------------------
+
+/** Long enough not to flood, short enough that the badge never lapses. */
+const ACTIVITY_THROTTLE_MS = 1500;
+
+const lastPing = new Map<string, number>();
+
+/**
+ * Tells everyone else this account is typing in a file.
+ *
+ * Throttled per file and deliberately unawaited: it is a hint, and a dropped
+ * one costs nothing because another follows and the badge expires by itself.
+ */
+export function notifyEditing(sessionId: string, path: string): void {
+  const key = `${sessionId}:${path}`;
+  const now = Date.now();
+  if (now - (lastPing.get(key) ?? 0) < ACTIVITY_THROTTLE_MS) return;
+  lastPing.set(key, now);
+
+  void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/activity`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, originId: currentTabId() }),
+    keepalive: true,
+  }).catch(() => {});
 }

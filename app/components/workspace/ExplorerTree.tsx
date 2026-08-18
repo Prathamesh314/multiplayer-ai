@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import { humanBytes } from "../../lib/format";
 import type { TreeNode } from "../../lib/types";
 import { ChevronIcon, FileIcon, FolderIcon } from "../icons";
+import { EditingBadge } from "./People";
+import type { FilePresence } from "./usePeople";
 
 type ExplorerTreeProps = {
   root: TreeNode;
@@ -12,6 +14,8 @@ type ExplorerTreeProps = {
   expanded: Set<string>;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
+  /** Repo path → who is typing in it right now. */
+  editing: Map<string, FilePresence[]>;
 };
 
 export function ExplorerTree({
@@ -21,6 +25,7 @@ export function ExplorerTree({
   expanded,
   onToggle,
   onOpenFile,
+  editing,
 }: ExplorerTreeProps) {
   const trimmed = query.trim().toLowerCase();
   const visible = useMemo(
@@ -39,6 +44,7 @@ export function ExplorerTree({
           depth={row.depth}
           open={row.open}
           active={row.node.path === activePath}
+          editing={editing.get(row.node.path) ?? []}
           onActivate={() =>
             row.node.type === "dir" ? onToggle(row.node.path) : onOpenFile(row.node.path)
           }
@@ -56,10 +62,11 @@ type RowProps = {
   depth: number;
   open: boolean;
   active: boolean;
+  editing: FilePresence[];
   onActivate: () => void;
 };
 
-function Row({ node, depth, open, active, onActivate }: RowProps) {
+function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
   const isDir = node.type === "dir";
 
   return (
@@ -90,10 +97,14 @@ function Row({ node, depth, open, active, onActivate }: RowProps) {
           not scanned
         </span>
       )}
-      {!isDir && (
-        <span className="ml-auto shrink-0 pl-2 text-[10px] tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">
-          {humanBytes(node.size ?? 0)}
-        </span>
+      {!isDir && editing.length > 0 ? (
+        <EditingBadge people={editing} compact />
+      ) : (
+        !isDir && (
+          <span className="ml-auto shrink-0 pl-2 text-[10px] tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">
+            {humanBytes(node.size ?? 0)}
+          </span>
+        )
       )}
     </button>
   );

@@ -11,6 +11,9 @@ import {
 } from "react";
 import type { PickedSource } from "../../lib/folder";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
+import { openSessionStream } from "../../lib/events/client";
+import { notifyEditing } from "../../lib/session/client";
+import type { FileSavedEvent } from "../../lib/events/types";
 import { startHeartbeat } from "../../lib/presence/client";
 import { takeFolder } from "../../lib/session/handoff";
 import {
@@ -34,6 +37,7 @@ import { StatusBar } from "./StatusBar";
 import { TeamChatPanel } from "./TeamChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
+import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -68,10 +72,24 @@ export function Workspace({ session }: { session: Session }) {
   // writes regardless; this stops the editor from pretending otherwise.
   const readOnly = !canEdit(session.myRole);
 
+  const [live, setLive] = useState(false);
+  /** Files a teammate changed under an edit of ours, which we refuse to discard. */
+  const [conflicts, setConflicts] = useState<Map<string, string>>(() => new Map());
+  /** Set when a broadcast names a path we have never seen. */
+  const [treeStale, setTreeStale] = useState(false);
+
+  const people = usePeople(session.id, !!session.repo || !!repo);
+
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(() => new Map());
   const [caret, setCaret] = useState<Caret>({ line: 1, column: 1 });
+
+  // Mirrored into refs so the event handler can read current values without
+  // becoming a new function on every keystroke — which would tear down and
+  // reopen the SSE connection each time.
+  const buffersRef = useRef(buffers);
+  const resultRef = useRef(result);
 
   const [chatOpen, setChatOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -120,6 +138,14 @@ export function Workspace({ session }: { session: Session }) {
       void saver.flush();
     };
   }, [saver]);
+
+  useEffect(() => {
+    buffersRef.current = buffers;
+  }, [buffers]);
+
+  useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
 
   // One heartbeat per open tab, for as long as this session is open. The tab
   // being open is what "online" means, so it starts and stops with the mount.
@@ -352,6 +378,49 @@ export function Workspace({ session }: { session: Session }) {
     });
   }
 
+  /**
+   * Applies a change someone else committed.
+   *
+   * A clean buffer is replaced silently, which is the whole point. A dirty one
+   * never is: overwriting unsaved work to show someone else's version would
+   * lose the very thing the person is looking at. Those become a notice they
+   * resolve by reopening the file.
+   */
+  const applyRemoteSave = useCallback(
+    async (event: FileSavedEvent) => {
+      setRepo((previous) => (previous ? { ...previous, headSha: event.headSha } : previous));
+
+      const open = buffersRef.current.get(event.path);
+      if (!open || open.loading) {
+        // Not on screen. A new path means the tree is stale, so refresh it.
+        if (!open) setTreeStale(true);
+        return;
+      }
+
+      if (open.text !== open.original) {
+        setConflicts((previous) => new Map(previous).set(event.path, event.authorName));
+        return;
+      }
+
+      const content = await resultRef.current?.readFile(event.path);
+      if (!content) return;
+
+      setBuffers((previous) => {
+        const buffer = previous.get(event.path);
+        // Re-checked: the person may have started typing while this was in
+        // flight, and their keystrokes outrank a background refresh.
+        if (!buffer || buffer.text !== buffer.original) return previous;
+        return new Map(previous).set(event.path, {
+          ...buffer,
+          original: content.text,
+          text: content.text,
+          size: content.size,
+        });
+      });
+    },
+    [],
+  );
+
   function editBuffer(path: string, text: string) {
     setBuffers((previous) => {
       const buffer = previous.get(path);
@@ -359,10 +428,76 @@ export function Workspace({ session }: { session: Session }) {
       return new Map(previous).set(path, { ...buffer, text });
     });
 
+    setConflicts((previous) => {
+      if (!previous.has(path)) return previous;
+      const next = new Map(previous);
+      next.delete(path);
+      return next;
+    });
+
     if (repo && !readOnly) {
+      // Sent on the keystroke, not on the save: a save is over a second away,
+      // which is far too late to show that someone is in the file.
+      notifyEditing(session.id, path);
       setSaveState("saving");
       saver.queue(path, text);
     }
+  }
+
+  // Live updates from everyone else in this session.
+  useEffect(() => {
+    if (!repo) return;
+    const stream = openSessionStream(session.id, {
+      onFileSaved: (event) => {
+        people.onSaved(event);
+        void applyRemoteSave(event);
+      },
+      onFileEditing: people.onEditing,
+      onMembersChanged: people.refresh,
+      onStatus: setLive,
+    });
+    return () => stream.close();
+  }, [session.id, repo, applyRemoteSave, people]);
+
+  // A broadcast named a file we have never seen, so the tree is out of date.
+  useEffect(() => {
+    if (!treeStale || !repo) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      scanSession({ ...session, repo })
+        .then((scanned) => {
+          if (cancelled) return;
+          setResult(scanned);
+          setTreeStale(false);
+        })
+        .catch(() => !cancelled && setTreeStale(false));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [treeStale, repo, session]);
+
+  /** Throws away local edits in favour of the committed version, on request. */
+  async function reloadFile(path: string) {
+    const content = await result?.readFile(path);
+    if (!content) return;
+
+    setBuffers((previous) => {
+      const buffer = previous.get(path);
+      if (!buffer) return previous;
+      return new Map(previous).set(path, {
+        ...buffer,
+        original: content.text,
+        text: content.text,
+        size: content.size,
+      });
+    });
+    setConflicts((previous) => {
+      const next = new Map(previous);
+      next.delete(path);
+      return next;
+    });
   }
 
   async function toggleIgnored(next: boolean) {
@@ -404,6 +539,7 @@ export function Workspace({ session }: { session: Session }) {
         onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
         canOpenFolder={!repo}
+        members={people.members}
       />
 
       <input
@@ -451,6 +587,7 @@ export function Workspace({ session }: { session: Session }) {
                 onOpenFile={openFile}
                 onOpenFolder={openPicker}
                 onClose={() => setExplorerOpen(false)}
+                editing={people.editing}
               />
             </div>
             <Resizer width={explorerWidth} onResize={setExplorerWidth} min={200} max={520} />
@@ -470,6 +607,9 @@ export function Workspace({ session }: { session: Session }) {
             onChange={editBuffer}
             onCaretChange={setCaret}
             readOnly={readOnly}
+            conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
+            onReload={reloadFile}
+            editing={people.editing}
             emptyState={
               <WelcomeView
                 dragging={dragging}
@@ -512,6 +652,7 @@ export function Workspace({ session }: { session: Session }) {
         caret={caret}
         headSha={repo?.headSha ?? null}
         saveState={saveState}
+        live={live}
       />
 
       {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}

@@ -3,6 +3,8 @@
 import { humanBytes } from "../../lib/format";
 import { languageOf } from "../../lib/language";
 import { CloseIcon, FileIcon, SpinnerIcon } from "../icons";
+import { EditingBadge } from "./People";
+import type { FilePresence } from "./usePeople";
 import type { Caret } from "./CodeEditor";
 import { CodeEditor } from "./CodeEditor";
 
@@ -28,6 +30,11 @@ type EditorAreaProps = {
   emptyState: React.ReactNode;
   /** True when this account may open the session but not save to it. */
   readOnly: boolean;
+  /** Who changed the active file while we had unsaved edits to it. */
+  conflictAuthor?: string;
+  onReload: (path: string) => void;
+  /** Repo path → who is typing in it right now. */
+  editing: Map<string, FilePresence[]>;
 };
 
 export function EditorArea({
@@ -40,6 +47,9 @@ export function EditorArea({
   onCaretChange,
   emptyState,
   readOnly,
+  conflictAuthor,
+  onReload,
+  editing,
 }: EditorAreaProps) {
   const active = activePath ? buffers.get(activePath) : undefined;
 
@@ -73,6 +83,7 @@ export function EditorArea({
                 <FileIcon className="h-3.5 w-3.5" />
                 <span className="max-w-52 truncate">{baseName(path)}</span>
                 {dirty && <span className="text-xs text-vs-fg">●</span>}
+                <EditingBadge people={editing.get(path) ?? []} />
               </button>
               <button
                 type="button"
@@ -98,6 +109,16 @@ export function EditorArea({
         </div>
       )}
 
+      {activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
+        <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[11px] text-vs-muted">
+          <EditingBadge people={editing.get(activePath) ?? []} />
+          <span>
+            {(editing.get(activePath) ?? []).map((p) => p.name).join(", ")}
+            {(editing.get(activePath) ?? []).length === 1 ? " is" : " are"} editing this file
+          </span>
+        </p>
+      )}
+
       {!active || active.loading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-vs-muted">
           <SpinnerIcon className="h-4 w-4" />
@@ -112,6 +133,22 @@ export function EditorArea({
         />
       ) : (
         <>
+          {conflictAuthor && activePath && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
+              <span>
+                {conflictAuthor} changed this file while you were editing it. Your version is
+                still here and was not overwritten.
+              </span>
+              <button
+                type="button"
+                onClick={() => onReload(activePath)}
+                className="rounded border border-vs-border px-2 py-0.5 text-[11px] transition hover:bg-vs-hover"
+              >
+                Discard mine and reload
+              </button>
+            </div>
+          )}
+
           {active.truncated && (
             <p className="border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
               Showing the first 2 MB of a {humanBytes(active.size)} file.

@@ -151,7 +151,12 @@ export type FileResponse = {
   binary: boolean;
 };
 
-export type SaveFileRequest = { path: string; text: string };
+export type SaveFileRequest = {
+  path: string;
+  text: string;
+  /** The tab that saved, echoed back on the broadcast so it can ignore itself. */
+  originId?: string;
+};
 
 export type SaveFileResponse = {
   /** New HEAD, or the unchanged one when the write was a no-op. */

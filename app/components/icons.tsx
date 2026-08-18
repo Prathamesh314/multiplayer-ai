@@ -348,3 +348,21 @@ export function AlertIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function EyeIcon({ className, off }: IconProps & { off?: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path
+        d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <circle cx="8" cy="8" r="1.9" stroke="currentColor" strokeWidth="1.3" />
+      {/* One glyph, two states: the slash is what turns "shown" into "hidden". */}
+      {off && (
+        <path d="M2.5 13.5l11-11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}

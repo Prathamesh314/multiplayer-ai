@@ -1,3 +1,4 @@
+import { events } from "../../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
 import {
@@ -102,5 +103,18 @@ export async function PUT(request: Request, context: RouteContext<"/api/sessions
   }
 
   await setHeadSha(id, sha);
+
+  // Announced after the commit lands, so anyone who reacts by re-reading the
+  // file is guaranteed to get the version the event is about.
+  await (await events()).publish(id, {
+    type: "file.saved",
+    path,
+    headSha: sha,
+    authorId: result.user.id,
+    authorName: result.user.displayName,
+    originId: typeof body.originId === "string" ? body.originId : null,
+    at: Date.now(),
+  });
+
   return Response.json({ headSha: sha, committed: true } satisfies SaveFileResponse);
 }

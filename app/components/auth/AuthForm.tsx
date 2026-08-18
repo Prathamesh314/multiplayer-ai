@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { login, register } from "../../lib/auth/client";
-import { AlertIcon, SparkleIcon, SpinnerIcon } from "../icons";
+import { AlertIcon, EyeIcon, SparkleIcon, SpinnerIcon } from "../icons";
 
 type Mode = "signin" | "register";
 
@@ -23,6 +23,7 @@ export function AuthForm() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +32,7 @@ export function AuthForm() {
     setBusy(true);
     setError(null);
     try {
+      setShowPassword(false);
       if (mode === "signin") await login(identifier, password);
       else await register({ handle, email, displayName, password });
       router.push(next);
@@ -115,15 +117,31 @@ export function AuthForm() {
             label="Password"
             hint={registering ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
           >
-            <input
-              required
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              minLength={registering ? MIN_PASSWORD_LENGTH : undefined}
-              autoComplete={registering ? "new-password" : "current-password"}
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                required
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={registering ? MIN_PASSWORD_LENGTH : undefined}
+                autoComplete={registering ? "new-password" : "current-password"}
+                // Room on the right so a long password never runs under the button.
+                className={`${inputClass} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((shown) => !shown)}
+                // Labelled by what pressing it does, not by what is on screen.
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                // Keeps focus in the field, so toggling mid-typing does not
+                // move the caret or dismiss the keyboard on a phone.
+                onMouseDown={(event) => event.preventDefault()}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-vs-accent"
+              >
+                <EyeIcon off={showPassword} className="h-4 w-4" />
+              </button>
+            </div>
           </Field>
 
           {error && (
@@ -149,6 +167,7 @@ export function AuthForm() {
             type="button"
             onClick={() => {
               setMode(registering ? "signin" : "register");
+              setShowPassword(false);
               setError(null);
             }}
             className="text-vs-accent underline-offset-2 hover:underline"

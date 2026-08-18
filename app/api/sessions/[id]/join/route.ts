@@ -1,4 +1,5 @@
 import { currentUser } from "../../../../lib/auth/tokens";
+import { events } from "../../../../lib/events";
 import {
   addMember,
   getSession,
@@ -67,6 +68,8 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   const existing = await roleOf(id, user.id);
   if (!existing || outranks(granted, existing)) {
     await addMember(id, user.id, granted, "share_link", session.ownerId);
+    // Everyone already watching sees the roster change without a reload.
+    await (await events()).publish(id, { type: "members.changed", at: Date.now() });
   }
 
   return Response.json((await getSession(id, user.id)) ?? session);
