@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { barePath, workPath } from "./paths";
-import { allSessions, deleteSession, markArchived } from "./store";
+import { deleteSession, markArchived, reapableSessions } from "./store";
 
 /**
  * Branch-per-session generates repos faster than anyone deletes them, so the
@@ -39,12 +39,14 @@ export async function sweep(): Promise<SweepResult> {
   const archived: string[] = [];
   const deleted: string[] = [];
 
-  for (const session of await allSessions()) {
+  for (const session of await reapableSessions()) {
     if (session.pinned) continue;
 
     if (session.lastActiveAt < deleteBefore) {
       await rm(workPath(session.id), { recursive: true, force: true });
       await rm(barePath(session.id), { recursive: true, force: true });
+      // The row goes last: losing the repo but keeping the record is
+      // recoverable, the reverse leaves an orphan directory nothing points at.
       await deleteSession(session.id);
       deleted.push(session.id);
       continue;

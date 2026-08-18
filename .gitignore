@@ -23,6 +23,9 @@
 # session repos and records (override with MULTIPLAYER_AI_DATA)
 /.multiplayer-ai/
 
+# compiled output for the presence tests
+/.test-build/
+
 # misc
 .DS_Store
 *.pem
@@ -35,6 +38,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template carries no secrets and belongs in the repo.
+!.env.example
 
 # vercel
 .vercel

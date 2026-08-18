@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { relativeTime } from "../../lib/format";
-import { listMySessions } from "../../lib/session/client";
+import { fetchMe, logout } from "../../lib/auth/client";
+import type { CurrentUser } from "../../lib/auth/types";
+import { listMySessions, NotSignedIn } from "../../lib/session/client";
 import type { Session } from "../../lib/session/types";
 import { LinkIcon, PlusIcon, SparkleIcon, SpinnerIcon } from "../icons";
 import { CreateSessionDialog } from "./CreateSessionDialog";
@@ -17,15 +19,35 @@ export function SessionLauncher() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
 
+  const [me, setMe] = useState<CurrentUser | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    listMySessions()
-      .then((list) => !cancelled && setSessions(list))
-      .catch(() => !cancelled && setSessions([]));
+
+    void (async () => {
+      try {
+        const list = await listMySessions();
+        if (cancelled) return;
+        setSessions(list);
+        setMe((await fetchMe()).user);
+      } catch (cause) {
+        if (cancelled) return;
+        // Sessions belong to an account now, so there is nothing to show a
+        // signed-out visitor here.
+        if (cause instanceof NotSignedIn) router.replace("/login");
+        else setSessions([]);
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
+
+  async function signOut() {
+    await logout();
+    router.replace("/login");
+  }
 
   function open(sessionId: string) {
     router.push(`/s/${sessionId}`);
@@ -35,6 +57,8 @@ export function SessionLauncher() {
     <div className="flex min-h-dvh flex-col bg-vs-editor text-vs-fg md:h-dvh md:flex-row md:overflow-hidden">
       <Sidebar
         sessions={sessions}
+        me={me}
+        onSignOut={signOut}
         onOpen={open}
         onCreate={() => setDialog("create")}
         onJoin={() => setDialog("join")}
@@ -54,11 +78,15 @@ export function SessionLauncher() {
 
 function Sidebar({
   sessions,
+  me,
+  onSignOut,
   onOpen,
   onCreate,
   onJoin,
 }: {
   sessions: Session[] | null;
+  me: CurrentUser | null;
+  onSignOut: () => void;
   onOpen: (id: string) => void;
   onCreate: () => void;
   onJoin: () => void;
@@ -138,9 +166,23 @@ function Sidebar({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-vs-border px-4 py-3 text-[11px] leading-5 text-vs-muted">
-        Sessions are tied to this browser. They do not show up elsewhere unless you share the link
-        and its access code.
+      <footer className="flex shrink-0 items-center gap-2.5 border-t border-vs-border px-3 py-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[11px] font-semibold uppercase text-vs-accent">
+          {me ? initialsOf(me.displayName) : "?"}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px]">{me?.displayName ?? "Signed out"}</span>
+          <span className="block truncate font-mono text-[11px] text-vs-muted">
+            {me ? `@${me.handle}` : ""}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="shrink-0 rounded px-2 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+        >
+          Sign out
+        </button>
       </footer>
     </aside>
   );

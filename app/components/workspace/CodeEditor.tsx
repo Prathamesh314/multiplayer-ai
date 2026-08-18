@@ -57,6 +57,12 @@ export function CodeEditor({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-vs-editor">
+      {readOnly && (
+        <p className="border-b border-vs-border bg-vs-hover px-3 py-1.5 text-xs text-vs-muted">
+          Read-only — you have view access to this session.
+        </p>
+      )}
+
       {tooBig && !readOnly && (
         <p className="border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
           {humanBytes(text.length)} of text — opened read-only to keep highlighting responsive.

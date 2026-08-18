@@ -1,6 +1,6 @@
-import { authorize, locked } from "../../../../lib/session/auth";
+import { access, denied, forbidden } from "../../../../lib/session/auth";
 import { finishSeed, writeSeedBatch } from "../../../../lib/session/repo";
-import { attachRepo, publicSession } from "../../../../lib/session/store";
+import { attachRepo } from "../../../../lib/session/store";
 import type { SeedRequest, SeedResponse } from "../../../../lib/session/types";
 
 export const runtime = "nodejs";
@@ -9,20 +9,21 @@ export const dynamic = "force-dynamic";
 const MAX_FILES_PER_BATCH = 500;
 
 /**
- * Uploads the picked folder in batches, then commits it. Only the creator can
- * seed, and only once: after the session branch exists, the repo is the record
+ * Uploads the picked folder in batches, then commits it. Only the owner can
+ * seed, and only once: after the session branch exists the repo is the record
  * and further changes go through the file route as commits.
  */
 export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/seed">) {
   const { id } = await context.params;
-  const session = await authorize(id);
-  if (!session) return locked();
+  const result = await access(id);
+  const refusal = denied(result);
+  if (refusal || !result) return refusal!;
 
-  if (session.repo) {
-    return Response.json(
-      { error: "This session already holds a repository." },
-      { status: 409 },
-    );
+  if (result.role !== "owner") {
+    return forbidden("Only the session owner can add the folder.");
+  }
+  if (result.session.repo) {
+    return Response.json({ error: "This session already holds a repository." }, { status: 409 });
   }
 
   let body: SeedRequest;
@@ -47,13 +48,13 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   }
 
   const rootName = typeof body.rootName === "string" ? body.rootName.trim() : "";
-  const repo = await finishSeed(id, rootName || session.name);
+  const repo = await finishSeed(id, rootName || result.session.name);
   const upstream = typeof body.upstreamUrl === "string" ? body.upstreamUrl : null;
   const updated = await attachRepo(id, repo, upstream);
 
   return Response.json({
     written,
     skipped,
-    repo: updated ? publicSession(updated).repo : repo,
+    repo: updated?.repo ?? repo,
   } satisfies SeedResponse);
 }

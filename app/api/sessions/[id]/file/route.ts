@@ -1,4 +1,4 @@
-import { authorize, locked } from "../../../../lib/session/auth";
+import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
 import {
   commitWork,
@@ -23,26 +23,26 @@ const BAD_PATH = { error: "That file path is not valid for this session." };
 
 export async function GET(request: Request, context: RouteContext<"/api/sessions/[id]/file">) {
   const { id } = await context.params;
-  const session = await authorize(id);
-  if (!session) return locked();
-  if (!session.repo) return Response.json(NO_REPO, { status: 404 });
+  const result = await access(id);
+  const refusal = denied(result);
+  if (refusal || !result) return refusal!;
+
+  const repo = result.session.repo;
+  if (!repo) return Response.json(NO_REPO, { status: 404 });
 
   const url = new URL(request.url);
   const path = safeRelativePath(url.searchParams.get("path"));
   if (!path) return Response.json(BAD_PATH, { status: 400 });
 
-  await withRepoLock(id, () => ensureWork(id, session.repo!.headSha));
+  await withRepoLock(id, () => ensureWork(id, repo.headSha));
 
-  // `raw=1` streams the bytes back, which is what seeding an image or reading a
-  // binary needs; everything else wants the decoded, size-capped text.
+  // `raw=1` streams the bytes back, which is what reading a binary needs;
+  // everything else wants the decoded, size-capped text.
   if (url.searchParams.get("raw") === "1") {
     const bytes = await readRepoBytes(id, path);
     if (!bytes) return Response.json({ error: "No such file." }, { status: 404 });
     return new Response(new Uint8Array(bytes), {
-      headers: {
-        "content-type": "application/octet-stream",
-        "cache-control": "no-store",
-      },
+      headers: { "content-type": "application/octet-stream", "cache-control": "no-store" },
     });
   }
 
@@ -61,9 +61,18 @@ export async function GET(request: Request, context: RouteContext<"/api/sessions
  */
 export async function PUT(request: Request, context: RouteContext<"/api/sessions/[id]/file">) {
   const { id } = await context.params;
-  const session = await authorize(id);
-  if (!session) return locked();
-  if (!session.repo) return Response.json(NO_REPO, { status: 404 });
+  const result = await access(id);
+  const refusal = denied(result);
+  if (refusal || !result) return refusal!;
+
+  if (!canWrite(result.role)) {
+    return forbidden(
+      "You have read access to this session. Ask the owner for edit access to make changes.",
+    );
+  }
+
+  const repo = result.session.repo;
+  if (!repo) return Response.json(NO_REPO, { status: 404 });
 
   let body: SaveFileRequest;
   try {
@@ -78,13 +87,13 @@ export async function PUT(request: Request, context: RouteContext<"/api/sessions
     return Response.json({ error: "A file body is required." }, { status: 400 });
   }
 
-  const previous = session.repo.headSha;
-  await touchSession(id);
+  const previous = repo.headSha;
+  await touchSession(id, result.user.id);
 
   const sha = await withRepoLock(id, async () => {
     await ensureWork(id, previous);
     if (!(await writeRepoFile(id, path, body.text))) return null;
-    return commitWork(id, `WIP: ${path}`);
+    return commitWork(id, `WIP: ${path}`, result.user.displayName, result.user.email);
   });
 
   if (sha === null) {

@@ -6,16 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "node db/migrate.mjs",
+    "db:test": "node db/schema.test.mjs",
+    "test:presence": "tsc app/lib/presence/types.ts app/lib/presence/memory.ts app/lib/presence/redis.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/presence.test.cjs",
+    "test": "npm run db:test && npm run test:presence"
   },
   "dependencies": {
     "next": "16.3.1",
+    "pg": "^8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "redis": "^6.2.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

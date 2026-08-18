@@ -1,161 +1,259 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { storeFile } from "./paths";
-import type { Session, SessionRepo } from "./types";
-
-export type StoredSession = Session & {
-  /** Secret held only in the creator's cookie — never sent in a URL. */
-  key: string;
-  /**
-   * External remote discovered from the uploaded `.git/config`, when there was
-   * one. The session's own bare repo is always derivable from the id, so it is
-   * not stored; this is the only repo URL that carries information.
-   */
-  upstreamUrl: string | null;
-};
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { query, queryOne, transaction } from "../db/client";
+import type {
+  Session,
+  SessionMember,
+  SessionRepo,
+  SessionRole,
+  ShareLink,
+  ShareRole,
+} from "./types";
 
 /**
- * Sessions are persisted to one JSON file. They have to outlive the process:
- * once a session owns a branch and a head sha, losing the record would strand
- * the branch with nothing left to reap it.
+ * Sessions live in Postgres. The git repo on disk is still the record for file
+ * contents — this table records who owns the session, who may open it, and
+ * where its branch currently points.
  */
-let cache: Map<string, StoredSession> | null = null;
-/** Serialises writes so two concurrent saves cannot interleave. */
-let writes: Promise<unknown> = Promise.resolve();
-
-/** Guards against unbounded growth from repeated creates. */
-const MAX_SESSIONS = 200;
 
 const ID_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-async function load(): Promise<Map<string, StoredSession>> {
-  if (cache) return cache;
+type SessionRow = {
+  id: string;
+  name: string;
+  join_code: string;
+  owner_id: string;
+  org_id: string | null;
+  project_id: string | null;
+  root_name: string | null;
+  created_at: Date;
+  last_active_at: Date;
+  pinned: boolean;
+  archived_at: Date | null;
+  // Joined from session_repos; null before seeding.
+  base_branch: string | null;
+  base_sha_at_fork: string | null;
+  session_branch: string | null;
+  head_sha: string | null;
+  dep_lockfile_hash: string | null;
+  spec_doc_sha: string | null;
+  container_image_digest: string | null;
+  last_test_status: string | null;
+  last_test_sha: string | null;
+  repo_root_name: string | null;
+  seeded_at: Date | null;
+};
 
-  const loaded = new Map<string, StoredSession>();
-  try {
-    const parsed: unknown = JSON.parse(await readFile(storeFile(), "utf8"));
-    if (Array.isArray(parsed)) {
-      for (const entry of parsed) {
-        const session = validate(entry);
-        if (session) loaded.set(session.id, session);
+const SELECT_SESSION = `
+  SELECT s.id, s.name, s.join_code, s.owner_id, s.org_id, s.project_id, s.root_name,
+         s.created_at, s.last_active_at, s.pinned, s.archived_at,
+         r.base_branch, r.base_sha_at_fork, r.session_branch, r.head_sha,
+         r.dep_lockfile_hash, r.spec_doc_sha, r.container_image_digest,
+         r.last_test_status, r.last_test_sha, r.root_name AS repo_root_name, r.seeded_at
+    FROM sessions s
+    LEFT JOIN session_repos r ON r.session_id = s.id
+`;
+
+function toSession(row: SessionRow, myRole?: SessionRole | null): Session {
+  const repo: SessionRepo | null = row.session_branch
+    ? {
+        rootName: row.repo_root_name ?? row.root_name ?? row.name,
+        baseBranch: row.base_branch!,
+        baseShaAtFork: row.base_sha_at_fork!,
+        sessionBranch: row.session_branch,
+        headSha: row.head_sha!,
+        depLockfileHash: row.dep_lockfile_hash,
+        specDocSha: row.spec_doc_sha,
+        containerImageDigest: row.container_image_digest,
+        lastTestStatus: (row.last_test_status ?? "unknown") as SessionRepo["lastTestStatus"],
+        lastTestSha: row.last_test_sha,
+        seededAt: row.seeded_at ? row.seeded_at.getTime() : 0,
       }
-    }
-  } catch {
-    // Missing or corrupt: start empty rather than refusing to boot. A corrupt
-    // file is left on disk untouched until the next successful save.
-  }
-
-  cache = loaded;
-  return loaded;
-}
-
-function validate(entry: unknown): StoredSession | null {
-  if (!entry || typeof entry !== "object") return null;
-  const value = entry as Record<string, unknown>;
-
-  if (typeof value.id !== "string" || typeof value.key !== "string") return null;
-  if (typeof value.name !== "string" || typeof value.joinCode !== "string") return null;
-  if (typeof value.createdAt !== "number") return null;
+    : null;
 
   return {
-    id: value.id,
-    name: value.name,
-    joinCode: value.joinCode,
-    createdAt: value.createdAt,
-    key: value.key,
-    upstreamUrl: typeof value.upstreamUrl === "string" ? value.upstreamUrl : null,
-    repo: (value.repo as SessionRepo | null | undefined) ?? null,
-    // Records written before retention existed are treated as active now,
-    // rather than as ancient and immediately reapable.
-    lastActiveAt:
-      typeof value.lastActiveAt === "number" ? value.lastActiveAt : Date.now(),
-    pinned: value.pinned === true,
-    archivedAt: typeof value.archivedAt === "number" ? value.archivedAt : null,
+    id: row.id,
+    name: row.name,
+    joinCode: row.join_code,
+    ownerId: row.owner_id,
+    orgId: row.org_id,
+    createdAt: row.created_at.getTime(),
+    lastActiveAt: row.last_active_at.getTime(),
+    pinned: row.pinned,
+    archivedAt: row.archived_at ? row.archived_at.getTime() : null,
+    myRole: myRole ?? null,
+    repo,
   };
 }
 
-async function save(): Promise<void> {
-  const sessions = [...(cache?.values() ?? [])];
-  const target = storeFile();
+// ---------------------------------------------------------------------------
+// Share links
+// ---------------------------------------------------------------------------
 
-  writes = writes.then(async () => {
-    await mkdir(dirname(target), { recursive: true });
-    // Written aside and renamed so a crash mid-write cannot truncate the store.
-    const temporary = `${target}.${randomString(6, ID_ALPHABET)}.tmp`;
-    await writeFile(temporary, JSON.stringify(sessions, null, 2), "utf8");
-    await rename(temporary, target);
-  });
+/**
+ * The token is 32 random bytes, so an unsalted SHA-256 is the right store:
+ * there is nothing to brute force, and the database never holds anything that
+ * could be pasted into a URL.
+ */
+const tokenDigest = (token: string) => createHash("sha256").update(token, "utf8").digest();
 
-  await writes;
+type LinkRow = {
+  id: string;
+  role: ShareRole;
+  label: string | null;
+  created_at: Date;
+  expires_at: Date | null;
+  last_used_at: Date | null;
+  uses: number;
+};
+
+const toLink = (row: LinkRow): ShareLink => ({
+  id: row.id,
+  role: row.role,
+  label: row.label,
+  createdAt: row.created_at.getTime(),
+  expiresAt: row.expires_at ? row.expires_at.getTime() : null,
+  lastUsedAt: row.last_used_at ? row.last_used_at.getTime() : null,
+  uses: row.uses,
+});
+
+export async function createShareLink(
+  sessionId: string,
+  role: ShareRole,
+  createdBy: string,
+  options: { label?: string | null; expiresInDays?: number | null } = {},
+): Promise<{ link: ShareLink; token: string }> {
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt =
+    options.expiresInDays && options.expiresInDays > 0
+      ? new Date(Date.now() + options.expiresInDays * 24 * 60 * 60 * 1000)
+      : null;
+
+  const row = await queryOne<LinkRow>(
+    `INSERT INTO session_share_links (session_id, token_hash, role, label, created_by, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, role, label, created_at, expires_at, last_used_at, uses`,
+    [sessionId, tokenDigest(token), role, options.label ?? null, createdBy, expiresAt],
+  );
+
+  return { link: toLink(row!), token };
 }
 
-export type CreateOutcome =
-  | { ok: true; session: StoredSession }
-  | { ok: false; error: string };
+export async function listShareLinks(sessionId: string): Promise<ShareLink[]> {
+  const rows = await query<LinkRow>(
+    `SELECT id, role, label, created_at, expires_at, last_used_at, uses
+       FROM session_share_links
+      WHERE session_id = $1 AND revoked_at IS NULL
+      ORDER BY created_at DESC`,
+    [sessionId],
+  );
+  return rows.map(toLink);
+}
 
-export async function createSession(requestedName?: string): Promise<CreateOutcome> {
-  const sessions = await load();
+export async function revokeShareLink(sessionId: string, linkId: string): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `UPDATE session_share_links SET revoked_at = now()
+      WHERE id = $1 AND session_id = $2 AND revoked_at IS NULL
+      RETURNING id`,
+    [linkId, sessionId],
+  );
+  return rows.length > 0;
+}
 
-  if (sessions.size >= MAX_SESSIONS) {
-    // Only unseeded sessions are disposable. A seeded one owns a repo, and
-    // deleting somebody's code to make room is never the right default.
-    const disposable = [...sessions.values()]
-      .filter((session) => session.repo === null)
-      .sort((a, b) => a.createdAt - b.createdAt)[0];
+/**
+ * Resolves a token to the role it grants, and records the use.
+ *
+ * Expiry and revocation are checked in the same statement that consumes it, so
+ * there is no window between "is this valid" and "use it".
+ */
+export async function redeemShareLink(
+  sessionId: string,
+  token: string,
+): Promise<ShareRole | null> {
+  const row = await queryOne<{ role: ShareRole }>(
+    `UPDATE session_share_links
+        SET uses = uses + 1, last_used_at = now()
+      WHERE session_id = $1
+        AND token_hash = $2
+        AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())
+    RETURNING role`,
+    [sessionId, tokenDigest(token)],
+  );
+  return row?.role ?? null;
+}
 
-    if (!disposable) {
-      return {
-        ok: false,
-        error: `The session limit of ${MAX_SESSIONS} is full and every session holds code. Idle sessions are reclaimed automatically; unpin one to let it through, or remove one by hand.`,
-      };
+export async function createSession(ownerId: string, requestedName?: string): Promise<Session> {
+  const name = cleanName(requestedName) ?? `Session ${randomString(4, CODE_ALPHABET)}`;
+  const joinCode = `${randomString(4, CODE_ALPHABET)}-${randomString(4, CODE_ALPHABET)}`;
+
+  // The session and its owner row must appear together: a session nobody can
+  // open is not a state worth being able to reach.
+  return transaction(async (tx) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const id = randomString(12, ID_ALPHABET);
+      const inserted = await tx.query<SessionRow>(
+        `INSERT INTO sessions (id, owner_id, name, join_code)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id, name, join_code, owner_id, org_id, project_id, root_name,
+                   created_at, last_active_at, pinned, archived_at,
+                   NULL AS base_branch, NULL AS base_sha_at_fork, NULL AS session_branch,
+                   NULL AS head_sha, NULL AS dep_lockfile_hash, NULL AS spec_doc_sha,
+                   NULL AS container_image_digest, NULL AS last_test_status,
+                   NULL AS last_test_sha, NULL AS repo_root_name, NULL AS seeded_at`,
+        [id, ownerId, name, joinCode],
+      );
+
+      if (inserted.rows.length === 0) continue; // id collision, try another
+
+      await tx.query(
+        `INSERT INTO session_members (session_id, user_id, role, added_via)
+         VALUES ($1, $2, 'owner', 'owner')`,
+        [id, ownerId],
+      );
+
+      return toSession(inserted.rows[0]);
     }
-    sessions.delete(disposable.id);
-  }
 
-  const id = randomString(12, ID_ALPHABET);
-  const session: StoredSession = {
-    id,
-    name: cleanName(requestedName) ?? `Session ${randomString(4, CODE_ALPHABET)}`,
-    joinCode: `${randomString(4, CODE_ALPHABET)}-${randomString(4, CODE_ALPHABET)}`,
-    key: randomBytes(32).toString("base64url"),
-    createdAt: Date.now(),
-    upstreamUrl: null,
-    repo: null,
-    lastActiveAt: Date.now(),
-    pinned: false,
-    archivedAt: null,
-  };
-
-  sessions.set(id, session);
-  await save();
-  return { ok: true, session };
+    throw new Error("Could not allocate a session id.");
+  });
 }
 
-export async function getSession(id: string): Promise<StoredSession | undefined> {
-  return (await load()).get(id);
+export async function getSession(id: string, viewerId?: string): Promise<Session | null> {
+  const row = await queryOne<SessionRow>(
+    `${SELECT_SESSION} WHERE s.id = $1 AND s.deleted_at IS NULL`,
+    [id],
+  );
+  if (!row) return null;
+  // The caller's own role travels with the session so the UI knows what to
+  // enable without a second request.
+  const role = viewerId ? await roleOf(id, viewerId) : null;
+  return toSession(row, role);
 }
 
-export async function listSessions(ids: string[]): Promise<StoredSession[]> {
-  const sessions = await load();
-  return ids
-    .map((id) => sessions.get(id))
-    .filter((session): session is StoredSession => session !== undefined)
-    .sort((a, b) => b.createdAt - a.createdAt);
+/** Sessions this user may open, most recently active first. */
+export async function listSessionsForUser(userId: string): Promise<Session[]> {
+  const rows = await query<SessionRow & { my_role: SessionRole }>(
+    `${SELECT_SESSION.replace("SELECT ", "SELECT m.role AS my_role, ")}
+      JOIN session_members m ON m.session_id = s.id
+     WHERE m.user_id = $1 AND m.removed_at IS NULL AND s.deleted_at IS NULL
+     ORDER BY s.last_active_at DESC`,
+    [userId],
+  );
+  return rows.map((row) => toSession(row, row.my_role));
 }
 
-export async function renameSession(
-  id: string,
-  name: string,
-): Promise<StoredSession | undefined> {
-  const session = (await load()).get(id);
+export async function renameSession(id: string, name: string): Promise<Session | null> {
   const cleaned = cleanName(name);
-  if (!session || !cleaned) return undefined;
+  if (!cleaned) return null;
+  await query(`UPDATE sessions SET name = $2 WHERE id = $1`, [id, cleaned]);
+  return getSession(id);
+}
 
-  session.name = cleaned;
-  await save();
-  return session;
+export async function setPinned(id: string, pinned: boolean): Promise<Session | null> {
+  await query(`UPDATE sessions SET pinned = $2 WHERE id = $1`, [id, pinned]);
+  return getSession(id);
 }
 
 /** Records the git state produced by a seed. */
@@ -163,91 +261,150 @@ export async function attachRepo(
   id: string,
   repo: SessionRepo,
   upstreamUrl: string | null,
-): Promise<StoredSession | undefined> {
-  const session = (await load()).get(id);
-  if (!session) return undefined;
+): Promise<Session | null> {
+  await transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO session_repos
+         (session_id, root_name, base_branch, base_sha_at_fork, session_branch, head_sha,
+          dep_lockfile_hash, spec_doc_sha, container_image_digest, upstream_url, last_test_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        id,
+        repo.rootName,
+        repo.baseBranch,
+        repo.baseShaAtFork,
+        repo.sessionBranch,
+        repo.headSha,
+        repo.depLockfileHash,
+        repo.specDocSha,
+        repo.containerImageDigest,
+        upstreamUrl,
+        repo.lastTestStatus,
+      ],
+    );
+    await tx.query(`UPDATE sessions SET root_name = $2 WHERE id = $1`, [id, repo.rootName]);
+  });
 
-  session.repo = repo;
-  session.upstreamUrl = upstreamUrl;
-  await save();
-  return session;
+  return getSession(id);
 }
 
-/** Advances HEAD after a commit. */
 export async function setHeadSha(id: string, headSha: string): Promise<void> {
-  const session = (await load()).get(id);
-  if (!session?.repo) return;
-
-  session.repo.headSha = headSha;
-  await save();
+  await query(`UPDATE session_repos SET head_sha = $2 WHERE session_id = $1`, [id, headSha]);
 }
 
 /**
  * Marks a session as in use. Every repo read and write calls this, so idleness
  * means "nobody has opened it", not "nobody has committed to it".
  */
-export async function touchSession(id: string): Promise<void> {
-  const session = (await load()).get(id);
-  if (!session) return;
-
-  session.lastActiveAt = Date.now();
-  // Opening an archived session un-archives it: the working copy is about to
-  // be rebuilt anyway.
-  session.archivedAt = null;
-  await save();
+export async function touchSession(id: string, userId?: string): Promise<void> {
+  await query(
+    `UPDATE sessions SET last_active_at = now(), archived_at = NULL WHERE id = $1`,
+    [id],
+  );
+  if (userId) {
+    await query(
+      `UPDATE session_members SET last_seen_at = now() WHERE session_id = $1 AND user_id = $2`,
+      [id, userId],
+    );
+  }
 }
 
-/** Promotes a session to "keep", or releases it back to the retention rules. */
-export async function setPinned(
-  id: string,
-  pinned: boolean,
-): Promise<StoredSession | undefined> {
-  const session = (await load()).get(id);
-  if (!session) return undefined;
-
-  session.pinned = pinned;
-  await save();
-  return session;
+export async function deleteSession(id: string): Promise<void> {
+  await query(`DELETE FROM sessions WHERE id = $1`, [id]);
 }
 
 export async function markArchived(id: string): Promise<void> {
-  const session = (await load()).get(id);
-  if (!session) return;
-
-  session.archivedAt = Date.now();
-  await save();
+  await query(`UPDATE sessions SET archived_at = now() WHERE id = $1`, [id]);
 }
 
-export async function allSessions(): Promise<StoredSession[]> {
-  return [...(await load()).values()];
+/** Retention sweep input: everything not already deleted. */
+export async function reapableSessions(): Promise<
+  { id: string; lastActiveAt: number; pinned: boolean; archivedAt: number | null }[]
+> {
+  const rows = await query<{
+    id: string;
+    last_active_at: Date;
+    pinned: boolean;
+    archived_at: Date | null;
+  }>(
+    `SELECT id, last_active_at, pinned, archived_at
+       FROM sessions WHERE deleted_at IS NULL`,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    lastActiveAt: row.last_active_at.getTime(),
+    pinned: row.pinned,
+    archivedAt: row.archived_at ? row.archived_at.getTime() : null,
+  }));
 }
 
-/** Drops the record. The caller is responsible for the repo on disk. */
-export async function deleteSession(id: string): Promise<void> {
-  const sessions = await load();
-  if (!sessions.delete(id)) return;
-  await save();
+// ---------------------------------------------------------------------------
+// Membership — the durable roster that replaced the per-session cookie key
+// ---------------------------------------------------------------------------
+
+export async function roleOf(sessionId: string, userId: string): Promise<SessionRole | null> {
+  const row = await queryOne<{ role: SessionRole }>(
+    `SELECT role FROM session_members
+      WHERE session_id = $1 AND user_id = $2 AND removed_at IS NULL`,
+    [sessionId, userId],
+  );
+  return row?.role ?? null;
 }
 
-/** Strips the secret before anything is sent to a browser. */
-export function publicSession(session: StoredSession): Session {
-  return {
-    id: session.id,
-    name: session.name,
-    joinCode: session.joinCode,
-    createdAt: session.createdAt,
-    repo: session.repo,
-    lastActiveAt: session.lastActiveAt,
-    pinned: session.pinned,
-    archivedAt: session.archivedAt,
-  };
+export async function addMember(
+  sessionId: string,
+  userId: string,
+  role: SessionRole,
+  addedVia: "owner" | "share_link" | "org",
+  addedBy?: string,
+): Promise<void> {
+  await query(
+    `INSERT INTO session_members (session_id, user_id, role, added_via, added_by)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (session_id, user_id)
+     DO UPDATE SET removed_at = NULL, role = EXCLUDED.role`,
+    [sessionId, userId, role, addedVia, addedBy ?? null],
+  );
 }
 
-export function keyMatches(session: StoredSession, candidate: string | undefined): boolean {
-  return !!candidate && constantTimeEquals(session.key, candidate);
+export async function removeMember(sessionId: string, userId: string): Promise<void> {
+  await query(
+    `UPDATE session_members SET removed_at = now()
+      WHERE session_id = $1 AND user_id = $2 AND removed_at IS NULL`,
+    [sessionId, userId],
+  );
 }
 
-export function joinCodeMatches(session: StoredSession, candidate: string): boolean {
+/** The roster, for the session's people list. */
+export async function membersOf(sessionId: string): Promise<SessionMember[]> {
+  const rows = await query<{
+    user_id: string;
+    handle: string;
+    display_name: string;
+    avatar_url: string | null;
+    role: SessionRole;
+    last_seen_at: Date | null;
+  }>(
+    `SELECT m.user_id, u.handle, u.display_name, u.avatar_url, m.role, m.last_seen_at
+       FROM session_members m
+       JOIN users u ON u.id = m.user_id
+      WHERE m.session_id = $1 AND m.removed_at IS NULL
+      ORDER BY m.joined_at`,
+    [sessionId],
+  );
+
+  return rows.map((row) => ({
+    userId: row.user_id,
+    handle: row.handle,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    role: row.role,
+    lastSeenAt: row.last_seen_at ? row.last_seen_at.getTime() : null,
+    online: false,
+  }));
+}
+
+export function joinCodeMatches(session: Session, candidate: string): boolean {
   return constantTimeEquals(
     session.joinCode.toUpperCase(),
     candidate.trim().toUpperCase().replace(/\s+/g, ""),

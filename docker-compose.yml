@@ -1,0 +1,94 @@
+# Local development services for multiplayer-ai.
+#
+#   docker compose up -d      start everything
+#   npm run db:migrate        apply the schema (not run automatically — see below)
+#   docker compose down       stop, keeping data
+#   docker compose down -v    stop and wipe the volumes
+#
+# Credentials here are development defaults, committed on purpose so the stack
+# comes up with no setup. Override any of them with a .env file beside this one,
+# and never reuse them anywhere reachable from outside your machine.
+
+name: multiplayer-ai
+
+services:
+  postgres:
+    # 18 specifically: the schema uses uuidv7() for time-ordered primary keys,
+    # which older servers do not have. Migration 001 falls back to random v4,
+    # so an older tag works — it just loses the index locality.
+    image: postgres:18
+    container_name: multiplayer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-multiplayer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
+      POSTGRES_DB: ${POSTGRES_DB:-multiplayer_ai}
+      # Faster startup; irrelevant for a throwaway dev database.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18 changed this: the mount goes at /var/lib/postgresql, not
+      # .../data. The server puts its cluster in a version-named subdirectory,
+      # which is what lets `pg_upgrade --link` work across a major version
+      # without tripping over the mount boundary. Mounting the old path makes
+      # 18 refuse to start.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # Both flags matter: without -d it checks the wrong database.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-multiplayer} -d ${POSTGRES_DB:-multiplayer_ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: multiplayer-redis
+    restart: unless-stopped
+    # No persistence, and no volume. Presence is disposable by design: an empty
+    # store after a restart is the correct state, because nobody is connected.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      # 6380 on the host, not 6379: you already run Redis for another project
+      # on the default port. Inside the compose network this is still 6379.
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: multiplayer-pgadmin
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin}
+      # Skips the master-password prompt on every launch.
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      # Pre-registers the connection so the server is already in the tree.
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/misc/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  pgadmin-data:
+# The schema is deliberately NOT applied through /docker-entrypoint-initdb.d.
+# Running the migration files that way would create the tables without
+# recording them in schema_migrations, so the next `npm run db:migrate` would
+# try to create them again and fail. Run the migrations through the runner.

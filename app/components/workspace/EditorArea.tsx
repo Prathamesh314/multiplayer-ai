@@ -26,6 +26,8 @@ type EditorAreaProps = {
   onChange: (path: string, text: string) => void;
   onCaretChange: (caret: Caret) => void;
   emptyState: React.ReactNode;
+  /** True when this account may open the session but not save to it. */
+  readOnly: boolean;
 };
 
 export function EditorArea({
@@ -37,6 +39,7 @@ export function EditorArea({
   onChange,
   onCaretChange,
   emptyState,
+  readOnly,
 }: EditorAreaProps) {
   const active = activePath ? buffers.get(activePath) : undefined;
 
@@ -118,7 +121,7 @@ export function EditorArea({
             key={activePath}
             fileName={baseName(activePath!)}
             text={active.text}
-            readOnly={active.truncated}
+            readOnly={readOnly || active.truncated}
             onChange={(text) => onChange(activePath!, text)}
             onCaretChange={onCaretChange}
           />

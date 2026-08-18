@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { PickedSource } from "../../lib/folder";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
+import { startHeartbeat } from "../../lib/presence/client";
 import { takeFolder } from "../../lib/session/handoff";
 import {
   createSaver,
@@ -18,7 +19,7 @@ import {
   seedSession,
   type SeedProgress,
 } from "../../lib/session/remote";
-import type { Session, SessionRepo } from "../../lib/session/types";
+import { canEdit, type Session, type SessionRepo } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
 import { ActivityBar } from "./ActivityBar";
 import { AiPanel } from "./AiPanel";
@@ -62,6 +63,10 @@ export function Workspace({ session }: { session: Session }) {
   const [repo, setRepo] = useState<SessionRepo | null>(session.repo);
   const [seeding, setSeeding] = useState<SeedProgress | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  // A viewer may open everything and change nothing. The server refuses their
+  // writes regardless; this stops the editor from pretending otherwise.
+  const readOnly = !canEdit(session.myRole);
 
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -115,6 +120,13 @@ export function Workspace({ session }: { session: Session }) {
       void saver.flush();
     };
   }, [saver]);
+
+  // One heartbeat per open tab, for as long as this session is open. The tab
+  // being open is what "online" means, so it starts and stops with the mount.
+  useEffect(() => {
+    const beat = startHeartbeat({ sessionId: session.id, orgId: session.orgId });
+    return () => beat.stop();
+  }, [session.id, session.orgId]);
 
   // Ctrl+Shift+Z toggles the terminal; Ctrl+` also works, as in VS Code.
   useEffect(() => {
@@ -347,7 +359,7 @@ export function Workspace({ session }: { session: Session }) {
       return new Map(previous).set(path, { ...buffer, text });
     });
 
-    if (repo) {
+    if (repo && !readOnly) {
       setSaveState("saving");
       saver.queue(path, text);
     }
@@ -457,6 +469,7 @@ export function Workspace({ session }: { session: Session }) {
             onCloseTab={closeTab}
             onChange={editBuffer}
             onCaretChange={setCaret}
+            readOnly={readOnly}
             emptyState={
               <WelcomeView
                 dragging={dragging}

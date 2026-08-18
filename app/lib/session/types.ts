@@ -24,12 +24,48 @@ export type SessionRepo = {
   seededAt: number;
 };
 
+export type SessionRole = "owner" | "editor" | "viewer";
+
+/** What a share link may grant. Never "owner". */
+export type ShareRole = Exclude<SessionRole, "owner">;
+
+/** Highest wins when someone redeems a second link. */
+const RANK: Record<SessionRole, number> = { viewer: 1, editor: 2, owner: 3 };
+
+export const outranks = (a: SessionRole, b: SessionRole) => RANK[a] > RANK[b];
+
+export const canEdit = (role: SessionRole | null | undefined) =>
+  role === "owner" || role === "editor";
+
+/** A share link as the owner sees it. The token is not included: it is shown
+ *  once at creation and only its hash is stored. */
+export type ShareLink = {
+  id: string;
+  role: ShareRole;
+  label: string | null;
+  createdAt: number;
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+  uses: number;
+};
+
+export type ShareLinksResponse = { links: ShareLink[] };
+
+export type CreateShareLinkRequest = { role: ShareRole; label?: string; expiresInDays?: number };
+
+/** The one response that carries a token, because it is the only chance to. */
+export type CreateShareLinkResponse = { link: ShareLink; token: string };
+
 /** Session as the client is allowed to see it. */
 export type Session = {
   id: string;
   name: string;
   /** Shareable code a new device must present to join. */
   joinCode: string;
+  /** The account that created it. Sessions are never ownerless. */
+  ownerId: string;
+  /** Null for a personal session that belongs to no org. */
+  orgId: string | null;
   createdAt: number;
   /** Null until the creator has seeded a folder into it. */
   repo: SessionRepo | null;
@@ -39,13 +75,31 @@ export type Session = {
   pinned: boolean;
   /** Set when the working copy was reclaimed; the repo itself is untouched. */
   archivedAt: number | null;
+  /** The requesting account's role. Null in contexts with no caller. */
+  myRole: SessionRole | null;
 };
+
+/** A person on a session's roster, with live presence folded in. */
+export type SessionMember = {
+  userId: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  role: SessionRole;
+  /** Durable "last opened", distinct from presence. */
+  lastSeenAt: number | null;
+  /** From Redis, not the database. */
+  online: boolean;
+};
+
+export type MembersResponse = { members: SessionMember[] };
 
 export type SessionListResponse = { sessions: Session[] };
 
 export type CreateSessionRequest = { name?: string };
 
-export type JoinSessionRequest = { code: string };
+/** Exactly one of these. A token carries a role; a code always means viewer. */
+export type JoinSessionRequest = { code?: string; token?: string };
 
 // ---------------------------------------------------------------------------
 // Seeding

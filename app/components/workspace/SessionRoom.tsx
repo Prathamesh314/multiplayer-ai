@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { joinSession, loadSession } from "../../lib/session/client";
-import { clearShareCode, readShareCode } from "../../lib/session/share";
+import {
+  clearShareCode,
+  readShareCode,
+  stashShareCode,
+  takeStashedShareCode,
+} from "../../lib/session/share";
 import type { Session } from "../../lib/session/types";
 import { AlertIcon, SparkleIcon, SpinnerIcon } from "../icons";
 import { Workspace } from "./Workspace";
@@ -15,6 +20,7 @@ type RoomState =
   | { kind: "error"; message: string };
 
 export function SessionRoom({ sessionId }: { sessionId: string }) {
+  const router = useRouter();
   const [state, setState] = useState<RoomState>({ kind: "loading", label: "Opening session…" });
 
   useEffect(() => {
@@ -23,11 +29,21 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
     void (async () => {
       // Read before anything awaits: a share link is only in the URL until it
       // is redeemed, and this must not race with `clearShareCode`.
-      const shared = readShareCode();
+      // A code stashed before a trip through sign-in counts too.
+      const shared = readShareCode() ?? takeStashedShareCode(sessionId);
 
       try {
         const result = await loadSession(sessionId);
         if (cancelled) return;
+
+        if (result.state === "signin") {
+          // Carry the code across sign-in, or following a share link while
+          // signed out would land on a locked screen asking for the code the
+          // link already contained.
+          if (shared) stashShareCode(sessionId, shared);
+          router.replace(`/login?next=${encodeURIComponent(`/s/${sessionId}`)}`);
+          return;
+        }
 
         if (result.state === "ready") {
           // Already a member; the code in the URL is redundant.
@@ -65,7 +81,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, router]);
 
   if (state.kind === "ready") {
     return <Workspace session={state.session} />;

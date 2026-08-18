@@ -1,4 +1,4 @@
-import { authorize, locked } from "../../../../lib/session/auth";
+import { access, denied } from "../../../../lib/session/auth";
 import {
   checkoutHead,
   ensureWork,
@@ -7,8 +7,8 @@ import {
   withRepoLock,
 } from "../../../../lib/session/repo";
 import { setHeadSha, touchSession } from "../../../../lib/session/store";
-import type { TreeNode } from "../../../../lib/types";
 import type { TreeResponse } from "../../../../lib/session/types";
+import type { TreeNode } from "../../../../lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,18 +19,19 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]/tree">) {
   const { id } = await context.params;
-  const session = await authorize(id);
-  if (!session) return locked();
+  const result = await access(id);
+  const refusal = denied(result);
+  if (refusal || !result) return refusal!;
 
-  if (!session.repo) {
+  const repo = result.session.repo;
+  if (!repo) {
     return Response.json(
       { error: "This session has no repository yet." },
       { status: 404, headers: { "cache-control": "no-store" } },
     );
   }
 
-  const repo = session.repo;
-  await touchSession(id);
+  await touchSession(id, result.user.id);
 
   const root = await withRepoLock(id, async () => {
     // Rebuilds the working copy if it is gone, then realigns it only when it
@@ -55,10 +56,10 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
 
   return Response.json(
     {
-      rootName: session.repo.rootName,
+      rootName: repo.rootName,
       root,
-      headSha: session.repo.headSha,
-      sessionBranch: session.repo.sessionBranch,
+      headSha: repo.headSha,
+      sessionBranch: repo.sessionBranch,
       ...totals,
     } satisfies TreeResponse,
     { headers: { "cache-control": "no-store" } },

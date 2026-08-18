@@ -1,29 +1,31 @@
-import { grantSessionKey, readSessionKeys } from "../../lib/session/cookie";
-import { createSession, listSessions, publicSession } from "../../lib/session/store";
+import { currentUser } from "../../lib/auth/tokens";
 import { createRepo, gitAvailable } from "../../lib/session/repo";
 import { sweepInBackground } from "../../lib/session/retention";
+import { createSession, listSessionsForUser } from "../../lib/session/store";
 import type { CreateSessionRequest, SessionListResponse } from "../../lib/session/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Sessions this browser holds a key for. Others are invisible here. */
+/** Sessions this account may open. */
 export async function GET() {
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
+
   // No scheduler exists in this app, so the session list is what drives
   // retention. It is throttled and never awaited.
   sweepInBackground();
 
-  const keys = await readSessionKeys();
-  const sessions = (await listSessions(Object.keys(keys)))
-    .filter((session) => keys[session.id] === session.key)
-    .map(publicSession);
-
+  const sessions = await listSessionsForUser(user.id);
   return Response.json({ sessions } satisfies SessionListResponse, {
     headers: { "cache-control": "no-store" },
   });
 }
 
 export async function POST(request: Request) {
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
+
   if (!(await gitAvailable())) {
     return Response.json(
       { error: "git is not installed on the server, so sessions cannot be created." },
@@ -38,13 +40,11 @@ export async function POST(request: Request) {
     // An empty body is fine; the session gets a generated name.
   }
 
-  const outcome = await createSession(body.name);
-  if (!outcome.ok) return Response.json({ error: outcome.error }, { status: 409 });
+  const session = await createSession(user.id, body.name);
 
   // The repo is created up front so seeding has somewhere to land, and so a
   // session that is never seeded still fails loudly rather than half-existing.
-  await createRepo(outcome.session.id);
-  await grantSessionKey(outcome.session.id, outcome.session.key);
+  await createRepo(session.id);
 
-  return Response.json(publicSession(outcome.session), { status: 201 });
+  return Response.json(session, { status: 201 });
 }

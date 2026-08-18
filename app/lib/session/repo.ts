@@ -346,14 +346,26 @@ export async function writeRepoFile(id: string, relative: string, text: string):
  * Commits whatever is dirty and pushes it. Returns null when the tree was
  * already clean, so a redundant save does not manufacture an empty commit.
  */
-export async function commitWork(id: string, message: string): Promise<string | null> {
+export async function commitWork(
+  id: string,
+  message: string,
+  authorName?: string,
+  authorEmail?: string,
+): Promise<string | null> {
   const work = workPath(id);
 
   await git(work, ["add", "-A"]);
   const status = (await git(work, ["status", "--porcelain"])).trim();
   if (status.length === 0) return null;
 
-  await git(work, ["commit", "-m", message]);
+  // Attribute the commit to whoever made the edit. `git log` is the audit trail
+  // for a session, and "multiplayer-ai" on every commit would waste it.
+  const author =
+    authorName && authorEmail
+      ? ["-c", `user.name=${authorName}`, "-c", `user.email=${authorEmail}`]
+      : [];
+
+  await git(work, [...author, "commit", "-m", message]);
   const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
 
   // A failed push must not lose the commit: it is safe locally, and the next
