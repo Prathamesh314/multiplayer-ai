@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { joinSession, parseSessionId } from "../../lib/session/client";
+import { parseShareLink } from "../../lib/session/share";
 import { ShieldIcon, SpinnerIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, inputClass, Modal, PrimaryButton } from "../ui/Modal";
 
@@ -16,6 +17,16 @@ export function JoinSessionDialog({
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * A pasted share link already carries its code, so asking for it again would
+   * be a dead end — the answer is sitting in the box above.
+   */
+  function onTargetChange(value: string) {
+    setTarget(value);
+    const shared = parseShareLink(value).code;
+    if (shared) setCode(shared.toUpperCase());
+  }
 
   async function join() {
     const id = parseSessionId(target);
@@ -56,7 +67,7 @@ export function JoinSessionDialog({
         <input
           autoFocus
           value={target}
-          onChange={(event) => setTarget(event.target.value)}
+          onChange={(event) => onTargetChange(event.target.value)}
           placeholder="http://localhost:3000/s/…"
           className={`${inputClass} font-mono`}
         />

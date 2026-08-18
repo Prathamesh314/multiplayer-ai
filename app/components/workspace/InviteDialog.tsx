@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TEAM } from "../../lib/members";
+import { buildShareLink } from "../../lib/session/share";
 import type { Session } from "../../lib/session/types";
 import { CheckIcon, ShieldIcon } from "../icons";
 import { GhostButton, inputClass, Modal } from "../ui/Modal";
@@ -9,8 +10,10 @@ import { Avatar } from "./chat";
 
 /**
  * Invite surface. Sending an invite is not wired to a backend yet — that form is
- * intentionally inert. What is real is the pairing shown here: the link alone
- * cannot open the session, so the code has to travel separately.
+ * intentionally inert.
+ *
+ * Two ways to share, and the difference between them is the whole security
+ * story, so both are shown rather than one being quietly preferred.
  */
 export function InviteDialog({ session, onClose }: { session: Session; onClose: () => void }) {
   const sessionUrl =
@@ -21,17 +24,25 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   return (
     <Modal
       title={`Invite to “${session.name}”`}
-      description="Send the link and the code separately — one without the other will not open the session."
+      description="A share link opens the session on its own. The plain link needs the code sent separately."
       onClose={onClose}
       footer={<GhostButton onClick={onClose}>Done</GhostButton>}
     >
+      <CopyRow
+        label="Share link — opens on its own"
+        value={buildShareLink(session)}
+        hint="Anyone who gets hold of this link is in. Send it somewhere private, and treat forwarding it as handing over the code."
+      />
+
+      <div className="h-px bg-vs-border" />
+
       <CopyRow label="Session link" value={sessionUrl} />
       <CopyRow label="Access code" value={session.joinCode} spaced />
 
       <p className="flex items-start gap-2 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-[11px] leading-5 text-vs-muted">
         <ShieldIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vs-accent" />
-        Anyone who only has the link — because it was copied out of a browser or forwarded on —
-        lands on a locked screen.
+        The plain link is inert on its own: anyone who has only that — because it was copied out of
+        a browser or forwarded on — lands on a locked screen.
       </p>
 
       <div>
@@ -77,7 +88,17 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   );
 }
 
-function CopyRow({ label, value, spaced }: { label: string; value: string; spaced?: boolean }) {
+function CopyRow({
+  label,
+  value,
+  spaced,
+  hint,
+}: {
+  label: string;
+  value: string;
+  spaced?: boolean;
+  hint?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -111,6 +132,7 @@ function CopyRow({ label, value, spaced }: { label: string; value: string; space
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+      {hint && <p className="mt-1.5 text-[11px] leading-4 text-vs-muted">{hint}</p>}
     </div>
   );
 }

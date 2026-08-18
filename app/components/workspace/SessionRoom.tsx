@@ -3,37 +3,65 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { joinSession, loadSession } from "../../lib/session/client";
+import { clearShareCode, readShareCode } from "../../lib/session/share";
 import type { Session } from "../../lib/session/types";
 import { AlertIcon, SparkleIcon, SpinnerIcon } from "../icons";
 import { Workspace } from "./Workspace";
 
 type RoomState =
-  | { kind: "loading" }
+  | { kind: "loading"; label: string }
   | { kind: "ready"; session: Session }
   | { kind: "locked"; reason: string }
   | { kind: "error"; message: string };
 
 export function SessionRoom({ sessionId }: { sessionId: string }) {
-  const [state, setState] = useState<RoomState>({ kind: "loading" });
+  const [state, setState] = useState<RoomState>({ kind: "loading", label: "Opening session…" });
 
   useEffect(() => {
     let cancelled = false;
-    loadSession(sessionId)
-      .then((result) => {
+
+    void (async () => {
+      // Read before anything awaits: a share link is only in the URL until it
+      // is redeemed, and this must not race with `clearShareCode`.
+      const shared = readShareCode();
+
+      try {
+        const result = await loadSession(sessionId);
         if (cancelled) return;
-        setState(
-          result.state === "ready"
-            ? { kind: "ready", session: result.session }
-            : { kind: "locked", reason: result.reason },
-        );
-      })
-      .catch((cause: unknown) => {
+
+        if (result.state === "ready") {
+          // Already a member; the code in the URL is redundant.
+          if (shared) clearShareCode();
+          setState({ kind: "ready", session: result.session });
+          return;
+        }
+
+        // A share link means this browser can admit itself without the code
+        // being typed in — that is the whole point of the link.
+        if (shared) {
+          setState({ kind: "loading", label: "Opening shared session…" });
+          try {
+            const session = await joinSession(sessionId, shared);
+            if (cancelled) return;
+            clearShareCode();
+            setState({ kind: "ready", session });
+            return;
+          } catch {
+            // A stale or tampered link falls through to the locked screen
+            // rather than reporting a different failure.
+          }
+        }
+
+        if (!cancelled) setState({ kind: "locked", reason: result.reason });
+      } catch (cause) {
         if (cancelled) return;
         setState({
           kind: "error",
           message: cause instanceof Error ? cause.message : "Could not open this session.",
         });
-      });
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -47,7 +75,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
     return (
       <Centered>
         <SpinnerIcon className="h-6 w-6 text-vs-accent" />
-        <p className="text-sm text-vs-muted">Opening session…</p>
+        <p className="text-sm text-vs-muted">{state.label}</p>
       </Centered>
     );
   }
