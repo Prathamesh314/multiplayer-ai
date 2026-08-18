@@ -14,6 +14,7 @@ import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/
 import { openSessionStream } from "../../lib/events/client";
 import { notifyEditing } from "../../lib/session/client";
 import type { FileSavedEvent } from "../../lib/events/types";
+import type { ChatMessage } from "../../lib/session/types";
 import { startHeartbeat } from "../../lib/presence/client";
 import { takeFolder } from "../../lib/session/handoff";
 import {
@@ -78,7 +79,10 @@ export function Workspace({ session }: { session: Session }) {
   /** Set when a broadcast names a path we have never seen. */
   const [treeStale, setTreeStale] = useState(false);
 
-  const people = usePeople(session.id, !!session.repo || !!repo);
+  // Enabled unconditionally: the roster and chat matter before a folder is up.
+  const people = usePeople(session.id, true);
+  /** Messages arriving over the stream, handed to the chat panel to merge. */
+  const [incoming, setIncoming] = useState<ChatMessage[]>([]);
 
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -466,13 +470,13 @@ export function Workspace({ session }: { session: Session }) {
 
   // Live updates from everyone else in this session.
   useEffect(() => {
-    if (!repo) return;
     const stream = openSessionStream(session.id, {
       onFileSaved: (event) => {
         people.onSaved(event);
         void applyRemoteSave(event);
       },
       onFileEditing: people.onEditing,
+      onMessage: (event) => setIncoming((previous) => [...previous, event.message]),
       onMembersChanged: people.refresh,
       onStatus: setLive,
     });
@@ -587,7 +591,12 @@ export function Workspace({ session }: { session: Session }) {
         {chatOpen && (
           <>
             <div style={{ width: chatWidth }} className="min-h-0 shrink-0">
-              <TeamChatPanel onClose={() => setChatOpen(false)} />
+              <TeamChatPanel
+                sessionId={session.id}
+                members={people.members}
+                incoming={incoming}
+                onClose={() => setChatOpen(false)}
+              />
             </div>
             <Resizer width={chatWidth} onResize={setChatWidth} min={200} max={440} />
           </>

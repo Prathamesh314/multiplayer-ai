@@ -38,12 +38,30 @@ export type FileEditingEvent = {
   at: number;
 };
 
+/** A chat message, delivered the moment it is stored. */
+export type MessageCreatedEvent = {
+  type: "message.created";
+  message: {
+    id: string;
+    userId: string;
+    userName: string;
+    handle: string;
+    body: string;
+    createdAt: number;
+  };
+  at: number;
+};
+
 export type MembersChangedEvent = {
   type: "members.changed";
   at: number;
 };
 
-export type SessionEvent = FileSavedEvent | FileEditingEvent | MembersChangedEvent;
+export type SessionEvent =
+  | FileSavedEvent
+  | FileEditingEvent
+  | MessageCreatedEvent
+  | MembersChangedEvent;
 
 export type EventHandler = (event: SessionEvent) => void;
 

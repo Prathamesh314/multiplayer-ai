@@ -1,11 +1,18 @@
 import { currentTabId } from "../tab-id";
-import type { FileEditingEvent, FileSavedEvent, SessionEvent } from "./types";
+import type {
+  FileEditingEvent,
+  FileSavedEvent,
+  MessageCreatedEvent,
+  SessionEvent,
+} from "./types";
 
 export type SessionStreamOptions = {
   /** Fires for changes made by any *other* tab. */
   onFileSaved?: (event: FileSavedEvent) => void;
   /** Fires while another person types, not when they save. */
   onFileEditing?: (event: FileEditingEvent) => void;
+  /** A chat message from anyone, including this account's other tabs. */
+  onMessage?: (event: MessageCreatedEvent) => void;
   onMembersChanged?: () => void;
   /** Connection state, for showing whether live updates are actually flowing. */
   onStatus?: (connected: boolean) => void;
@@ -42,6 +49,14 @@ export function openSessionStream(
     if (event?.type !== "file.editing") return;
     if (event.originId && event.originId === tab) return;
     options.onFileEditing?.(event);
+  });
+
+  // Not filtered by tab: your own message should still land in your other
+  // windows, and the sender reconciles by id rather than by suppressing it.
+  source.addEventListener("message.created", (message) => {
+    const event = parse(message);
+    if (event?.type !== "message.created") return;
+    options.onMessage?.(event);
   });
 
   source.addEventListener("members.changed", () => options.onMembersChanged?.());

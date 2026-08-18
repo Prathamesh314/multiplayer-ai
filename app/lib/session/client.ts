@@ -1,12 +1,14 @@
 import { currentTabId } from "../tab-id";
 import { isJoinCode } from "./share";
 import type {
+  ChatMessage,
   CreateShareLinkResponse,
   MembersResponse,
   Session,
   SessionListResponse,
   SessionMember,
   ShareLink,
+  MessagesResponse,
   ShareLinksResponse,
   ShareRole,
 } from "./types";
@@ -217,4 +219,28 @@ export function notifyEditing(
   }, ACTIVITY_THROTTLE_MS - since);
 
   trailing.set(sessionId, { timer, pending: at });
+}
+
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+export async function fetchMessages(id: string, before?: string): Promise<MessagesResponse> {
+  const query = before ? `?before=${encodeURIComponent(before)}` : "";
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages${query}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) return { messages: [], hasMore: false };
+  return (await response.json()) as MessagesResponse;
+}
+
+export async function sendMessage(id: string, body: string): Promise<ChatMessage> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not send that message."));
+  return (await response.json()) as ChatMessage;
 }

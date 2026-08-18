@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
 import type {
+  ChatMessage,
   Session,
   SessionMember,
   SessionRepo,
@@ -432,4 +433,76 @@ function cleanName(name: unknown): string | null {
   if (typeof name !== "string") return null;
   const trimmed = name.trim().replace(/\s+/g, " ").slice(0, 60);
   return trimmed.length > 0 ? trimmed : null;
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+type MessageRow = {
+  id: string;
+  user_id: string;
+  display_name: string;
+  handle: string;
+  body: string;
+  created_at: Date;
+};
+
+const toMessage = (row: MessageRow): ChatMessage => ({
+  id: row.id,
+  userId: row.user_id,
+  userName: row.display_name,
+  handle: row.handle,
+  body: row.body,
+  createdAt: row.created_at.getTime(),
+});
+
+export const MESSAGE_PAGE = 50;
+
+/**
+ * A page of history, newest-first from the index then reversed for display.
+ *
+ * `before` is a message id rather than a timestamp: ids are uuidv7 and so sort
+ * by creation, which means paging cannot skip or repeat a message when two land
+ * in the same millisecond.
+ */
+export async function listMessages(
+  sessionId: string,
+  before?: string,
+): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
+  const rows = await query<MessageRow>(
+    `SELECT m.id, m.user_id, u.display_name, u.handle, m.body, m.created_at
+       FROM session_messages m
+       JOIN users u ON u.id = m.user_id
+      WHERE m.session_id = $1
+        AND m.deleted_at IS NULL
+        AND ($2::uuid IS NULL OR m.id < $2::uuid)
+      ORDER BY m.created_at DESC, m.id DESC
+      LIMIT $3`,
+    [sessionId, before ?? null, MESSAGE_PAGE + 1],
+  );
+
+  const hasMore = rows.length > MESSAGE_PAGE;
+  return {
+    messages: rows.slice(0, MESSAGE_PAGE).reverse().map(toMessage),
+    hasMore,
+  };
+}
+
+export async function createMessage(
+  sessionId: string,
+  userId: string,
+  body: string,
+): Promise<ChatMessage> {
+  const row = await queryOne<MessageRow>(
+    `WITH inserted AS (
+       INSERT INTO session_messages (session_id, user_id, body)
+       VALUES ($1, $2, $3)
+       RETURNING id, user_id, body, created_at
+     )
+     SELECT i.id, i.user_id, u.display_name, u.handle, i.body, i.created_at
+       FROM inserted i JOIN users u ON u.id = i.user_id`,
+    [sessionId, userId, body],
+  );
+  return toMessage(row!);
 }

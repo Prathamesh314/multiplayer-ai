@@ -94,6 +94,25 @@ export type SessionMember = {
 
 export type MembersResponse = { members: SessionMember[] };
 
+/** One chat message, with its author resolved. */
+export type ChatMessage = {
+  id: string;
+  userId: string;
+  userName: string;
+  handle: string;
+  body: string;
+  createdAt: number;
+};
+
+export type MessagesResponse = {
+  /** Oldest first, ready to render. */
+  messages: ChatMessage[];
+  /** True when older messages exist before the first one returned. */
+  hasMore: boolean;
+};
+
+export type SendMessageRequest = { body: string };
+
 export type SessionListResponse = { sessions: Session[] };
 
 export type CreateSessionRequest = { name?: string };
