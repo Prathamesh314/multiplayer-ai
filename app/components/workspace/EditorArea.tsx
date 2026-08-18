@@ -159,6 +159,7 @@ export function EditorArea({
             fileName={baseName(activePath!)}
             text={active.text}
             readOnly={readOnly || active.truncated}
+            remote={editing.get(activePath!) ?? []}
             onChange={(text) => onChange(activePath!, text)}
             onCaretChange={onCaretChange}
           />

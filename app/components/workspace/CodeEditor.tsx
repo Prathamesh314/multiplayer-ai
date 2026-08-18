@@ -4,6 +4,8 @@ import { useMemo, useRef } from "react";
 import { TOKEN_CLASS, tokenize } from "../../lib/highlight";
 import { humanBytes } from "../../lib/format";
 import { languageOf } from "../../lib/language";
+import { RemoteCarets } from "./RemoteCarets";
+import type { FilePresence } from "./usePeople";
 
 /** Above this size the buffer is shown read-only: re-tokenizing gets costly. */
 const EDITABLE_LIMIT = 256 * 1024;
@@ -16,6 +18,8 @@ type CodeEditorProps = {
   readOnly?: boolean;
   onChange: (text: string) => void;
   onCaretChange: (caret: Caret) => void;
+  /** Other people currently in this file, with their caret positions. */
+  remote?: FilePresence[];
 };
 
 export function CodeEditor({
@@ -24,6 +28,7 @@ export function CodeEditor({
   readOnly,
   onChange,
   onCaretChange,
+  remote = [],
 }: CodeEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { grammar } = languageOf(fileName);
@@ -107,6 +112,8 @@ export function CodeEditor({
               onSelect={(event) => reportCaret(event.currentTarget)}
               className="absolute inset-0 resize-none overflow-hidden whitespace-pre border-0 bg-transparent px-0 py-2 pr-8 font-mono text-[13px] leading-[20px] text-transparent caret-vs-fg outline-none selection:bg-vs-accent/30"
             />
+
+            <RemoteCarets people={remote} />
           </div>
         </div>
       </div>

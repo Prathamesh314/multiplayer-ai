@@ -10,7 +10,14 @@ const EDITING_TTL_MS = 6_000;
 /** How often expired badges are swept. */
 const SWEEP_MS = 2_000;
 
-export type FilePresence = { userId: string; name: string; at: number };
+export type FilePresence = {
+  userId: string;
+  name: string;
+  /** 1-based caret position inside the file. */
+  line: number;
+  column: number;
+  at: number;
+};
 
 export type People = {
   members: SessionMember[];
@@ -56,7 +63,16 @@ export function usePeople(sessionId: string, enabled: boolean): People {
     setEditing((previous) => {
       const next = new Map(previous);
       const others = (next.get(event.path) ?? []).filter((p) => p.userId !== event.userId);
-      next.set(event.path, [...others, { userId: event.userId, name: event.userName, at: Date.now() }]);
+      next.set(event.path, [
+        ...others,
+        {
+          userId: event.userId,
+          name: event.userName,
+          line: event.line,
+          column: event.column,
+          at: Date.now(),
+        },
+      ]);
       return next;
     });
   }, []);

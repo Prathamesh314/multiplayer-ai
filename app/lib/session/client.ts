@@ -161,24 +161,60 @@ export async function revokeShareLink(id: string, linkId: string): Promise<void>
 /** Long enough not to flood, short enough that the badge never lapses. */
 const ACTIVITY_THROTTLE_MS = 1500;
 
+type Pending = { path: string; line: number; column: number };
+
 const lastPing = new Map<string, number>();
+const trailing = new Map<string, { timer: ReturnType<typeof setTimeout>; pending: Pending }>();
 
-/**
- * Tells everyone else this account is typing in a file.
- *
- * Throttled per file and deliberately unawaited: it is a hint, and a dropped
- * one costs nothing because another follows and the badge expires by itself.
- */
-export function notifyEditing(sessionId: string, path: string): void {
-  const key = `${sessionId}:${path}`;
-  const now = Date.now();
-  if (now - (lastPing.get(key) ?? 0) < ACTIVITY_THROTTLE_MS) return;
-  lastPing.set(key, now);
-
+function send(sessionId: string, at: Pending): void {
+  lastPing.set(sessionId, Date.now());
   void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/activity`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, originId: currentTabId() }),
+    body: JSON.stringify({ ...at, originId: currentTabId() }),
     keepalive: true,
   }).catch(() => {});
+}
+
+/**
+ * Tells everyone else where this account is working: which file, and where the
+ * caret sits in it.
+ *
+ * Leading-and-trailing throttle. Leading so the marker appears the moment
+ * someone starts, trailing so where they *stopped* is what everyone ends up
+ * seeing — a plain throttle would leave the marker frozen at whatever position
+ * happened to fall on the last tick.
+ */
+export function notifyEditing(
+  sessionId: string,
+  path: string,
+  line = 1,
+  column = 1,
+): void {
+  const at: Pending = { path, line, column };
+  const since = Date.now() - (lastPing.get(sessionId) ?? 0);
+
+  if (since >= ACTIVITY_THROTTLE_MS) {
+    const queued = trailing.get(sessionId);
+    if (queued) {
+      clearTimeout(queued.timer);
+      trailing.delete(sessionId);
+    }
+    send(sessionId, at);
+    return;
+  }
+
+  const queued = trailing.get(sessionId);
+  if (queued) {
+    queued.pending = at;
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    const entry = trailing.get(sessionId);
+    trailing.delete(sessionId);
+    if (entry) send(sessionId, entry.pending);
+  }, ACTIVITY_THROTTLE_MS - since);
+
+  trailing.set(sessionId, { timer, pending: at });
 }

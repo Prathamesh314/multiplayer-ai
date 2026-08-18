@@ -90,6 +90,7 @@ export function Workspace({ session }: { session: Session }) {
   // reopen the SSE connection each time.
   const buffersRef = useRef(buffers);
   const resultRef = useRef(result);
+  const caretRef = useRef(caret);
 
   const [chatOpen, setChatOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -146,6 +147,25 @@ export function Workspace({ session }: { session: Session }) {
   useEffect(() => {
     resultRef.current = result;
   }, [result]);
+
+  useEffect(() => {
+    caretRef.current = caret;
+  }, [caret]);
+
+  /**
+   * Moving the cursor is presence too, not just typing — otherwise a marker
+   * sticks at the last character someone typed while they read elsewhere in
+   * the file. The throttle keeps this from being chatty.
+   */
+  const trackCaret = useCallback(
+    (next: Caret) => {
+      setCaret(next);
+      if (repo && !readOnly && activePath) {
+        notifyEditing(session.id, activePath, next.line, next.column);
+      }
+    },
+    [repo, readOnly, activePath, session.id],
+  );
 
   // One heartbeat per open tab, for as long as this session is open. The tab
   // being open is what "online" means, so it starts and stops with the mount.
@@ -438,7 +458,7 @@ export function Workspace({ session }: { session: Session }) {
     if (repo && !readOnly) {
       // Sent on the keystroke, not on the save: a save is over a second away,
       // which is far too late to show that someone is in the file.
-      notifyEditing(session.id, path);
+      notifyEditing(session.id, path, caretRef.current.line, caretRef.current.column);
       setSaveState("saving");
       saver.queue(path, text);
     }
@@ -605,7 +625,7 @@ export function Workspace({ session }: { session: Session }) {
             }}
             onCloseTab={closeTab}
             onChange={editBuffer}
-            onCaretChange={setCaret}
+            onCaretChange={trackCaret}
             readOnly={readOnly}
             conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
             onReload={reloadFile}
