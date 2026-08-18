@@ -23,7 +23,7 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     return Response.json({ error: "Enter the access code for this session." }, { status: 400 });
   }
 
-  const session = getSession(id);
+  const session = await getSession(id);
   // Same response whether the session is missing or the code is wrong.
   if (!session || !joinCodeMatches(session, code)) {
     return Response.json(

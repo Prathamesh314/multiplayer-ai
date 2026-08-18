@@ -15,6 +15,8 @@ type ExplorerPanelProps = {
   activePath: string | null;
   scanning: boolean;
   includeIgnored: boolean;
+  /** False once the tree comes from the session repo rather than local disk. */
+  canRescan: boolean;
   onToggleIgnored: (value: boolean) => void;
   onOpenFile: (path: string) => void;
   onOpenFolder: () => void;
@@ -26,6 +28,7 @@ export function ExplorerPanel({
   activePath,
   scanning,
   includeIgnored,
+  canRescan,
   onToggleIgnored,
   onOpenFile,
   onOpenFolder,
@@ -93,6 +96,7 @@ export function ExplorerPanel({
       <RepoInfo
         result={result}
         includeIgnored={includeIgnored}
+        canRescan={canRescan}
         onToggleIgnored={onToggleIgnored}
       />
     </aside>
@@ -102,10 +106,12 @@ export function ExplorerPanel({
 function RepoInfo({
   result,
   includeIgnored,
+  canRescan,
   onToggleIgnored,
 }: {
   result: ScanResult;
   includeIgnored: boolean;
+  canRescan: boolean;
   onToggleIgnored: (value: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -168,15 +174,22 @@ function RepoInfo({
             </p>
           )}
 
-          <label className="flex items-start gap-1.5 pt-1">
-            <input
-              type="checkbox"
-              checked={includeIgnored}
-              onChange={(event) => onToggleIgnored(event.target.checked)}
-              className="mt-0.5 h-3 w-3 accent-vs-accent"
-            />
-            <span>Scan build &amp; dependency folders ({IGNORED_DIRS.size} skipped)</span>
-          </label>
+          {canRescan ? (
+            <label className="flex items-start gap-1.5 pt-1">
+              <input
+                type="checkbox"
+                checked={includeIgnored}
+                onChange={(event) => onToggleIgnored(event.target.checked)}
+                className="mt-0.5 h-3 w-3 accent-vs-accent"
+              />
+              <span>Scan build &amp; dependency folders ({IGNORED_DIRS.size} skipped)</span>
+            </label>
+          ) : (
+            <p className="pt-1 leading-4">
+              Build and dependency folders were left out when this session was created. Changing
+              that now would need a fresh session.
+            </p>
+          )}
 
           {notices.map((notice) => (
             <p key={notice} className="flex gap-1.5 leading-4">

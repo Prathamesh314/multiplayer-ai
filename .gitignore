@@ -20,6 +20,9 @@
 # production
 /build
 
+# session repos and records (override with MULTIPLAYER_AI_DATA)
+/.multiplayer-ai/
+
 # misc
 .DS_Store
 *.pem

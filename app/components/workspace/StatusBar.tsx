@@ -11,9 +11,19 @@ type StatusBarProps = {
   activePath: string | null;
   activeText: string | null;
   caret: Caret;
+  /** Null when this session has no repo yet. */
+  headSha: string | null;
+  saveState: "idle" | "saving" | "saved" | "error";
 };
 
-export function StatusBar({ result, activePath, activeText, caret }: StatusBarProps) {
+export function StatusBar({
+  result,
+  activePath,
+  activeText,
+  caret,
+  headSha,
+  saveState,
+}: StatusBarProps) {
   const git = result?.git;
 
   return (
@@ -25,6 +35,25 @@ export function StatusBar({ result, activePath, activeText, caret }: StatusBarPr
         </span>
       ) : (
         <span>{result ? "No source control" : "No folder open"}</span>
+      )}
+
+      {headSha && (
+        <span
+          title={
+            saveState === "error"
+              ? "The last save did not reach the session repository."
+              : `Every edit is committed to the session branch. HEAD is ${headSha}.`
+          }
+          className={
+            saveState === "error" ? "text-red-500 dark:text-red-400" : "font-mono text-vs-fg"
+          }
+        >
+          {saveState === "saving"
+            ? "committing…"
+            : saveState === "error"
+              ? "not saved"
+              : headSha.slice(0, 8)}
+        </span>
       )}
 
       {result && (

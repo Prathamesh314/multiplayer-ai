@@ -1,4 +1,5 @@
 import { readGitInfo } from "./git";
+import { compareNodes, sortTree } from "./tree";
 import type {
   FileContent,
   GitReader,
@@ -90,18 +91,37 @@ export async function scanDirectoryHandle(
     source,
     hiddenFilesUnavailable: false,
     readFile: async (path) => {
+      const file = await fileAt(handle, path);
+      if (!file) return null;
       try {
-        const segments = path.split("/").filter(Boolean);
-        const fileName = segments.pop();
-        if (!fileName) return null;
-        let dir = handle;
-        for (const segment of segments) dir = await dir.getDirectoryHandle(segment);
-        return await readFileContent(await (await dir.getFileHandle(fileName)).getFile());
+        return await readFileContent(file);
+      } catch {
+        return null;
+      }
+    },
+    readBytes: async (path) => {
+      const file = await fileAt(handle, path);
+      if (!file) return null;
+      try {
+        return new Uint8Array(await file.arrayBuffer());
       } catch {
         return null;
       }
     },
   };
+}
+
+async function fileAt(root: FileSystemDirectoryHandle, path: string): Promise<File | null> {
+  try {
+    const segments = path.split("/").filter(Boolean);
+    const fileName = segments.pop();
+    if (!fileName) return null;
+    let dir = root;
+    for (const segment of segments) dir = await dir.getDirectoryHandle(segment);
+    return await (await dir.getFileHandle(fileName)).getFile();
+  } catch {
+    return null;
+  }
 }
 
 async function walkHandle(
@@ -255,6 +275,15 @@ export async function scanFileList(
       if (!file) return null;
       try {
         return await readFileContent(file);
+      } catch {
+        return null;
+      }
+    },
+    readBytes: async (path) => {
+      const file = byPath.get(path);
+      if (!file) return null;
+      try {
+        return new Uint8Array(await file.arrayBuffer());
       } catch {
         return null;
       }
@@ -441,20 +470,10 @@ async function collectEntryFiles(
 // ---------------------------------------------------------------------------
 
 function sortChildren(node: TreeNode): void {
-  node.children?.sort((a, b) => {
-    if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
-    return a.name.localeCompare(b.name, undefined, { numeric: true });
-  });
+  node.children?.sort(compareNodes);
 }
 
-function sortTree(node: TreeNode): void {
-  sortChildren(node);
-  for (const child of node.children ?? []) {
-    if (child.type === "dir") sortTree(child);
-  }
-}
-
-function collectStats(root: TreeNode, truncated: boolean): ScanStats {
+export function collectStats(root: TreeNode, truncated: boolean): ScanStats {
   let files = 0;
   let dirs = 0;
   let bytes = 0;

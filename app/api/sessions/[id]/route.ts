@@ -1,49 +1,46 @@
-import { readSessionKeys, revokeSessionKey } from "../../../lib/session/cookie";
-import { getSession, keyMatches, publicSession, renameSession } from "../../../lib/session/store";
+import { authorize, locked } from "../../../lib/session/auth";
+import { revokeSessionKey } from "../../../lib/session/cookie";
+import { publicSession, renameSession, setPinned } from "../../../lib/session/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Unknown sessions and unauthorised ones get the same 403, so the URL cannot be
- * used to probe which session ids exist.
- */
-const LOCKED = Response.json(
-  {
-    error:
-      "This session is not open on this device. Ask whoever created it for the access code — the link on its own does not grant access.",
-  },
-  { status: 403, headers: { "cache-control": "no-store" } },
-);
-
 export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]">) {
   const { id } = await context.params;
-  const session = getSession(id);
-  const keys = await readSessionKeys();
-
-  if (!session || !keyMatches(session, keys[id])) return LOCKED.clone();
+  const session = await authorize(id);
+  if (!session) return locked();
 
   return Response.json(publicSession(session), { headers: { "cache-control": "no-store" } });
 }
 
 export async function PATCH(request: Request, context: RouteContext<"/api/sessions/[id]">) {
   const { id } = await context.params;
-  const session = getSession(id);
-  const keys = await readSessionKeys();
+  if (!(await authorize(id))) return locked();
 
-  if (!session || !keyMatches(session, keys[id])) return LOCKED.clone();
-
-  let name: unknown;
+  let body: { name?: unknown; pinned?: unknown };
   try {
-    ({ name } = (await request.json()) as { name?: unknown });
+    body = (await request.json()) as { name?: unknown; pinned?: unknown };
   } catch {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const renamed = typeof name === "string" ? renameSession(id, name) : undefined;
-  if (!renamed) return Response.json({ error: "A session name is required." }, { status: 400 });
+  // Pinning is the documented escape hatch from retention, so it is settable on
+  // its own — renaming must not be a precondition for keeping a session.
+  let updated =
+    typeof body.pinned === "boolean" ? await setPinned(id, body.pinned) : undefined;
 
-  return Response.json(publicSession(renamed));
+  if (typeof body.name === "string") {
+    updated = (await renameSession(id, body.name)) ?? updated;
+    if (!updated) {
+      return Response.json({ error: "A session name is required." }, { status: 400 });
+    }
+  }
+
+  if (!updated) {
+    return Response.json({ error: "Nothing to update." }, { status: 400 });
+  }
+
+  return Response.json(publicSession(updated));
 }
 
 /** Leaving only drops this browser's key; the session itself stays alive. */

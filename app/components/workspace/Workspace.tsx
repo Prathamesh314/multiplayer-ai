@@ -1,11 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { PickedSource } from "../../lib/folder";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
 import { takeFolder } from "../../lib/session/handoff";
-import type { Session } from "../../lib/session/types";
+import {
+  createSaver,
+  scanSession,
+  seedSession,
+  type SeedProgress,
+} from "../../lib/session/remote";
+import type { Session, SessionRepo } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
 import { ActivityBar } from "./ActivityBar";
 import { AiPanel } from "./AiPanel";
@@ -21,6 +34,8 @@ import { TeamChatPanel } from "./TeamChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WelcomeView } from "./WelcomeView";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 // The File System Access API only exists on the client, so the value has to
 // come through a store that reports `false` during server rendering.
@@ -42,6 +57,12 @@ export function Workspace({ session }: { session: Session }) {
   const [includeIgnored, setIncludeIgnored] = useState(false);
   const [dragging, setDragging] = useState(false);
 
+  // Once a repo exists the browser is no longer the owner of this code: the
+  // session repo is, and `result` is a view onto it.
+  const [repo, setRepo] = useState<SessionRepo | null>(session.repo);
+  const [seeding, setSeeding] = useState<SeedProgress | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(() => new Map());
@@ -55,6 +76,45 @@ export function Workspace({ session }: { session: Session }) {
   const [explorerWidth, setExplorerWidth] = useState(270);
   const [aiWidth, setAiWidth] = useState(320);
   const [terminalHeight, setTerminalHeight] = useState(260);
+
+  /**
+   * Typing has no turn boundary to commit on, so it gets a debounced one. This
+   * is what keeps "a session never holds uncommitted state" true for people as
+   * well as for agents.
+   */
+  const saver = useMemo(
+    () =>
+      createSaver(
+        session.id,
+        (path, saved, headSha) => {
+          setRepo((previous) => (previous ? { ...previous, headSha } : previous));
+          setSaveState("saved");
+          setBuffers((previous) => {
+            const buffer = previous.get(path);
+            if (!buffer) return previous;
+            // Only clear the dirty marker if the buffer has not moved on since
+            // this save was sent; another save is already queued if it has.
+            if (buffer.text !== saved) return previous;
+            return new Map(previous).set(path, { ...buffer, original: saved });
+          });
+        },
+        (message) => {
+          setSaveState("error");
+          setError(message);
+        },
+      ),
+    [session.id],
+  );
+
+  // Nothing in flight may be dropped on the way out.
+  useEffect(() => {
+    const onHide = () => void saver.flush();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      void saver.flush();
+    };
+  }, [saver]);
 
   // Ctrl+Shift+Z toggles the terminal; Ctrl+` also works, as in VS Code.
   useEffect(() => {
@@ -76,28 +136,69 @@ export function Workspace({ session }: { session: Session }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const scan = useCallback(async (source: PickedSource, withIgnored: boolean) => {
-    setScanning(true);
-    setProgress(0);
-    setError(null);
-    try {
-      const options = { includeIgnored: withIgnored, onProgress: setProgress };
-      const scanned =
-        source.kind === "handle"
-          ? await scanDirectoryHandle(
-              source.handle,
-              source.origin === "drop" ? "drop" : "picker",
-              options,
-            )
-          : await scanFileList(source.files, source.origin === "drop" ? "drop" : "input", options);
-      setResult(scanned);
-    } catch (cause) {
-      setResult(null);
-      setError(cause instanceof Error ? cause.message : "Could not read that folder.");
-    } finally {
-      setScanning(false);
-    }
-  }, []);
+  const scan = useCallback(
+    async (source: PickedSource, withIgnored: boolean): Promise<ScanResult | null> => {
+      setScanning(true);
+      setProgress(0);
+      setError(null);
+      try {
+        const options = { includeIgnored: withIgnored, onProgress: setProgress };
+        const scanned =
+          source.kind === "handle"
+            ? await scanDirectoryHandle(
+                source.handle,
+                source.origin === "drop" ? "drop" : "picker",
+                options,
+              )
+            : await scanFileList(
+                source.files,
+                source.origin === "drop" ? "drop" : "input",
+                options,
+              );
+        setResult(scanned);
+        return scanned;
+      } catch (cause) {
+        setResult(null);
+        setError(cause instanceof Error ? cause.message : "Could not read that folder.");
+        return null;
+      } finally {
+        setScanning(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Uploads a locally scanned folder into the session repo, then swaps `result`
+   * for a repo-backed one. After this the local folder is never read again —
+   * handles die with the tab, and a teammate joining later has no access to it.
+   */
+  const publish = useCallback(
+    async (scanned: ScanResult) => {
+      setSeeding({ uploaded: 0, total: 0 });
+      setError(null);
+      try {
+        const { repo: created, skipped } = await seedSession(session.id, scanned, setSeeding);
+        setRepo(created);
+        // The folder is no longer the source of truth, so drop the handle: a
+        // rescan from here would silently diverge from the committed tree.
+        setPicked(null);
+        setResult(await scanSession({ ...session, repo: created }));
+        if (skipped.length > 0) {
+          setError(
+            `${skipped.length} file(s) were too large or had unusable names and were left out of the session.`,
+          );
+        }
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : "Could not upload the folder to this session.",
+        );
+      } finally {
+        setSeeding(null);
+      }
+    },
+    [session],
+  );
 
   const start = useCallback(
     async (source: PickedSource) => {
@@ -106,9 +207,10 @@ export function Workspace({ session }: { session: Session }) {
       setTabs([]);
       setActivePath(null);
       setBuffers(new Map());
-      await scan(source, includeIgnored);
+      const scanned = await scan(source, includeIgnored);
+      if (scanned) await publish(scanned);
     },
-    [includeIgnored, scan],
+    [includeIgnored, publish, scan],
   );
 
   // A folder chosen in the create dialog is waiting for this session. Reading it
@@ -116,10 +218,36 @@ export function Workspace({ session }: { session: Session }) {
   // does not set state inside the effect body. `takeFolder` clears the entry, so
   // a repeated effect run (StrictMode, or a rescan toggle) will not scan twice.
   useEffect(() => {
+    if (session.repo) return;
     const handed = takeFolder(session.id);
     if (!handed) return;
     queueMicrotask(() => void start(handed));
-  }, [session.id, start]);
+  }, [session.id, session.repo, start]);
+
+  // Resume: a session that already owns a repo is read from the repo, not from
+  // whatever happens to be on this machine.
+  useEffect(() => {
+    if (!session.repo) return;
+
+    let cancelled = false;
+    // Deferred a microtask so no state is set inside the effect body, matching
+    // how the handed-off folder above is picked up.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setScanning(true);
+      scanSession(session)
+        .then((scanned) => !cancelled && setResult(scanned))
+        .catch((cause: unknown) => {
+          if (cancelled) return;
+          setError(cause instanceof Error ? cause.message : "Could not open this session.");
+        })
+        .finally(() => !cancelled && setScanning(false));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
@@ -196,6 +324,10 @@ export function Workspace({ session }: { session: Session }) {
   }
 
   function closeTab(path: string) {
+    // Closing a tab discards its buffer, so anything still queued has to land
+    // first or the edit is gone.
+    void saver.flush();
+
     setTabs((previous) => {
       const next = previous.filter((candidate) => candidate !== path);
       if (path === activePath) setActivePath(next.at(-1) ?? null);
@@ -214,11 +346,18 @@ export function Workspace({ session }: { session: Session }) {
       if (!buffer) return previous;
       return new Map(previous).set(path, { ...buffer, text });
     });
+
+    if (repo) {
+      setSaveState("saving");
+      saver.queue(path, text);
+    }
   }
 
   async function toggleIgnored(next: boolean) {
     setIncludeIgnored(next);
-    if (picked) await scan(picked, next);
+    // Only meaningful before seeding. Afterwards the committed tree is the
+    // truth and a local rescan would contradict it.
+    if (picked && !repo) await scan(picked, next);
   }
 
   const activeBuffer = activePath ? buffers.get(activePath) : undefined;
@@ -252,6 +391,7 @@ export function Workspace({ session }: { session: Session }) {
         onToggleAi={() => setAiOpen(!aiOpen)}
         onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
+        canOpenFolder={!repo}
       />
 
       <input
@@ -294,6 +434,7 @@ export function Workspace({ session }: { session: Session }) {
                 activePath={activePath}
                 scanning={scanning}
                 includeIgnored={includeIgnored}
+                canRescan={!repo}
                 onToggleIgnored={toggleIgnored}
                 onOpenFile={openFile}
                 onOpenFolder={openPicker}
@@ -320,6 +461,7 @@ export function Workspace({ session }: { session: Session }) {
               <WelcomeView
                 dragging={dragging}
                 scanning={scanning}
+                seeding={seeding}
                 progress={progress}
                 supportsPicker={supportsPicker}
                 error={error}
@@ -355,6 +497,8 @@ export function Workspace({ session }: { session: Session }) {
         activePath={activePath}
         activeText={activeBuffer && !activeBuffer.loading && !activeBuffer.binary ? activeBuffer.text : null}
         caret={caret}
+        headSha={repo?.headSha ?? null}
+        saveState={saveState}
       />
 
       {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}

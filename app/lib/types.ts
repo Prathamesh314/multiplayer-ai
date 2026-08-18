@@ -59,6 +59,9 @@ export type FileContent = {
 /** Reads one file by its path relative to the scanned root. */
 export type ReadFile = (path: string) => Promise<FileContent | null>;
 
+/** Raw bytes of one file, for uploads that must preserve binaries verbatim. */
+export type ReadBytes = (path: string) => Promise<Uint8Array | null>;
+
 export type ScanResult = {
   rootName: string;
   root: TreeNode;
@@ -68,6 +71,7 @@ export type ScanResult = {
   /** True when hidden entries such as `.git` could not be seen at all. */
   hiddenFilesUnavailable: boolean;
   readFile: ReadFile;
+  readBytes: ReadBytes;
 };
 
 export type ScanOptions = {

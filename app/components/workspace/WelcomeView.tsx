@@ -10,6 +10,8 @@ type WelcomeViewProps = {
   supportsPicker: boolean;
   error: string | null;
   hasFolder: boolean;
+  /** Set while the folder is being uploaded into the session repository. */
+  seeding: { uploaded: number; total: number } | null;
   onOpenPicker: () => void;
   onOpenInput: () => void;
 };
@@ -21,6 +23,7 @@ export function WelcomeView({
   supportsPicker,
   error,
   hasFolder,
+  seeding,
   onOpenPicker,
   onOpenInput,
 }: WelcomeViewProps) {
@@ -31,7 +34,21 @@ export function WelcomeView({
           dragging ? "border-vs-accent bg-vs-accent/10" : "border-vs-border"
         }`}
       >
-        {scanning ? (
+        {seeding ? (
+          <>
+            <SpinnerIcon className="h-8 w-8 text-vs-accent" />
+            <p className="text-sm text-vs-fg">
+              Adding to the session…{" "}
+              {seeding.total > 0
+                ? `${humanCount(seeding.uploaded)} of ${humanCount(seeding.total)} files`
+                : `${humanCount(seeding.uploaded)} files`}
+            </p>
+            <p className="max-w-sm text-xs leading-5 text-vs-muted">
+              The folder is being committed to this session so it survives the tab closing and
+              opens for anyone you invite.
+            </p>
+          </>
+        ) : scanning ? (
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
             <p className="text-sm text-vs-fg">Reading folder… {humanCount(progress)} entries</p>
@@ -44,7 +61,8 @@ export function WelcomeView({
                 {hasFolder ? "Select a file to start editing" : "Drop a folder anywhere"}
               </p>
               <p className="mt-1 text-sm text-vs-muted">
-                A Git repository or any plain folder — both work, and nothing leaves your browser.
+                A Git repository or any plain folder. It is uploaded to this session and committed,
+                so it is still here when you come back.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">

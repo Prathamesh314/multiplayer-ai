@@ -28,6 +28,8 @@ type TopBarProps = {
   onToggleAi: () => void;
   onToggleTerminal: () => void;
   onOpenFolder: () => void;
+  /** False once this session owns a repo — a session is seeded exactly once. */
+  canOpenFolder: boolean;
 };
 
 export function TopBar({
@@ -46,6 +48,7 @@ export function TopBar({
   onToggleAi,
   onToggleTerminal,
   onOpenFolder,
+  canOpenFolder,
 }: TopBarProps) {
   return (
     <header className="flex h-9 shrink-0 items-center gap-3 border-b border-vs-border bg-vs-chrome px-3">
@@ -68,13 +71,15 @@ export function TopBar({
         {session.name}
       </span>
 
-      <button
-        type="button"
-        onClick={onOpenFolder}
-        className="shrink-0 rounded px-2 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-      >
-        Open folder…
-      </button>
+      {canOpenFolder && (
+        <button
+          type="button"
+          onClick={onOpenFolder}
+          className="shrink-0 rounded px-2 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+        >
+          Open folder…
+        </button>
+      )}
 
       <div className="mx-auto flex min-w-0 items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-xs text-vs-muted">
         <span className="truncate">
