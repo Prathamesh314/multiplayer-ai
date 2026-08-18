@@ -1,0 +1,109 @@
+/**
+ * The coding agents this app knows how to talk to.
+ *
+ * All of them are command-line tools that run on the machine serving this app,
+ * so connecting one is the same class of thing as opening the terminal — see
+ * `app/lib/terminal/guard.ts`, whose rules the run endpoint reuses.
+ *
+ * Each is driven in its one-shot, non-interactive mode. Their interactive TUIs
+ * need a pty, which is a much larger piece of work than this.
+ */
+export type AgentId = "claude" | "gemini" | "codex";
+
+export type AgentSpec = {
+  id: AgentId;
+  name: string;
+  vendor: string;
+  /** Executable looked up on PATH. */
+  bin: string;
+  versionArgs: string[];
+  /** argv for a single prompt. Never a shell string — the prompt is a value. */
+  promptArgs: (prompt: string) => string[];
+  install: {
+    /** Shown first: works the same on every platform. */
+    command: string;
+    /** Offered when the vendor has a first-party installer worth preferring. */
+    alternative?: string;
+    docs: string;
+  };
+  blurb: string;
+};
+
+export const AGENTS: AgentSpec[] = [
+  {
+    id: "claude",
+    name: "Claude Code",
+    vendor: "Anthropic",
+    bin: "claude",
+    versionArgs: ["--version"],
+    /*
+     * -p is print mode: run the prompt, write the answer, exit.
+     *
+     * acceptEdits, not bypassPermissions: stdin is closed, so an agent that
+     * stops to ask permission just stalls and reports nothing. This lets it
+     * edit files in the working copy while still refusing the riskier tools —
+     * and everything it writes is committed, so any edit is reversible.
+     */
+    promptArgs: (prompt) => ["--permission-mode", "acceptEdits", "-p", prompt],
+    install: {
+      command: "npm install -g @anthropic-ai/claude-code",
+      alternative: "curl -fsSL https://claude.ai/install.sh | bash",
+      docs: "https://docs.claude.com/en/docs/claude-code",
+    },
+    blurb: "Reads and edits files, runs commands, works across the whole repo.",
+  },
+  {
+    id: "codex",
+    name: "Codex CLI",
+    vendor: "OpenAI",
+    bin: "codex",
+    versionArgs: ["--version"],
+    // workspace-write is the equivalent bound: it may change this repo and
+    // nothing outside it.
+    promptArgs: (prompt) => ["exec", "--sandbox", "workspace-write", prompt],
+    install: {
+      command: "npm install -g @openai/codex",
+      alternative: "brew install codex",
+      docs: "https://developers.openai.com/codex/cli",
+    },
+    blurb: "Runs a task to completion in the working copy and reports back.",
+  },
+  {
+    id: "gemini",
+    name: "Gemini CLI",
+    vendor: "Google",
+    bin: "gemini",
+    versionArgs: ["--version"],
+    promptArgs: (prompt) => ["-p", prompt],
+    install: {
+      command: "npm install -g @google/gemini-cli",
+      docs: "https://github.com/google-gemini/gemini-cli",
+    },
+    blurb: "Large-context agent for reading and changing a codebase.",
+  },
+];
+
+export const agentById = (id: string): AgentSpec | undefined =>
+  AGENTS.find((agent) => agent.id === id);
+
+/** What the browser is told about one agent. */
+export type AgentStatus = {
+  id: AgentId;
+  name: string;
+  vendor: string;
+  blurb: string;
+  installed: boolean;
+  /** Reported by the tool itself, when it is there. */
+  version: string | null;
+  install: AgentSpec["install"];
+};
+
+export type AgentsResponse = {
+  agents: AgentStatus[];
+  /**
+   * Whether this server will actually run an agent. Detection is harmless and
+   * always answered; running is gated exactly like the terminal.
+   */
+  canRun: boolean;
+  reason: string | null;
+};

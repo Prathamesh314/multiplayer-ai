@@ -668,7 +668,12 @@ export function Workspace({ session }: { session: Session }) {
           <>
             <Resizer width={aiWidth} onResize={setAiWidth} min={260} max={520} invert />
             <div style={{ width: aiWidth }} className="min-h-0 shrink-0">
-              <AiPanel activePath={activePath} onClose={() => setAiOpen(false)} />
+              <AiPanel
+                sessionId={session.id}
+                activePath={activePath}
+                canRun={!readOnly}
+                onClose={() => setAiOpen(false)}
+              />
             </div>
           </>
         )}
