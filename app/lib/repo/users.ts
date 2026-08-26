@@ -140,6 +140,20 @@ export async function rotateConnectCode(userId: string): Promise<string> {
   throw new Error("Could not allocate a connect code.");
 }
 
+/**
+ * Whether an account already uses this email. Drives the email-first flow: a
+ * known email means "log in", an unknown one means "sign up". This deliberately
+ * discloses existence — that branch is the whole point of the flow — unlike the
+ * login endpoint, which hides it.
+ */
+export async function emailExists(email: string): Promise<boolean> {
+  const row = await queryOne<{ x: number }>(
+    `SELECT 1 AS x FROM users WHERE email = $1 AND deleted_at IS NULL`,
+    [email.trim()],
+  );
+  return row !== null;
+}
+
 /** Resolves a pasted connect code to the account that owns it. */
 export async function findByConnectCode(code: string): Promise<CurrentUser | null> {
   const row = await queryOne<UserRow>(

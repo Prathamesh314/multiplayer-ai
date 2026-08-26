@@ -1,8 +1,22 @@
-import type { CurrentUser, MeResponse } from "./types";
+import type { ContinueRequest, ContinueResponse, CurrentUser, MeResponse } from "./types";
 
 async function readError(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: string } | null;
   return body?.error ?? fallback;
+}
+
+/**
+ * Email-first step one. Returns "existing" (now signed in) or "new" (go collect
+ * a username). Throws with the server's message on a bad password or input.
+ */
+export async function continueWithEmail(input: ContinueRequest): Promise<ContinueResponse> {
+  const response = await fetch("/api/auth/continue", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not continue."));
+  return (await response.json()) as ContinueResponse;
 }
 
 export async function fetchMe(): Promise<MeResponse> {

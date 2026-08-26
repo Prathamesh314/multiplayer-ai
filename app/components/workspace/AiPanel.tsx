@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentStatus } from "../../lib/ai/catalog";
 import { fetchAgents, runAgent, type RunHandle } from "../../lib/ai/client";
-import { AlertIcon, CheckIcon, SparkleIcon, SpinnerIcon } from "../icons";
+import type { AgentRun } from "../../lib/ai/runs";
+import { fetchRun, listRuns } from "../../lib/ai/runs-client";
+import { relativeTime } from "../../lib/format";
+import { AlertIcon, CheckIcon, EyeIcon, SparkleIcon, SpinnerIcon } from "../icons";
 import { Composer } from "./chat";
 import { baseName } from "./EditorArea";
 import { PanelHeader } from "./TeamChatPanel";
@@ -28,6 +31,15 @@ export function AiPanel({ sessionId, activePath, canRun, onClose }: AiPanelProps
   const [error, setError] = useState<string | null>(null);
   const run = useRef<RunHandle | null>(null);
   const log = useRef<HTMLPreElement>(null);
+
+  // Every run in this room, so a teammate's run can be watched or joined. The
+  // run currently in the output pane — null when composing a fresh one.
+  const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [viewing, setViewing] = useState<AgentRun | null>(null);
+
+  useEffect(() => {
+    void listRuns(sessionId).then(setRuns).catch(() => {});
+  }, [sessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,13 +74,16 @@ export function AiPanel({ sessionId, activePath, canRun, onClose }: AiPanelProps
     if (!connected || running) return;
     setRunning(true);
     setError(null);
-    setOutput(`$ ${connected} — ${prompt}\n\n`);
+    // Continue the run being watched (join-as-editor), or open a fresh one.
+    const continuing = viewing && viewing.status !== "completed" ? viewing.id : undefined;
+    setOutput((prev) => (continuing ? `${prev}\n$ ${prompt}\n\n` : `$ ${connected} — ${prompt}\n\n`));
 
     run.current = runAgent(
-      { sessionId, agentId: connected, prompt },
+      { sessionId, agentId: continuing ? viewing!.agentId : connected, prompt, runId: continuing },
       {
         onEvent: (event) => {
-          if (event.t === "out" || event.t === "err") setOutput((p) => p + event.d);
+          if (event.t === "start") refreshRuns();
+          else if (event.t === "out" || event.t === "err") setOutput((p) => p + event.d);
           else if (event.t === "notice") setOutput((p) => `${p}\n[${event.message}]\n`);
           else if (event.t === "exit") {
             setOutput(
@@ -80,9 +95,43 @@ export function AiPanel({ sessionId, activePath, canRun, onClose }: AiPanelProps
           }
         },
         onError: setError,
-        onDone: () => setRunning(false),
+        onDone: () => {
+          setRunning(false);
+          refreshRuns();
+        },
       },
     );
+  }
+
+  function refreshRuns() {
+    void listRuns(sessionId).then(setRuns).catch(() => {});
+  }
+
+  /** Open a run's stored conversation in the output pane — the "watch" action. */
+  async function watch(target: AgentRun) {
+    setViewing(target);
+    setError(null);
+    setOutput(`# ${target.startedByName} · ${target.agentId}\n\n`);
+    try {
+      const { messages } = await fetchRun(sessionId, target.id);
+      setOutput(
+        `# ${target.startedByName} · ${target.agentId}\n\n` +
+          messages
+            .map((m) => {
+              const who = m.role === "user" ? m.authorName ?? "prompt" : m.role;
+              return `[${who}]\n${m.body}\n`;
+            })
+            .join("\n"),
+      );
+    } catch {
+      setError("Could not load that run.");
+    }
+  }
+
+  function newRun() {
+    setViewing(null);
+    setOutput("");
+    setError(null);
   }
 
   const active = agents?.find((agent) => agent.id === connected) ?? null;
@@ -102,6 +151,50 @@ export function AiPanel({ sessionId, activePath, canRun, onClose }: AiPanelProps
       </PanelHeader>
 
       <div className="vs-scroll min-h-0 flex-1 overflow-y-auto">
+        {runs.length > 0 && (
+          <div className="border-b border-vs-border p-2">
+            <div className="flex items-center justify-between px-1 pb-1.5">
+              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-vs-muted">
+                Agent runs
+              </h3>
+              {viewing && (
+                <button
+                  type="button"
+                  onClick={newRun}
+                  className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-accent transition hover:bg-vs-hover"
+                >
+                  New run
+                </button>
+              )}
+            </div>
+            <ul className="space-y-0.5">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => watch(r)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition ${
+                      viewing?.id === r.id ? "bg-vs-accent/10" : "hover:bg-vs-hover"
+                    }`}
+                  >
+                    <RunStatusDot status={r.status} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px]">
+                        {r.title ?? `${r.agentId} run`}
+                      </span>
+                      <span className="block truncate text-[10px] text-vs-muted">
+                        {r.startedByName} · {r.agentId} ·{" "}
+                        {relativeTime(Math.floor(r.createdAt / 1000))}
+                      </span>
+                    </span>
+                    {viewing?.id === r.id && <EyeIcon className="h-3.5 w-3.5 shrink-0 text-vs-accent" />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="space-y-2 border-b border-vs-border p-2">
           {agents === null ? (
             <p className="flex items-center gap-2 px-1 py-2 text-xs text-vs-muted">
@@ -173,7 +266,13 @@ export function AiPanel({ sessionId, activePath, canRun, onClose }: AiPanelProps
         </div>
       ) : (
         <Composer
-          placeholder={ready ? `Ask ${active!.name} to change something…` : "Connect an agent first"}
+          placeholder={
+            !ready
+              ? "Connect an agent first"
+              : viewing && viewing.status !== "completed"
+                ? `Join ${viewing.startedByName}'s run as editor…`
+                : `Ask ${active!.name} to change something…`
+          }
           onSend={ask}
         />
       )}
@@ -295,6 +394,18 @@ function CopyLine({ command }: { command: string }) {
       )}
     </button>
   );
+}
+
+function RunStatusDot({ status }: { status: AgentRun["status"] }) {
+  const color =
+    status === "running"
+      ? "bg-amber-500 animate-pulse"
+      : status === "completed"
+        ? "bg-emerald-500"
+        : status === "failed"
+          ? "bg-red-500"
+          : "bg-vs-muted";
+  return <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} title={status} />;
 }
 
 function Note({ children }: { children: React.ReactNode }) {

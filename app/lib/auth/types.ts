@@ -20,6 +20,15 @@ export type LoginRequest = {
   password: string;
 };
 
+/** Email-first step one: the same form logs in or begins signup. */
+export type ContinueRequest = { email: string; password: string };
+
+export type ContinueResponse =
+  /** The email is known and the password matched — already signed in. */
+  | { status: "existing"; user: CurrentUser; connectCode: string | null }
+  /** The email is new; the password is acceptable. Ask for a username next. */
+  | { status: "new" };
+
 export type MeResponse = {
   user: CurrentUser | null;
   /** The code others paste to add this person to an org. */
