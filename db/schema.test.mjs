@@ -363,6 +363,140 @@ await test("deleting a session takes its repo and roster with it", async () => {
   assert.equal(members.rows[0].n, 0);
 });
 
+// --- project members: the access gate --------------------------------------
+
+await test("a github project must name a repo", async () => {
+  await rejects(
+    db,
+    `INSERT INTO projects (org_id, slug, name, created_by, source)
+     VALUES ($1, 'gh1', 'GH', $2, 'github')`,
+    [acme, alice],
+    /projects_github_needs_repo/,
+  );
+});
+
+await test("a non-org-member cannot be added to a project", async () => {
+  // carol exists as a user but is in no org.
+  const carol = await user("carolpm");
+  await rejects(
+    db,
+    `INSERT INTO project_members (project_id, org_id, user_id, role)
+     VALUES ($1, $2, $3, 'editor')`,
+    [acmeProject, acme, carol],
+    /foreign key/i,
+  );
+});
+
+await test("a member of another org cannot be smuggled into a project via org_id", async () => {
+  await rejects(
+    db,
+    `INSERT INTO project_members (project_id, org_id, user_id, role)
+     VALUES ($1, $2, $3, 'editor')`,
+    [acmeProject, rival, mallory],
+    /foreign key/i,
+  );
+});
+
+await test("an org member can be added to a project in that org", async () => {
+  await db.query(
+    `INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'member')
+     ON CONFLICT (org_id, user_id) DO NOTHING`,
+    [acme, bob],
+  );
+  await db.query(
+    `INSERT INTO project_members (project_id, org_id, user_id, role)
+     VALUES ($1, $2, $3, 'editor')`,
+    [acmeProject, acme, bob],
+  );
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM project_members WHERE user_id = $1`,
+    [bob],
+  );
+  assert.equal(rows[0].n, 1);
+});
+
+await test("removing an org member cascades project membership", async () => {
+  await db.query(`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, [acme, bob]);
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM project_members WHERE user_id = $1`,
+    [bob],
+  );
+  assert.equal(rows[0].n, 0, "project membership should have gone with the org membership");
+});
+
+// --- agent runs -------------------------------------------------------------
+
+const runSession = "runrunrunrun";
+await db.query(
+  `INSERT INTO sessions (id, owner_id, name, join_code)
+   VALUES ($1, $2, 'Run room', 'RUNR-2345')`,
+  [runSession, alice],
+);
+const aRun = (
+  await db.query(
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+     VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+    [runSession, alice],
+  )
+).rows[0].id;
+
+await test("a run status is constrained to the known set", async () => {
+  await rejects(
+    db,
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha, status)
+     VALUES ($1, $2, 'claude', 'abc', 'exploded')`,
+    [runSession, alice],
+    /agent_runs_status_check|check/i,
+  );
+});
+
+await test("a user turn must carry an author", async () => {
+  await rejects(
+    db,
+    `INSERT INTO agent_run_messages (run_id, seq, role, body)
+     VALUES ($1, 1, 'user', 'hi')`,
+    [aRun],
+    /agent_run_messages_user_has_author/,
+  );
+});
+
+await test("an agent turn must not carry an author", async () => {
+  await rejects(
+    db,
+    `INSERT INTO agent_run_messages (run_id, seq, role, author_user_id, body)
+     VALUES ($1, 2, 'agent', $2, 'output')`,
+    [aRun, alice],
+    /agent_run_messages_user_has_author/,
+  );
+});
+
+await test("seq is unique within a run", async () => {
+  await db.query(
+    `INSERT INTO agent_run_messages (run_id, seq, role, author_user_id, body)
+     VALUES ($1, 1, 'user', $2, 'first prompt')`,
+    [aRun, alice],
+  );
+  await rejects(
+    db,
+    `INSERT INTO agent_run_messages (run_id, seq, role, body)
+     VALUES ($1, 1, 'agent', 'dup seq')`,
+    [aRun],
+    /duplicate key|unique/i,
+  );
+});
+
+await test("deleting a run takes its messages and participants with it", async () => {
+  await db.query(
+    `INSERT INTO agent_run_participants (run_id, user_id, role) VALUES ($1, $2, 'owner')`,
+    [aRun, alice],
+  );
+  await db.query(`DELETE FROM agent_runs WHERE id = $1`, [aRun]);
+  const msgs = await db.query(`SELECT count(*)::int AS n FROM agent_run_messages`);
+  const parts = await db.query(`SELECT count(*)::int AS n FROM agent_run_participants`);
+  assert.equal(msgs.rows[0].n, 0);
+  assert.equal(parts.rows[0].n, 0);
+});
+
 // --- time-ordered keys ------------------------------------------------------
 
 await test("primary keys are time-ordered (uuidv7 where available)", async () => {

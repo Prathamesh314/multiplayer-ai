@@ -1,5 +1,5 @@
-import { SessionLauncher } from "./components/launcher/SessionLauncher";
+import { OrgWorkspace } from "./components/orgs/OrgWorkspace";
 
 export default function Home() {
-  return <SessionLauncher />;
+  return <OrgWorkspace />;
 }

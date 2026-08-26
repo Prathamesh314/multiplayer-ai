@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
+import { roomRoleFromProject } from "../project/store";
 import type {
   ChatMessage,
   Session,
@@ -184,18 +185,29 @@ export async function redeemShareLink(
   return row?.role ?? null;
 }
 
-export async function createSession(ownerId: string, requestedName?: string): Promise<Session> {
+/** A room can belong to an org project; omit both for a personal session. */
+export type CreateSessionOptions = { orgId?: string | null; projectId?: string | null };
+
+export async function createSession(
+  ownerId: string,
+  requestedName?: string,
+  options: CreateSessionOptions = {},
+): Promise<Session> {
   const name = cleanName(requestedName) ?? `Session ${randomString(4, CODE_ALPHABET)}`;
   const joinCode = `${randomString(4, CODE_ALPHABET)}-${randomString(4, CODE_ALPHABET)}`;
+  const orgId = options.orgId ?? null;
+  const projectId = options.projectId ?? null;
 
   // The session and its owner row must appear together: a session nobody can
-  // open is not a state worth being able to reach.
+  // open is not a state worth being able to reach. For an org project room the
+  // authority is project_members, but the creator still gets an owner row so
+  // they keep control of the room they made.
   return transaction(async (tx) => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const id = randomString(12, ID_ALPHABET);
       const inserted = await tx.query<SessionRow>(
-        `INSERT INTO sessions (id, owner_id, name, join_code)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO sessions (id, owner_id, org_id, project_id, name, join_code)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (id) DO NOTHING
          RETURNING id, name, join_code, owner_id, org_id, project_id, root_name,
                    created_at, last_active_at, pinned, archived_at,
@@ -203,7 +215,7 @@ export async function createSession(ownerId: string, requestedName?: string): Pr
                    NULL AS head_sha, NULL AS dep_lockfile_hash, NULL AS spec_doc_sha,
                    NULL AS container_image_digest, NULL AS last_test_status,
                    NULL AS last_test_sha, NULL AS repo_root_name, NULL AS seeded_at`,
-        [id, ownerId, name, joinCode],
+        [id, ownerId, orgId, projectId, name, joinCode],
       );
 
       if (inserted.rows.length === 0) continue; // id collision, try another
@@ -221,6 +233,20 @@ export async function createSession(ownerId: string, requestedName?: string): Pr
   });
 }
 
+/**
+ * Rooms in a project, newest-active first. Access to the project is the caller's
+ * to check first (getProjectForUser); this trusts that and lists them all.
+ */
+export async function listRoomsInProject(projectId: string): Promise<Session[]> {
+  const rows = await query<SessionRow>(
+    `${SELECT_SESSION}
+      WHERE s.project_id = $1 AND s.deleted_at IS NULL
+      ORDER BY s.last_active_at DESC`,
+    [projectId],
+  );
+  return rows.map((row) => toSession(row));
+}
+
 export async function getSession(id: string, viewerId?: string): Promise<Session | null> {
   const row = await queryOne<SessionRow>(
     `${SELECT_SESSION} WHERE s.id = $1 AND s.deleted_at IS NULL`,
@@ -228,8 +254,13 @@ export async function getSession(id: string, viewerId?: string): Promise<Session
   );
   if (!row) return null;
   // The caller's own role travels with the session so the UI knows what to
-  // enable without a second request.
-  const role = viewerId ? await roleOf(id, viewerId) : null;
+  // enable without a second request. For an org project room it is derived from
+  // the project roster; a personal room falls back to session_members.
+  let role: SessionRole | null = null;
+  if (viewerId) {
+    role = row.project_id ? await roomRoleFromProject(id, viewerId) : null;
+    if (!role) role = await roleOf(id, viewerId);
+  }
   return toSession(row, role);
 }
 

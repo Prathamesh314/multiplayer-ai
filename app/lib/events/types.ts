@@ -57,11 +57,58 @@ export type MembersChangedEvent = {
   at: number;
 };
 
+/** An agent run opened in this room — tells everyone a new run exists to watch. */
+export type RunStartedEvent = {
+  type: "run.started";
+  runId: string;
+  startedBy: string;
+  startedByName: string;
+  agentId: string;
+  at: number;
+};
+
+/**
+ * A live chunk of a run's output. Unlike a stored turn this is not durable — it
+ * is the tail a watcher sees as it happens; the consolidated turn is what they
+ * get on reload. Carries text because a run's output is the point of watching.
+ */
+export type RunOutputEvent = {
+  type: "run.output";
+  runId: string;
+  stream: "out" | "err";
+  chunk: string;
+  at: number;
+};
+
+/** A stored turn was appended to a run's conversation (prompt, or final output). */
+export type RunTurnEvent = {
+  type: "run.turn";
+  runId: string;
+  seq: number;
+  role: "user" | "agent" | "system" | "tool";
+  authorName: string | null;
+  body: string;
+  at: number;
+};
+
+/** A run reached a terminal state. headSha is the commit it produced, if any. */
+export type RunFinishedEvent = {
+  type: "run.finished";
+  runId: string;
+  status: "completed" | "failed" | "cancelled";
+  headSha: string | null;
+  at: number;
+};
+
 export type SessionEvent =
   | FileSavedEvent
   | FileEditingEvent
   | MessageCreatedEvent
-  | MembersChangedEvent;
+  | MembersChangedEvent
+  | RunStartedEvent
+  | RunOutputEvent
+  | RunTurnEvent
+  | RunFinishedEvent;
 
 export type EventHandler = (event: SessionEvent) => void;
 

@@ -2,12 +2,13 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { login, register } from "../../lib/auth/client";
+import { continueWithEmail, register } from "../../lib/auth/client";
 import { AlertIcon, EyeIcon, SparkleIcon, SpinnerIcon } from "../icons";
 
-type Mode = "signin" | "register";
-
 const MIN_PASSWORD_LENGTH = 10;
+
+/** Step one collects email + password; step two only appears for new accounts. */
+type Step = "email" | "username";
 
 export function AuthForm() {
   const router = useRouter();
@@ -17,33 +18,56 @@ export function AuthForm() {
   const rawNext = params.get("next") ?? "/";
   const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
-  const [mode, setMode] = useState<Mode>("signin");
-  const [identifier, setIdentifier] = useState("");
-  const [handle, setHandle] = useState("");
+  const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [handle, setHandle] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: React.FormEvent) {
+  function done() {
+    router.push(next);
+    router.refresh();
+  }
+
+  async function submitEmail(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setShowPassword(false);
     try {
-      setShowPassword(false);
-      if (mode === "signin") await login(identifier, password);
-      else await register({ handle, email, displayName, password });
-      router.push(next);
-      router.refresh();
+      const result = await continueWithEmail({ email: email.trim(), password });
+      if (result.status === "existing") {
+        done();
+        return;
+      }
+      // New email, valid password — move on to pick a username.
+      setStep("username");
+      setBusy(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");
       setBusy(false);
     }
   }
 
-  const registering = mode === "register";
+  async function submitUsername(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await register({
+        handle: handle.trim(),
+        email: email.trim(),
+        displayName: handle.trim(),
+        password,
+      });
+      done();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create your account.");
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-vs-editor px-6 py-12 text-vs-fg">
@@ -55,19 +79,58 @@ export function AuthForm() {
           </span>
         </span>
 
-        <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-          {registering ? "Create an account" : "Sign in"}
-        </h1>
-        <p className="mt-1.5 text-xs leading-5 text-vs-muted">
-          {next !== "/"
-            ? "You need an account to open a shared session."
-            : "Sessions and the code in them belong to an account."}
-        </p>
+        {step === "email" ? (
+          <>
+            <h1 className="mt-6 text-2xl font-semibold tracking-tight">Sign in or sign up</h1>
+            <p className="mt-1.5 text-xs leading-5 text-vs-muted">
+              Enter your email and password. We&apos;ll sign you in, or start a new account if this
+              is your first time.
+            </p>
 
-        <form onSubmit={submit} className="mt-6 space-y-3">
-          {registering ? (
-            <>
-              <Field label="Handle" hint="Lowercase letters, numbers, dashes.">
+            <form onSubmit={submitEmail} className="mt-6 space-y-3">
+              <Field label="Email">
+                <input
+                  autoFocus
+                  required
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className={inputClass}
+                />
+              </Field>
+
+              <Field label="Password">
+                <div className="relative">
+                  <input
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    className={`${inputClass} pr-10`}
+                  />
+                  <PasswordToggle shown={showPassword} onToggle={() => setShowPassword((s) => !s)} />
+                </div>
+              </Field>
+
+              {error && <ErrorNote>{error}</ErrorNote>}
+
+              <SubmitButton busy={busy}>Continue</SubmitButton>
+            </form>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-6 text-2xl font-semibold tracking-tight">Pick a username</h1>
+            <p className="mt-1.5 text-xs leading-5 text-vs-muted">
+              Almost there — choose a username for{" "}
+              <span className="text-vs-fg">{email.trim()}</span>. It&apos;s how teammates will see
+              you.
+            </p>
+
+            <form onSubmit={submitUsername} className="mt-6 space-y-3">
+              <Field label="Username" hint="Lowercase letters, numbers, dashes.">
                 <input
                   autoFocus
                   required
@@ -78,105 +141,68 @@ export function AuthForm() {
                   className={inputClass}
                 />
               </Field>
-              <Field label="Email">
-                <input
-                  required
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="Display name">
-                <input
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  placeholder="Prathamesh"
-                  autoComplete="name"
-                  className={inputClass}
-                />
-              </Field>
-            </>
-          ) : (
-            <Field label="Handle or email">
-              <input
-                autoFocus
-                required
-                value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="prathamesh"
-                autoComplete="username"
-                className={inputClass}
-              />
-            </Field>
-          )}
 
-          <Field
-            label="Password"
-            hint={registering ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
-          >
-            <div className="relative">
-              <input
-                required
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={registering ? MIN_PASSWORD_LENGTH : undefined}
-                autoComplete={registering ? "new-password" : "current-password"}
-                // Room on the right so a long password never runs under the button.
-                className={`${inputClass} pr-10`}
-              />
+              {error && <ErrorNote>{error}</ErrorNote>}
+
+              <SubmitButton busy={busy}>Create account &amp; enter</SubmitButton>
+
               <button
                 type="button"
-                onClick={() => setShowPassword((shown) => !shown)}
-                // Labelled by what pressing it does, not by what is on screen.
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                // Keeps focus in the field, so toggling mid-typing does not
-                // move the caret or dismiss the keyboard on a phone.
-                onMouseDown={(event) => event.preventDefault()}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-vs-accent"
+                onClick={() => {
+                  setStep("email");
+                  setError(null);
+                }}
+                className="w-full text-center text-xs text-vs-muted underline-offset-2 hover:text-vs-fg hover:underline"
               >
-                <EyeIcon off={showPassword} className="h-4 w-4" />
+                Use a different email
               </button>
-            </div>
-          </Field>
+            </form>
+          </>
+        )}
 
-          {error && (
-            <p className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
-              <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
-          >
-            {busy && <SpinnerIcon className="h-4 w-4" />}
-            {registering ? "Create account" : "Sign in"}
-          </button>
-        </form>
-
-        <p className="mt-5 text-center text-xs text-vs-muted">
-          {registering ? "Already have an account?" : "No account yet?"}{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setMode(registering ? "signin" : "register");
-              setShowPassword(false);
-              setError(null);
-            }}
-            className="text-vs-accent underline-offset-2 hover:underline"
-          >
-            {registering ? "Sign in" : "Create one"}
-          </button>
+        <p className="mt-5 text-center text-[11px] leading-5 text-vs-muted">
+          New accounts need a password of at least {MIN_PASSWORD_LENGTH} characters.
         </p>
       </div>
     </div>
+  );
+}
+
+function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={shown ? "Hide password" : "Show password"}
+      aria-pressed={shown}
+      // Keeps focus in the field, so toggling mid-typing does not move the caret.
+      onMouseDown={(event) => event.preventDefault()}
+      className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-vs-accent"
+    >
+      <EyeIcon off={shown} className="h-4 w-4" />
+    </button>
+  );
+}
+
+function SubmitButton({ busy, children }: { busy: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      type="submit"
+      disabled={busy}
+      className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+    >
+      {busy && <SpinnerIcon className="h-4 w-4" />}
+      {children}
+    </button>
+  );
+}
+
+function ErrorNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
+      <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      {children}
+    </p>
   );
 }
 
