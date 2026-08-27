@@ -24,6 +24,9 @@ export type AgentRun = {
   status: RunStatus;
   baseSha: string;
   resultSha: string | null;
+  /** Lines added/removed between base and result; null until the run finishes. */
+  addedLines: number | null;
+  removedLines: number | null;
   exitCode: number | null;
   error: string | null;
   createdAt: number;
@@ -56,6 +59,8 @@ type RunRow = {
   status: RunStatus;
   base_sha: string;
   result_sha: string | null;
+  added_lines: number | null;
+  removed_lines: number | null;
   exit_code: number | null;
   error: string | null;
   created_at: Date;
@@ -73,6 +78,8 @@ const toRun = (row: RunRow): AgentRun => ({
   status: row.status,
   baseSha: row.base_sha,
   resultSha: row.result_sha,
+  addedLines: row.added_lines,
+  removedLines: row.removed_lines,
   exitCode: row.exit_code,
   error: row.error,
   createdAt: row.created_at.getTime(),
@@ -82,8 +89,8 @@ const toRun = (row: RunRow): AgentRun => ({
 
 const RUN_COLUMNS = `
   r.id, r.session_id, r.started_by, u.display_name AS started_by_name, r.agent_id,
-  r.title, r.status, r.base_sha, r.result_sha, r.exit_code, r.error,
-  r.created_at, r.started_at, r.ended_at
+  r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
+  r.exit_code, r.error, r.created_at, r.started_at, r.ended_at
 `;
 
 /**
@@ -159,14 +166,35 @@ export async function appendMessage(input: {
 /** Closes a run out with its terminal status and the commit it produced. */
 export async function finishRun(
   runId: string,
-  outcome: { status: RunStatus; resultSha?: string | null; exitCode?: number | null; error?: string | null },
+  outcome: {
+    status: RunStatus;
+    resultSha?: string | null;
+    exitCode?: number | null;
+    error?: string | null;
+    addedLines?: number | null;
+    removedLines?: number | null;
+  },
 ): Promise<void> {
   await query(
     `UPDATE agent_runs
-        SET status = $2, result_sha = $3, exit_code = $4, error = $5, ended_at = now()
+        SET status = $2, result_sha = $3, exit_code = $4, error = $5,
+            added_lines = $6, removed_lines = $7, ended_at = now()
       WHERE id = $1`,
-    [runId, outcome.status, outcome.resultSha ?? null, outcome.exitCode ?? null, outcome.error ?? null],
+    [
+      runId,
+      outcome.status,
+      outcome.resultSha ?? null,
+      outcome.exitCode ?? null,
+      outcome.error ?? null,
+      outcome.addedLines ?? null,
+      outcome.removedLines ?? null,
+    ],
   );
+}
+
+/** Renames a run (its title defaults to the first prompt). */
+export async function renameRun(runId: string, title: string): Promise<void> {
+  await query(`UPDATE agent_runs SET title = $2 WHERE id = $1`, [runId, title]);
 }
 
 /** The run list for a room, newest first. */
