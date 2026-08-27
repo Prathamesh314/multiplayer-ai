@@ -26,6 +26,16 @@ export async function fetchRun(
   return (await response.json()) as RunResponse;
 }
 
+/** Rename a run (allowed only for the run's starter). */
+export async function renameRun(sessionId: string, runId: string, title: string): Promise<void> {
+  const response = await fetch(`${base(sessionId)}/${encodeURIComponent(runId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not rename that run."));
+}
+
 /** Watch (viewer) or co-drive (editor) an existing run. */
 export async function joinRun(
   sessionId: string,

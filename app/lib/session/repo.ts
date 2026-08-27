@@ -263,6 +263,27 @@ export async function listTree(id: string, rootName: string): Promise<TreeNode> 
  * people and agents have changed. Rename/copy lines carry two paths; the new
  * one is what the explorer opens.
  */
+/** Added/removed line totals between two commits, for a run's diff badge. */
+export async function diffStat(
+  id: string,
+  base: string,
+  head: string,
+): Promise<{ added: number; removed: number }> {
+  const work = workPath(id);
+  const stdout = await git(work, ["diff", "--numstat", base, head]).catch(() => "");
+
+  let added = 0;
+  let removed = 0;
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [a, r] = line.split("\t");
+    // Binary files report "-\t-"; only count numeric rows.
+    if (a && a !== "-") added += Number(a) || 0;
+    if (r && r !== "-") removed += Number(r) || 0;
+  }
+  return { added, removed };
+}
+
 export async function listChangedFiles(id: string, baseSha: string): Promise<ChangedFile[]> {
   const work = workPath(id);
   const stdout = await git(work, ["diff", "--name-status", "-M", baseSha, "HEAD"]).catch(() => "");

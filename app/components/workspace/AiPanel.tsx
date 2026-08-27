@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import { fetchAgents, runAgent, type RunHandle } from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
@@ -18,6 +18,7 @@ import {
   SpinnerIcon,
 } from "../icons";
 import { Composer } from "./chat";
+import { Markdown } from "./Markdown";
 import { PanelHeader } from "./TeamChatPanel";
 
 type AiPanelProps = {
@@ -543,9 +544,18 @@ function AgentSelector({
 // ---------------------------------------------------------------------------
 
 function Conversation({ turns }: { turns: Turn[] }) {
+  // Agent/system turns carry CLI framing (Codex's banner, model-manager error
+  // logs, its echo of the prompt, the token tally). Strip it to the reply;
+  // a turn that was nothing but noise is dropped entirely.
+  const visible = turns.flatMap((turn) => {
+    if (turn.role === "user") return [turn];
+    const text = cleanRunText(turn.text);
+    return text ? [{ ...turn, text }] : [];
+  });
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-4">
-      {turns.map((turn) =>
+      {visible.map((turn) =>
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />
         ) : (
@@ -556,75 +566,79 @@ function Conversation({ turns }: { turns: Turn[] }) {
   );
 }
 
+/**
+ * Removes the coding CLI's framing so only the assistant's reply shows.
+ * Codex prints a startup banner, timestamped model-manager error logs, a
+ * "Reading additional input…" notice, an echo of the prompt under a `codex`
+ * marker, and a trailing token count. Non-Codex agents lack these markers, so
+ * their output passes through unchanged.
+ */
+function cleanRunText(raw: string): string {
+  if (!raw) return "";
+  const isCodex = raw.includes("OpenAI Codex v");
+
+  let text = raw
+    .split("\n")
+    .filter((line) => {
+      const t = line.trimStart();
+      if (/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+(ERROR|WARN|WARNING|INFO|DEBUG|TRACE)\b/.test(t)) {
+        return false;
+      }
+      if (t.startsWith("Reading additional input from stdin")) return false;
+      return true;
+    })
+    .join("\n");
+
+  if (isCodex) {
+    // The startup banner: "OpenAI Codex v…" through its closing rule.
+    text = text.replace(/OpenAI Codex v[^\n]*\n-{3,}[\s\S]*?\n-{3,}\n?/, "");
+    // The trailing token accounting.
+    text = text.replace(/\n*tokens used\n[\d,]+\s*$/i, "");
+    // Keep only what follows the last `codex` marker, dropping the prompt echo.
+    const lastCodex = text.lastIndexOf("\ncodex\n");
+    if (lastCodex >= 0) text = text.slice(lastCodex + "\ncodex\n".length);
+    else if (text.startsWith("codex\n")) text = text.slice("codex\n".length);
+
+    // Codex's canned "no real task" greeting is filler, not a reply — drop it
+    // whether it stands alone or trails the actual output.
+    const filler = /(?:^|\n)\s*(?:hi|hello|hey)?[.!,]?\s*what (?:do|would) you (?:want|like) to work on\??\s*$/i;
+    text = text.replace(filler, "");
+  }
+
+  return text.trim();
+}
+
 function TurnBubble({ turn }: { turn: Turn }) {
-  const isUser = turn.role === "user";
+  // The user's own prompts sit on the right as a bubble; the agent replies on
+  // the left as rendered Markdown — the familiar assistant-chat layout.
+  if (turn.role === "user") {
+    const author = turn.author ?? "You";
+    return (
+      <div className="flex flex-col items-end gap-1">
+        {author !== "You" && <span className="pr-1 text-[11px] text-vs-muted">{author}</span>}
+        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-vs-accent px-3.5 py-2 text-[13.5px] leading-6 text-vs-accent-fg">
+          {turn.text}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <article className="flex min-w-0 gap-3">
-      <span
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
-          isUser ? "bg-vs-accent text-vs-accent-fg" : "bg-vs-accent/15 text-vs-accent"
-        }`}
-      >
-        {isUser ? (turn.author ?? "You").slice(0, 1).toUpperCase() : <SparkleIcon className="h-4 w-4" />}
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/15 text-vs-accent">
+        <SparkleIcon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
         <header className="mb-1 flex items-center gap-2">
           <span className="truncate text-[13px] font-semibold text-vs-fg">
-            {isUser ? turn.author ?? "You" : turn.agentName ?? "Agent"}
+            {turn.agentName ?? "Agent"}
           </span>
           {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
         </header>
-        {isUser ? (
-          <div className="w-fit max-w-full whitespace-pre-wrap break-words rounded-xl rounded-tl-sm bg-vs-hover px-3.5 py-2 text-[13px] leading-6 text-vs-fg">
-            {turn.text}
-          </div>
-        ) : (
-          <AgentBody text={turn.text} streaming={turn.streaming} />
-        )}
+        <Markdown text={turn.text} />
       </div>
     </article>
   );
-}
-
-/**
- * Renders agent output, splitting fenced ``` blocks into monospace cards while
- * the prose stays proportional. The CLIs emit plain text, so this stays
- * intentionally small rather than a full Markdown engine.
- */
-function AgentBody({ text, streaming }: { text: string; streaming?: boolean }) {
-  const segments = useMemo(() => splitFences(text), [text]);
-  return (
-    <div className="space-y-2 text-[13px] leading-5 text-vs-fg/90">
-      {segments.map((segment, index) =>
-        segment.code ? (
-          <pre
-            key={index}
-            className="vs-scroll overflow-x-auto rounded-md border border-vs-border bg-vs-editor px-3 py-2 font-mono text-[11px] leading-5 text-vs-fg"
-          >
-            {segment.text}
-          </pre>
-        ) : (
-          <p key={index} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-            {segment.text}
-            {streaming && index === segments.length - 1 && (
-              <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-vs-accent" />
-            )}
-          </p>
-        ),
-      )}
-    </div>
-  );
-}
-
-function splitFences(text: string): { code: boolean; text: string }[] {
-  const parts = text.split(/```[^\n]*\n?/);
-  const out: { code: boolean; text: string }[] = [];
-  parts.forEach((part, index) => {
-    if (part.length === 0) return;
-    // Odd segments sit between fence markers, so they are the code blocks.
-    out.push({ code: index % 2 === 1, text: index % 2 === 1 ? part.replace(/\n$/, "") : part });
-  });
-  return out.length > 0 ? out : [{ code: false, text }];
 }
 
 function SystemLine({ text }: { text: string }) {

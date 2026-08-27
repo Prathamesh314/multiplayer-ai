@@ -4,7 +4,7 @@ import { appendMessage, createRun, finishRun, getRun, joinRun } from "../../../l
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
-import { commitWork, ensureWork, withRepoLock } from "../../../lib/session/repo";
+import { commitWork, diffStat, ensureWork, withRepoLock } from "../../../lib/session/repo";
 import { setHeadSha } from "../../../lib/session/store";
 import { terminalAccess } from "../../../lib/terminal/guard";
 
@@ -131,7 +131,7 @@ export async function POST(request: Request) {
 
   const author = { name: result.user.displayName, email: result.user.email };
   return new Response(
-    runStream(sessionId, run.id, agent.bin, agent.promptArgs(prompt, runOptions), author),
+    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(prompt, runOptions), author),
     {
       headers: {
         "content-type": "application/x-ndjson; charset=utf-8",
@@ -145,6 +145,7 @@ export async function POST(request: Request) {
 function runStream(
   sessionId: string,
   runId: string,
+  baseSha: string,
   bin: string,
   args: string[],
   author: { name: string; email: string },
@@ -264,7 +265,18 @@ function runStream(
             await appendMessage({ runId, role: "system", body: trimmedErr });
           }
           const status = code === 0 ? "completed" : "failed";
-          await finishRun(runId, { status, resultSha: sha, exitCode: code, error: trimmedErr || null });
+          // Line counts of what the agent changed, for the sidebar's +N -N badge.
+          const stat = sha
+            ? await withRepoLock(sessionId, () => diffStat(sessionId, baseSha, sha!)).catch(() => null)
+            : { added: 0, removed: 0 };
+          await finishRun(runId, {
+            status,
+            resultSha: sha,
+            exitCode: code,
+            error: trimmedErr || null,
+            addedLines: stat?.added ?? null,
+            removedLines: stat?.removed ?? null,
+          });
           broadcast({ type: "run.finished", runId, status, headSha: sha, at: Date.now() });
         } catch {
           // The run record is best-effort; the live stream already succeeded.

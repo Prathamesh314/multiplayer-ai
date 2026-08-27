@@ -614,6 +614,7 @@ export function Workspace({ session }: { session: Session }) {
                 onEnter={setEnteredRun}
                 onNewRun={() => setEnteredRun(null)}
                 onFork={() => setEnteredRun(null)}
+                onRenamed={refreshRuns}
               />
             </div>
             <Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={460} />
