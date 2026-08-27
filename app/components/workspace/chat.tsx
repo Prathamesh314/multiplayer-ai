@@ -84,9 +84,18 @@ export function MessageList({
 export function Composer({
   placeholder,
   onSend,
+  /** A larger, multi-line input — used for the AI chat where prompts are longer. */
+  tall,
+  /** Constrain the box and centre it, so it does not span the whole pane. */
+  narrow,
+  /** A toolbar rendered inside the box (e.g. provider / model / capacity chips). */
+  footer,
 }: {
   placeholder: string;
   onSend: (text: string) => void;
+  tall?: boolean;
+  narrow?: boolean;
+  footer?: React.ReactNode;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -97,31 +106,53 @@ export function Composer({
     setDraft("");
   }
 
+  const textarea = (
+    <textarea
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          send();
+        }
+      }}
+      rows={tall ? 4 : 1}
+      placeholder={placeholder}
+      className={`vs-scroll flex-1 resize-none bg-transparent text-[13px] text-vs-fg outline-none placeholder:text-vs-muted ${
+        tall ? "max-h-64 min-h-24" : "max-h-28 min-h-5"
+      }`}
+    />
+  );
+
+  const sendButton = (
+    <button
+      type="button"
+      onClick={send}
+      disabled={draft.trim().length === 0}
+      aria-label="Send message"
+      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40 disabled:hover:bg-transparent"
+    >
+      <SendIcon className="h-4 w-4" />
+    </button>
+  );
+
   return (
     <div className="shrink-0 border-t border-vs-border p-2">
-      <div className="flex items-end gap-1.5 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 focus-within:border-vs-accent">
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          rows={1}
-          placeholder={placeholder}
-          className="vs-scroll max-h-28 min-h-5 flex-1 resize-none bg-transparent text-[13px] text-vs-fg outline-none placeholder:text-vs-muted"
-        />
-        <button
-          type="button"
-          onClick={send}
-          disabled={draft.trim().length === 0}
-          aria-label="Send message"
-          className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <SendIcon className="h-4 w-4" />
-        </button>
+      <div className={narrow ? "mx-auto w-full max-w-4xl" : ""}>
+        {footer ? (
+          <div className="rounded-lg border border-vs-border bg-vs-editor px-2.5 py-2 focus-within:border-vs-accent">
+            <div className="flex">{textarea}</div>
+            <div className="mt-1.5 flex items-center gap-1">
+              {footer}
+              <div className="ml-auto">{sendButton}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-end gap-1.5 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 focus-within:border-vs-accent">
+            {textarea}
+            {sendButton}
+          </div>
+        )}
       </div>
     </div>
   );

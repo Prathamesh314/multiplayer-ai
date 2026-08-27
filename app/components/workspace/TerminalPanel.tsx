@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnsiBuffer, type Segment } from "../../lib/terminal/ansi";
 import { fetchTerminalStatus, interruptRun, runCommand } from "../../lib/terminal/client";
 import type { TerminalStatus } from "../../lib/terminal/protocol";
-import { AlertIcon, CloseIcon, SpinnerIcon } from "../icons";
+import { AlertIcon, CloseIcon, LinkIcon, PlusIcon, SpinnerIcon, TerminalIcon } from "../icons";
 
 type Block = {
   id: string;
@@ -22,7 +22,193 @@ type Block = {
 /** Blocks kept before the oldest are dropped. */
 const MAX_BLOCKS = 120;
 
+/** Imperative hooks the shared header uses to drive the active terminal. */
+type InstanceHandle = { clear: () => void; stop: () => void };
+
+// ---------------------------------------------------------------------------
+// Tabbed shell: several independent terminals, only the active one visible.
+// ---------------------------------------------------------------------------
+
+type Tab = { id: string; name: string };
+
 export function TerminalPanel({ onClose }: { onClose: () => void }) {
+  const [tabs, setTabs] = useState<Tab[]>([{ id: "t1", name: "Terminal" }]);
+  const [activeId, setActiveId] = useState("t1");
+  const [running, setRunning] = useState<Set<string>>(new Set());
+  const counter = useRef(1);
+  const handles = useRef(new Map<string, InstanceHandle>());
+
+  const register = useCallback((id: string, handle: InstanceHandle | null) => {
+    if (handle) handles.current.set(id, handle);
+    else handles.current.delete(id);
+  }, []);
+
+  const onRunningChange = useCallback((id: string, isRunning: boolean) => {
+    setRunning((previous) => {
+      if (previous.has(id) === isRunning) return previous;
+      const next = new Set(previous);
+      if (isRunning) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  function addTab() {
+    counter.current += 1;
+    const id = `t${counter.current}`;
+    setTabs((previous) => [...previous, { id, name: `Terminal ${counter.current}` }]);
+    setActiveId(id);
+  }
+
+  function closeTab(id: string) {
+    setTabs((previous) => {
+      const next = previous.filter((tab) => tab.id !== id);
+      if (next.length === 0) {
+        onClose();
+        return previous;
+      }
+      if (id === activeId) setActiveId(next[next.length - 1].id);
+      return next;
+    });
+  }
+
+  const port = typeof window !== "undefined" ? window.location.port || "3000" : "3000";
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col bg-vs-terminal">
+      <header className="flex h-9 shrink-0 items-center gap-1 border-b border-vs-border bg-vs-terminal-head px-2">
+        <div className="vs-scroll flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          {tabs.map((tab) => (
+            <TabButton
+              key={tab.id}
+              tab={tab}
+              active={tab.id === activeId}
+              running={running.has(tab.id)}
+              closable={tabs.length > 1}
+              onSelect={() => setActiveId(tab.id)}
+              onClose={() => closeTab(tab.id)}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={addTab}
+            aria-label="New terminal"
+            title="New terminal"
+            className="ml-0.5 shrink-0 rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <div className="ml-2 flex shrink-0 items-center gap-1">
+          <a
+            href={`http://localhost:${port}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 rounded border border-vs-border px-2 py-0.5 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            <LinkIcon className="h-3 w-3" />
+            Open :{port}
+          </a>
+          {running.has(activeId) && (
+            <button
+              type="button"
+              onClick={() => handles.current.get(activeId)?.stop()}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            >
+              <SpinnerIcon className="h-3 w-3" />
+              Stop
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => handles.current.get(activeId)?.clear()}
+            title="Clear (Ctrl+L)"
+            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close terminal"
+            className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            <CloseIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </header>
+
+      {tabs.map((tab) => (
+        <div
+          key={tab.id}
+          className={tab.id === activeId ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+        >
+          <TerminalInstance id={tab.id} register={register} onRunningChange={onRunningChange} />
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function TabButton({
+  tab,
+  active,
+  running,
+  closable,
+  onSelect,
+  onClose,
+}: {
+  tab: Tab;
+  active: boolean;
+  running: boolean;
+  closable: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <span
+      className={`group flex shrink-0 items-center gap-1.5 rounded-md py-1 pl-2 pr-1 text-[12px] transition ${
+        active ? "bg-vs-terminal text-vs-fg" : "text-vs-muted hover:bg-vs-hover hover:text-vs-fg"
+      }`}
+    >
+      <button type="button" onClick={onSelect} className="flex items-center gap-1.5">
+        {running ? (
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 [animation:pulse_1.2s_ease-in-out_infinite]" />
+        ) : (
+          <TerminalIcon className={`h-3.5 w-3.5 ${active ? "text-vs-accent" : ""}`} />
+        )}
+        {tab.name}
+      </button>
+      {closable ? (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${tab.name}`}
+          className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-hover hover:text-vs-fg group-hover:opacity-100"
+        >
+          <CloseIcon className="h-3 w-3" />
+        </button>
+      ) : (
+        <span className="w-2" />
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One terminal: its own scrollback, cwd, history and in-flight command.
+// ---------------------------------------------------------------------------
+
+function TerminalInstance({
+  id,
+  register,
+  onRunningChange,
+}: {
+  id: string;
+  register: (id: string, handle: InstanceHandle | null) => void;
+  onRunningChange: (id: string, running: boolean) => void;
+}) {
   const [status, setStatus] = useState<TerminalStatus | null>(null);
   const [cwd, setCwd] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -35,6 +221,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
   const stickToBottomRef = useRef(true);
 
   useEffect(() => {
@@ -60,8 +247,26 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // Abort any in-flight run when the panel unmounts.
+  // Abort any in-flight run when the terminal unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Expose clear/stop to the shared header, and report the running state up so
+  // the tab can show a live indicator.
+  useEffect(() => {
+    register(id, {
+      clear: () => setBlocks([]),
+      stop: () => {
+        const runId = activeRunIdRef.current;
+        if (runId) void interruptRun(runId);
+      },
+    });
+    return () => register(id, null);
+  }, [id, register]);
+
+  useEffect(() => {
+    activeRunIdRef.current = activeRunId;
+    onRunningChange(id, activeRunId !== null);
+  }, [activeRunId, id, onRunningChange]);
 
   // Follow the output while it streams, unless the user scrolled up to read.
   useEffect(() => {
@@ -81,9 +286,9 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
     });
   }
 
-  function patch(id: string, changes: Partial<Block>) {
+  function patch(blockId: string, changes: Partial<Block>) {
     setBlocks((previous) =>
-      previous.map((block) => (block.id === id ? { ...block, ...changes } : block)),
+      previous.map((block) => (block.id === blockId ? { ...block, ...changes } : block)),
     );
   }
 
@@ -220,98 +425,63 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
 
   const disabled = status !== null && !status.enabled;
 
+  if (disabled) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-vs-terminal px-6">
+        <p className="flex max-w-md items-start gap-2 text-xs leading-5 text-vs-muted">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          {status?.reason}
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-vs-panel">
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-vs-border px-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
-          Terminal
-        </h2>
-        {status?.shell && (
-          <span className="truncate font-mono text-[11px] text-vs-muted">{status.shell}</span>
+    <>
+      <div
+        ref={scrollRef}
+        onClick={() => inputRef.current?.focus()}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          stickToBottomRef.current =
+            element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+        }}
+        className="vs-scroll min-h-0 flex-1 overflow-auto bg-vs-terminal px-3 py-2 font-mono text-[12.5px] leading-[18px]"
+        style={{ tabSize: 4 }}
+      >
+        {blocks.length === 0 && (
+          <p className="max-w-xl text-[11px] leading-5 text-vs-muted">
+            Commands run through {status?.shell ?? "your shell"} on the machine serving this app, in
+            the directory below — not inside the folder you opened in the browser. Use{" "}
+            <code className="rounded bg-vs-hover px-1">cd</code> to move around; it is remembered
+            between commands.
+          </p>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          {activeRunId && (
-            <button
-              type="button"
-              onClick={stop}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-            >
-              <SpinnerIcon className="h-3 w-3" />
-              Stop
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setBlocks([])}
-            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close terminal"
-            className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            <CloseIcon className="h-3.5 w-3.5" />
-          </button>
+        {blocks.map((block) => (
+          <BlockView key={block.id} block={block} />
+        ))}
+      </div>
+
+      <div className="shrink-0 border-t border-vs-border bg-vs-terminal-head px-2 py-2">
+        <div className="flex items-center gap-2 rounded-md border border-vs-border bg-vs-terminal px-2.5 py-1.5 font-mono text-[12.5px] focus-within:border-vs-accent">
+          <CwdField cwd={cwd} disabled={!!activeRunId} onSubmit={(next) => submit(`cd ${next}`)} />
+          <span className="shrink-0 text-emerald-500">➜</span>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={status === null || !!activeRunId}
+            placeholder={activeRunId ? "running… press Ctrl+C to stop" : "npm test"}
+            spellCheck={false}
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent text-vs-fg outline-none placeholder:text-vs-muted disabled:placeholder:text-vs-muted/70"
+          />
+          {activeRunId && <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />}
         </div>
-      </header>
-
-      {disabled ? (
-        <div className="flex flex-1 items-center justify-center px-6">
-          <p className="flex max-w-md items-start gap-2 text-xs leading-5 text-vs-muted">
-            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-            {status?.reason}
-          </p>
-        </div>
-      ) : (
-        <>
-          <div
-            ref={scrollRef}
-            onClick={() => inputRef.current?.focus()}
-            onScroll={(event) => {
-              const element = event.currentTarget;
-              stickToBottomRef.current =
-                element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-            }}
-            className="vs-scroll min-h-0 flex-1 overflow-auto px-3 py-2 font-mono text-[12.5px] leading-[18px]"
-            style={{ tabSize: 4 }}
-          >
-            {blocks.length === 0 && (
-              <p className="text-[11px] leading-5 text-vs-muted">
-                Commands run through {status?.shell ?? "your shell"} on the machine serving this
-                app, in the directory below — not inside the folder you opened in the browser. Use{" "}
-                <code>cd</code> to move around; it is remembered between commands.
-              </p>
-            )}
-
-            {blocks.map((block) => (
-              <BlockView key={block.id} block={block} />
-            ))}
-          </div>
-
-          <div className="shrink-0 border-t border-vs-border">
-            <div className="flex items-center gap-2 px-3 py-1.5 font-mono text-[12.5px]">
-              <CwdField cwd={cwd} disabled={!!activeRunId} onSubmit={(next) => submit(`cd ${next}`)} />
-              <span className="shrink-0 text-vs-accent">❯</span>
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={onKeyDown}
-                disabled={status === null || !!activeRunId}
-                placeholder={activeRunId ? "running… press Ctrl+C to stop" : "npm test"}
-                spellCheck={false}
-                autoComplete="off"
-                className="min-w-0 flex-1 bg-transparent text-vs-fg outline-none placeholder:text-vs-muted disabled:placeholder:text-vs-muted/70"
-              />
-            </div>
-          </div>
-        </>
-      )}
-    </section>
+      </div>
+    </>
   );
 }
 
@@ -323,11 +493,11 @@ function BlockView({ block }: { block: Block }) {
   const hasOutput = rendered.some((line) => line.length > 0);
 
   return (
-    <div className="mt-2 first:mt-0">
+    <div className="mt-2.5 border-t border-vs-border/60 pt-2.5 first:mt-0 first:border-t-0 first:pt-0">
       <div className="flex items-baseline gap-2">
-        <span className="shrink-0 text-vs-muted">{lastSegment(block.cwd)}</span>
-        <span className="shrink-0 text-vs-accent">❯</span>
-        <span className="whitespace-pre-wrap break-all text-vs-fg">{block.command}</span>
+        <span className="shrink-0 text-emerald-500">➜</span>
+        <span className="shrink-0 text-cyan-500 dark:text-cyan-400">{lastSegment(block.cwd)}</span>
+        <span className="whitespace-pre-wrap break-all font-medium text-vs-fg">{block.command}</span>
         {block.running && <SpinnerIcon className="ml-1 h-3 w-3 shrink-0 text-vs-muted" />}
       </div>
 
@@ -335,7 +505,7 @@ function BlockView({ block }: { block: Block }) {
         <pre className="whitespace-pre-wrap break-all text-vs-fg/90">
           {rendered.map((line, index) => (
             <div key={index}>
-              {line.length === 0 ? " " : line.map((segment, at) => <SegmentView key={at} segment={segment} />)}
+              {line.length === 0 ? " " : line.map((segment, at) => <SegmentView key={at} segment={segment} />)}
             </div>
           ))}
         </pre>
@@ -351,15 +521,19 @@ function BlockView({ block }: { block: Block }) {
       {block.failure && <p className="text-[11px] text-vs-muted">{block.failure}</p>}
 
       {!block.running && !block.failure && (
-        <p className="text-[11px] text-vs-muted">
-          {block.signal ? (
-            <span className="text-amber-600 dark:text-amber-400">{block.signal}</span>
-          ) : block.exitCode === 0 ? (
-            "exit 0"
-          ) : (
-            <span className="text-red-600 dark:text-red-400">exit {block.exitCode ?? "?"}</span>
-          )}
-          {block.ms > 0 && ` · ${formatDuration(block.ms)}`}
+        <p className="mt-1 flex items-center gap-1.5 text-[11px]">
+          <span
+            className={`rounded px-1.5 py-0.5 font-medium ${
+              block.signal
+                ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                : block.exitCode === 0
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  : "bg-red-500/15 text-red-600 dark:text-red-400"
+            }`}
+          >
+            {block.signal ? block.signal : block.exitCode === 0 ? "exit 0" : `exit ${block.exitCode ?? "?"}`}
+          </span>
+          {block.ms > 0 && <span className="text-vs-muted">{formatDuration(block.ms)}</span>}
         </p>
       )}
     </div>

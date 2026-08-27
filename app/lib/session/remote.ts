@@ -2,6 +2,8 @@ import { collectStats } from "../scan";
 import { currentTabId } from "../tab-id";
 import type { GitInfo, ScanResult, TreeNode } from "../types";
 import type {
+  ChangedFile,
+  ChangesResponse,
   FileResponse,
   SaveFileResponse,
   SeedResponse,
@@ -125,6 +127,16 @@ function toBase64(bytes: Uint8Array): string {
  * explorer and editor cannot tell the difference — `readFile` was always a
  * closure over its source, which is what makes this a drop-in.
  */
+/** Files changed since the session was seeded, for the explorer's Changes tab. */
+export async function fetchChanges(sessionId: string): Promise<ChangedFile[]> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes`, {
+    cache: "no-store",
+  });
+  if (!response.ok) return [];
+  const body = (await response.json()) as ChangesResponse;
+  return body.changes ?? [];
+}
+
 export async function scanSession(session: Session): Promise<ScanResult> {
   const id = session.id;
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/tree`, {

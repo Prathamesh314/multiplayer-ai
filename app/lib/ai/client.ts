@@ -18,7 +18,15 @@ export type RunHandle = { cancel: () => void };
  * for tens of seconds, so buffering the whole run would look like a hang.
  */
 export function runAgent(
-  input: { sessionId: string; agentId: string; prompt: string; runId?: string; title?: string },
+  input: {
+    sessionId: string;
+    agentId: string;
+    prompt: string;
+    runId?: string;
+    title?: string;
+    model?: string;
+    effort?: string;
+  },
   handlers: {
     onEvent: (event: AiRunEvent) => void;
     onError: (message: string) => void;

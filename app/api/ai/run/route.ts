@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { agentById } from "../../../lib/ai/catalog";
+import { agentById, resolveChoice } from "../../../lib/ai/catalog";
 import { appendMessage, createRun, finishRun, getRun, joinRun } from "../../../lib/ai/runs";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
@@ -23,6 +23,9 @@ export type AiRunRequest = {
   title?: string;
   /** Continue an existing run (join-as-editor follow-up) instead of opening one. */
   runId?: string;
+  /** Composer choices; validated against the agent's own allow-lists below. */
+  model?: string;
+  effort?: string;
 };
 
 export type AiRunEvent =
@@ -120,14 +123,23 @@ export async function POST(request: Request) {
     at: Date.now(),
   });
 
+  // Only values the agent actually offers reach the argv; anything else is dropped.
+  const runOptions = {
+    model: resolveChoice(agent.models, body.model),
+    effort: resolveChoice(agent.efforts, body.effort),
+  };
+
   const author = { name: result.user.displayName, email: result.user.email };
-  return new Response(runStream(sessionId, run.id, agent.bin, agent.promptArgs(prompt), author), {
-    headers: {
-      "content-type": "application/x-ndjson; charset=utf-8",
-      "cache-control": "no-store, no-transform",
-      "x-accel-buffering": "no",
+  return new Response(
+    runStream(sessionId, run.id, agent.bin, agent.promptArgs(prompt, runOptions), author),
+    {
+      headers: {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-store, no-transform",
+        "x-accel-buffering": "no",
+      },
     },
-  });
+  );
 }
 
 function runStream(

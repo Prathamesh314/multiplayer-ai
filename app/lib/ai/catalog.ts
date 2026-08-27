@@ -10,6 +10,12 @@
  */
 export type AgentId = "claude" | "gemini" | "codex";
 
+/** A selectable value (model or reasoning effort). Empty id → the CLI default. */
+export type AgentChoice = { id: string; label: string };
+
+/** What the composer's Model / Capacity selectors send back with a prompt. */
+export type RunOptions = { model?: string; effort?: string };
+
 export type AgentSpec = {
   id: AgentId;
   name: string;
@@ -17,8 +23,16 @@ export type AgentSpec = {
   /** Executable looked up on PATH. */
   bin: string;
   versionArgs: string[];
-  /** argv for a single prompt. Never a shell string — the prompt is a value. */
-  promptArgs: (prompt: string) => string[];
+  /**
+   * argv for a single prompt. Never a shell string — the prompt is a value.
+   * `opts` carries an optional model / reasoning-effort chosen in the composer;
+   * an empty or absent value means "let the CLI use its own default".
+   */
+  promptArgs: (prompt: string, opts?: RunOptions) => string[];
+  /** Models offered in the composer. First entry is the default ("Auto"). */
+  models: AgentChoice[];
+  /** Reasoning-effort levels offered, where the CLI supports them. May be empty. */
+  efforts: AgentChoice[];
   install: {
     /** Shown first: works the same on every platform. */
     command: string;
@@ -44,7 +58,22 @@ export const AGENTS: AgentSpec[] = [
      * edit files in the working copy while still refusing the riskier tools —
      * and everything it writes is committed, so any edit is reversible.
      */
-    promptArgs: (prompt) => ["--permission-mode", "acceptEdits", "-p", prompt],
+    promptArgs: (prompt, opts) => [
+      ...(opts?.model ? ["--model", opts.model] : []),
+      "--permission-mode",
+      "acceptEdits",
+      "-p",
+      prompt,
+    ],
+    models: [
+      { id: "", label: "Auto" },
+      { id: "opus", label: "Opus" },
+      { id: "sonnet", label: "Sonnet" },
+      { id: "haiku", label: "Haiku" },
+    ],
+    // Claude Code has no reasoning-effort flag in print mode; capability follows
+    // the model tier instead.
+    efforts: [],
     install: {
       command: "npm install -g @anthropic-ai/claude-code",
       alternative: "curl -fsSL https://claude.ai/install.sh | bash",
@@ -60,7 +89,21 @@ export const AGENTS: AgentSpec[] = [
     versionArgs: ["--version"],
     // workspace-write is the equivalent bound: it may change this repo and
     // nothing outside it.
-    promptArgs: (prompt) => ["exec", "--sandbox", "workspace-write", prompt],
+    promptArgs: (prompt, opts) => [
+      "exec",
+      "--sandbox",
+      "workspace-write",
+      ...(opts?.model ? ["-m", opts.model] : []),
+      ...(opts?.effort ? ["-c", `model_reasoning_effort="${opts.effort}"`] : []),
+      prompt,
+    ],
+    models: [{ id: "", label: "Auto" }],
+    efforts: [
+      { id: "", label: "Auto" },
+      { id: "low", label: "Low" },
+      { id: "medium", label: "Medium" },
+      { id: "high", label: "High" },
+    ],
     install: {
       command: "npm install -g @openai/codex",
       alternative: "brew install codex",
@@ -74,7 +117,17 @@ export const AGENTS: AgentSpec[] = [
     vendor: "Google",
     bin: "gemini",
     versionArgs: ["--version"],
-    promptArgs: (prompt) => ["-p", prompt],
+    promptArgs: (prompt, opts) => [
+      ...(opts?.model ? ["-m", opts.model] : []),
+      "-p",
+      prompt,
+    ],
+    models: [
+      { id: "", label: "Auto" },
+      { id: "gemini-2.5-pro", label: "2.5 Pro" },
+      { id: "gemini-2.5-flash", label: "2.5 Flash" },
+    ],
+    efforts: [],
     install: {
       command: "npm install -g @google/gemini-cli",
       docs: "https://github.com/google-gemini/gemini-cli",
@@ -82,6 +135,12 @@ export const AGENTS: AgentSpec[] = [
     blurb: "Large-context agent for reading and changing a codebase.",
   },
 ];
+
+/** Validates a choice id against a spec's allow-list; empty/unknown → undefined. */
+export function resolveChoice(choices: AgentChoice[], id: unknown): string | undefined {
+  if (typeof id !== "string" || id === "") return undefined;
+  return choices.some((choice) => choice.id === id) ? id : undefined;
+}
 
 export const agentById = (id: string): AgentSpec | undefined =>
   AGENTS.find((agent) => agent.id === id);

@@ -18,6 +18,10 @@
   --vs-gutter: #6e7681;
   --vs-shadow: rgb(0 0 0 / 0.08);
 
+  /* Terminal surface — matches the editor in light, goes near-black in dark. */
+  --vs-terminal: #ffffff;
+  --vs-terminal-head: #f0f0f0;
+
   /* Syntax */
   --syn-plain: #3b3b3b;
   --syn-keyword: #0000ff;
@@ -50,6 +54,9 @@
     --vs-gutter: #6e7681;
     --vs-shadow: rgb(0 0 0 / 0.4);
 
+    --vs-terminal: #0b0e14;
+    --vs-terminal-head: #0e1119;
+
     --syn-plain: #cccccc;
     --syn-keyword: #569cd6;
     --syn-control: #c586c0;
@@ -80,6 +87,8 @@
   --color-vs-accent: var(--vs-accent);
   --color-vs-accent-fg: var(--vs-accent-fg);
   --color-vs-gutter: var(--vs-gutter);
+  --color-vs-terminal: var(--vs-terminal);
+  --color-vs-terminal-head: var(--vs-terminal-head);
 
   --color-syn-plain: var(--syn-plain);
   --color-syn-keyword: var(--syn-keyword);

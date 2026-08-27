@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
 import type { TreeNode } from "../types";
 import { barePath, resolveInside, safeRelativePath, workPath } from "./paths";
-import type { SessionRepo } from "./types";
+import type { ChangedFile, SessionRepo } from "./types";
 
 const run = promisify(execFile);
 
@@ -256,6 +256,28 @@ export async function listTree(id: string, rootName: string): Promise<TreeNode> 
   const work = workPath(id);
   const stdout = await git(work, ["ls-tree", "-r", "-l", "--full-tree", "HEAD"]);
   return buildTree(rootName, parseLsTree(stdout));
+}
+
+/**
+ * Files that differ between the seed commit and HEAD — everything the session's
+ * people and agents have changed. Rename/copy lines carry two paths; the new
+ * one is what the explorer opens.
+ */
+export async function listChangedFiles(id: string, baseSha: string): Promise<ChangedFile[]> {
+  const work = workPath(id);
+  const stdout = await git(work, ["diff", "--name-status", "-M", baseSha, "HEAD"]).catch(() => "");
+
+  const changes: ChangedFile[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const fields = line.split("\t");
+    const letter = (fields[0]?.[0] ?? "M").toUpperCase();
+    const status = (["A", "M", "D", "R", "C"].includes(letter) ? letter : "M") as ChangedFile["status"];
+    // Renames/copies are "R100\told\tnew"; plain changes are "M\tpath".
+    const path = fields.length >= 3 ? fields[fields.length - 1] : fields[1];
+    if (path) changes.push({ path, status });
+  }
+  return changes;
 }
 
 /** `<mode> SP <type> SP <sha> SP* <size> TAB <path>` */

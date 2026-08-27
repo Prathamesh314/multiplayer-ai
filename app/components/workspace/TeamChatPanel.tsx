@@ -13,7 +13,8 @@ type TeamChatPanelProps = {
   members: SessionMember[];
   /** Messages arriving over the event stream, newest last. */
   incoming: ChatMessage[];
-  onClose: () => void;
+  /** Omitted when docked as the permanent left sidebar, where there is no X. */
+  onClose?: () => void;
 };
 
 export function TeamChatPanel({ sessionId, members, incoming, onClose }: TeamChatPanelProps) {

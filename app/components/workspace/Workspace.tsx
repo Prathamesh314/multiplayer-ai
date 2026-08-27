@@ -25,7 +25,7 @@ import {
 } from "../../lib/session/remote";
 import { canEdit, type Session, type SessionRepo } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
-import { ActivityBar } from "./ActivityBar";
+import { FilesIcon, TerminalIcon } from "../icons";
 import { AiPanel } from "./AiPanel";
 import type { Caret } from "./CodeEditor";
 import type { Buffer } from "./EditorArea";
@@ -82,7 +82,6 @@ export function Workspace({ session }: { session: Session }) {
   // Enabled unconditionally: the roster and chat matter before a folder is up.
   const people = usePeople(session.id, true);
   /** Messages arriving over the stream, handed to the chat panel to merge. */
-  const [incoming, setIncoming] = useState<ChatMessage[]>([]);
 
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -96,14 +95,16 @@ export function Workspace({ session }: { session: Session }) {
   const resultRef = useRef(result);
   const caretRef = useRef(caret);
 
-  const [chatOpen, setChatOpen] = useState(true);
-  const [explorerOpen, setExplorerOpen] = useState(true);
-  const [aiOpen, setAiOpen] = useState(true);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [chatWidth, setChatWidth] = useState(250);
-  const [explorerWidth, setExplorerWidth] = useState(270);
-  const [aiWidth, setAiWidth] = useState(320);
+  // Three-column room: a team-chat sidebar (people talking to each other), the
+  // AI chat as the big middle, and the right stacks the file tree over the
+  // terminal. `showTree` picks the right-top view — the Files tree, or a file.
+  const [teamChatWidth, setTeamChatWidth] = useState(260);
+  const [showTree, setShowTree] = useState(true);
+  const [rightWidth, setRightWidth] = useState(520);
+  const [terminalOpen, setTerminalOpen] = useState(true);
   const [terminalHeight, setTerminalHeight] = useState(260);
+  // Live team-chat messages arriving over the session event stream.
+  const [incoming, setIncoming] = useState<ChatMessage[]>([]);
 
   /**
    * Typing has no turn boundary to commit on, so it gets a debounced one. This
@@ -354,6 +355,7 @@ export function Workspace({ session }: { session: Session }) {
 
   async function openFile(path: string) {
     setActivePath(path);
+    setShowTree(false); // Clicking a file swaps the right-top from the tree to the file.
     setCaret({ line: 1, column: 1 });
     setTabs((previous) => (previous.includes(path) ? previous : [...previous, path]));
 
@@ -392,7 +394,11 @@ export function Workspace({ session }: { session: Session }) {
 
     setTabs((previous) => {
       const next = previous.filter((candidate) => candidate !== path);
-      if (path === activePath) setActivePath(next.at(-1) ?? null);
+      if (path === activePath) {
+        setActivePath(next.at(-1) ?? null);
+        // Closing the last file returns the right-top to the Files tree.
+        if (next.length === 0) setShowTree(true);
+      }
       return next;
     });
     setBuffers((previous) => {
@@ -553,13 +559,7 @@ export function Workspace({ session }: { session: Session }) {
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
-        chatOpen={chatOpen}
-        explorerOpen={explorerOpen}
-        aiOpen={aiOpen}
         terminalOpen={terminalOpen}
-        onToggleChat={() => setChatOpen(!chatOpen)}
-        onToggleExplorer={() => setExplorerOpen(!explorerOpen)}
-        onToggleAi={() => setAiOpen(!aiOpen)}
         onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
         canOpenFolder={!repo}
@@ -577,104 +577,111 @@ export function Workspace({ session }: { session: Session }) {
       />
 
       <div className="flex min-h-0 flex-1">
-        <ActivityBar
-          chatOpen={chatOpen}
-          explorerOpen={explorerOpen}
-          aiOpen={aiOpen}
-          terminalOpen={terminalOpen}
-          onToggleChat={() => setChatOpen(!chatOpen)}
-          onToggleExplorer={() => setExplorerOpen(!explorerOpen)}
-          onToggleAi={() => setAiOpen(!aiOpen)}
-          onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
-        />
-
-        {chatOpen && (
+        {!repo ? (
+          // Before a repo exists: the folder upload / open flow fills the room.
+          <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
+            <WelcomeView
+              dragging={dragging}
+              scanning={scanning}
+              seeding={seeding}
+              progress={progress}
+              supportsPicker={supportsPicker}
+              error={error}
+              hasFolder={!!result}
+              hasRepo={!!repo}
+              onOpenPicker={openPicker}
+              onOpenInput={() => inputRef.current?.click()}
+            />
+          </div>
+        ) : (
           <>
-            <div style={{ width: chatWidth }} className="min-h-0 shrink-0">
-              <TeamChatPanel
-                sessionId={session.id}
-                members={people.members}
-                incoming={incoming}
-                onClose={() => setChatOpen(false)}
-              />
+            {/* LEFT sidebar: the room's team chat — people talking to each other. */}
+            <div
+              style={{ width: teamChatWidth }}
+              className="flex min-h-0 shrink-0 flex-col border-r border-vs-border"
+            >
+              <TeamChatPanel sessionId={session.id} members={people.members} incoming={incoming} />
             </div>
-            <Resizer width={chatWidth} onResize={setChatWidth} min={200} max={440} />
-          </>
-        )}
+            <Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={200} max={420} />
 
-        {explorerOpen && result && (
-          <>
-            <div style={{ width: explorerWidth }} className="min-h-0 shrink-0">
-              <ExplorerPanel
-                key={`${result.rootName}:${includeIgnored}`}
-                result={result}
-                activePath={activePath}
-                scanning={scanning}
-                includeIgnored={includeIgnored}
-                canRescan={!repo}
-                onToggleIgnored={toggleIgnored}
-                onOpenFile={openFile}
-                onOpenFolder={openPicker}
-                onClose={() => setExplorerOpen(false)}
-                editing={people.editing}
-              />
+            {/* MIDDLE: the room's AI chat — the big space. */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <AiPanel sessionId={session.id} canRun={!readOnly} />
             </div>
-            <Resizer width={explorerWidth} onResize={setExplorerWidth} min={200} max={520} />
-          </>
-        )}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <EditorArea
-            tabs={tabs}
-            activePath={activePath}
-            buffers={buffers}
-            onSelectTab={(path) => {
-              setActivePath(path);
-              setCaret({ line: 1, column: 1 });
-            }}
-            onCloseTab={closeTab}
-            onChange={editBuffer}
-            onCaretChange={trackCaret}
-            readOnly={readOnly}
-            conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
-            onReload={reloadFile}
-            editing={people.editing}
-            emptyState={
-              <WelcomeView
-                dragging={dragging}
-                scanning={scanning}
-                seeding={seeding}
-                progress={progress}
-                supportsPicker={supportsPicker}
-                error={error}
-                hasFolder={!!result}
-                hasRepo={!!repo}
-                onOpenPicker={openPicker}
-                onOpenInput={() => inputRef.current?.click()}
-              />
-            }
-          />
+            <Resizer width={rightWidth} onResize={setRightWidth} min={360} max={900} invert />
 
-          {terminalOpen && (
-            <>
-              <RowResizer height={terminalHeight} onResize={setTerminalHeight} />
-              <div style={{ height: terminalHeight }} className="flex min-h-0 shrink-0">
-                <TerminalPanel onClose={() => setTerminalOpen(false)} />
+            {/* RIGHT: the Files tree (and opened files) over the terminal. */}
+            <div
+              style={{ width: rightWidth }}
+              className="flex min-h-0 shrink-0 flex-col border-l border-vs-border"
+            >
+              <div className="flex min-h-0 flex-1 flex-col">
+                <EditorArea
+                  tabs={tabs}
+                  activePath={activePath}
+                  buffers={buffers}
+                  onSelectTab={(path) => {
+                    setActivePath(path);
+                    setShowTree(false);
+                    setCaret({ line: 1, column: 1 });
+                  }}
+                  onCloseTab={closeTab}
+                  onChange={editBuffer}
+                  onCaretChange={trackCaret}
+                  readOnly={readOnly}
+                  conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
+                  onReload={reloadFile}
+                  editing={people.editing}
+                  pinned={
+                    result
+                      ? {
+                          label: "Files",
+                          icon: <FilesIcon className="h-3.5 w-3.5" />,
+                          node: (
+                            <ExplorerPanel
+                              key={`${result.rootName}:${includeIgnored}`}
+                              result={result}
+                              activePath={activePath}
+                              scanning={scanning}
+                              includeIgnored={includeIgnored}
+                              canRescan={!repo}
+                              onToggleIgnored={toggleIgnored}
+                              onOpenFile={openFile}
+                              editing={people.editing}
+                              sessionId={repo ? session.id : undefined}
+                            />
+                          ),
+                        }
+                      : undefined
+                  }
+                  pinnedActive={showTree}
+                  onSelectPinned={() => setShowTree(true)}
+                  emptyState={
+                    <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-vs-muted">
+                      Pick a file from the Files tab to open it here.
+                    </div>
+                  }
+                />
               </div>
-            </>
-          )}
-        </div>
 
-        {aiOpen && (
-          <>
-            <Resizer width={aiWidth} onResize={setAiWidth} min={260} max={520} invert />
-            <div style={{ width: aiWidth }} className="min-h-0 shrink-0">
-              <AiPanel
-                sessionId={session.id}
-                activePath={activePath}
-                canRun={!readOnly}
-                onClose={() => setAiOpen(false)}
-              />
+              {terminalOpen ? (
+                <>
+                  <RowResizer height={terminalHeight} onResize={setTerminalHeight} />
+                  <div style={{ height: terminalHeight }} className="flex min-h-0 shrink-0">
+                    <TerminalPanel onClose={() => setTerminalOpen(false)} />
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTerminalOpen(true)}
+                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[11px] text-vs-muted transition hover:text-vs-fg"
+                >
+                  <TerminalIcon className="h-3.5 w-3.5" />
+                  Terminal
+                </button>
+              )}
             </div>
           </>
         )}

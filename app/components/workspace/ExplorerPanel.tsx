@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { treeToText } from "../../lib/ascii";
 import { humanBytes, humanCount, relativeTime } from "../../lib/format";
 import { shortRemote } from "../../lib/git";
 import { IGNORED_DIRS } from "../../lib/scan";
+import { fetchChanges } from "../../lib/session/remote";
+import type { ChangedFile } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
-import { AlertIcon, ChevronIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
+import { AlertIcon, ChevronIcon, FileIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
+import { baseName } from "./EditorArea";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
 import { PanelHeader } from "./TeamChatPanel";
 
@@ -19,9 +22,10 @@ type ExplorerPanelProps = {
   canRescan: boolean;
   onToggleIgnored: (value: boolean) => void;
   onOpenFile: (path: string) => void;
-  onOpenFolder: () => void;
-  onClose: () => void;
+  onClose?: () => void;
   editing: Map<string, import("./usePeople").FilePresence[]>;
+  /** When set, an "All files / Changes" switcher backed by this session's diff. */
+  sessionId?: string;
 };
 
 export function ExplorerPanel({
@@ -32,12 +36,15 @@ export function ExplorerPanel({
   canRescan,
   onToggleIgnored,
   onOpenFile,
-  onOpenFolder,
   onClose,
   editing,
+  sessionId,
 }: ExplorerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
+  const [view, setView] = useState<"files" | "changes">("files");
+  const [changes, setChanges] = useState<ChangedFile[] | null>(null);
+  const [loadingChanges, setLoadingChanges] = useState(false);
 
   function toggle(path: string) {
     setExpanded((previous) => {
@@ -48,53 +55,101 @@ export function ExplorerPanel({
     });
   }
 
+  const loadChanges = useCallback(async () => {
+    if (!sessionId) return;
+    setLoadingChanges(true);
+    try {
+      setChanges(await fetchChanges(sessionId));
+    } finally {
+      setLoadingChanges(false);
+    }
+  }, [sessionId]);
+
+  // The diff is fetched when the Changes tab is opened and on Refresh, rather
+  // than in an effect — the tree can change underneath it, so Refresh is there.
+  function showChanges() {
+    setView("changes");
+    void loadChanges();
+  }
+
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
       <PanelHeader title="Explorer" onClose={onClose}>
-        <button
-          type="button"
-          onClick={() => setExpanded(new Set())}
-          className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-        >
-          Collapse
-        </button>
-        <button
-          type="button"
-          onClick={onOpenFolder}
-          className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-        >
-          Open
-        </button>
+        {view === "files" && (
+          <button
+            type="button"
+            onClick={() => setExpanded(new Set())}
+            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            Collapse
+          </button>
+        )}
+        {view === "changes" && (
+          <button
+            type="button"
+            onClick={() => void loadChanges()}
+            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          >
+            Refresh
+          </button>
+        )}
       </PanelHeader>
 
-      <div className="shrink-0 px-2 py-2">
-        <label className="relative flex items-center">
-          <SearchIcon className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-vs-muted" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter files"
-            className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-2 text-xs text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
-          />
-        </label>
-      </div>
+      {sessionId && (
+        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-1.5">
+          <TabButton active={view === "files"} onClick={() => setView("files")}>
+            All files
+          </TabButton>
+          <TabButton active={view === "changes"} onClick={showChanges}>
+            Changes
+            {changes && changes.length > 0 && (
+              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[10px] text-vs-accent">
+                {changes.length}
+              </span>
+            )}
+          </TabButton>
+        </div>
+      )}
 
-      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-vs-fg">
-        <span className="truncate">{result.rootName}</span>
-        {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
-      </div>
+      {view === "files" ? (
+        <>
+          <div className="shrink-0 px-2 py-2">
+            <label className="relative flex items-center">
+              <SearchIcon className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-vs-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filter files"
+                className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-2 text-xs text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
+              />
+            </label>
+          </div>
 
-      <div className="vs-scroll min-h-0 flex-1 overflow-auto">
-        <ExplorerTree
-          root={result.root}
+          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-vs-fg">
+            <span className="truncate">{result.rootName}</span>
+            {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
+          </div>
+
+          <div className="vs-scroll min-h-0 flex-1 overflow-auto">
+            <ExplorerTree
+              root={result.root}
+              activePath={activePath}
+              query={query}
+              expanded={expanded}
+              onToggle={toggle}
+              onOpenFile={onOpenFile}
+              editing={editing}
+            />
+          </div>
+        </>
+      ) : (
+        <ChangesList
+          changes={changes}
+          loading={loadingChanges}
           activePath={activePath}
-          query={query}
-          expanded={expanded}
-          onToggle={toggle}
           onOpenFile={onOpenFile}
-          editing={editing}
         />
-      </div>
+      )}
 
       <RepoInfo
         result={result}
@@ -103,6 +158,96 @@ export function ExplorerPanel({
         onToggleIgnored={onToggleIgnored}
       />
     </aside>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center rounded px-2 py-1 text-xs transition ${
+        active ? "bg-vs-hover font-medium text-vs-fg" : "text-vs-muted hover:text-vs-fg"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+const STATUS_META: Record<ChangedFile["status"], { label: string; className: string }> = {
+  A: { label: "A", className: "text-emerald-500" },
+  M: { label: "M", className: "text-amber-500" },
+  D: { label: "D", className: "text-red-500" },
+  R: { label: "R", className: "text-vs-accent" },
+  C: { label: "C", className: "text-vs-accent" },
+};
+
+function ChangesList({
+  changes,
+  loading,
+  activePath,
+  onOpenFile,
+}: {
+  changes: ChangedFile[] | null;
+  loading: boolean;
+  activePath: string | null;
+  onOpenFile: (path: string) => void;
+}) {
+  if (loading && changes === null) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-vs-muted">
+        <SpinnerIcon className="h-3.5 w-3.5" />
+        Reading changes…
+      </div>
+    );
+  }
+
+  if (!changes || changes.length === 0) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-vs-muted">
+        No changes since the session started.
+      </div>
+    );
+  }
+
+  return (
+    <div className="vs-scroll min-h-0 flex-1 overflow-auto py-1">
+      {changes.map((change) => {
+        const meta = STATUS_META[change.status];
+        const deleted = change.status === "D";
+        const dir = change.path.slice(0, change.path.length - baseName(change.path).length);
+        return (
+          <button
+            key={change.path}
+            type="button"
+            disabled={deleted}
+            onClick={() => onOpenFile(change.path)}
+            title={change.path}
+            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] transition ${
+              change.path === activePath ? "bg-vs-active" : "hover:bg-vs-hover"
+            } ${deleted ? "cursor-default opacity-60" : ""}`}
+          >
+            <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${meta.className}`}>
+              {meta.label}
+            </span>
+            <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
+            <span className={`min-w-0 flex-1 truncate ${deleted ? "line-through" : "text-vs-fg"}`}>
+              <span>{baseName(change.path)}</span>
+              {dir && <span className="text-vs-muted"> · {dir.replace(/\/$/, "")}</span>}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
