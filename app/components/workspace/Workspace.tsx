@@ -26,6 +26,7 @@ import {
 import { canEdit, type Session, type SessionRepo } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
 import { FilesIcon, TerminalIcon } from "../icons";
+import type { AgentRun } from "../../lib/ai/runs";
 import { AiPanel } from "./AiPanel";
 import type { Caret } from "./CodeEditor";
 import type { Buffer } from "./EditorArea";
@@ -35,7 +36,8 @@ import { InviteDialog } from "./InviteDialog";
 import { Resizer } from "./Resizer";
 import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
-import { TeamChatPanel } from "./TeamChatPanel";
+import { RoomSidebar } from "./RoomSidebar";
+import { useRoomRuns } from "./useRoomRuns";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
@@ -105,6 +107,9 @@ export function Workspace({ session }: { session: Session }) {
   const [terminalHeight, setTerminalHeight] = useState(260);
   // Live team-chat messages arriving over the session event stream.
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);
+  // The room's agent runs, and which one is open in the chat (null = new run).
+  const { runs, refresh: refreshRuns } = useRoomRuns(session.id);
+  const [enteredRun, setEnteredRun] = useState<AgentRun | null>(null);
 
   /**
    * Typing has no turn boundary to commit on, so it gets a debounced one. This
@@ -595,18 +600,34 @@ export function Workspace({ session }: { session: Session }) {
           </div>
         ) : (
           <>
-            {/* LEFT sidebar: the room's team chat — people talking to each other. */}
+            {/* LEFT sidebar: team chat and the agent runs, browsed by person. */}
             <div
               style={{ width: teamChatWidth }}
               className="flex min-h-0 shrink-0 flex-col border-r border-vs-border"
             >
-              <TeamChatPanel sessionId={session.id} members={people.members} incoming={incoming} />
+              <RoomSidebar
+                sessionId={session.id}
+                members={people.members}
+                incoming={incoming}
+                runs={runs}
+                enteredRunId={enteredRun?.id ?? null}
+                onEnter={setEnteredRun}
+                onNewRun={() => setEnteredRun(null)}
+                onFork={() => setEnteredRun(null)}
+              />
             </div>
-            <Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={200} max={420} />
+            <Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={460} />
 
             {/* MIDDLE: the room's AI chat — the big space. */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <AiPanel sessionId={session.id} canRun={!readOnly} />
+              <AiPanel
+                sessionId={session.id}
+                canRun={!readOnly}
+                members={people.members}
+                entered={enteredRun}
+                onRunsChanged={refreshRuns}
+                onNewRun={() => setEnteredRun(null)}
+              />
             </div>
 
             <Resizer width={rightWidth} onResize={setRightWidth} min={360} max={900} invert />
