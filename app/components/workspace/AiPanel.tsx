@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import { fetchAgents, runAgent, type RunHandle } from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
-import { fetchRun, listRuns } from "../../lib/ai/runs-client";
-import { relativeTime } from "../../lib/format";
+import { fetchRun } from "../../lib/ai/runs-client";
+import { openSessionStream } from "../../lib/events/client";
+import { colorOf, initialsOf } from "../../lib/people";
+import type { SessionMember } from "../../lib/session/types";
 import {
   AlertIcon,
   CheckIcon,
-  ChevronIcon,
-  CloseIcon,
+  EyeIcon,
+  GitBranchIcon,
   PlusIcon,
   SparkleIcon,
   SpinnerIcon,
@@ -22,6 +24,14 @@ type AiPanelProps = {
   sessionId: string;
   /** False for viewers: running an agent edits files. */
   canRun: boolean;
+  /** Room roster, for the "watching" cluster in the header. */
+  members: SessionMember[];
+  /** The run whose conversation is shown; null = composing a fresh one. */
+  entered: AgentRun | null;
+  /** Reload the room's runs after this tab starts one. */
+  onRunsChanged: () => void;
+  /** Clear the entered run to compose a fresh one. */
+  onNewRun: () => void;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
   onClose?: () => void;
 };
@@ -37,7 +47,15 @@ type Turn = {
   streaming?: boolean;
 };
 
-export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
+export function AiPanel({
+  sessionId,
+  canRun,
+  members,
+  entered,
+  onRunsChanged,
+  onNewRun,
+  onClose,
+}: AiPanelProps) {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [serverCanRun, setServerCanRun] = useState(true);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -56,14 +74,116 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
   const turnSeq = useRef(0);
   const uid = () => `t${(turnSeq.current += 1)}`;
 
-  // Every run in this room, so a teammate's run can be watched or joined. The
-  // run currently loaded into the conversation — null while composing a fresh one.
-  const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [viewing, setViewing] = useState<AgentRun | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const myId = members.find((member) => member.isSelf)?.userId ?? null;
+  // Whether the run in view is the current user's (or a fresh compose).
+  const enteredIsMine = !entered || entered.startedBy === myId;
 
+  // Refs the live event handlers read, so the one-time subscription below never
+  // closes over stale state.
+  const enteredRef = useRef<AgentRun | null>(null);
+  const localRunIdRef = useRef<string | null>(null); // the run this tab is streaming
+  const liveTurnIdRef = useRef<string | null>(null); // the agent turn being followed
   useEffect(() => {
-    void listRuns(sessionId).then(setRuns).catch(() => {});
+    enteredRef.current = entered;
+  }, [entered]);
+
+  /** Load a run's stored conversation into the panel. */
+  async function loadRun(target: AgentRun) {
+    setError(null);
+    liveTurnIdRef.current = null;
+    const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
+    setTurns([]);
+    try {
+      const { messages } = await fetchRun(sessionId, target.id);
+      setTurns(
+        messages.map((message) => {
+          // "tool" turns are the agent's own machinery; show them as agent output.
+          const role: Turn["role"] = message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
+          return {
+            id: uid(),
+            role,
+            text: message.body,
+            author: message.authorName ?? null,
+            agentName: role === "agent" ? agentName : null,
+          };
+        }),
+      );
+    } catch {
+      setError("Could not load that run.");
+    }
+  }
+
+  /** Append a live output chunk to the agent turn of a run we are following. */
+  function appendFollowChunk(chunk: string) {
+    setTurns((prev) => {
+      const next = [...prev];
+      if (liveTurnIdRef.current === null) {
+        const tid = uid();
+        liveTurnIdRef.current = tid;
+        next.push({
+          id: tid,
+          role: "agent",
+          text: chunk,
+          streaming: true,
+          agentName: enteredRef.current?.agentId ?? "Agent",
+        });
+      } else {
+        const index = next.findIndex((turn) => turn.id === liveTurnIdRef.current);
+        if (index >= 0) next[index] = { ...next[index], text: next[index].text + chunk };
+      }
+      return next;
+    });
+  }
+
+  // The conversation follows whichever run is entered: load its stored turns,
+  // or clear to compose a fresh one. Deferred so no state is set in the effect body.
+  useEffect(() => {
+    liveTurnIdRef.current = null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (entered) void loadRun(entered);
+      else setTurns([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entered?.id]);
+
+  // Realtime: follow the entered run as its output streams from whoever is
+  // running it. (The run list itself is refreshed by the room, not here.)
+  useEffect(() => {
+    const stream = openSessionStream(sessionId, {
+      onRunOutput: (event) => {
+        if (event.runId === localRunIdRef.current) return; // our own run streams locally
+        if (enteredRef.current?.id !== event.runId) return; // not the run in view
+        appendFollowChunk(event.chunk);
+      },
+      onRunTurn: (event) => {
+        if (event.runId === localRunIdRef.current) return;
+        if (enteredRef.current?.id !== event.runId) return;
+        // A prompt from the runner shows immediately; agent output arrives via
+        // run.output and is reconciled on finish, so it is not appended here.
+        if (event.role === "user") {
+          setTurns((prev) => [
+            ...prev,
+            { id: uid(), role: "user", text: event.body, author: event.authorName ?? "Prompt" },
+          ]);
+        }
+      },
+      onRunFinished: (event) => {
+        // Reload the entered run so its complete, stored output replaces the
+        // live tail (which may have started mid-run).
+        const current = enteredRef.current;
+        if (current?.id === event.runId && event.runId !== localRunIdRef.current) {
+          liveTurnIdRef.current = null;
+          void loadRun(current);
+        }
+      },
+    });
+    return () => stream.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   useEffect(() => {
@@ -96,10 +216,6 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
     setRefreshing(false);
   }
 
-  function refreshRuns() {
-    void listRuns(sessionId).then(setRuns).catch(() => {});
-  }
-
   // Switching provider clears the model/effort picks, whose options differ per agent.
   function selectProvider(id: string) {
     setConnected(id);
@@ -112,14 +228,17 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
     if (!connected || running) return;
     setRunning(true);
     setError(null);
-    setShowHistory(false);
 
-    // Continue the run being watched (join-as-editor), or open a fresh one.
-    const continuing = viewing && viewing.status !== "completed" ? viewing.id : undefined;
-    const agentId = continuing ? viewing!.agentId : connected;
+    // Continue only your own unfinished run; a message on someone else's run
+    // forks into a fresh run of your own rather than editing theirs.
+    const continuing =
+      entered && entered.status !== "completed" && entered.startedBy === myId ? entered.id : undefined;
+    const agentId = continuing ? entered!.agentId : connected;
     const agentName = agents?.find((a) => a.id === agentId)?.name ?? agentId;
 
-    setTurns((prev) => [...prev, { id: uid(), role: "user", text: prompt, author: "You" }]);
+    // Continuing appends to the entered run; a fresh run starts a clean thread.
+    const userTurn: Turn = { id: uid(), role: "user", text: prompt, author: "You" };
+    setTurns((prev) => (continuing ? [...prev, userTurn] : [userTurn]));
 
     // The agent's turn is created lazily on its first byte, so an agent that
     // exits without output does not leave an empty bubble.
@@ -130,7 +249,8 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
       {
         onEvent: (event) => {
           if (event.t === "start") {
-            refreshRuns();
+            localRunIdRef.current = event.runId; // so the room broadcast of our own run is ignored
+            onRunsChanged(); // the new run shows in the sidebar
           } else if (event.t === "out" || event.t === "err") {
             setTurns((prev) => {
               const next = [...prev];
@@ -161,44 +281,11 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
         onError: setError,
         onDone: () => {
           setRunning(false);
-          refreshRuns();
+          localRunIdRef.current = null;
+          onRunsChanged();
         },
       },
     );
-  }
-
-  /** Load a run's stored conversation into the panel — the "watch" action. */
-  async function watch(target: AgentRun) {
-    setViewing(target);
-    setError(null);
-    setShowHistory(false);
-    const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
-    setTurns([]);
-    try {
-      const { messages } = await fetchRun(sessionId, target.id);
-      setTurns(
-        messages.map((message) => {
-          // "tool" turns are the agent's own machinery; show them as agent output.
-          const role: Turn["role"] = message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
-          return {
-            id: uid(),
-            role,
-            text: message.body,
-            author: message.authorName ?? null,
-            agentName: role === "agent" ? agentName : null,
-          };
-        }),
-      );
-    } catch {
-      setError("Could not load that run.");
-    }
-  }
-
-  function newRun() {
-    setViewing(null);
-    setTurns([]);
-    setError(null);
-    setShowHistory(false);
   }
 
   const active = agents?.find((agent) => agent.id === connected) ?? null;
@@ -239,28 +326,29 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader title="AI Agents" onClose={onClose}>
-        {runs.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowHistory((shown) => !shown)}
-            className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide transition hover:bg-vs-hover hover:text-vs-fg ${
-              showHistory ? "text-vs-accent" : "text-vs-muted"
-            }`}
-          >
-            History
-          </button>
-        )}
-        {(hasConversation || viewing) && (
-          <button
-            type="button"
-            onClick={newRun}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            <PlusIcon className="h-3 w-3" />
-            New
-          </button>
-        )}
+      <PanelHeader title={entered ? entered.title ?? "Agent run" : "New chat"} onClose={onClose}>
+        {entered &&
+          (enteredIsMine ? (
+            <button
+              type="button"
+              onClick={onNewRun}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            >
+              <PlusIcon className="h-3 w-3" />
+              New
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onNewRun}
+              title={`Branch off ${entered.startedByName}'s session into your own run`}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            >
+              <GitBranchIcon className="h-3 w-3" />
+              Fork
+            </button>
+          ))}
+        <WatchingCluster members={members} />
       </PanelHeader>
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
@@ -284,15 +372,8 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
         <Note tone="warn">You have read access here, and running an agent edits files.</Note>
       )}
 
-      <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto">
-        {showHistory ? (
-          <HistoryList
-            runs={runs}
-            viewingId={viewing?.id ?? null}
-            onWatch={watch}
-            onClose={() => setShowHistory(false)}
-          />
-        ) : hasConversation ? (
+      <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {hasConversation ? (
           <Conversation turns={turns} />
         ) : (
           <EmptyState
@@ -329,8 +410,8 @@ export function AiPanel({ sessionId, canRun, onClose }: AiPanelProps) {
           placeholder={
             !ready
               ? "Connect an agent first…"
-              : viewing && viewing.status !== "completed"
-                ? `Join ${viewing.startedByName}'s run…`
+              : entered && !enteredIsMine
+                ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
                 : `Message ${active!.name}…`
           }
           onSend={ask}
@@ -463,7 +544,7 @@ function AgentSelector({
 
 function Conversation({ turns }: { turns: Turn[] }) {
   return (
-    <div className="flex flex-col gap-4 p-3">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-4">
       {turns.map((turn) =>
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />
@@ -478,25 +559,25 @@ function Conversation({ turns }: { turns: Turn[] }) {
 function TurnBubble({ turn }: { turn: Turn }) {
   const isUser = turn.role === "user";
   return (
-    <article className="flex gap-2.5">
+    <article className="flex min-w-0 gap-3">
       <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
           isUser ? "bg-vs-accent text-vs-accent-fg" : "bg-vs-accent/15 text-vs-accent"
         }`}
       >
-        {isUser ? "You"[0] : <SparkleIcon className="h-3.5 w-3.5" />}
+        {isUser ? (turn.author ?? "You").slice(0, 1).toUpperCase() : <SparkleIcon className="h-4 w-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <header className="mb-1 flex items-center gap-2">
-          <span className="text-xs font-semibold text-vs-fg">
+          <span className="truncate text-[13px] font-semibold text-vs-fg">
             {isUser ? turn.author ?? "You" : turn.agentName ?? "Agent"}
           </span>
-          {turn.streaming && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
+          {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
         </header>
         {isUser ? (
-          <p className="whitespace-pre-wrap break-words rounded-lg rounded-tl-sm bg-vs-hover px-3 py-2 text-[13px] leading-5 text-vs-fg">
+          <div className="w-fit max-w-full whitespace-pre-wrap break-words rounded-xl rounded-tl-sm bg-vs-hover px-3.5 py-2 text-[13px] leading-6 text-vs-fg">
             {turn.text}
-          </p>
+          </div>
         ) : (
           <AgentBody text={turn.text} streaming={turn.streaming} />
         )}
@@ -523,7 +604,7 @@ function AgentBody({ text, streaming }: { text: string; streaming?: boolean }) {
             {segment.text}
           </pre>
         ) : (
-          <p key={index} className="whitespace-pre-wrap break-words">
+          <p key={index} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
             {segment.text}
             {streaming && index === segments.length - 1 && (
               <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-vs-accent" />
@@ -547,12 +628,21 @@ function splitFences(text: string): { code: boolean; text: string }[] {
 }
 
 function SystemLine({ text }: { text: string }) {
+  // Short run boundaries read as a centered divider; a long stderr dump is shown
+  // as a wrapped, muted note so it never blows out the panel width.
+  if (text.length <= 52 && !text.includes("\n")) {
+    return (
+      <div className="flex items-center gap-2 px-1">
+        <span className="h-px flex-1 bg-vs-border" />
+        <span className="shrink-0 text-[10px] text-vs-muted">{text}</span>
+        <span className="h-px flex-1 bg-vs-border" />
+      </div>
+    );
+  }
   return (
-    <div className="flex items-center gap-2 px-1">
-      <span className="h-px flex-1 bg-vs-border" />
-      <span className="shrink-0 text-[10px] text-vs-muted">{text}</span>
-      <span className="h-px flex-1 bg-vs-border" />
-    </div>
+    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md bg-vs-hover/50 px-3 py-2 font-mono text-[11px] leading-5 text-vs-muted">
+      {text}
+    </p>
   );
 }
 
@@ -608,57 +698,37 @@ function EmptyState({
   );
 }
 
-function HistoryList({
-  runs,
-  viewingId,
-  onWatch,
-  onClose,
-}: {
-  runs: AgentRun[];
-  viewingId: string | null;
-  onWatch: (run: AgentRun) => void;
-  onClose: () => void;
-}) {
+// ---------------------------------------------------------------------------
+// Who is watching
+// ---------------------------------------------------------------------------
+
+/** The people currently in the room — "who is watching". */
+function WatchingCluster({ members }: { members: SessionMember[] }) {
+  const online = members.filter((member) => member.online);
+  if (online.length === 0) return null;
+
+  const shown = online.slice(0, 4);
+  const extra = online.length - shown.length;
+
   return (
-    <div className="p-2">
-      <div className="flex items-center justify-between px-1 pb-1.5">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-vs-muted">
-          Recent runs
-        </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          aria-label="Close history"
-        >
-          <CloseIcon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <ul className="space-y-0.5">
-        {runs.map((r) => (
-          <li key={r.id}>
-            <button
-              type="button"
-              onClick={() => onWatch(r)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition ${
-                viewingId === r.id ? "bg-vs-accent/10" : "hover:bg-vs-hover"
-              }`}
+    <span className="flex items-center gap-1.5" title={`${online.length} watching this room`}>
+      <EyeIcon className="h-3.5 w-3.5 text-vs-muted" />
+      <span className="flex -space-x-1.5">
+        {shown.map((member) => {
+          const color = colorOf(member.userId);
+          return (
+            <span
+              key={member.userId}
+              title={member.displayName}
+              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold ring-2 ring-vs-panel ${color.chip}`}
             >
-              <RunStatusDot status={r.status} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12px] text-vs-fg">
-                  {r.title ?? `${r.agentId} run`}
-                </span>
-                <span className="block truncate text-[10px] text-vs-muted">
-                  {r.startedByName} · {r.agentId} · {relativeTime(Math.floor(r.createdAt / 1000))}
-                </span>
-              </span>
-              <ChevronIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+              {initialsOf(member.displayName)}
+            </span>
+          );
+        })}
+      </span>
+      {extra > 0 && <span className="text-[10px] text-vs-muted">+{extra}</span>}
+    </span>
   );
 }
 
@@ -750,18 +820,6 @@ function CopyLine({ command }: { command: string }) {
       )}
     </button>
   );
-}
-
-function RunStatusDot({ status }: { status: AgentRun["status"] }) {
-  const color =
-    status === "running"
-      ? "bg-amber-500 animate-pulse"
-      : status === "completed"
-        ? "bg-emerald-500"
-        : status === "failed"
-          ? "bg-red-500"
-          : "bg-vs-muted";
-  return <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} title={status} />;
 }
 
 function StatusDot({ ok }: { ok: boolean }) {

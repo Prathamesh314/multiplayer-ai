@@ -15,9 +15,17 @@ type TeamChatPanelProps = {
   incoming: ChatMessage[];
   /** Omitted when docked as the permanent left sidebar, where there is no X. */
   onClose?: () => void;
+  /** Hides the panel's own header when it sits under a section header. */
+  embedded?: boolean;
 };
 
-export function TeamChatPanel({ sessionId, members, incoming, onClose }: TeamChatPanelProps) {
+export function TeamChatPanel({
+  sessionId,
+  members,
+  incoming,
+  onClose,
+  embedded,
+}: TeamChatPanelProps) {
   const [history, setHistory] = useState<ChatMessage[] | null>(null);
   /** Sent from this tab: optimistic first, then the stored version. */
   const [local, setLocal] = useState<ChatMessage[]>([]);
@@ -114,9 +122,11 @@ export function TeamChatPanel({ sessionId, members, incoming, onClose }: TeamCha
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader title="Session chat" onClose={onClose}>
-        <PeopleStack members={members} />
-      </PanelHeader>
+      {!embedded && (
+        <PanelHeader title="Session chat" onClose={onClose}>
+          <PeopleStack members={members} />
+        </PanelHeader>
+      )}
 
       <div
         ref={scroller}

@@ -3,6 +3,10 @@ import type {
   FileEditingEvent,
   FileSavedEvent,
   MessageCreatedEvent,
+  RunFinishedEvent,
+  RunOutputEvent,
+  RunStartedEvent,
+  RunTurnEvent,
   SessionEvent,
 } from "./types";
 
@@ -14,6 +18,14 @@ export type SessionStreamOptions = {
   /** A chat message from anyone, including this account's other tabs. */
   onMessage?: (event: MessageCreatedEvent) => void;
   onMembersChanged?: () => void;
+  /** A new agent run opened in the room. */
+  onRunStarted?: (event: RunStartedEvent) => void;
+  /** A live output chunk from a run in progress. */
+  onRunOutput?: (event: RunOutputEvent) => void;
+  /** A stored turn (prompt or consolidated output) appended to a run. */
+  onRunTurn?: (event: RunTurnEvent) => void;
+  /** A run reached a terminal state. */
+  onRunFinished?: (event: RunFinishedEvent) => void;
   /** Connection state, for showing whether live updates are actually flowing. */
   onStatus?: (connected: boolean) => void;
 };
@@ -60,6 +72,26 @@ export function openSessionStream(
   });
 
   source.addEventListener("members.changed", () => options.onMembersChanged?.());
+
+  source.addEventListener("run.started", (message) => {
+    const event = parse(message);
+    if (event?.type === "run.started") options.onRunStarted?.(event);
+  });
+
+  source.addEventListener("run.output", (message) => {
+    const event = parse(message);
+    if (event?.type === "run.output") options.onRunOutput?.(event);
+  });
+
+  source.addEventListener("run.turn", (message) => {
+    const event = parse(message);
+    if (event?.type === "run.turn") options.onRunTurn?.(event);
+  });
+
+  source.addEventListener("run.finished", (message) => {
+    const event = parse(message);
+    if (event?.type === "run.finished") options.onRunFinished?.(event);
+  });
 
   source.onopen = () => options.onStatus?.(true);
   source.onerror = () => {

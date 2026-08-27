@@ -22,7 +22,11 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
   const roster = await membersOf(id);
   const online = new Set(await (await presence()).onlineInSession(id));
 
-  const members = roster.map((member) => ({ ...member, online: online.has(member.userId) }));
+  const members = roster.map((member) => ({
+    ...member,
+    online: online.has(member.userId),
+    isSelf: member.userId === result.user.id,
+  }));
 
   return Response.json({ members } satisfies MembersResponse, {
     headers: { "cache-control": "no-store" },

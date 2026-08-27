@@ -90,6 +90,8 @@ export type SessionMember = {
   lastSeenAt: number | null;
   /** From Redis, not the database. */
   online: boolean;
+  /** True for the account making the request, so the UI can label it "Me". */
+  isSelf?: boolean;
 };
 
 export type MembersResponse = { members: SessionMember[] };
