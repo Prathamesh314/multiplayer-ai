@@ -648,6 +648,7 @@ export function Workspace({ session }: { session: Session }) {
                 supportsPicker={supportsPicker}
                 error={error}
                 hasFolder={!!result}
+                hasRepo={!!repo}
                 onOpenPicker={openPicker}
                 onOpenInput={() => inputRef.current?.click()}
               />
