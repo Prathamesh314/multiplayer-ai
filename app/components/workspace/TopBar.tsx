@@ -1,14 +1,7 @@
 "use client";
 
 import type { Session, SessionMember } from "../../lib/session/types";
-import {
-  ChatIcon,
-  GitBranchIcon,
-  LayoutIcon,
-  SparkleIcon,
-  TerminalIcon,
-  UserPlusIcon,
-} from "../icons";
+import { GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons";
 import { PeopleStack } from "./People";
 
 type TopBarProps = {
@@ -18,13 +11,7 @@ type TopBarProps = {
   folderName: string | null;
   branch: string | null;
   isGit: boolean;
-  chatOpen: boolean;
-  explorerOpen: boolean;
-  aiOpen: boolean;
   terminalOpen: boolean;
-  onToggleChat: () => void;
-  onToggleExplorer: () => void;
-  onToggleAi: () => void;
   onToggleTerminal: () => void;
   onOpenFolder: () => void;
   /** False once this session owns a repo — a session is seeded exactly once. */
@@ -39,13 +26,7 @@ export function TopBar({
   folderName,
   branch,
   isGit,
-  chatOpen,
-  explorerOpen,
-  aiOpen,
   terminalOpen,
-  onToggleChat,
-  onToggleExplorer,
-  onToggleAi,
   onToggleTerminal,
   onOpenFolder,
   canOpenFolder,
@@ -106,21 +87,12 @@ export function TopBar({
       </button>
 
       <div className="flex items-center gap-0.5">
-        <ToggleButton label="Toggle team chat" active={chatOpen} onClick={onToggleChat}>
-          <ChatIcon className="h-4 w-4" />
-        </ToggleButton>
-        <ToggleButton label="Toggle explorer" active={explorerOpen} onClick={onToggleExplorer}>
-          <LayoutIcon side="left" className="h-4 w-4" />
-        </ToggleButton>
         <ToggleButton
           label="Toggle terminal (Ctrl+Shift+Z)"
           active={terminalOpen}
           onClick={onToggleTerminal}
         >
           <TerminalIcon className="h-4 w-4" />
-        </ToggleButton>
-        <ToggleButton label="Toggle AI panel" active={aiOpen} onClick={onToggleAi}>
-          <LayoutIcon side="right" className="h-4 w-4" />
         </ToggleButton>
       </div>
     </header>

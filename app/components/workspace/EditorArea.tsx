@@ -35,6 +35,13 @@ type EditorAreaProps = {
   onReload: (path: string) => void;
   /** Repo path → who is typing in it right now. */
   editing: Map<string, FilePresence[]>;
+  /**
+   * A pinned first tab (the file tree) shown before the file tabs, so the tree
+   * and any opened files share one tabbed pane. Undefined when there is no tree.
+   */
+  pinned?: { label: string; icon: React.ReactNode; node: React.ReactNode };
+  pinnedActive: boolean;
+  onSelectPinned: () => void;
 };
 
 export function EditorArea({
@@ -50,20 +57,44 @@ export function EditorArea({
   conflictAuthor,
   onReload,
   editing,
+  pinned,
+  pinnedActive,
+  onSelectPinned,
 }: EditorAreaProps) {
   const active = activePath ? buffers.get(activePath) : undefined;
+  const showPinned = !!pinned && pinnedActive;
+  const showFile = !showPinned && !!activePath;
 
-  if (tabs.length === 0) {
+  // Without a pinned tab and with no files open, the whole area is the empty state.
+  if (!pinned && tabs.length === 0) {
     return <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">{emptyState}</div>;
   }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-vs-editor">
       <div className="vs-scroll flex shrink-0 overflow-x-auto border-b border-vs-border bg-vs-chrome">
+        {pinned && (
+          <div
+            className={`flex shrink-0 items-center border-r border-vs-border ${
+              showPinned
+                ? "border-t-2 border-t-vs-accent bg-vs-editor text-vs-fg"
+                : "border-t-2 border-t-transparent text-vs-muted hover:bg-vs-hover"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={onSelectPinned}
+              className="flex items-center gap-2 px-3 py-1.5 text-[13px]"
+            >
+              {pinned.icon}
+              <span>{pinned.label}</span>
+            </button>
+          </div>
+        )}
         {tabs.map((path) => {
           const buffer = buffers.get(path);
           const dirty = !!buffer && !buffer.loading && buffer.text !== buffer.original;
-          const isActive = path === activePath;
+          const isActive = !showPinned && path === activePath;
 
           return (
             <div
@@ -98,7 +129,13 @@ export function EditorArea({
         })}
       </div>
 
-      {activePath && (
+      {showPinned && <div className="flex min-h-0 flex-1 flex-col">{pinned!.node}</div>}
+
+      {!showPinned && !showFile && (
+        <div className="flex min-h-0 flex-1 flex-col">{emptyState}</div>
+      )}
+
+      {showFile && activePath && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-vs-border px-4 py-1 text-[11px] text-vs-muted">
           {activePath.split("/").map((segment, index, all) => (
             <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
@@ -109,7 +146,7 @@ export function EditorArea({
         </div>
       )}
 
-      {activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
+      {showFile && activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
         <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[11px] text-vs-muted">
           <EditingBadge people={editing.get(activePath) ?? []} />
           <span>
@@ -119,7 +156,8 @@ export function EditorArea({
         </p>
       )}
 
-      {!active || active.loading ? (
+      {showFile &&
+        (!active || active.loading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-vs-muted">
           <SpinnerIcon className="h-4 w-4" />
           Opening file…
@@ -164,7 +202,7 @@ export function EditorArea({
             onCaretChange={onCaretChange}
           />
         </>
-      )}
+      ))}
     </div>
   );
 }

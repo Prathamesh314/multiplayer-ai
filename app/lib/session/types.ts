@@ -170,6 +170,15 @@ export type FileResponse = {
   binary: boolean;
 };
 
+/** A file that differs from the session's seed commit. Status is git's letter. */
+export type ChangedFile = {
+  path: string;
+  /** "A" added, "M" modified, "D" deleted, "R" renamed, "C" copied. */
+  status: "A" | "M" | "D" | "R" | "C";
+};
+
+export type ChangesResponse = { changes: ChangedFile[] };
+
 export type SaveFileRequest = {
   path: string;
   text: string;
