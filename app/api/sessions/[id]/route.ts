@@ -1,5 +1,11 @@
 import { access, denied, forbidden } from "../../../lib/session/auth";
-import { removeMember, renameSession, setPinned } from "../../../lib/session/store";
+import {
+  addMember,
+  removeMember,
+  renameSession,
+  setPinned,
+  setVisibility,
+} from "../../../lib/session/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,9 +29,9 @@ export async function PATCH(request: Request, context: RouteContext<"/api/sessio
     return forbidden("Only the session owner can change its settings.");
   }
 
-  let body: { name?: unknown; pinned?: unknown };
+  let body: { name?: unknown; pinned?: unknown; visibility?: unknown };
   try {
-    body = (await request.json()) as { name?: unknown; pinned?: unknown };
+    body = (await request.json()) as { name?: unknown; pinned?: unknown; visibility?: unknown };
   } catch {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
@@ -34,6 +40,16 @@ export async function PATCH(request: Request, context: RouteContext<"/api/sessio
   // its own — renaming must not be a precondition for keeping a session.
   let updated =
     typeof body.pinned === "boolean" ? await setPinned(id, body.pinned) : null;
+
+  if (body.visibility === "public" || body.visibility === "private") {
+    // Going private makes access roster-only, so the person doing it must be on
+    // the roster or they would lock themselves out (a project manager reaching
+    // a public room has no roster row of their own).
+    if (body.visibility === "private") {
+      await addMember(id, result.user.id, "owner", "owner");
+    }
+    updated = (await setVisibility(id, body.visibility)) ?? updated;
+  }
 
   if (typeof body.name === "string") {
     updated = (await renameSession(id, body.name)) ?? updated;

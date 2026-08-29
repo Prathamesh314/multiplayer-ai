@@ -107,10 +107,10 @@ export async function createProject(input: CreateProjectInput): Promise<CreatePr
         const row = inserted.rows[0];
         await tx.query(
           `INSERT INTO project_members (project_id, org_id, user_id, role, added_by)
-           VALUES ($1, $2, $3, 'admin', $3)`,
+           VALUES ($1, $2, $3, 'manager', $3)`,
           [row.id, input.orgId, input.createdBy],
         );
-        return toProject({ ...row, my_role: "admin" });
+        return toProject({ ...row, my_role: "manager" });
       });
       return { ok: true, project };
     } catch (cause) {
@@ -127,14 +127,15 @@ export async function createProject(input: CreateProjectInput): Promise<CreatePr
 
 /**
  * A single SQL fragment computing a caller's effective role on a project:
- * their explicit project_members role, or 'admin' if they own/administer the
- * org. NULL means no access. Reused by every read below so the rule lives once.
+ * their explicit project_members role, or 'manager' if they own/administer the
+ * org (org admins keep oversight of every project). NULL means no access.
+ * Reused by every read below so the rule lives once.
  */
 const EFFECTIVE_ROLE = `
   COALESCE(
     (SELECT pm.role FROM project_members pm
       WHERE pm.project_id = p.id AND pm.user_id = $USER AND pm.removed_at IS NULL),
-    (SELECT 'admin' FROM org_members om
+    (SELECT 'manager' FROM org_members om
       WHERE om.org_id = p.org_id AND om.user_id = $USER
         AND om.status = 'active' AND om.role IN ('owner', 'admin'))
   )
@@ -185,9 +186,12 @@ export async function projectRoleOf(projectId: string, userId: string): Promise<
 
 /**
  * The room-access derivation everything hinges on: what may this user do in
- * this room? For an org room, it comes entirely from their project role. For a
- * personal room (no project) this returns null — those still use the
- * session_members roster.
+ * this room *by virtue of the project*?
+ *
+ * Only a **public** room grants access this way — being on the project is
+ * enough to drop in. A **private** room grants nothing here: its access lives
+ * solely in the session_members roster, so getSession falls through to that.
+ * A personal room (no project) also returns null and uses the roster.
  */
 export async function roomRoleFromProject(
   sessionId: string,
@@ -197,10 +201,33 @@ export async function roomRoleFromProject(
     `SELECT ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} AS role
        FROM sessions s
        JOIN projects p ON p.id = s.project_id
-      WHERE s.id = $1 AND s.deleted_at IS NULL`,
+      WHERE s.id = $1 AND s.deleted_at IS NULL AND s.visibility = 'public'`,
     [sessionId, userId],
   );
   return row?.role ? projectRoleToSessionRole(row.role) : null;
+}
+
+/**
+ * Rooms in a project the caller may actually see: every public room, plus the
+ * private ones they are on the roster of. Managers additionally see the private
+ * rooms they created (they are the room owner on its roster, so that is already
+ * covered — no manager-wide peek into others' private rooms).
+ */
+export async function visibleRoomIds(projectId: string, userId: string): Promise<Set<string>> {
+  const rows = await query<{ id: string }>(
+    `SELECT s.id
+       FROM sessions s
+      WHERE s.project_id = $1 AND s.deleted_at IS NULL
+        AND (
+          s.visibility = 'public'
+          OR EXISTS (
+            SELECT 1 FROM session_members m
+             WHERE m.session_id = s.id AND m.user_id = $2 AND m.removed_at IS NULL
+          )
+        )`,
+    [projectId, userId],
+  );
+  return new Set(rows.map((r) => r.id));
 }
 
 // ---------------------------------------------------------------------------
