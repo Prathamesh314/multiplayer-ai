@@ -4,6 +4,7 @@ import { safeRelativePath } from "../../../../lib/session/paths";
 import {
   commitWork,
   ensureWork,
+  mergeSave,
   readRepoBytes,
   readRepoFile,
   withRepoLock,
@@ -90,6 +91,38 @@ export async function PUT(request: Request, context: RouteContext<"/api/sessions
 
   const previous = repo.headSha;
   await touchSession(id, result.user.id);
+
+  const author = { name: result.user.displayName, email: result.user.email };
+
+  // When the client tells us what version it edited from, save through a 3-way
+  // merge so a teammate's concurrent change to the same file is merged rather
+  // than clobbered. Without a base (a brand-new file), fall back to a plain write.
+  if (typeof body.baseText === "string") {
+    const outcome = await mergeSave(id, path, body.baseText, body.text, previous, author);
+
+    if (outcome.status === "conflict") {
+      // Nothing was committed; the client keeps the user's text to reconcile.
+      return Response.json(
+        { headSha: outcome.headSha, committed: false, conflict: true } satisfies SaveFileResponse,
+        { status: 409 },
+      );
+    }
+    if (outcome.status === "nochange") {
+      return Response.json({ headSha: outcome.headSha, committed: false } satisfies SaveFileResponse);
+    }
+
+    await setHeadSha(id, outcome.headSha);
+    await (await events()).publish(id, {
+      type: "file.saved",
+      path,
+      headSha: outcome.headSha,
+      authorId: result.user.id,
+      authorName: result.user.displayName,
+      originId: typeof body.originId === "string" ? body.originId : null,
+      at: Date.now(),
+    });
+    return Response.json({ headSha: outcome.headSha, committed: true } satisfies SaveFileResponse);
+  }
 
   const sha = await withRepoLock(id, async () => {
     await ensureWork(id, previous);

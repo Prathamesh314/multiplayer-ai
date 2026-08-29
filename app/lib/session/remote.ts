@@ -203,24 +203,34 @@ export async function saveSessionFile(
   sessionId: string,
   path: string,
   text: string,
+  baseText?: string,
 ): Promise<SaveFileResponse> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, originId: currentTabId() }),
+    body: JSON.stringify({ path, text, baseText, originId: currentTabId() }),
   });
+  // 409 is a real, expected outcome — an overlapping edit — not a failure. It
+  // comes back as a conflict response the saver reconciles, not a thrown error.
+  if (response.status === 409) return (await response.json()) as SaveFileResponse;
   if (!response.ok) throw new Error(await readError(response, "Could not save this file."));
   return (await response.json()) as SaveFileResponse;
 }
 
 export type Saver = {
-  /** Queues a save; repeated calls for the same path collapse into one. */
-  queue(path: string, text: string): void;
+  /**
+   * Queues a save; repeated calls for the same path collapse into one.
+   * `baseText` is the committed version the edit was made against, so the
+   * server can merge rather than overwrite a teammate's concurrent change.
+   */
+  queue(path: string, text: string, baseText: string): void;
   /** Writes everything pending right now — for tab close or unload. */
   flush(): Promise<void>;
 };
 
 const SAVE_DEBOUNCE_MS = 1200;
+
+type PendingSave = { text: string; baseText: string };
 
 /**
  * Human edits have no turn boundary to commit on, so they get a debounced one.
@@ -231,8 +241,10 @@ export function createSaver(
   sessionId: string,
   onSaved?: (path: string, text: string, headSha: string) => void,
   onError?: (message: string) => void,
+  /** Called when a save overlapped a teammate's edit and committed nothing. */
+  onConflict?: (path: string) => void,
 ): Saver {
-  const pending = new Map<string, string>();
+  const pending = new Map<string, PendingSave>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlight: Promise<void> = Promise.resolve();
 
@@ -240,15 +252,21 @@ export function createSaver(
     const batch = [...pending];
     pending.clear();
 
-    for (const [path, text] of batch) {
+    for (const [path, save] of batch) {
       try {
-        const result = await saveSessionFile(sessionId, path, text);
+        const result = await saveSessionFile(sessionId, path, save.text, save.baseText);
+        if (result.conflict) {
+          // An overlapping edit — leave the user's text as-is and let them
+          // reconcile; don't retry, which would just conflict again.
+          onConflict?.(path);
+          continue;
+        }
         // The saved text is reported back so the caller can tell whether the
         // buffer moved on while the request was in flight.
-        onSaved?.(path, text, result.headSha);
+        onSaved?.(path, save.text, result.headSha);
       } catch (cause) {
         // Put it back so the next flush retries rather than dropping the edit.
-        if (!pending.has(path)) pending.set(path, text);
+        if (!pending.has(path)) pending.set(path, save);
         onError?.(cause instanceof Error ? cause.message : "Could not save this file.");
       }
     }
@@ -263,8 +281,8 @@ export function createSaver(
   }
 
   return {
-    queue(path, text) {
-      pending.set(path, text);
+    queue(path, text, baseText) {
+      pending.set(path, { text, baseText });
       schedule();
     },
     async flush() {

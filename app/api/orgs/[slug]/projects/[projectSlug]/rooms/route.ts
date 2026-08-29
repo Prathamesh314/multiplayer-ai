@@ -1,6 +1,6 @@
 import { forbidden, orgDenied, projectAccess } from "../../../../../../lib/org/auth";
-import { createRepo, gitAvailable } from "../../../../../../lib/session/repo";
-import { createSession, listRoomsInProject } from "../../../../../../lib/session/store";
+import { forkRoomFromProject, gitAvailable } from "../../../../../../lib/session/repo";
+import { attachRepo, createSession, listRoomsInProject } from "../../../../../../lib/session/store";
 import { canEdit } from "../../../../../../lib/session/types";
 import { projectRoleToSessionRole } from "../../../../../../lib/project/types";
 import type { SessionListResponse } from "../../../../../../lib/session/types";
@@ -58,9 +58,10 @@ export async function POST(
     visibility: body.visibility === "private" ? "private" : "public",
   });
 
-  // The repo is created up front so seeding (or a future GitHub clone) has
-  // somewhere to land, and an unseeded room fails loudly rather than half-exists.
-  await createRepo(session.id);
+  // The room forks from the project's canonical main, so it opens already
+  // holding the shared source of truth — a branch of the project, not an island.
+  const repo = await forkRoomFromProject(session.id, result.project.id, session.name);
+  const updated = (await attachRepo(session.id, repo, result.project.upstreamUrl)) ?? session;
 
-  return Response.json(session, { status: 201 });
+  return Response.json(updated, { status: 201 });
 }

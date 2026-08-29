@@ -88,6 +88,27 @@ export async function renameSession(id: string, name: string): Promise<Session> 
   return (await response.json()) as Session;
 }
 
+/** Outcome of a publish or sync: the new sha, or the files that conflicted. */
+export type MergeOutcome =
+  | { ok: true; sha: string }
+  | { ok: false; reason: "conflict"; files: string[] };
+
+/** Merge this room's work back into the project's shared main. */
+export async function publishRoom(id: string): Promise<MergeOutcome> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/publish`, { method: "POST" });
+  if (response.status === 409) return (await response.json()) as MergeOutcome;
+  if (!response.ok) throw new Error(await readError(response, "Could not publish to the project."));
+  return (await response.json()) as MergeOutcome;
+}
+
+/** Pull the project's latest main into this room. */
+export async function syncRoom(id: string): Promise<MergeOutcome> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/sync`, { method: "POST" });
+  if (response.status === 409) return (await response.json()) as MergeOutcome;
+  if (!response.ok) throw new Error(await readError(response, "Could not sync from the project."));
+  return (await response.json()) as MergeOutcome;
+}
+
 /** Flip a room between public (open to the project) and private (invite-only). */
 export async function setRoomVisibility(
   id: string,

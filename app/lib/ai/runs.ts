@@ -164,6 +164,35 @@ export async function appendMessage(input: {
 }
 
 /** Closes a run out with its terminal status and the commit it produced. */
+/**
+ * Whether anyone other than `userId` has already sent a prompt into this run —
+ * i.e. it is being co-driven. When true, prompts to the agent are tagged with
+ * who is speaking so two people's intents in one run stay legible.
+ */
+export async function runHasOtherAuthors(runId: string, userId: string): Promise<boolean> {
+  const row = await queryOne<{ present: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM agent_run_messages
+        WHERE run_id = $1 AND role = 'user'
+          AND author_user_id IS NOT NULL AND author_user_id <> $2
+     ) AS present`,
+    [runId, userId],
+  );
+  return row?.present ?? false;
+}
+
+/**
+ * Marks an existing run running again — used when a follow-up prompt continues
+ * it, so the concurrency accounting counts the live process it just spawned.
+ */
+export async function reopenRun(runId: string): Promise<void> {
+  await query(
+    `UPDATE agent_runs SET status = 'running', ended_at = NULL, started_at = now()
+      WHERE id = $1`,
+    [runId],
+  );
+}
+
 export async function finishRun(
   runId: string,
   outcome: {

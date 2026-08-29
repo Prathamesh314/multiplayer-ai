@@ -188,6 +188,12 @@ export type ChangesResponse = { changes: ChangedFile[] };
 export type SaveFileRequest = {
   path: string;
   text: string;
+  /**
+   * The committed version the edit was made against. When present, the server
+   * 3-way-merges instead of overwriting, so a concurrent edit is never lost.
+   * Omitted only by callers that have no base (e.g. a brand-new file).
+   */
+  baseText?: string;
   /** The tab that saved, echoed back on the broadcast so it can ignore itself. */
   originId?: string;
 };
@@ -196,4 +202,9 @@ export type SaveFileResponse = {
   /** New HEAD, or the unchanged one when the write was a no-op. */
   headSha: string;
   committed: boolean;
+  /**
+   * True when the save overlapped someone else's edit: nothing was committed,
+   * and the client should reconcile before saving again.
+   */
+  conflict?: boolean;
 };
