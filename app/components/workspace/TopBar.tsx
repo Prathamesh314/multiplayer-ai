@@ -1,6 +1,8 @@
 "use client";
 
-import type { Session, SessionMember } from "../../lib/session/types";
+import { useState } from "react";
+import { publishRoom, syncRoom } from "../../lib/session/client";
+import { canEdit, type Session, type SessionMember } from "../../lib/session/types";
 import { GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons";
 import { PeopleStack } from "./People";
 
@@ -75,6 +77,10 @@ export function TopBar({
         </span>
       </div>
 
+      {session.projectId && canEdit(session.myRole) && (
+        <PublishControls sessionId={session.id} />
+      )}
+
       <PeopleStack members={members} />
 
       <button
@@ -96,6 +102,68 @@ export function TopBar({
         </ToggleButton>
       </div>
     </header>
+  );
+}
+
+/**
+ * Sync from / publish to the project's shared main — the Git/Branch model made
+ * visible. A room is a branch; these are its pull and merge-back.
+ */
+function PublishControls({ sessionId }: { sessionId: string }) {
+  const [busy, setBusy] = useState<"publish" | "sync" | null>(null);
+  const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+
+  async function run(kind: "publish" | "sync") {
+    setBusy(kind);
+    setStatus(null);
+    try {
+      const outcome = await (kind === "publish" ? publishRoom(sessionId) : syncRoom(sessionId));
+      if (outcome.ok) {
+        setStatus({ tone: "ok", text: kind === "publish" ? "Published to project" : "Up to date with project" });
+      } else {
+        setStatus({
+          tone: "error",
+          text: `Conflict in ${outcome.files.slice(0, 2).join(", ")}${outcome.files.length > 2 ? "…" : ""} — resolve it in the room first`,
+        });
+      }
+    } catch (cause) {
+      setStatus({ tone: "error", text: cause instanceof Error ? cause.message : "Something went wrong." });
+    } finally {
+      setBusy(null);
+      setTimeout(() => setStatus(null), 6000);
+    }
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={() => run("sync")}
+        disabled={busy !== null}
+        title="Pull the project's latest main into this room"
+        className="rounded px-2 py-1 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+      >
+        {busy === "sync" ? "Syncing…" : "Sync"}
+      </button>
+      <button
+        type="button"
+        onClick={() => run("publish")}
+        disabled={busy !== null}
+        title="Merge this room's work back into the project's main"
+        className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-xs text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
+      >
+        <GitBranchIcon className="h-3 w-3" />
+        {busy === "publish" ? "Publishing…" : "Publish"}
+      </button>
+      {status && (
+        <span
+          className={`max-w-64 truncate text-[11px] ${status.tone === "ok" ? "text-emerald-500" : "text-red-500"}`}
+          title={status.text}
+        >
+          {status.text}
+        </span>
+      )}
+    </div>
   );
 }
 

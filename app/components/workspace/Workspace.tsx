@@ -136,6 +136,12 @@ export function Workspace({ session }: { session: Session }) {
           setSaveState("error");
           setError(message);
         },
+        (path) => {
+          // The save overlapped a teammate's edit and committed nothing. Flag
+          // it so the user reconciles instead of silently losing either change.
+          setSaveState("error");
+          setConflicts((previous) => new Map(previous).set(path, "a teammate"));
+        },
       ),
     [session.id],
   );
@@ -475,7 +481,9 @@ export function Workspace({ session }: { session: Session }) {
       // which is far too late to show that someone is in the file.
       notifyEditing(session.id, path, caretRef.current.line, caretRef.current.column);
       setSaveState("saving");
-      saver.queue(path, text);
+      // The buffer's `original` is the committed version this edit is based on;
+      // the server merges against it so a concurrent change is never clobbered.
+      saver.queue(path, text, buffersRef.current.get(path)?.original ?? "");
     }
   }
 

@@ -21,6 +21,14 @@ export function barePath(id: string): string {
   return resolve(dataRoot(), "repos", `${id}.git`);
 }
 
+/**
+ * The project's canonical repo — the single source of truth its rooms fork from
+ * and publish back to. A room is a branch; this holds the `main` they share.
+ */
+export function projectBarePath(projectId: string): string {
+  return resolve(dataRoot(), "projects", `${projectId}.git`);
+}
+
 export function workPath(id: string): string {
   return resolve(dataRoot(), "work", id);
 }

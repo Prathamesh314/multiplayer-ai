@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
 import type { TreeNode } from "../types";
-import { barePath, resolveInside, safeRelativePath, workPath } from "./paths";
+import { barePath, projectBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
 import type { ChangedFile, SessionRepo } from "./types";
 
 const run = promisify(execFile);
@@ -114,6 +114,180 @@ export async function createRepo(id: string): Promise<void> {
   await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
   await git(work, ["init", "-b", BASE_BRANCH]);
   await git(work, ["remote", "add", "origin", bare]);
+}
+
+// ---------------------------------------------------------------------------
+// Project canonical repo — the single source of truth (Git/Branch model)
+// ---------------------------------------------------------------------------
+
+const PROJECT_REMOTE = "project";
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensures the project's canonical bare repo exists with an initial `main`.
+ *
+ * Idempotent: rooms call it on the way to forking, and only the first one does
+ * any work. `main` starts as an empty root commit so a room always has a real
+ * commit to fork from, even before anyone has published anything.
+ */
+export async function ensureProjectRepo(projectId: string): Promise<void> {
+  const bare = projectBarePath(projectId);
+  if (await exists(bare)) return;
+
+  await mkdir(dirname(bare), { recursive: true });
+  await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
+
+  // A bare repo can't hold a commit on its own; make the root commit in a throwaway
+  // work tree and push it, so `main` exists for the first fork.
+  const seed = join(dirname(bare), `.seed-${projectId}`);
+  await mkdir(seed, { recursive: true });
+  try {
+    await git(seed, ["init", "-b", BASE_BRANCH]);
+    await git(seed, ["commit", "--allow-empty", "-m", "Initialize project"]);
+    await git(seed, ["remote", "add", "origin", bare]);
+    await git(seed, ["push", "origin", BASE_BRANCH]);
+  } finally {
+    await rm(seed, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Creates a room as a branch of the project: its bare repo is a clone of the
+ * project's, so it starts at the project's current `main`, and `session/<id>`
+ * forks from there. The room also keeps the project repo as a `project` remote
+ * for later publish and sync.
+ *
+ * This is the fork half of the Git/Branch model; publishRoom is the merge half.
+ */
+export async function forkRoomFromProject(
+  roomId: string,
+  projectId: string,
+  rootName: string,
+): Promise<SessionRepo> {
+  await ensureProjectRepo(projectId);
+  const projectBare = projectBarePath(projectId);
+  const bare = barePath(roomId);
+  const work = workPath(roomId);
+  const branch = sessionBranchOf(roomId);
+
+  await mkdir(dirname(bare), { recursive: true });
+  await mkdir(dirname(work), { recursive: true });
+
+  // Room bare = a clone of the project repo, so it carries the shared main.
+  await git(dirname(bare), ["clone", "--bare", projectBare, bare]);
+  // Working copy clones the room bare (its origin), matching every other room.
+  await git(dirname(work), ["clone", "--branch", BASE_BRANCH, bare, work]);
+  await git(work, ["remote", "add", PROJECT_REMOTE, projectBare]);
+
+  const baseSha = (await git(work, ["rev-parse", "HEAD"])).trim();
+  await git(work, ["checkout", "-b", branch]);
+  await git(work, ["push", "-u", "origin", branch]);
+
+  return {
+    rootName,
+    baseBranch: BASE_BRANCH,
+    baseShaAtFork: baseSha,
+    sessionBranch: branch,
+    headSha: baseSha,
+    depLockfileHash: await lockfileHash(roomId),
+    specDocSha: await specDocSha(roomId),
+    containerImageDigest: null,
+    lastTestStatus: "unknown",
+    lastTestSha: null,
+    seededAt: Date.now(),
+  };
+}
+
+export type MergeResult =
+  | { ok: true; sha: string }
+  /** The room and project diverged on the same lines; nothing was changed. */
+  | { ok: false; reason: "conflict"; files: string[] };
+
+/** Makes sure the room's working copy has the project repo as a remote. */
+async function ensureProjectRemote(work: string, projectId: string): Promise<void> {
+  const has = await gitOk(work, ["remote", "get-url", PROJECT_REMOTE]);
+  if (!has) await git(work, ["remote", "add", PROJECT_REMOTE, projectBarePath(projectId)]);
+}
+
+/**
+ * Publishes a room's work back to the project's `main` — the "merge back to the
+ * source of truth" step.
+ *
+ * The project's latest main is merged into the room branch first, so publishing
+ * is always a fast-forward of main and never clobbers a concurrent publish from
+ * another room. A merge conflict aborts cleanly and is reported, leaving both
+ * the room and the project exactly as they were.
+ */
+export async function publishRoom(roomId: string, projectId: string): Promise<MergeResult> {
+  const work = workPath(roomId);
+  return withRepoLock(roomId, async () => {
+    await ensureProjectRemote(work, projectId);
+    await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
+
+    const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
+    if (!merged) {
+      const files = await conflictedFiles(work);
+      await gitOk(work, ["merge", "--abort"]);
+      return { ok: false, reason: "conflict", files };
+    }
+
+    await git(work, ["push", PROJECT_REMOTE, `HEAD:${BASE_BRANCH}`]);
+    const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
+    // Keep the room's own branch ref in step with what was published.
+    await gitOk(work, ["push", "origin", sessionBranchOf(roomId)]);
+    return { ok: true, sha };
+  });
+}
+
+/**
+ * Pulls the project's latest `main` into a room — the reverse of publish, for
+ * picking up what other rooms have merged without leaving the room.
+ */
+export async function syncRoom(roomId: string, projectId: string): Promise<MergeResult> {
+  const work = workPath(roomId);
+  return withRepoLock(roomId, async () => {
+    await ensureProjectRemote(work, projectId);
+    await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
+
+    const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
+    if (!merged) {
+      const files = await conflictedFiles(work);
+      await gitOk(work, ["merge", "--abort"]);
+      return { ok: false, reason: "conflict", files };
+    }
+
+    const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
+    await gitOk(work, ["push", "origin", sessionBranchOf(roomId)]);
+    return { ok: true, sha };
+  });
+}
+
+/** The current `main` of a project's canonical repo, or null if uninitialised. */
+export async function projectHeadSha(projectId: string): Promise<string | null> {
+  const bare = projectBarePath(projectId);
+  if (!(await exists(bare))) return null;
+  try {
+    return (await git(bare, ["rev-parse", BASE_BRANCH])).trim();
+  } catch {
+    return null;
+  }
+}
+
+async function conflictedFiles(work: string): Promise<string[]> {
+  try {
+    const out = await git(work, ["diff", "--name-only", "--diff-filter=U"]);
+    return out.split("\n").map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +557,94 @@ export async function writeRepoFile(id: string, relative: string, text: string):
   await mkdir(dirname(absolute), { recursive: true });
   await writeFile(absolute, text, "utf8");
   return true;
+}
+
+export type SaveResult =
+  | { status: "clean"; headSha: string }
+  | { status: "nochange"; headSha: string }
+  /** Overlapping edits: nothing was committed; the room is unchanged. */
+  | { status: "conflict"; headSha: string };
+
+/** Runs git's standalone 3-way merge, returning the conflict count (0 = clean). */
+async function mergeFile(ours: string, base: string, theirs: string): Promise<number> {
+  try {
+    // Merges `theirs` into `ours` using `base` as the ancestor, in place in `ours`.
+    await run("git", ["merge-file", "-L", "current", "-L", "base", "-L", "incoming", ours, base, theirs], {
+      windowsHide: true,
+    });
+    return 0;
+  } catch (cause) {
+    const code = (cause as { code?: unknown }).code;
+    return typeof code === "number" ? code : -1;
+  }
+}
+
+/**
+ * Saves a file the safe way: a 3-way merge against the version the editor was
+ * working from, instead of a blind overwrite.
+ *
+ * `baseText` is what the client had before it started editing. If nobody else
+ * has touched the file since, this is a plain write. If someone has, git merges
+ * the two sets of changes: non-overlapping edits both survive, and only genuine
+ * line-level collisions are reported as a conflict — which commits nothing, so a
+ * concurrent edit can never be silently lost.
+ */
+export async function mergeSave(
+  id: string,
+  relative: string,
+  baseText: string,
+  incomingText: string,
+  headAtRequest: string,
+  author: { name: string; email: string },
+): Promise<SaveResult> {
+  const work = workPath(id);
+  return withRepoLock(id, async () => {
+    await ensureWork(id, headAtRequest);
+
+    const absolute = resolveInside(work, relative);
+    if (!absolute) throw new Error("Unsafe path.");
+
+    let ours = "";
+    try {
+      ours = await readFile(absolute, "utf8");
+    } catch {
+      ours = ""; // new file
+    }
+
+    if (ours === incomingText) return { status: "nochange", headSha: await headSha(id) };
+
+    // Fast path: the file hasn't moved under the editor, so the write is safe.
+    if (ours === baseText) {
+      await writeRepoFile(id, relative, incomingText);
+      const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
+      return { status: "clean", headSha: sha ?? (await headSha(id)) };
+    }
+
+    // The file changed under the editor — merge the two sets of edits.
+    const scratch = join(dirname(work), `.merge-${randomBytes(6).toString("hex")}`);
+    await mkdir(scratch, { recursive: true });
+    try {
+      const oursTmp = join(scratch, "ours");
+      const baseTmp = join(scratch, "base");
+      const theirsTmp = join(scratch, "theirs");
+      await writeFile(oursTmp, ours, "utf8");
+      await writeFile(baseTmp, baseText, "utf8");
+      await writeFile(theirsTmp, incomingText, "utf8");
+
+      const conflicts = await mergeFile(oursTmp, baseTmp, theirsTmp);
+      if (conflicts !== 0) {
+        // Leave the room untouched; the client keeps the user's text to resolve.
+        return { status: "conflict", headSha: await headSha(id) };
+      }
+
+      const merged = await readFile(oursTmp, "utf8");
+      await writeRepoFile(id, relative, merged);
+      const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
+      return { status: "clean", headSha: sha ?? (await headSha(id)) };
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
 }
 
 /**

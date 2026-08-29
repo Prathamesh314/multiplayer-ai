@@ -1,6 +1,15 @@
 import { spawn } from "node:child_process";
 import { agentById, resolveChoice } from "../../../lib/ai/catalog";
-import { appendMessage, createRun, finishRun, getRun, joinRun } from "../../../lib/ai/runs";
+import {
+  appendMessage,
+  createRun,
+  finishRun,
+  getRun,
+  joinRun,
+  reopenRun,
+  runHasOtherAuthors,
+} from "../../../lib/ai/runs";
+import { checkRunAllowed } from "../../../lib/ai/usage";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
@@ -85,6 +94,20 @@ export async function POST(request: Request) {
   // prompt is stored as the first turn either way, attributed to whoever sent it.
   let run = body.runId ? await getRun(body.runId) : null;
   if (run && run.sessionId !== sessionId) run = null;
+
+  // Cost governor: pooled org limits and the per-project throttle decide whether
+  // this agent may spawn at all. Checked before anything is created or run.
+  const runGate = await checkRunAllowed({
+    orgId: result.session.orgId,
+    projectId: result.session.projectId,
+    sessionId,
+    userId: result.user.id,
+    isNewRun: !run,
+  });
+  if (!runGate.ok) {
+    return Response.json({ error: runGate.error, limit: runGate.limit }, { status: 429 });
+  }
+
   if (!run) {
     run = await createRun({
       sessionId,
@@ -102,9 +125,18 @@ export async function POST(request: Request) {
       at: Date.now(),
     });
   } else {
-    // A second driver on someone else's run is recorded as an editor.
+    // A second driver on someone else's run is recorded as an editor, and the
+    // run is marked running again so it holds a concurrency slot while it works.
     await joinRun(run.id, result.user.id, "editor");
+    await reopenRun(run.id);
   }
+
+  // On a co-driven run (someone else has also sent prompts into it), tell the
+  // agent who is speaking so two people's intents in one run don't blur into
+  // one contradictory instruction. Solo runs — the common case — stay untagged,
+  // and separate members always have separate runs, so their contexts never mix.
+  const coDriven = await runHasOtherAuthors(run.id, result.user.id);
+  const agentPrompt = coDriven ? `[@${result.user.handle}] ${prompt}` : prompt;
 
   const promptTurn = await appendMessage({
     runId: run.id,
@@ -131,7 +163,7 @@ export async function POST(request: Request) {
 
   const author = { name: result.user.displayName, email: result.user.email };
   return new Response(
-    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(prompt, runOptions), author),
+    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(agentPrompt, runOptions), author),
     {
       headers: {
         "content-type": "application/x-ndjson; charset=utf-8",

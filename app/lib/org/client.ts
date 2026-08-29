@@ -32,6 +32,18 @@ export async function createOrg(input: CreateOrgRequest): Promise<Org> {
   return (await response.json()) as Org;
 }
 
+export type OrgUsage = {
+  concurrency: { used: number; limit: number };
+  monthly: { used: number; limit: number | null };
+};
+
+/** The org's pooled AI-run usage against its limits. */
+export async function fetchOrgUsage(slug: string): Promise<OrgUsage | null> {
+  const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/usage`, { cache: "no-store" });
+  if (!response.ok) return null;
+  return (await response.json()) as OrgUsage;
+}
+
 export async function fetchOrgMembers(slug: string): Promise<OrgMember[]> {
   const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/members`, { cache: "no-store" });
   if (!response.ok) return [];

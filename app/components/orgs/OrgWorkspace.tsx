@@ -8,10 +8,12 @@ import {
   acceptInvitation,
   createOrg,
   fetchOrgMembers,
+  fetchOrgUsage,
   inviteByConnectCode,
   inviteByEmail,
   listMyOrgs,
   listPendingInvitations,
+  type OrgUsage,
 } from "../../lib/org/client";
 import {
   canManageOrg,
@@ -326,6 +328,8 @@ function OrgPanel({
             </button>
           )}
         </header>
+
+        <UsageBadge orgSlug={org.slug} />
 
         {invitations.length > 0 && (
           <div className="border-b border-vs-border p-2">
@@ -1250,6 +1254,42 @@ function RoomSettingsDialog({
         </div>
       )}
     </Modal>
+  );
+}
+
+/**
+ * The org's pooled AI-run usage — the visible side of resource pooling. Refreshes
+ * on a light interval so "N running now" stays roughly live.
+ */
+function UsageBadge({ orgSlug }: { orgSlug: string }) {
+  const [usage, setUsage] = useState<OrgUsage | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => void fetchOrgUsage(orgSlug).then((u) => !cancelled && setUsage(u));
+    load();
+    const timer = setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [orgSlug]);
+
+  if (!usage) return null;
+  const atCap = usage.concurrency.used >= usage.concurrency.limit && usage.concurrency.limit > 0;
+
+  return (
+    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-1.5 text-[11px] text-vs-muted">
+      <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
+        <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-amber-500" : "bg-emerald-500"}`} />
+        {usage.concurrency.used}/{usage.concurrency.limit} running
+      </span>
+      {usage.monthly.limit != null && (
+        <span title="Agent runs used this month">
+          {usage.monthly.used}/{usage.monthly.limit} this month
+        </span>
+      )}
+    </div>
   );
 }
 
