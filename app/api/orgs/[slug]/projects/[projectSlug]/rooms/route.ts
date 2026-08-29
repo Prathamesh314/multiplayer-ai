@@ -18,7 +18,7 @@ export async function GET(
   const refusal = orgDenied(result);
   if (refusal || !result) return refusal!;
 
-  const sessions = await listRoomsInProject(result.project.id);
+  const sessions = await listRoomsInProject(result.project.id, result.user.id);
   return Response.json({ sessions } satisfies SessionListResponse, {
     headers: { "cache-control": "no-store" },
   });
@@ -45,16 +45,17 @@ export async function POST(
     );
   }
 
-  let body: { name?: string } = {};
+  let body: { name?: string; visibility?: "public" | "private" } = {};
   try {
-    body = (await request.json()) as { name?: string };
+    body = (await request.json()) as { name?: string; visibility?: "public" | "private" };
   } catch {
-    // An empty body is fine; the room gets a generated name.
+    // An empty body is fine; the room gets a generated name and is public.
   }
 
   const session = await createSession(result.user.id, body.name, {
     orgId: result.org.id,
     projectId: result.project.id,
+    visibility: body.visibility === "private" ? "private" : "public",
   });
 
   // The repo is created up front so seeding (or a future GitHub clone) has

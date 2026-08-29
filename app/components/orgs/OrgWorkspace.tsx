@@ -34,8 +34,15 @@ import {
   type ProjectMember,
   type ProjectRole,
 } from "../../lib/project/types";
-import { NotSignedIn } from "../../lib/session/client";
-import type { Session } from "../../lib/session/types";
+import {
+  NotSignedIn,
+  addRoomMember,
+  fetchMembers,
+  loadSession,
+  removeRoomMember,
+  setRoomVisibility,
+} from "../../lib/session/client";
+import type { Session, SessionMember } from "../../lib/session/types";
 import {
   CheckIcon,
   ChevronIcon,
@@ -63,6 +70,7 @@ type Dialog =
   | { kind: "createProject"; org: Org }
   | { kind: "createRoom"; org: Org; project: Project }
   | { kind: "projectMembers"; org: Org; project: Project }
+  | { kind: "roomSettings"; org: Org; project: Project; room: Session }
   | null;
 
 export function OrgWorkspace() {
@@ -134,6 +142,9 @@ export function OrgWorkspace() {
           onManageMembers={(project) =>
             setDialog({ kind: "projectMembers", org: activeOrg, project })
           }
+          onRoomSettings={(project, room) =>
+            setDialog({ kind: "roomSettings", org: activeOrg, project, room })
+          }
           onOpenRoom={(id) => router.push(`/s/${id}`)}
         />
       ) : (
@@ -172,6 +183,14 @@ export function OrgWorkspace() {
         <ProjectMembersDialog
           org={dialog.org}
           project={dialog.project}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "roomSettings" && (
+        <RoomSettingsDialog
+          org={dialog.org}
+          project={dialog.project}
+          room={dialog.room}
           onClose={() => setDialog(null)}
         />
       )}
@@ -265,6 +284,7 @@ function OrgPanel({
   onNewProject,
   onNewRoom,
   onManageMembers,
+  onRoomSettings,
   onOpenRoom,
 }: {
   org: Org;
@@ -274,6 +294,7 @@ function OrgPanel({
   onNewProject: () => void;
   onNewRoom: (project: Project) => void;
   onManageMembers: (project: Project) => void;
+  onRoomSettings: (project: Project, room: Session) => void;
   onOpenRoom: (id: string) => void;
 }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -365,6 +386,7 @@ function OrgPanel({
                   project={project}
                   onNewRoom={() => onNewRoom(project)}
                   onManageMembers={() => onManageMembers(project)}
+                  onRoomSettings={(room) => onRoomSettings(project, room)}
                   onOpenRoom={onOpenRoom}
                 />
               ))}
@@ -391,12 +413,14 @@ function ProjectRow({
   project,
   onNewRoom,
   onManageMembers,
+  onRoomSettings,
   onOpenRoom,
 }: {
   org: Org;
   project: Project;
   onNewRoom: () => void;
   onManageMembers: () => void;
+  onRoomSettings: (room: Session) => void;
   onOpenRoom: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -459,14 +483,25 @@ function ProjectRow({
             <li className="px-2 py-1 text-[11px] text-vs-muted">No rooms yet.</li>
           ) : (
             rooms.map((room) => (
-              <li key={room.id}>
+              <li
+                key={room.id}
+                className="group/room flex items-center gap-1 rounded-md pr-1 hover:bg-vs-hover"
+              >
                 <button
                   type="button"
                   onClick={() => onOpenRoom(room.id)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition hover:bg-vs-hover"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[13px]"
                 >
-                  <span className="text-vs-muted">#</span>
+                  <span className="text-vs-muted">{room.visibility === "private" ? "🔒" : "#"}</span>
                   <span className="min-w-0 flex-1 truncate">{room.name}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRoomSettings(room)}
+                  title="Room privacy & members"
+                  className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover/room:opacity-100"
+                >
+                  <UsersIcon className="h-3.5 w-3.5" />
                 </button>
               </li>
             ))
@@ -659,6 +694,7 @@ function CreateRoomDialog({
   onCreated: (id: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -666,7 +702,7 @@ function CreateRoomDialog({
     setBusy(true);
     setError(null);
     try {
-      const room = await createRoom(org.slug, project.slug, name.trim() || undefined);
+      const room = await createRoom(org.slug, project.slug, name.trim() || undefined, visibility);
       onCreated(room.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");
@@ -698,6 +734,34 @@ function CreateRoomDialog({
           onKeyDown={(e) => e.key === "Enter" && submit()}
           placeholder="Fix the parser"
         />
+      </Field>
+
+      <Field label="Visibility">
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          {(
+            [
+              { v: "public", title: "Public", hint: "Anyone on the project can drop in." },
+              { v: "private", title: "Private", hint: "Invite-only. You add who can see it." },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.v}
+              type="button"
+              onClick={() => setVisibility(option.v)}
+              className={`rounded-lg border px-3 py-2 text-left transition ${
+                visibility === option.v
+                  ? "border-vs-accent bg-vs-accent/10"
+                  : "border-vs-border hover:bg-vs-hover"
+              }`}
+            >
+              <span className="block text-[13px] font-medium">
+                {option.v === "private" ? "🔒 " : "# "}
+                {option.title}
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+            </button>
+          ))}
+        </div>
       </Field>
     </Modal>
   );
@@ -934,9 +998,9 @@ function ProjectMembersDialog({
               onChange={(e) => setRole(e.target.value as ProjectRole)}
               className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] text-vs-fg outline-none"
             >
+              <option value="manager">manager</option>
               <option value="editor">editor</option>
               <option value="viewer">viewer</option>
-              <option value="admin">admin</option>
             </select>
           </label>
         </div>
@@ -975,6 +1039,216 @@ function ProjectMembersDialog({
           </ul>
         )}
       </div>
+    </Modal>
+  );
+}
+
+function RoomSettingsDialog({
+  org,
+  project,
+  room,
+  onClose,
+}: {
+  org: Org;
+  project: Project;
+  room: Session;
+  onClose: () => void;
+}) {
+  const [visibility, setVisibilityState] = useState<"public" | "private">(room.visibility);
+  const [myRole, setMyRole] = useState<Session["myRole"]>(null);
+  const [ownerId, setOwnerId] = useState(room.ownerId);
+  const [members, setMembers] = useState<SessionMember[] | null>(null);
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    const [loaded, roster, pm] = await Promise.all([
+      loadSession(room.id),
+      fetchMembers(room.id),
+      fetchProjectMembers(org.slug, project.slug),
+    ]);
+    if (loaded.state === "ready") {
+      setMyRole(loaded.session.myRole);
+      setVisibilityState(loaded.session.visibility);
+      setOwnerId(loaded.session.ownerId);
+    }
+    setMembers(roster);
+    setProjectMembers(pm);
+  }, [room.id, org.slug, project.slug]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const isOwner = myRole === "owner";
+  const onRoster = new Set((members ?? []).map((m) => m.userId));
+  const addable = projectMembers.filter((m) => !onRoster.has(m.userId));
+
+  async function flip(next: "public" | "private") {
+    setError(null);
+    setVisibilityState(next); // optimistic
+    try {
+      await setRoomVisibility(room.id, next);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change visibility.");
+      setVisibilityState((v) => (v === next ? room.visibility : v));
+    }
+  }
+
+  async function add(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await addRoomMember(room.id, userId, "editor");
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add that person.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function remove(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await removeRoomMember(room.id, userId);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove that person.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <Modal
+      title={`${room.name} · privacy`}
+      description="Public rooms are open to everyone on the project. Private rooms are invite-only."
+      onClose={onClose}
+      width="max-w-xl"
+      footer={<GhostButton onClick={onClose}>Done</GhostButton>}
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            { v: "public", title: "Public", hint: "Anyone on the project can drop in." },
+            { v: "private", title: "Private", hint: "Only people you add can see it." },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.v}
+            type="button"
+            disabled={!isOwner}
+            onClick={() => flip(option.v)}
+            className={`rounded-lg border px-3 py-2 text-left transition disabled:opacity-60 ${
+              visibility === option.v
+                ? "border-vs-accent bg-vs-accent/10"
+                : "border-vs-border hover:bg-vs-hover"
+            }`}
+          >
+            <span className="block text-[13px] font-medium">
+              {option.v === "private" ? "🔒 " : "# "}
+              {option.title}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+          </button>
+        ))}
+      </div>
+      {!isOwner && (
+        <p className="text-[11px] text-vs-muted">
+          Only the room owner can change its privacy or manage who&apos;s in it.
+        </p>
+      )}
+
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          In this room ({members?.length ?? 0})
+        </h3>
+        {members === null ? (
+          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+            <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {members.map((m) => (
+              <li
+                key={m.userId}
+                className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+              >
+                <Avatar name={m.displayName} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px]">{m.displayName}</span>
+                  <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                </span>
+                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                  {m.userId === ownerId ? "owner" : m.role}
+                </span>
+                {isOwner && m.userId !== ownerId && (
+                  <button
+                    type="button"
+                    onClick={() => remove(m.userId)}
+                    disabled={pending === m.userId}
+                    title="Remove from room"
+                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <CloseIcon className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {isOwner && visibility === "private" && (
+        <div>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+            Add from the project
+          </h3>
+          {addable.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-vs-muted">
+              Everyone on {project.name} is already in this room.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {addable.map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">{m.displayName}</span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => add(m.userId)}
+                    disabled={pending === m.userId}
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PlusIcon className="h-3.5 w-3.5" />
+                    )}
+                    Add
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

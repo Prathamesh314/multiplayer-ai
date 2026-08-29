@@ -87,13 +87,14 @@ export async function createRoom(
   orgSlug: string,
   projectSlug: string,
   name?: string,
+  visibility: "public" | "private" = "public",
 ): Promise<Session> {
   const response = await fetch(
     `/api/orgs/${encodeURIComponent(orgSlug)}/projects/${encodeURIComponent(projectSlug)}/rooms`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, visibility }),
     },
   );
   if (!response.ok) throw new Error(await readError(response, "Could not create the room."));

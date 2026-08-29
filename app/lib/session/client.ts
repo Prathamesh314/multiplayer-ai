@@ -88,6 +88,42 @@ export async function renameSession(id: string, name: string): Promise<Session> 
   return (await response.json()) as Session;
 }
 
+/** Flip a room between public (open to the project) and private (invite-only). */
+export async function setRoomVisibility(
+  id: string,
+  visibility: "public" | "private",
+): Promise<Session> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ visibility }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not change room visibility."));
+  return (await response.json()) as Session;
+}
+
+/** Add a project member to a room's roster (how people get into a private room). */
+export async function addRoomMember(
+  id: string,
+  userId: string,
+  role: "editor" | "viewer" = "editor",
+): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/members`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId, role }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not add that person."));
+}
+
+export async function removeRoomMember(id: string, userId: string): Promise<void> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw new Error(await readError(response, "Could not remove that person."));
+}
+
 export async function setPinned(id: string, pinned: boolean): Promise<Session> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: "PATCH",

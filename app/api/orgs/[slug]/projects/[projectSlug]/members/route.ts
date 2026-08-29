@@ -45,7 +45,7 @@ export async function POST(
 
   const userId = String(body.userId ?? "");
   if (!userId) return Response.json({ error: "Name the member to add." }, { status: 400 });
-  const role = body.role === "admin" ? "admin" : body.role === "viewer" ? "viewer" : "editor";
+  const role = body.role === "manager" ? "manager" : body.role === "viewer" ? "viewer" : "editor";
 
   const outcome = await addProjectMember(result.project.id, result.org.id, userId, role, result.user.id);
   if (!outcome.ok) return Response.json({ error: outcome.error }, { status: 409 });

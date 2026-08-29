@@ -66,6 +66,10 @@ export type Session = {
   ownerId: string;
   /** Null for a personal session that belongs to no org. */
   orgId: string | null;
+  /** Null for a personal room, or an org room with no project. */
+  projectId: string | null;
+  /** 'private' rooms are invite-only; 'public' rooms are open to the project. */
+  visibility: "public" | "private";
   createdAt: number;
   /** Null until the creator has seeded a folder into it. */
   repo: SessionRepo | null;

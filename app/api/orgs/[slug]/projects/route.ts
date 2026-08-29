@@ -1,5 +1,4 @@
-import { forbidden, orgAccess, orgDenied } from "../../../../lib/org/auth";
-import { canManageOrg } from "../../../../lib/org/types";
+import { orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { createProject, listProjectsForUser } from "../../../../lib/project/store";
 import type { CreateProjectRequest, ProjectListResponse } from "../../../../lib/project/types";
 
@@ -26,9 +25,9 @@ export async function POST(request: Request, context: RouteContext<"/api/orgs/[s
   const refusal = orgDenied(result);
   if (refusal || !result) return refusal!;
 
-  if (!canManageOrg(result.role)) {
-    return forbidden("Only an admin can create projects.");
-  }
+  // Any member of the org can start a project — they become its manager. This
+  // is deliberate: funnelling every project through an org admin is the
+  // bottleneck we are removing. Org admins still oversee all projects.
 
   let body: CreateProjectRequest;
   try {

@@ -27,6 +27,7 @@ type SessionRow = {
   owner_id: string;
   org_id: string | null;
   project_id: string | null;
+  visibility: "public" | "private";
   root_name: string | null;
   created_at: Date;
   last_active_at: Date;
@@ -47,8 +48,8 @@ type SessionRow = {
 };
 
 const SELECT_SESSION = `
-  SELECT s.id, s.name, s.join_code, s.owner_id, s.org_id, s.project_id, s.root_name,
-         s.created_at, s.last_active_at, s.pinned, s.archived_at,
+  SELECT s.id, s.name, s.join_code, s.owner_id, s.org_id, s.project_id, s.visibility,
+         s.root_name, s.created_at, s.last_active_at, s.pinned, s.archived_at,
          r.base_branch, r.base_sha_at_fork, r.session_branch, r.head_sha,
          r.dep_lockfile_hash, r.spec_doc_sha, r.container_image_digest,
          r.last_test_status, r.last_test_sha, r.root_name AS repo_root_name, r.seeded_at
@@ -79,6 +80,8 @@ function toSession(row: SessionRow, myRole?: SessionRole | null): Session {
     joinCode: row.join_code,
     ownerId: row.owner_id,
     orgId: row.org_id,
+    projectId: row.project_id,
+    visibility: row.visibility,
     createdAt: row.created_at.getTime(),
     lastActiveAt: row.last_active_at.getTime(),
     pinned: row.pinned,
@@ -186,7 +189,12 @@ export async function redeemShareLink(
 }
 
 /** A room can belong to an org project; omit both for a personal session. */
-export type CreateSessionOptions = { orgId?: string | null; projectId?: string | null };
+export type CreateSessionOptions = {
+  orgId?: string | null;
+  projectId?: string | null;
+  /** 'private' makes the room invite-only; defaults to 'public'. */
+  visibility?: "public" | "private";
+};
 
 export async function createSession(
   ownerId: string,
@@ -197,6 +205,7 @@ export async function createSession(
   const joinCode = `${randomString(4, CODE_ALPHABET)}-${randomString(4, CODE_ALPHABET)}`;
   const orgId = options.orgId ?? null;
   const projectId = options.projectId ?? null;
+  const visibility = options.visibility === "private" ? "private" : "public";
 
   // The session and its owner row must appear together: a session nobody can
   // open is not a state worth being able to reach. For an org project room the
@@ -206,16 +215,16 @@ export async function createSession(
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const id = randomString(12, ID_ALPHABET);
       const inserted = await tx.query<SessionRow>(
-        `INSERT INTO sessions (id, owner_id, org_id, project_id, name, join_code)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO sessions (id, owner_id, org_id, project_id, visibility, name, join_code)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (id) DO NOTHING
-         RETURNING id, name, join_code, owner_id, org_id, project_id, root_name,
+         RETURNING id, name, join_code, owner_id, org_id, project_id, visibility, root_name,
                    created_at, last_active_at, pinned, archived_at,
                    NULL AS base_branch, NULL AS base_sha_at_fork, NULL AS session_branch,
                    NULL AS head_sha, NULL AS dep_lockfile_hash, NULL AS spec_doc_sha,
                    NULL AS container_image_digest, NULL AS last_test_status,
                    NULL AS last_test_sha, NULL AS repo_root_name, NULL AS seeded_at`,
-        [id, ownerId, orgId, projectId, name, joinCode],
+        [id, ownerId, orgId, projectId, visibility, name, joinCode],
       );
 
       if (inserted.rows.length === 0) continue; // id collision, try another
@@ -234,17 +243,34 @@ export async function createSession(
 }
 
 /**
- * Rooms in a project, newest-active first. Access to the project is the caller's
- * to check first (getProjectForUser); this trusts that and lists them all.
+ * Rooms in a project the caller may see: every public room, plus the private
+ * ones they are on the roster of. A private room is simply absent from the list
+ * for everyone else — the point of it being private.
  */
-export async function listRoomsInProject(projectId: string): Promise<Session[]> {
+export async function listRoomsInProject(projectId: string, viewerId: string): Promise<Session[]> {
   const rows = await query<SessionRow>(
     `${SELECT_SESSION}
       WHERE s.project_id = $1 AND s.deleted_at IS NULL
+        AND (
+          s.visibility = 'public'
+          OR EXISTS (
+            SELECT 1 FROM session_members m
+             WHERE m.session_id = s.id AND m.user_id = $2 AND m.removed_at IS NULL
+          )
+        )
       ORDER BY s.last_active_at DESC`,
-    [projectId],
+    [projectId, viewerId],
   );
   return rows.map((row) => toSession(row));
+}
+
+/** Flips a room between public and invite-only. */
+export async function setVisibility(
+  id: string,
+  visibility: "public" | "private",
+): Promise<Session | null> {
+  await query(`UPDATE sessions SET visibility = $2 WHERE id = $1`, [id, visibility]);
+  return getSession(id);
 }
 
 export async function getSession(id: string, viewerId?: string): Promise<Session | null> {
