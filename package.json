@@ -14,12 +14,16 @@
     "desktop:prod": "next build && NODE_ENV=production electron desktop/main.js",
     "lint": "eslint",
     "db:migrate": "node db/migrate.mjs",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
     "db:test": "node db/schema.test.mjs",
     "test:presence": "tsc app/lib/presence/types.ts app/lib/presence/memory.ts app/lib/presence/redis.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/presence.test.cjs",
     "test": "npm run db:test && npm run test:presence"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "next": "16.3.1",
+    "node-pty": "^1.1.0",
     "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",

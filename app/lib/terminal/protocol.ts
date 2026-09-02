@@ -1,12 +1,4 @@
-/** Events streamed from the terminal route as newline-delimited JSON. */
-export type TerminalEvent =
-  | { t: "start"; pid: number | undefined; cwd: string; command: string }
-  | { t: "out"; d: string }
-  | { t: "err"; d: string }
-  | { t: "cwd"; path: string }
-  | { t: "notice"; message: string }
-  | { t: "exit"; code: number | null; signal: string | null; ms: number };
-
+/** Whether the terminal may run here, and what shell/cwd it reports. */
 export type TerminalStatus = {
   enabled: boolean;
   reason?: string;
@@ -15,13 +7,8 @@ export type TerminalStatus = {
   platform: string;
 };
 
-export type RunRequest = {
-  command: string;
-  cwd: string;
-  runId: string;
-};
-
-/** Total bytes of output kept per command before the run is cut short. */
-export const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-/** Hard wall-clock limit for a single command. */
-export const MAX_RUN_MS = 10 * 60 * 1000;
+/** Control messages POSTed to the pty route: keystrokes, a resize, or a kill. */
+export type PtyControl =
+  | { id: string; type: "input"; data: string }
+  | { id: string; type: "resize"; cols: number; rows: number }
+  | { id: string; type: "kill" };
