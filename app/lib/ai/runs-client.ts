@@ -36,6 +36,20 @@ export async function renameRun(sessionId: string, runId: string, title: string)
   if (!response.ok) throw new Error(await readError(response, "Could not rename that run."));
 }
 
+/** Archive or restore a run (allowed only for the run's starter). */
+export async function archiveRun(
+  sessionId: string,
+  runId: string,
+  archived: boolean,
+): Promise<void> {
+  const response = await fetch(`${base(sessionId)}/${encodeURIComponent(runId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not archive that run."));
+}
+
 /** Watch (viewer) or co-drive (editor) an existing run. */
 export async function joinRun(
   sessionId: string,

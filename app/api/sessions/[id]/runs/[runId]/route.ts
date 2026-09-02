@@ -1,5 +1,5 @@
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
-import { getRun, listRunMessages, renameRun } from "../../../../../lib/ai/runs";
+import { getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
 import type { RunResponse } from "../../../../../lib/ai/runs";
 
 export const runtime = "nodejs";
@@ -34,7 +34,11 @@ export async function GET(
   });
 }
 
-/** Rename a run. Only the person who started it may rename it. */
+/**
+ * Rename or archive a run. Both are the starter's call alone — you manage your
+ * own chats, not other members'. `{ archived }` archives/restores; `{ title }`
+ * renames.
+ */
 export async function PATCH(
   request: Request,
   context: RouteContext<"/api/sessions/[id]/runs/[runId]">,
@@ -49,10 +53,16 @@ export async function PATCH(
     return Response.json({ error: "No such run." }, { status: 404 });
   }
   if (run.startedBy !== result.user.id) {
-    return forbidden("Only the person who started a run can rename it.");
+    return forbidden("You can only manage chats you started, not other members'.");
   }
 
-  const body = (await request.json().catch(() => ({}))) as { title?: unknown };
+  const body = (await request.json().catch(() => ({}))) as { title?: unknown; archived?: unknown };
+
+  if (typeof body.archived === "boolean") {
+    await setRunArchived(runId, body.archived);
+    return Response.json({ ok: true });
+  }
+
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) {
     return Response.json({ error: "A name is required." }, { status: 400 });

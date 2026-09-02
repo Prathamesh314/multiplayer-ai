@@ -10,6 +10,8 @@ import {
   runHasOtherAuthors,
 } from "../../../lib/ai/runs";
 import { checkRunAllowed } from "../../../lib/ai/usage";
+import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
+import type { ForkableRun } from "../../../lib/ai/memory";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
@@ -35,6 +37,8 @@ export type AiRunRequest = {
   /** Composer choices; validated against the agent's own allow-lists below. */
   model?: string;
   effort?: string;
+  /** Import another chat's transcript as this (new) run's opening memory. Ignored when continuing a run. */
+  forkFromRunId?: string;
 };
 
 export type AiRunEvent =
@@ -95,6 +99,24 @@ export async function POST(request: Request) {
   let run = body.runId ? await getRun(body.runId) : null;
   if (run && run.sessionId !== sessionId) run = null;
 
+  // "Import context from…" only makes sense for a brand new chat. Resolved
+  // (and validated against project room visibility, via listForkableRuns)
+  // before the cost gate, so a bad request never spends a concurrency slot.
+  let forkSource: ForkableRun | null = null;
+  if (!run && body.forkFromRunId) {
+    if (!result.session.projectId) {
+      return Response.json(
+        { error: "This room has no project to import context from." },
+        { status: 400 },
+      );
+    }
+    const candidates = await listForkableRuns(result.session.projectId, result.user.id);
+    forkSource = candidates.find((candidate) => candidate.id === body.forkFromRunId) ?? null;
+    if (!forkSource) {
+      return Response.json({ error: "That chat isn't available to import from." }, { status: 404 });
+    }
+  }
+
   // Cost governor: pooled org limits and the per-project throttle decide whether
   // this agent may spawn at all. Checked before anything is created or run.
   const runGate = await checkRunAllowed({
@@ -107,6 +129,10 @@ export async function POST(request: Request) {
   if (!runGate.ok) {
     return Response.json({ error: runGate.error, limit: runGate.limit }, { status: 429 });
   }
+
+  // Set when a fork actually happens, so it can be woven into the prompt sent
+  // to the agent below — the stored user turn stays exactly what was typed.
+  let importedContext: string | null = null;
 
   if (!run) {
     run = await createRun({
@@ -124,6 +150,28 @@ export async function POST(request: Request) {
       agentId: agent.id,
       at: Date.now(),
     });
+
+    if (forkSource) {
+      importedContext = await forkRunMemory({
+        sourceRunId: forkSource.id,
+        destRunId: run.id,
+        createdBy: result.user.id,
+      });
+      const notice = await appendMessage({
+        runId: run.id,
+        role: "system",
+        body: `Imported context from #${forkSource.sessionName}`,
+      });
+      await (await events()).publish(sessionId, {
+        type: "run.turn",
+        runId: run.id,
+        seq: notice.seq,
+        role: "system",
+        authorName: null,
+        body: notice.body,
+        at: Date.now(),
+      });
+    }
   } else {
     // A second driver on someone else's run is recorded as an editor, and the
     // run is marked running again so it holds a concurrency slot while it works.
@@ -136,7 +184,20 @@ export async function POST(request: Request) {
   // one contradictory instruction. Solo runs — the common case — stay untagged,
   // and separate members always have separate runs, so their contexts never mix.
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
-  const agentPrompt = coDriven ? `[@${result.user.handle}] ${prompt}` : prompt;
+  let agentPrompt = coDriven ? `[@${result.user.handle}] ${prompt}` : prompt;
+
+  // The stored transcript in ai_memories keeps the full import regardless; only
+  // what's sent to the CLI process is bounded, since it travels as one argv
+  // string capped at MAX_PROMPT. Earlier turns are dropped first — the most
+  // recent ones are the most likely to matter to a fresh chat.
+  if (importedContext) {
+    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - 120);
+    const injected =
+      importedContext.length > budget
+        ? `[…earlier context truncated for length…]\n${importedContext.slice(importedContext.length - budget)}`
+        : importedContext;
+    agentPrompt = `<imported-context>\n${injected}\n</imported-context>\n\n${agentPrompt}`;
+  }
 
   const promptTurn = await appendMessage({
     runId: run.id,
@@ -293,10 +354,14 @@ function runStream(
             });
           }
           const trimmedErr = errBuf.trim();
-          if (trimmedErr) {
+          const status = code === 0 ? "completed" : "failed";
+          // Only keep stderr when the run failed — then it is the error to show.
+          // On success it is just the CLI's own transcript (Codex echoes its
+          // whole session to stderr), which would render as a second copy of
+          // the reply when the run is reloaded.
+          if (trimmedErr && status === "failed") {
             await appendMessage({ runId, role: "system", body: trimmedErr });
           }
-          const status = code === 0 ? "completed" : "failed";
           // Line counts of what the agent changed, for the sidebar's +N -N badge.
           const stat = sha
             ? await withRepoLock(sessionId, () => diffStat(sessionId, baseSha, sha!)).catch(() => null)

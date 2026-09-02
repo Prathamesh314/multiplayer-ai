@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { PickedSource } from "../../lib/folder";
+import { fetchMe } from "../../lib/auth/client";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
 import { openSessionStream } from "../../lib/events/client";
 import { notifyEditing } from "../../lib/session/client";
@@ -110,6 +111,34 @@ export function Workspace({ session }: { session: Session }) {
   // The room's agent runs, and which one is open in the chat (null = new run).
   const { runs, refresh: refreshRuns } = useRoomRuns(session.id);
   const [enteredRun, setEnteredRun] = useState<AgentRun | null>(null);
+  // The chat whose context the next new run will import into its memory, if any.
+  // Shared so the sidebar/header "Fork" actions and the composer picker agree.
+  const [forkFromRunId, setForkFromRunId] = useState<string | null>(null);
+
+  // The signed-in user's id, resolved directly rather than inferred from the
+  // roster: a public room is entered by project role, so the viewer may have no
+  // session_members row to carry an `isSelf` flag. This is what marks "you".
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMe().then((r) => {
+      if (!cancelled) setMyUserId(r.user?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Open a fresh chat with nothing carried over.
+  const startNewRun = () => {
+    setEnteredRun(null);
+    setForkFromRunId(null);
+  };
+  // Fork a chat: a fresh chat that imports the source run's context on send.
+  const startFork = (run: AgentRun) => {
+    setEnteredRun(null);
+    setForkFromRunId(run.id);
+  };
 
   /**
    * Typing has no turn boundary to commit on, so it gets a debounced one. This
@@ -616,12 +645,13 @@ export function Workspace({ session }: { session: Session }) {
               <RoomSidebar
                 sessionId={session.id}
                 members={people.members}
+                myUserId={myUserId}
                 incoming={incoming}
                 runs={runs}
                 enteredRunId={enteredRun?.id ?? null}
                 onEnter={setEnteredRun}
-                onNewRun={() => setEnteredRun(null)}
-                onFork={() => setEnteredRun(null)}
+                onNewRun={startNewRun}
+                onFork={startFork}
                 onRenamed={refreshRuns}
               />
             </div>
@@ -633,9 +663,14 @@ export function Workspace({ session }: { session: Session }) {
                 sessionId={session.id}
                 canRun={!readOnly}
                 members={people.members}
+                myUserId={myUserId}
                 entered={enteredRun}
                 onRunsChanged={refreshRuns}
-                onNewRun={() => setEnteredRun(null)}
+                onEntered={setEnteredRun}
+                forkFromRunId={forkFromRunId}
+                onForkFromChange={setForkFromRunId}
+                onForkEntered={startFork}
+                onNewRun={startNewRun}
               />
             </div>
 

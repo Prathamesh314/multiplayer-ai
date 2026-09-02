@@ -1,7 +1,9 @@
 import type { AgentsResponse, AgentStatus } from "./catalog";
 import type { AiRunEvent } from "../../api/ai/run/route";
+import type { ForkableRunsResponse } from "../../api/sessions/[id]/forkable-runs/route";
 
 export type { AgentStatus, AgentsResponse };
+export type { ForkableRun } from "./memory";
 
 export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   const response = await fetch(`/api/ai/agents${refresh ? "?refresh=1" : ""}`, {
@@ -9,6 +11,13 @@ export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   });
   if (!response.ok) return { agents: [], canRun: false, reason: null };
   return (await response.json()) as AgentsResponse;
+}
+
+/** Candidate source chats for "import context from…" in this room. */
+export async function fetchForkableRuns(sessionId: string): Promise<ForkableRunsResponse> {
+  const response = await fetch(`/api/sessions/${sessionId}/forkable-runs`, { cache: "no-store" });
+  if (!response.ok) return { runs: [] };
+  return (await response.json()) as ForkableRunsResponse;
 }
 
 export type RunHandle = { cancel: () => void };
@@ -26,6 +35,7 @@ export function runAgent(
     title?: string;
     model?: string;
     effort?: string;
+    forkFromRunId?: string;
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

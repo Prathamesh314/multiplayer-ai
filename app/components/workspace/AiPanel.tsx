@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
-import { fetchAgents, runAgent, type RunHandle } from "../../lib/ai/client";
+import { fetchAgents, fetchForkableRuns, runAgent, type ForkableRun, type RunHandle } from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
 import { openSessionStream } from "../../lib/events/client";
@@ -27,10 +27,27 @@ type AiPanelProps = {
   canRun: boolean;
   /** Room roster, for the "watching" cluster in the header. */
   members: SessionMember[];
+  /** The signed-in user's id — reliable even in a public room with no roster row. */
+  myUserId: string | null;
   /** The run whose conversation is shown; null = composing a fresh one. */
   entered: AgentRun | null;
   /** Reload the room's runs after this tab starts one. */
   onRunsChanged: () => void;
+  /**
+   * A run this tab just started, so the parent can make it the entered run —
+   * that is what keeps follow-up prompts in the same chat instead of opening a
+   * new one each time.
+   */
+  onEntered?: (run: AgentRun) => void;
+  /**
+   * The chat whose context the next new run will import into its AI memory, or
+   * null for none. Controlled by the parent so the sidebar/header "Fork"
+   * actions and the composer's own picker all drive one selection.
+   */
+  forkFromRunId: string | null;
+  onForkFromChange: (runId: string | null) => void;
+  /** "Fork" a run in view: open a fresh chat that imports that run's context. */
+  onForkEntered: (run: AgentRun) => void;
   /** Clear the entered run to compose a fresh one. */
   onNewRun: () => void;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
@@ -52,8 +69,13 @@ export function AiPanel({
   sessionId,
   canRun,
   members,
+  myUserId,
   entered,
   onRunsChanged,
+  onEntered,
+  forkFromRunId,
+  onForkFromChange,
+  onForkEntered,
   onNewRun,
   onClose,
 }: AiPanelProps) {
@@ -66,6 +88,9 @@ export function AiPanel({
   // Composer selectors. Reset together with the provider, since the options do.
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
+  // Candidate chats to import context from. The chosen one (forkFromRunId) is
+  // controlled by the parent so a "Fork" action elsewhere preselects it here.
+  const [forkableRuns, setForkableRuns] = useState<ForkableRun[]>([]);
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
@@ -75,7 +100,9 @@ export function AiPanel({
   const turnSeq = useRef(0);
   const uid = () => `t${(turnSeq.current += 1)}`;
 
-  const myId = members.find((member) => member.isSelf)?.userId ?? null;
+  // Reliable even in a public room (no roster row to carry isSelf); falls back
+  // to the roster only until the id resolves. Drives continue-vs-fork and "you".
+  const myId = myUserId ?? members.find((member) => member.isSelf)?.userId ?? null;
   // Whether the run in view is the current user's (or a fresh compose).
   const enteredIsMine = !entered || entered.startedBy === myId;
 
@@ -83,10 +110,25 @@ export function AiPanel({
   // closes over stale state.
   const enteredRef = useRef<AgentRun | null>(null);
   const localRunIdRef = useRef<string | null>(null); // the run this tab is streaming
+  const lastLocalRunIdRef = useRef<string | null>(null); // the last run this tab drove to a finish
   const liveTurnIdRef = useRef<string | null>(null); // the agent turn being followed
   useEffect(() => {
     enteredRef.current = entered;
   }, [entered]);
+
+  // Only a fresh compose can import context; reload the candidate list each
+  // time the panel returns to that state (a new run may have just finished).
+  // The pick itself is cleared in ask() once it's been used, not here.
+  useEffect(() => {
+    if (entered) return;
+    let cancelled = false;
+    fetchForkableRuns(sessionId).then((res) => {
+      if (!cancelled) setForkableRuns(res.runs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, entered]);
 
   /** Load a run's stored conversation into the panel. */
   async function loadRun(target: AgentRun) {
@@ -97,17 +139,31 @@ export function AiPanel({
     try {
       const { messages } = await fetchRun(sessionId, target.id);
       setTurns(
-        messages.map((message) => {
-          // "tool" turns are the agent's own machinery; show them as agent output.
-          const role: Turn["role"] = message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
-          return {
-            id: uid(),
-            role,
-            text: message.body,
-            author: message.authorName ?? null,
-            agentName: role === "agent" ? agentName : null,
-          };
-        }),
+        messages
+          // On a run that finished cleanly, a stored system turn is the CLI's own
+          // stderr transcript (Codex echoes its whole session there), which just
+          // duplicates the agent reply. Drop it, but keep deliberate notices such
+          // as the imported-context marker. A failed run keeps stderr — it's the error.
+          .filter(
+            (message) =>
+              !(
+                message.role === "system" &&
+                target.status === "completed" &&
+                !message.body.startsWith("Imported context")
+              ),
+          )
+          .map((message) => {
+            // "tool" turns are the agent's own machinery; show them as agent output.
+            const role: Turn["role"] =
+              message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
+            return {
+              id: uid(),
+              role,
+              text: message.body,
+              author: message.authorName ?? null,
+              agentName: role === "agent" ? agentName : null,
+            };
+          }),
       );
     } catch {
       setError("Could not load that run.");
@@ -138,13 +194,17 @@ export function AiPanel({
 
   // The conversation follows whichever run is entered: load its stored turns,
   // or clear to compose a fresh one. Deferred so no state is set in the effect body.
+  //
+  // The exception is a run this tab just started: it is entered so follow-ups
+  // continue it, but its output is already streaming into `turns` locally, so
+  // reloading from the store here would wipe the live tail. Skip it.
   useEffect(() => {
     liveTurnIdRef.current = null;
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      if (entered) void loadRun(entered);
-      else setTurns([]);
+      if (entered && entered.id !== localRunIdRef.current) void loadRun(entered);
+      else if (!entered) setTurns([]);
     });
     return () => {
       cancelled = true;
@@ -159,6 +219,7 @@ export function AiPanel({
       onRunOutput: (event) => {
         if (event.runId === localRunIdRef.current) return; // our own run streams locally
         if (enteredRef.current?.id !== event.runId) return; // not the run in view
+        if (event.stream !== "out") return; // stderr is internal processing, not shown
         appendFollowChunk(event.chunk);
       },
       onRunTurn: (event) => {
@@ -175,9 +236,14 @@ export function AiPanel({
       },
       onRunFinished: (event) => {
         // Reload the entered run so its complete, stored output replaces the
-        // live tail (which may have started mid-run).
+        // live tail (which may have started mid-run). Only for a run driven by
+        // someone else — one we drove locally is already fully rendered.
         const current = enteredRef.current;
-        if (current?.id === event.runId && event.runId !== localRunIdRef.current) {
+        if (
+          current?.id === event.runId &&
+          event.runId !== localRunIdRef.current &&
+          event.runId !== lastLocalRunIdRef.current
+        ) {
           liveTurnIdRef.current = null;
           void loadRun(current);
         }
@@ -194,8 +260,14 @@ export function AiPanel({
       setAgents(response.agents);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
-      // Pre-select the one that is ready, so the common case is one click.
-      setConnected((previous) => previous ?? response.agents.find((a) => a.installed)?.id ?? null);
+      // Pre-select a ready agent, so the common case is one click. Codex is the
+      // default when it is installed; otherwise the first installed one.
+      setConnected((previous) => {
+        if (previous) return previous;
+        const installed = response.agents.filter((a) => a.installed);
+        const codex = installed.find((a) => a.id === "codex");
+        return codex?.id ?? installed[0]?.id ?? null;
+      });
     });
     return () => {
       cancelled = true;
@@ -230,38 +302,72 @@ export function AiPanel({
     setRunning(true);
     setError(null);
 
-    // Continue only your own unfinished run; a message on someone else's run
-    // forks into a fresh run of your own rather than editing theirs.
-    const continuing =
-      entered && entered.status !== "completed" && entered.startedBy === myId ? entered.id : undefined;
+    // Continue your own run — including one that already finished, so a
+    // follow-up keeps the same chat instead of opening a new one every time.
+    // A message on someone else's run forks into a fresh run of your own
+    // rather than editing theirs.
+    const continuing = entered && entered.startedBy === myId ? entered.id : undefined;
     const agentId = continuing ? entered!.agentId : connected;
     const agentName = agents?.find((a) => a.id === agentId)?.name ?? agentId;
 
-    // Continuing appends to the entered run; a fresh run starts a clean thread.
-    const userTurn: Turn = { id: uid(), role: "user", text: prompt, author: "You" };
-    setTurns((prev) => (continuing ? [...prev, userTurn] : [userTurn]));
+    // Claim the run as ours *before* the request. When continuing, the room
+    // broadcasts this run's prompt and output back to us, and those can arrive
+    // ahead of the local stream's "start" event — without this, they'd slip
+    // past the own-run guard in the realtime handlers and render a second time.
+    // A fresh run's id isn't known until "start", but it isn't entered yet
+    // either, so its broadcasts are already ignored until then.
+    if (continuing) localRunIdRef.current = continuing;
 
-    // The agent's turn is created lazily on its first byte, so an agent that
-    // exits without output does not leave an empty bubble.
-    let agentTurnId: string | null = null;
+    // A fork pick only ever applies to the fresh run it was made for.
+    const forkFromRun = continuing ? undefined : forkFromRunId || undefined;
+    const forkSource = forkFromRun ? forkableRuns.find((r) => r.id === forkFromRun) : undefined;
+    onForkFromChange(null);
+
+    // Continuing appends to the entered run; a fresh run starts a clean thread.
+    // On a fork, lead with a notice so the imported memory is visible up top —
+    // the messages themselves stay in the agent's context, not the transcript.
+    const userTurn: Turn = { id: uid(), role: "user", text: prompt, author: "You" };
+    setTurns((prev) => {
+      if (continuing) return [...prev, userTurn];
+      if (forkSource) {
+        return [
+          { id: uid(), role: "system", text: `Imported context from #${forkSource.sessionName}` },
+          userTurn,
+        ];
+      }
+      return [userTurn];
+    });
+
+    // The agent's turn is created up front and shows "Thinking…" until real
+    // output lands; it is filled only from stdout (the finished reply). stderr
+    // is the CLI's internal processing — its banner, reasoning, token tally —
+    // and is never shown in the chat.
+    const agentTurnId = uid();
 
     run.current = runAgent(
-      { sessionId, agentId, prompt, runId: continuing, model, effort },
+      { sessionId, agentId, prompt, runId: continuing, model, effort, forkFromRunId: forkFromRun },
       {
         onEvent: (event) => {
           if (event.t === "start") {
             localRunIdRef.current = event.runId; // so the room broadcast of our own run is ignored
+            setTurns((prev) => [
+              ...prev,
+              { id: agentTurnId, role: "agent", text: "", agentName, streaming: true },
+            ]);
             onRunsChanged(); // the new run shows in the sidebar
-          } else if (event.t === "out" || event.t === "err") {
+            // Enter a freshly opened run so the next prompt continues it rather
+            // than starting yet another. (A continuation is already entered.)
+            if (!continuing && onEntered) {
+              void fetchRun(sessionId, event.runId)
+                .then(({ run }) => onEntered(run))
+                .catch(() => {});
+            }
+          } else if (event.t === "out") {
+            // Only stdout — the reply. stderr (event.t === "err") is dropped.
             setTurns((prev) => {
               const next = [...prev];
-              if (agentTurnId === null) {
-                agentTurnId = uid();
-                next.push({ id: agentTurnId, role: "agent", text: event.d, agentName, streaming: true });
-              } else {
-                const index = next.findIndex((turn) => turn.id === agentTurnId);
-                if (index >= 0) next[index] = { ...next[index], text: next[index].text + event.d };
-              }
+              const index = next.findIndex((turn) => turn.id === agentTurnId);
+              if (index >= 0) next[index] = { ...next[index], text: next[index].text + event.d };
               return next;
             });
           } else if (event.t === "notice") {
@@ -282,6 +388,10 @@ export function AiPanel({
         onError: setError,
         onDone: () => {
           setRunning(false);
+          // Remember the run we just drove, so the room's run.finished broadcast
+          // does not reload it over our own already-rendered output (which
+          // includes the local "Finished in…" summary).
+          lastLocalRunIdRef.current = localRunIdRef.current;
           localRunIdRef.current = null;
           onRunsChanged();
         },
@@ -297,6 +407,16 @@ export function AiPanel({
   // providers to switch between — all from the shared catalog.
   const activeSpec = connected ? agentById(connected) : undefined;
   const installedAgents = agents?.filter((agent) => agent.installed) ?? [];
+
+  // Only offered while composing a fresh chat — a continuation already has a
+  // memory of its own.
+  const forkOptions: AgentChoice[] = [
+    { id: "", label: "Import context…" },
+    ...forkableRuns.map((candidate) => ({
+      id: candidate.id,
+      label: `${candidate.sessionName} · ${candidate.title ?? candidate.agentId}`,
+    })),
+  ];
 
   const composerFooter =
     ready && activeSpec ? (
@@ -322,6 +442,17 @@ export function AiPanel({
             />
           </>
         )}
+        {!entered && forkableRuns.length > 0 && (
+          <>
+            <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
+            <SelectChip
+              value={forkFromRunId ?? ""}
+              onChange={(id) => onForkFromChange(id || null)}
+              options={forkOptions}
+              title="Import context from…"
+            />
+          </>
+        )}
       </div>
     ) : undefined;
 
@@ -341,8 +472,8 @@ export function AiPanel({
           ) : (
             <button
               type="button"
-              onClick={onNewRun}
-              title={`Branch off ${entered.startedByName}'s session into your own run`}
+              onClick={() => onForkEntered(entered)}
+              title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
@@ -549,6 +680,9 @@ function Conversation({ turns }: { turns: Turn[] }) {
   // a turn that was nothing but noise is dropped entirely.
   const visible = turns.flatMap((turn) => {
     if (turn.role === "user") return [turn];
+    // A still-streaming agent turn is kept even when empty — it renders the
+    // "Thinking…" placeholder until stdout arrives.
+    if (turn.streaming) return [turn];
     const text = cleanRunText(turn.text);
     return text ? [{ ...turn, text }] : [];
   });
@@ -589,11 +723,13 @@ function cleanRunText(raw: string): string {
     })
     .join("\n");
 
+  // The token tally is never worth showing. Strip it wherever it appears —
+  // "tokens used\n8,940" or inline "tokens used 8,940" — not just at the end.
+  text = text.replace(/\n*tokens used\s+[\d,]+/gi, "");
+
   if (isCodex) {
     // The startup banner: "OpenAI Codex v…" through its closing rule.
     text = text.replace(/OpenAI Codex v[^\n]*\n-{3,}[\s\S]*?\n-{3,}\n?/, "");
-    // The trailing token accounting.
-    text = text.replace(/\n*tokens used\n[\d,]+\s*$/i, "");
     // Keep only what follows the last `codex` marker, dropping the prompt echo.
     const lastCodex = text.lastIndexOf("\ncodex\n");
     if (lastCodex >= 0) text = text.slice(lastCodex + "\ncodex\n".length);
@@ -635,7 +771,11 @@ function TurnBubble({ turn }: { turn: Turn }) {
           </span>
           {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
         </header>
-        <Markdown text={turn.text} />
+        {turn.streaming && !turn.text.trim() ? (
+          <p className="text-[13.5px] leading-6 text-vs-muted">Thinking…</p>
+        ) : (
+          <Markdown text={turn.text} />
+        )}
       </div>
     </article>
   );
