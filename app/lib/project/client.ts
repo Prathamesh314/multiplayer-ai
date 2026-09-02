@@ -62,6 +62,23 @@ export async function addProjectMember(
   if (!response.ok) throw new Error(await readError(response, "Could not add that member."));
 }
 
+export async function changeProjectMemberRole(
+  orgSlug: string,
+  projectSlug: string,
+  userId: string,
+  role: ProjectRole,
+): Promise<void> {
+  const response = await fetch(
+    `/api/orgs/${encodeURIComponent(orgSlug)}/projects/${encodeURIComponent(projectSlug)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role }),
+    },
+  );
+  if (!response.ok) throw new Error(await readError(response, "Could not change that member's role."));
+}
+
 export async function removeProjectMember(
   orgSlug: string,
   projectSlug: string,
