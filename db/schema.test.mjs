@@ -450,6 +450,11 @@ await test("a run status is constrained to the known set", async () => {
   );
 });
 
+await test("a run starts unarchived", async () => {
+  const { rows } = await db.query(`SELECT archived_at FROM agent_runs WHERE id = $1`, [aRun]);
+  assert.equal(rows[0].archived_at, null, "a fresh run should not be archived");
+});
+
 await test("a user turn must carry an author", async () => {
   await rejects(
     db,
@@ -483,6 +488,68 @@ await test("seq is unique within a run", async () => {
     [aRun],
     /duplicate key|unique/i,
   );
+});
+
+// --- ai memories -------------------------------------------------------------
+
+const memSourceRun = (
+  await db.query(
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+     VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+    [runSession, alice],
+  )
+).rows[0].id;
+
+const memDestRun = (
+  await db.query(
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+     VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+    [runSession, alice],
+  )
+).rows[0].id;
+
+await test("a memory's content cannot be blank", async () => {
+  await rejects(
+    db,
+    `INSERT INTO ai_memories (run_id, forked_from_run_id, content, created_by)
+     VALUES ($1, $2, '   ', $3)`,
+    [memDestRun, memSourceRun, alice],
+    /ai_memories_content_present/,
+  );
+});
+
+await test("deleting the destination run takes its imported memory with it", async () => {
+  const memId = (
+    await db.query(
+      `INSERT INTO ai_memories (run_id, forked_from_run_id, content, created_by)
+       VALUES ($1, $2, 'hello from the source chat', $3) RETURNING id`,
+      [memDestRun, memSourceRun, alice],
+    )
+  ).rows[0].id;
+  await db.query(`DELETE FROM agent_runs WHERE id = $1`, [memDestRun]);
+  const { rows } = await db.query(`SELECT count(*)::int AS n FROM ai_memories WHERE id = $1`, [memId]);
+  assert.equal(rows[0].n, 0);
+});
+
+await test("deleting the source run cascades to memories forked from it", async () => {
+  const freshDest = (
+    await db.query(
+      `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+       VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+      [runSession, alice],
+    )
+  ).rows[0].id;
+  await db.query(
+    `INSERT INTO ai_memories (run_id, forked_from_run_id, content, created_by)
+     VALUES ($1, $2, 'hello again', $3)`,
+    [freshDest, memSourceRun, alice],
+  );
+  await db.query(`DELETE FROM agent_runs WHERE id = $1`, [memSourceRun]);
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM ai_memories WHERE forked_from_run_id = $1`,
+    [memSourceRun],
+  );
+  assert.equal(rows[0].n, 0);
 });
 
 await test("deleting a run takes its messages and participants with it", async () => {

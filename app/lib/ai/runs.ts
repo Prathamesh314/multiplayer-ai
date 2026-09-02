@@ -32,6 +32,8 @@ export type AgentRun = {
   createdAt: number;
   startedAt: number | null;
   endedAt: number | null;
+  /** Set when the starter archived it out of the active list; null while live. */
+  archivedAt: number | null;
 };
 
 export type AgentRunMessage = {
@@ -66,6 +68,7 @@ type RunRow = {
   created_at: Date;
   started_at: Date | null;
   ended_at: Date | null;
+  archived_at: Date | null;
 };
 
 const toRun = (row: RunRow): AgentRun => ({
@@ -85,12 +88,13 @@ const toRun = (row: RunRow): AgentRun => ({
   createdAt: row.created_at.getTime(),
   startedAt: row.started_at ? row.started_at.getTime() : null,
   endedAt: row.ended_at ? row.ended_at.getTime() : null,
+  archivedAt: row.archived_at ? row.archived_at.getTime() : null,
 });
 
 const RUN_COLUMNS = `
   r.id, r.session_id, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
-  r.exit_code, r.error, r.created_at, r.started_at, r.ended_at
+  r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at
 `;
 
 /**
@@ -226,6 +230,14 @@ export async function renameRun(runId: string, title: string): Promise<void> {
   await query(`UPDATE agent_runs SET title = $2 WHERE id = $1`, [runId, title]);
 }
 
+/** Archives or restores a run — a personal hide, set only by its starter. */
+export async function setRunArchived(runId: string, archived: boolean): Promise<void> {
+  await query(
+    `UPDATE agent_runs SET archived_at = ${archived ? "now()" : "NULL"} WHERE id = $1`,
+    [runId],
+  );
+}
+
 /** The run list for a room, newest first. */
 export async function listRuns(sessionId: string): Promise<AgentRun[]> {
   const rows = await query<RunRow>(
@@ -236,6 +248,56 @@ export async function listRuns(sessionId: string): Promise<AgentRun[]> {
     [sessionId],
   );
   return rows.map(toRun);
+}
+
+export type ForkableRun = {
+  id: string;
+  sessionId: string;
+  sessionName: string;
+  startedByName: string;
+  agentId: string;
+  title: string | null;
+  status: RunStatus;
+  createdAt: number;
+};
+
+/**
+ * Candidate source runs for "import context from…" — across whichever rooms
+ * the caller may see, not just the one they're in. Room access is resolved by
+ * the caller (see visibleRoomIds); this just fetches runs for the given ids.
+ */
+export async function listRunsForRooms(sessionIds: string[], limit = 50): Promise<ForkableRun[]> {
+  if (sessionIds.length === 0) return [];
+  const rows = await query<{
+    id: string;
+    session_id: string;
+    session_name: string;
+    started_by_name: string;
+    agent_id: string;
+    title: string | null;
+    status: RunStatus;
+    created_at: Date;
+  }>(
+    `SELECT r.id, r.session_id, s.name AS session_name, u.display_name AS started_by_name,
+            r.agent_id, r.title, r.status, r.created_at
+       FROM agent_runs r
+       JOIN sessions s ON s.id = r.session_id
+       JOIN users u ON u.id = r.started_by
+      WHERE r.session_id = ANY($1)
+      ORDER BY r.created_at DESC
+      LIMIT $2`,
+    [sessionIds, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    sessionId: row.session_id,
+    sessionName: row.session_name,
+    startedByName: row.started_by_name,
+    agentId: row.agent_id,
+    title: row.title,
+    status: row.status,
+    createdAt: row.created_at.getTime(),
+  }));
 }
 
 export async function getRun(runId: string): Promise<AgentRun | null> {
