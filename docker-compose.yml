@@ -59,6 +59,43 @@ services:
       timeout: 3s
       retries: 10
 
+  mnemosyne:
+    # The semantic shared-memory sidecar. The app talks to it over MCP
+    # streamable HTTP (see app/lib/ai/mnemosyne.ts); when this service is not
+    # running, the app simply skips recall/ingest and behaves as before.
+    build:
+      context: .
+      dockerfile: docker/mnemosyne/Dockerfile
+    container_name: multiplayer-mnemosyne
+    restart: unless-stopped
+    environment:
+      # A non-loopback bind fail-closes without both of these. The token is a
+      # committed dev default — override it, and never expose this port publicly.
+      MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
+      # Host header values clients present: the compose service name and the
+      # host mapping below. Anything else is refused.
+      MNEMOSYNE_MCP_ALLOWED_HOSTS: "mnemosyne:8787,localhost:${MNEMOSYNE_PORT:-8787}"
+      # Distil working memory into long-term memory automatically once a bank
+      # accumulates enough turns — this is the cross-chat summarization pass.
+      MNEMOSYNE_AUTO_SLEEP: "true"
+    ports:
+      - "${MNEMOSYNE_PORT:-8787}:8787"
+    volumes:
+      - mnemosyne-data:/data
+    healthcheck:
+      # Readiness = uvicorn is listening. A successful TCP connect exits 0; a
+      # refused socket raises and exits non-zero. Simpler and more reliable than
+      # a full MCP handshake for a liveness gate.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import socket; socket.create_connection(('localhost', 8787), 3).close()"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: multiplayer-pgadmin
@@ -88,6 +125,7 @@ services:
 volumes:
   postgres-data:
   pgadmin-data:
+  mnemosyne-data:
 # The schema is deliberately NOT applied through /docker-entrypoint-initdb.d.
 # Running the migration files that way would create the tables without
 # recording them in schema_migrations, so the next `npm run db:migrate` would
