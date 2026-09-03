@@ -6,11 +6,13 @@ import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
 import { colorOf, initialsOf } from "../../lib/people";
 import type { ChatMessage, SessionMember } from "../../lib/session/types";
-import { ChevronIcon, GitBranchIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { CheckIcon, ChevronIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
 import { TeamChatPanel } from "./TeamChatPanel";
 
 type RoomSidebarProps = {
   sessionId: string;
+  /** This room's name, for building copyable `@room/<run-id>` chat paths. */
+  roomName: string;
   members: SessionMember[];
   /** The signed-in user's id, for marking their own folder. */
   myUserId: string | null;
@@ -31,6 +33,7 @@ type RoomSidebarProps = {
  */
 export function RoomSidebar({
   sessionId,
+  roomName,
   members,
   myUserId,
   incoming,
@@ -69,6 +72,7 @@ export function RoomSidebar({
         <div className="flex min-h-0 flex-1 flex-col">
           <AgentRunsBrowser
             sessionId={sessionId}
+            roomName={roomName}
             members={members}
             myUserId={myUserId}
             runs={runs}
@@ -121,6 +125,7 @@ type Person = { id: string; name: string; isSelf: boolean };
 
 function AgentRunsBrowser({
   sessionId,
+  roomName,
   members,
   myUserId,
   runs,
@@ -131,6 +136,7 @@ function AgentRunsBrowser({
   onRenamed,
 }: {
   sessionId: string;
+  roomName: string;
   members: SessionMember[];
   myUserId: string | null;
   runs: AgentRun[];
@@ -145,6 +151,20 @@ function AgentRunsBrowser({
   const myId = myUserId ?? members.find((member) => member.isSelf)?.userId ?? null;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Copy an `@room/<run-id>` path to reference this chat from another room's
+  // composer — the id is what the server resolves, the name is just readable.
+  function copyPath(run: AgentRun) {
+    const path = `@${roomName}/${run.id}`;
+    void navigator.clipboard
+      ?.writeText(path)
+      .then(() => {
+        setCopiedId(run.id);
+        window.setTimeout(() => setCopiedId((id) => (id === run.id ? null : id)), 1200);
+      })
+      .catch(() => {});
+  }
   // Folders the viewer has toggled away from their default (mine defaults open,
   // others closed). Tracking flips rather than absolute open-state means the
   // default reacts correctly once `myId` resolves, with no seeding effect.
@@ -306,6 +326,18 @@ function AgentRunsBrowser({
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
         </button>
+
+        <IconButton
+          onClick={() => copyPath(run)}
+          title={`Copy chat path (@${roomName}/…) to reference it from another room`}
+          label="Copy chat path"
+        >
+          {copiedId === run.id ? (
+            <CheckIcon className="h-3.5 w-3.5 text-green-500" />
+          ) : (
+            <LinkIcon className="h-3.5 w-3.5" />
+          )}
+        </IconButton>
 
         {self ? (
           archived ? (

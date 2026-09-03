@@ -1,9 +1,14 @@
 import type { AgentsResponse, AgentStatus } from "./catalog";
 import type { AiRunEvent } from "../../api/ai/run/route";
 import type { ForkableRunsResponse } from "../../api/sessions/[id]/forkable-runs/route";
+import type {
+  MentionRoomDTO,
+  MentionTargetsResponse,
+} from "../../api/sessions/[id]/mention-targets/route";
 
 export type { AgentStatus, AgentsResponse };
 export type { ForkableRun } from "./memory";
+export type { MentionRoomDTO };
 
 export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   const response = await fetch(`/api/ai/agents${refresh ? "?refresh=1" : ""}`, {
@@ -18,6 +23,13 @@ export async function fetchForkableRuns(sessionId: string): Promise<ForkableRuns
   const response = await fetch(`/api/sessions/${sessionId}/forkable-runs`, { cache: "no-store" });
   if (!response.ok) return { runs: [] };
   return (await response.json()) as ForkableRunsResponse;
+}
+
+/** Every visible room in this room's project (with its chats), for the @ picker. */
+export async function fetchMentionTargets(sessionId: string): Promise<MentionRoomDTO[]> {
+  const response = await fetch(`/api/sessions/${sessionId}/mention-targets`, { cache: "no-store" });
+  if (!response.ok) return [];
+  return ((await response.json()) as MentionTargetsResponse).rooms;
 }
 
 export type RunHandle = { cancel: () => void };
@@ -36,6 +48,8 @@ export function runAgent(
     model?: string;
     effort?: string;
     forkFromRunId?: string;
+    /** Run ids of chats referenced with `@room/<run-id>` in the prompt. */
+    contextRefs?: string[];
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

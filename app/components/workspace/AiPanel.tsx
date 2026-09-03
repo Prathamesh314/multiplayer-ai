@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
-import { fetchAgents, fetchForkableRuns, runAgent, type ForkableRun, type RunHandle } from "../../lib/ai/client";
+import {
+  fetchAgents,
+  fetchForkableRuns,
+  fetchMentionTargets,
+  runAgent,
+  type ForkableRun,
+  type RunHandle,
+} from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
 import { openSessionStream } from "../../lib/events/client";
@@ -17,7 +24,7 @@ import {
   SparkleIcon,
   SpinnerIcon,
 } from "../icons";
-import { Composer } from "./chat";
+import { Composer, type MentionRoom } from "./chat";
 import { Markdown } from "./Markdown";
 import { PanelHeader } from "./TeamChatPanel";
 
@@ -91,6 +98,9 @@ export function AiPanel({
   // Candidate chats to import context from. The chosen one (forkFromRunId) is
   // controlled by the parent so a "Fork" action elsewhere preselects it here.
   const [forkableRuns, setForkableRuns] = useState<ForkableRun[]>([]);
+  // Every room in the project (with its chats) for the composer's @ picker —
+  // includes empty rooms, unlike forkableRuns.
+  const [mentionTargets, setMentionTargets] = useState<MentionRoom[]>([]);
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
@@ -116,14 +126,16 @@ export function AiPanel({
     enteredRef.current = entered;
   }, [entered]);
 
-  // Only a fresh compose can import context; reload the candidate list each
-  // time the panel returns to that state (a new run may have just finished).
-  // The pick itself is cleared in ask() once it's been used, not here.
+  // Candidate chats for both "import context…" (fresh compose only) and the
+  // composer's @-mention picker (any time). Reloaded whenever the entered run
+  // changes, since a run may have just finished and become referenceable.
   useEffect(() => {
-    if (entered) return;
     let cancelled = false;
     fetchForkableRuns(sessionId).then((res) => {
       if (!cancelled) setForkableRuns(res.runs);
+    });
+    fetchMentionTargets(sessionId).then((rooms) => {
+      if (!cancelled) setMentionTargets(rooms);
     });
     return () => {
       cancelled = true;
@@ -297,7 +309,7 @@ export function AiPanel({
     setInstallFor(null);
   }
 
-  function ask(prompt: string) {
+  function ask(prompt: string, contextRefs?: string[]) {
     if (!connected || running) return;
     setRunning(true);
     setError(null);
@@ -345,7 +357,7 @@ export function AiPanel({
     const agentTurnId = uid();
 
     run.current = runAgent(
-      { sessionId, agentId, prompt, runId: continuing, model, effort, forkFromRunId: forkFromRun },
+      { sessionId, agentId, prompt, runId: continuing, model, effort, forkFromRunId: forkFromRun, contextRefs },
       {
         onEvent: (event) => {
           if (event.t === "start") {
@@ -407,6 +419,14 @@ export function AiPanel({
   // providers to switch between — all from the shared catalog.
   const activeSpec = connected ? agentById(connected) : undefined;
   const installedAgents = agents?.filter((agent) => agent.installed) ?? [];
+
+  // Every visible room in the project — including empty ones — for the @ picker,
+  // with only the chat currently in view removed (you can't reference the one
+  // you're typing into).
+  const mentionRooms: MentionRoom[] = mentionTargets.map((room) => ({
+    ...room,
+    chats: entered ? room.chats.filter((chat) => chat.runId !== entered.id) : room.chats,
+  }));
 
   // Only offered while composing a fresh chat — a continuation already has a
   // memory of its own.
@@ -539,12 +559,13 @@ export function AiPanel({
           tall
           narrow
           footer={composerFooter}
+          mentions={mentionRooms}
           placeholder={
             !ready
               ? "Connect an agent first…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…`
+                : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (type @ to reference another chat)" : ""}`
           }
           onSend={ask}
         />
