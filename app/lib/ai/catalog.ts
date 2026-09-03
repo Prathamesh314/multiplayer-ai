@@ -1,3 +1,5 @@
+import { createClaudeStreamParser, type StreamParser } from "./stream";
+
 /**
  * The coding agents this app knows how to talk to.
  *
@@ -46,6 +48,14 @@ export type AgentSpec = {
    * an empty or absent value means "let the CLI use its own default".
    */
   promptArgs: (prompt: string, opts?: RunOptions) => string[];
+  /**
+   * When set, this agent's stdout is newline-delimited JSON rather than plain
+   * text. A fresh parser is created per run and fed each line; it yields the
+   * reply (token by token), the thinking trace, and tool activity. This is what
+   * makes a run visibly working instead of the answer landing whole at the end.
+   * Absent → stdout is the reply verbatim.
+   */
+  createStreamParser?: () => StreamParser;
   /** Models offered in the composer. First entry is the default ("Auto"). */
   models: AgentChoice[];
   /** Reasoning-effort levels offered, where the CLI supports them. May be empty. */
@@ -91,14 +101,24 @@ export const AGENTS: AgentSpec[] = [
      * stops to ask permission just stalls and reports nothing. This lets it
      * edit files in the working copy while still refusing the riskier tools —
      * and everything it writes is committed, so any edit is reversible.
+     *
+     * stream-json + partial messages make the reply stream token by token;
+     * without them, print mode buffers the whole answer to the end and the run
+     * looks frozen the entire time. --verbose is required to stream under -p.
+     * `parseStreamLine` below turns those JSON events back into plain text.
      */
     promptArgs: (prompt, opts) => [
       ...(opts?.model ? ["--model", opts.model] : []),
       "--permission-mode",
       "acceptEdits",
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages",
+      "--verbose",
       "-p",
       prompt,
     ],
+    createStreamParser: createClaudeStreamParser,
     models: [
       { id: "", label: "Auto" },
       { id: "opus", label: "Opus" },
