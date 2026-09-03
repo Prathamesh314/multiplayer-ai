@@ -196,7 +196,13 @@ function AgentRunsBrowser({
       });
     for (const run of runs)
       if (!map.has(run.startedBy))
-        map.set(run.startedBy, { id: run.startedBy, name: run.startedByName, isSelf: false });
+        // A run-starter with no roster row is still you if the id matches — a
+        // public-room viewer has no session_members row but can start runs.
+        map.set(run.startedBy, {
+          id: run.startedBy,
+          name: run.startedByName,
+          isSelf: run.startedBy === myId,
+        });
 
     const lastRun = new Map<string, number>();
     for (const run of runs) lastRun.set(run.startedBy, Math.max(lastRun.get(run.startedBy) ?? 0, run.createdAt));
