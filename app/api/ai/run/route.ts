@@ -12,6 +12,7 @@ import {
 import { checkRunAllowed } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
+import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
@@ -39,6 +40,13 @@ export type AiRunRequest = {
   effort?: string;
   /** Import another chat's transcript as this (new) run's opening memory. Ignored when continuing a run. */
   forkFromRunId?: string;
+  /**
+   * Run ids of chats referenced with `@room/<run-id>` in the prompt. Their most
+   * relevant conversations (ranked against this prompt, capped) are injected as
+   * <referenced-context>. Also parsed from the prompt text, so a pasted path
+   * works even without this field. Applies to new and continuing runs alike.
+   */
+  contextRefs?: string[];
 };
 
 export type AiRunEvent =
@@ -179,6 +187,42 @@ export async function POST(request: Request) {
     await reopenRun(run.id);
   }
 
+  // Chats referenced with `@room/<run-id>` (picked in the composer, or a pasted
+  // path). Run ids are read straight out of the prompt — and out of the explicit
+  // list the client sends — so a token that got edited still resolves by its id.
+  // Unlike a fork, this is resolved every turn, so it works on continuations too;
+  // access is bounded to rooms the caller can already see.
+  let referencedContext: string | null = null;
+  const refIds = result.session.projectId
+    ? extractRunIds(`${prompt} ${(Array.isArray(body.contextRefs) ? body.contextRefs : []).join(" ")}`)
+    : [];
+  if (refIds.length > 0 && result.session.projectId) {
+    const referenced = await buildReferencedContext({
+      projectId: result.session.projectId,
+      userId: result.user.id,
+      runIds: refIds,
+      prompt,
+    });
+    referencedContext = referenced.text;
+    if (referenced.sources.length > 0) {
+      const label = referenced.sources.map((source) => `@${source.sessionName}`).join(", ");
+      const notice = await appendMessage({
+        runId: run.id,
+        role: "system",
+        body: `Referenced context from ${label}`,
+      });
+      await (await events()).publish(sessionId, {
+        type: "run.turn",
+        runId: run.id,
+        seq: notice.seq,
+        role: "system",
+        authorName: null,
+        body: notice.body,
+        at: Date.now(),
+      });
+    }
+  }
+
   // On a co-driven run (someone else has also sent prompts into it), tell the
   // agent who is speaking so two people's intents in one run don't blur into
   // one contradictory instruction. Solo runs — the common case — stay untagged,
@@ -186,12 +230,24 @@ export async function POST(request: Request) {
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
   let agentPrompt = coDriven ? `[@${result.user.handle}] ${prompt}` : prompt;
 
-  // The stored transcript in ai_memories keeps the full import regardless; only
-  // what's sent to the CLI process is bounded, since it travels as one argv
-  // string capped at MAX_PROMPT. Earlier turns are dropped first — the most
-  // recent ones are the most likely to matter to a fresh chat.
+  // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT,
+  // so the woven-in context is bounded here (the stored transcript keeps the
+  // full import regardless). Referenced context goes first — it is already the
+  // curated, query-ranked slice the asker explicitly pointed at — then the fork
+  // import fills whatever budget is left.
+  const OVERHEAD = 120;
+  if (referencedContext) {
+    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
+    const injected =
+      referencedContext.length > budget
+        ? `${referencedContext.slice(0, budget)}\n[…referenced context truncated for length…]`
+        : referencedContext;
+    agentPrompt = `<referenced-context>\n${injected}\n</referenced-context>\n\n${agentPrompt}`;
+  }
+  // Earlier turns are dropped first — the most recent ones are the most likely
+  // to matter to a fresh chat.
   if (importedContext) {
-    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - 120);
+    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
     const injected =
       importedContext.length > budget
         ? `[…earlier context truncated for length…]\n${importedContext.slice(importedContext.length - budget)}`

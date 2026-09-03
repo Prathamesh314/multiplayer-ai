@@ -644,6 +644,7 @@ export function Workspace({ session }: { session: Session }) {
             >
               <RoomSidebar
                 sessionId={session.id}
+                roomName={session.name}
                 members={people.members}
                 myUserId={myUserId}
                 incoming={incoming}
