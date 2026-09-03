@@ -63,10 +63,10 @@ export function WelcomeView({
           <>
             <FolderUpIcon className="h-10 w-10 text-vs-muted" />
             <div>
-              <p className="text-base font-medium text-vs-fg">
+              <p className="font-display text-xl font-semibold tracking-tight text-vs-fg">
                 {hasFolder ? "Select a file to start editing" : "Drop a folder anywhere"}
               </p>
-              <p className="mt-1 text-sm text-vs-muted">
+              <p className="mt-1.5 text-sm leading-6 text-vs-muted">
                 {hasRepo
                   ? "Pick a file from the Explorer on the left to open it here."
                   : "A Git repository or any plain folder. It is uploaded to this session and committed, so it is still here when you come back."}

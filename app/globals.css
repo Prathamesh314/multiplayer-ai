@@ -75,6 +75,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-bricolage);
 
   --color-vs-editor: var(--vs-editor);
   --color-vs-panel: var(--vs-panel);
@@ -106,6 +107,18 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* Kerning + common ligatures so body copy sets cleanly at the larger base size. */
+  font-feature-settings: "kern", "liga", "calt";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings and titles: the display grotesque, set tight with a touch of optical
+   weight. Applied via the `font-display` utility on the elements themselves. */
+.font-display {
+  font-family: var(--font-bricolage), var(--font-geist-sans), system-ui, sans-serif;
+  font-feature-settings: "kern", "liga", "ss01";
 }
 
 /* Thin, VS Code-ish scrollbars inside the workspace panes. */

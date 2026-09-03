@@ -69,13 +69,13 @@ export function LandingContent() {
           Local-first collaborative workspace
         </span>
 
-        <h1 className="mt-5 text-balance text-4xl font-semibold leading-[1.1] tracking-tight">
+        <h1 className="font-display mt-5 text-balance text-5xl font-semibold leading-[1.05] tracking-[-0.02em]">
           Open a repo, bring your team,
           <br />
           <span className="text-vs-muted">keep the code on your machine.</span>
         </h1>
 
-        <p className="mt-4 max-w-2xl text-[15px] leading-7 text-vs-muted">
+        <p className="mt-5 max-w-2xl text-base leading-7 text-vs-muted">
           multiplayer-ai is a code workspace that runs in the browser and reads your folders
           directly from disk. Every project opens in its own session, and a session only opens for
           someone holding both its link and its access code.
@@ -97,8 +97,8 @@ export function LandingContent() {
         </div>
       </section>
 
-      <section className="mt-12">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+      <section className="mt-14">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vs-muted">
           What is inside a session
         </h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -111,21 +111,23 @@ export function LandingContent() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-vs-accent/12 text-vs-accent">
                   {feature.icon}
                 </span>
-                <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{feature.title}</h3>
+                <h3 className="font-display min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
+                  {feature.title}
+                </h3>
                 {feature.badge && (
                   <span className="shrink-0 rounded border border-vs-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
                     {feature.badge}
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-xs leading-5 text-vs-muted">{feature.body}</p>
+              <p className="mt-2.5 text-[13px] leading-6 text-vs-muted">{feature.body}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="mt-12">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+      <section className="mt-14">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vs-muted">
           How it works
         </h2>
         <ol className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -134,19 +136,21 @@ export function LandingContent() {
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-vs-accent text-[11px] font-semibold text-vs-accent-fg">
                 {index + 1}
               </span>
-              <h3 className="mt-3 text-sm font-medium">{step.title}</h3>
-              <p className="mt-1.5 text-xs leading-5 text-vs-muted">{step.body}</p>
+              <h3 className="font-display mt-3 text-[15px] font-semibold tracking-tight">
+                {step.title}
+              </h3>
+              <p className="mt-1.5 text-[13px] leading-6 text-vs-muted">{step.body}</p>
             </li>
           ))}
         </ol>
       </section>
 
-      <section className="mt-12 rounded-xl border border-vs-border bg-vs-panel/50 p-5">
-        <h2 className="flex items-center gap-2 text-sm font-medium">
+      <section className="mt-14 rounded-xl border border-vs-border bg-vs-panel/50 p-5">
+        <h2 className="font-display flex items-center gap-2 text-base font-semibold tracking-tight">
           <ShieldIcon className="h-4 w-4 text-vs-accent" />
           Why a link alone is not enough
         </h2>
-        <p className="mt-2 max-w-2xl text-xs leading-5 text-vs-muted">
+        <p className="mt-2 max-w-2xl text-[13px] leading-6 text-vs-muted">
           The session id in the address bar is not a credential. Access lives in a key your browser
           holds in an httpOnly cookie, which page scripts cannot read and a URL cannot carry. Anyone
           who only has the link — forwarded, pasted into a chat, copied off a screen — lands on a
@@ -154,7 +158,7 @@ export function LandingContent() {
         </p>
       </section>
 
-      <footer className="mt-12 border-t border-vs-border pt-5 text-[11px] leading-5 text-vs-muted">
+      <footer className="mt-14 border-t border-vs-border pt-5 text-xs leading-5 text-vs-muted">
         Sessions are held in memory by the dev server for now, so they are cleared when it
         restarts. Team chat and the AI panel are laid out but not yet connected to a backend.
       </footer>

@@ -43,9 +43,9 @@ export function Modal({
       >
         <header className="flex items-start gap-3 border-b border-vs-border px-5 py-4">
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">{title}</h2>
+            <h2 className="font-display text-[15px] font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p className="mt-1 text-xs leading-5 text-vs-muted">{description}</p>
+              <p className="mt-1 text-[13px] leading-5 text-vs-muted">{description}</p>
             )}
           </div>
           <button
