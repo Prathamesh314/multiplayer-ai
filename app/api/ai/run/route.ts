@@ -14,6 +14,7 @@ import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
 import { buildSharedMemory, ingestExchange } from "../../../lib/ai/shared-memory";
+import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
@@ -26,7 +27,6 @@ export const dynamic = "force-dynamic";
 
 const MAX_RUN_MS = 10 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const MAX_PROMPT = 20_000;
 
 export type AiRunRequest = {
   sessionId: string;
@@ -263,47 +263,18 @@ export async function POST(request: Request) {
   // one contradictory instruction. Solo runs — the common case — stay untagged,
   // and separate members always have separate runs, so their contexts never mix.
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
-  let agentPrompt = coDriven ? `[@${result.user.handle}] ${prompt}` : prompt;
 
-  // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT,
-  // so the woven-in context is bounded here (the stored transcript keeps the
-  // full import regardless). Referenced context goes first — it is already the
-  // curated, query-ranked slice the asker explicitly pointed at — then the fork
-  // import fills whatever budget is left.
-  const OVERHEAD = 120;
-  if (referencedContext) {
-    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
-    const injected =
-      referencedContext.length > budget
-        ? `${referencedContext.slice(0, budget)}\n[…referenced context truncated for length…]`
-        : referencedContext;
-    agentPrompt = `<referenced-context>\n${injected}\n</referenced-context>\n\n${agentPrompt}`;
-  }
-  // Earlier turns are dropped first — the most recent ones are the most likely
-  // to matter to a fresh chat.
-  if (importedContext) {
-    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
-    const injected =
-      importedContext.length > budget
-        ? `[…earlier context truncated for length…]\n${importedContext.slice(importedContext.length - budget)}`
-        : importedContext;
-    agentPrompt = `<imported-context>\n${injected}\n</imported-context>\n\n${agentPrompt}`;
-  }
-  // Injected last, so it sits outermost as background and takes only whatever
-  // budget the explicit, caller-chosen sources above left behind — recall is the
-  // softest of the three context layers.
-  if (sharedMemory) {
-    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
-    // If the explicit sources already filled the budget, drop memory rather than
-    // emit an empty block.
-    if (budget > 0) {
-      const injected =
-        sharedMemory.length > budget
-          ? `${sharedMemory.slice(0, budget)}\n[…memory truncated for length…]`
-          : sharedMemory;
-      agentPrompt = `<memory>\n${injected}\n</memory>\n\n${agentPrompt}`;
-    }
-  }
+  // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT.
+  // The three context layers are woven and budgeted in assembleAgentPrompt (see
+  // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
+  // keeps the full import regardless.
+  const agentPrompt = assembleAgentPrompt({
+    prompt,
+    handle: coDriven ? result.user.handle : null,
+    referencedContext,
+    importedContext,
+    sharedMemory,
+  });
 
   const promptTurn = await appendMessage({
     runId: run.id,

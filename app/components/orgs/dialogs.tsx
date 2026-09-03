@@ -1,0 +1,849 @@
+"use client";
+
+/*
+ * The org workspace's modal dialogs, split out of OrgWorkspace.tsx: each is a
+ * self-contained unit driven entirely by its props, so they live together here
+ * and keep the workspace shell focused on layout and navigation.
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import type { CurrentUser } from "../../lib/auth/types";
+import {
+  createOrg,
+  fetchOrgMembers,
+  inviteByConnectCode,
+  inviteByEmail,
+} from "../../lib/org/client";
+import type { Org, OrgMember } from "../../lib/org/types";
+import {
+  addProjectMember,
+  changeProjectMemberRole,
+  createProject,
+  createRoom,
+  fetchProjectMembers,
+  removeProjectMember,
+} from "../../lib/project/client";
+import {
+  canManageProject,
+  type Project,
+  type ProjectMember,
+  type ProjectRole,
+} from "../../lib/project/types";
+import {
+  addRoomMember,
+  fetchMembers,
+  loadSession,
+  removeRoomMember,
+  setRoomVisibility,
+} from "../../lib/session/client";
+import type { Session, SessionMember } from "../../lib/session/types";
+import { CloseIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
+import { Avatar, CopyLink } from "./parts";
+
+export function CreateOrgDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (org: Org) => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      onCreated(await createOrg({ name }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="New organisation"
+      description="Invite your team and group your projects under it."
+      onClose={onClose}
+      footer={
+        <>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy || !name.trim()}>
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
+          </PrimaryButton>
+        </>
+      }
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <Field label="Name" hint="You can change this later.">
+        <input
+          autoFocus
+          className={inputClass}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && name.trim() && submit()}
+          placeholder="Acme Robotics"
+        />
+      </Field>
+    </Modal>
+  );
+}
+
+export function CreateProjectDialog({
+  org,
+  onClose,
+  onCreated,
+}: {
+  org: Org;
+  onClose: () => void;
+  onCreated: (project: Project) => void;
+}) {
+  const [source, setSource] = useState<"github" | "local">("github");
+  const [name, setName] = useState("");
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const project = await createProject(org.slug, {
+        name: name.trim() || repo.split("/").pop() || "Project",
+        source,
+        githubRepo: source === "github" ? repo.trim() : undefined,
+        defaultBranch: source === "github" ? branch.trim() || "main" : undefined,
+        upstreamUrl: source === "github" ? `https://github.com/${repo.trim()}.git` : undefined,
+      });
+      onCreated(project);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+      setBusy(false);
+    }
+  }
+
+  const valid = source === "github" ? /^[^/\s]+\/[^/\s]+$/.test(repo.trim()) : name.trim().length > 0;
+
+  return (
+    <Modal
+      title="New project"
+      description="A project is a repo. Everyone you add to it can open all of its rooms."
+      onClose={onClose}
+      footer={
+        <>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy || !valid}>
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
+          </PrimaryButton>
+        </>
+      }
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <div className="flex gap-2">
+        {(["github", "local"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setSource(option)}
+            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition ${
+              source === option
+                ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
+                : "border-vs-border text-vs-muted hover:bg-vs-hover"
+            }`}
+          >
+            {option === "github" ? "Connect GitHub" : "Empty / local"}
+          </button>
+        ))}
+      </div>
+
+      {source === "github" ? (
+        <>
+          <Field label="Repository" hint="owner/name, as it appears on GitHub.">
+            <input
+              autoFocus
+              className={inputClass}
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              placeholder="acme/web"
+            />
+          </Field>
+          <Field label="Default branch">
+            <input className={inputClass} value={branch} onChange={(e) => setBranch(e.target.value)} />
+          </Field>
+        </>
+      ) : (
+        <Field label="Name">
+          <input
+            autoFocus
+            className={inputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Prototype"
+          />
+        </Field>
+      )}
+    </Modal>
+  );
+}
+
+export function CreateRoomDialog({
+  org,
+  project,
+  onClose,
+  onCreated,
+}: {
+  org: Org;
+  project: Project;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const room = await createRoom(org.slug, project.slug, name.trim() || undefined, visibility);
+      onCreated(room.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`New room in ${project.name}`}
+      description="A room is one line of work on this project's repo."
+      onClose={onClose}
+      footer={
+        <>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy}>
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
+          </PrimaryButton>
+        </>
+      }
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <Field label="Name" hint="Optional — a name is generated if you leave it blank.">
+        <input
+          autoFocus
+          className={inputClass}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Fix the parser"
+        />
+      </Field>
+
+      <Field label="Visibility">
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          {(
+            [
+              { v: "public", title: "Public", hint: "Anyone on the project can drop in." },
+              { v: "private", title: "Private", hint: "Invite-only. You add who can see it." },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.v}
+              type="button"
+              onClick={() => setVisibility(option.v)}
+              className={`rounded-lg border px-3 py-2 text-left transition ${
+                visibility === option.v
+                  ? "border-vs-accent bg-vs-accent/10"
+                  : "border-vs-border hover:bg-vs-hover"
+              }`}
+            >
+              <span className="block text-[13px] font-medium">
+                {option.v === "private" ? "🔒 " : "# "}
+                {option.title}
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+    </Modal>
+  );
+}
+
+export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }) {
+  const [tab, setTab] = useState<"code" | "email">("email");
+  const [value, setValue] = useState("");
+  const [role, setRole] = useState<"admin" | "member">("member");
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      if (tab === "email") {
+        const { link } = await inviteByEmail(org.slug, value.trim(), role);
+        setResult(link);
+      } else {
+        const invited = await inviteByConnectCode(org.slug, value.trim(), role);
+        setResult(`Invitation sent to ${invited.displayName} (@${invited.handle}).`);
+      }
+      setValue("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Invite to ${org.name}`}
+      description="Email a one-time link, or add someone by their connect code."
+      onClose={onClose}
+      footer={
+        <>
+          <GhostButton onClick={onClose}>Done</GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy || !value.trim()}>
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null}
+            {tab === "email" ? "Create link" : "Invite"}
+          </PrimaryButton>
+        </>
+      }
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <div className="flex gap-2">
+        {(["email", "code"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => {
+              setTab(option);
+              setResult(null);
+            }}
+            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+              tab === option
+                ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
+                : "border-vs-border text-vs-muted hover:bg-vs-hover"
+            }`}
+          >
+            {option === "email" ? "Invite link" : "Connect code"}
+          </button>
+        ))}
+      </div>
+
+      <Field label={tab === "email" ? "Email address" : "Connect code"}>
+        <input
+          autoFocus
+          className={inputClass}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={tab === "email" ? "teammate@example.com" : "PK-XXXX-XXXX"}
+        />
+      </Field>
+
+      <Field label="Role">
+        <div className="mt-1.5 flex gap-2">
+          {(["member", "admin"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setRole(option)}
+              className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
+                role === option
+                  ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
+                  : "border-vs-border text-vs-muted hover:bg-vs-hover"
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {result && (
+        <div className="rounded-lg border border-vs-border bg-vs-editor p-3 text-xs">
+          {result.startsWith("http") ? (
+            <>
+              <p className="mb-1.5 text-vs-muted">Share this one-time link:</p>
+              <CopyLink url={result} />
+            </>
+          ) : (
+            <p className="text-emerald-500">{result}</p>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+const PROJECT_ROLES: ProjectRole[] = ["manager", "editor", "viewer"];
+
+export function ProjectMembersDialog({
+  org,
+  project,
+  me,
+  onClose,
+}: {
+  org: Org;
+  project: Project;
+  me: CurrentUser | null;
+  onClose: () => void;
+}) {
+  const canManage = canManageProject(project.myRole);
+  const [members, setMembers] = useState<ProjectMember[] | null>(null);
+  const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
+  const [role, setRole] = useState<ProjectRole>("editor");
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // The fetch, with no state writes — so it can be driven both by the initial
+  // effect (guarded against a stale apply) and by manual refresh after a change.
+  const load = useCallback(
+    () =>
+      // Only project admins can list the org roster (to add people); everyone
+      // else just needs the project members.
+      Promise.all([
+        fetchProjectMembers(org.slug, project.slug),
+        canManage ? fetchOrgMembers(org.slug) : Promise.resolve([]),
+      ]),
+    [org.slug, project.slug, canManage],
+  );
+
+  const reload = useCallback(async () => {
+    const [pm, om] = await load();
+    setMembers(pm);
+    setOrgMembers(om);
+  }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void load().then(([pm, om]) => {
+      if (cancelled) return;
+      setMembers(pm);
+      setOrgMembers(om);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  // Org members not already on the project — the people you can add.
+  const onProject = new Set((members ?? []).map((m) => m.userId));
+  const addable = orgMembers.filter((m) => !onProject.has(m.userId));
+
+  async function add(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await addProjectMember(org.slug, project.slug, userId, role);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add that member.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function changeRole(userId: string, next: ProjectRole) {
+    setPending(userId);
+    setError(null);
+    try {
+      await changeProjectMemberRole(org.slug, project.slug, userId, next);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change that role.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function remove(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await removeProjectMember(org.slug, project.slug, userId);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove that member.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <Modal
+      title={`${project.name} · members`}
+      description={
+        canManage
+          ? "Anyone here can open every room in this project. Change roles, add people from your organisation, or remove members."
+          : "Everyone on this project can open its rooms. Only a project manager can change roles or membership."
+      }
+      onClose={onClose}
+      width="max-w-xl"
+      footer={<GhostButton onClick={onClose}>Done</GhostButton>}
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          On this project ({members?.length ?? 0})
+        </h3>
+        {members === null ? (
+          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+            <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {members.map((m) => {
+              const isSelf = m.userId === me?.id;
+              // A manager can manage everyone but themselves, so a project can't
+              // lock itself out by self-demotion or self-removal.
+              const editable = canManage && !isSelf;
+              return (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">
+                      {m.displayName}
+                      {isSelf && <span className="text-vs-muted"> (you)</span>}
+                    </span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  {editable ? (
+                    <select
+                      value={m.role}
+                      onChange={(e) => changeRole(m.userId, e.target.value as ProjectRole)}
+                      disabled={pending === m.userId}
+                      aria-label={`Role for ${m.displayName}`}
+                      className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
+                    >
+                      {PROJECT_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                      {m.role}
+                    </span>
+                  )}
+                  {editable && (
+                    <button
+                      type="button"
+                      onClick={() => remove(m.userId)}
+                      disabled={pending === m.userId}
+                      title="Remove from project"
+                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                    >
+                      {pending === m.userId ? (
+                        <SpinnerIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {canManage && (
+        <div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+              Add from organisation
+            </h3>
+            <label className="flex items-center gap-1.5 text-[11px] text-vs-muted">
+              Role
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as ProjectRole)}
+                className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] text-vs-fg outline-none"
+              >
+                {PROJECT_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {addable.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-vs-muted">
+              Everyone in {org.name} is already on this project. Invite more people to the org first.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {addable.map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">{m.displayName}</span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => add(m.userId)}
+                    disabled={pending === m.userId}
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PlusIcon className="h-3.5 w-3.5" />
+                    )}
+                    Add
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+export function RoomSettingsDialog({
+  org,
+  project,
+  room,
+  onClose,
+}: {
+  org: Org;
+  project: Project;
+  room: Session;
+  onClose: () => void;
+}) {
+  const [visibility, setVisibilityState] = useState<"public" | "private">(room.visibility);
+  const [myRole, setMyRole] = useState<Session["myRole"]>(null);
+  const [ownerId, setOwnerId] = useState(room.ownerId);
+  const [members, setMembers] = useState<SessionMember[] | null>(null);
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // The fetch, with no state writes — shared by the initial effect (guarded
+  // against a stale apply) and by manual refresh after a change.
+  const load = useCallback(
+    () =>
+      Promise.all([
+        loadSession(room.id),
+        fetchMembers(room.id),
+        fetchProjectMembers(org.slug, project.slug),
+      ]),
+    [room.id, org.slug, project.slug],
+  );
+
+  const reload = useCallback(async () => {
+    const [loaded, roster, pm] = await load();
+    if (loaded.state === "ready") {
+      setMyRole(loaded.session.myRole);
+      setVisibilityState(loaded.session.visibility);
+      setOwnerId(loaded.session.ownerId);
+    }
+    setMembers(roster);
+    setProjectMembers(pm);
+  }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void load().then(([loaded, roster, pm]) => {
+      if (cancelled) return;
+      if (loaded.state === "ready") {
+        setMyRole(loaded.session.myRole);
+        setVisibilityState(loaded.session.visibility);
+        setOwnerId(loaded.session.ownerId);
+      }
+      setMembers(roster);
+      setProjectMembers(pm);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  const isOwner = myRole === "owner";
+  const onRoster = new Set((members ?? []).map((m) => m.userId));
+  const addable = projectMembers.filter((m) => !onRoster.has(m.userId));
+
+  async function flip(next: "public" | "private") {
+    setError(null);
+    setVisibilityState(next); // optimistic
+    try {
+      await setRoomVisibility(room.id, next);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change visibility.");
+      setVisibilityState((v) => (v === next ? room.visibility : v));
+    }
+  }
+
+  async function add(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await addRoomMember(room.id, userId, "editor");
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add that person.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function remove(userId: string) {
+    setPending(userId);
+    setError(null);
+    try {
+      await removeRoomMember(room.id, userId);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove that person.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <Modal
+      title={`${room.name} · privacy`}
+      description="Public rooms are open to everyone on the project. Private rooms are invite-only."
+      onClose={onClose}
+      width="max-w-xl"
+      footer={<GhostButton onClick={onClose}>Done</GhostButton>}
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            { v: "public", title: "Public", hint: "Anyone on the project can drop in." },
+            { v: "private", title: "Private", hint: "Only people you add can see it." },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.v}
+            type="button"
+            disabled={!isOwner}
+            onClick={() => flip(option.v)}
+            className={`rounded-lg border px-3 py-2 text-left transition disabled:opacity-60 ${
+              visibility === option.v
+                ? "border-vs-accent bg-vs-accent/10"
+                : "border-vs-border hover:bg-vs-hover"
+            }`}
+          >
+            <span className="block text-[13px] font-medium">
+              {option.v === "private" ? "🔒 " : "# "}
+              {option.title}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+          </button>
+        ))}
+      </div>
+      {!isOwner && (
+        <p className="text-[11px] text-vs-muted">
+          Only the room owner can change its privacy or manage who&apos;s in it.
+        </p>
+      )}
+
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          In this room ({members?.length ?? 0})
+        </h3>
+        {members === null ? (
+          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+            <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {members.map((m) => (
+              <li
+                key={m.userId}
+                className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+              >
+                <Avatar name={m.displayName} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px]">{m.displayName}</span>
+                  <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                </span>
+                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                  {m.userId === ownerId ? "owner" : m.role}
+                </span>
+                {isOwner && m.userId !== ownerId && (
+                  <button
+                    type="button"
+                    onClick={() => remove(m.userId)}
+                    disabled={pending === m.userId}
+                    title="Remove from room"
+                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <CloseIcon className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {isOwner && visibility === "private" && (
+        <div>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+            Add from the project
+          </h3>
+          {addable.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-vs-muted">
+              Everyone on {project.name} is already in this room.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {addable.map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">{m.displayName}</span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => add(m.userId)}
+                    disabled={pending === m.userId}
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PlusIcon className="h-3.5 w-3.5" />
+                    )}
+                    Add
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+

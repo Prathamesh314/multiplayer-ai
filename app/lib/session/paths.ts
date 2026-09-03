@@ -1,20 +1,19 @@
 import { resolve, sep } from "node:path";
 
 /**
- * Everything durable lives under one root so it can be backed up or wiped as a
- * unit:
+ * Session *metadata* lives in Postgres (the `sessions` table, migration 005);
+ * this root holds only the git state each record points at:
  *
- *   <root>/sessions.json     session records (the only metadata store)
- *   <root>/repos/<id>.git    bare repo — the record for a session
+ *   <root>/repos/<id>.git    bare repo — the durable record for a session
+ *   <root>/projects/<id>.git bare repo — a project's canonical `main`
  *   <root>/work/<id>         checked-out copy — a cache, safe to delete
+ *
+ * A legacy `<root>/sessions.json` may still exist from before the Postgres
+ * migration; it is read once by `db/import-sessions.mjs` and is not a store.
  */
 export function dataRoot(): string {
   const configured = process.env.MULTIPLAYER_AI_DATA;
   return configured ? resolve(configured) : resolve(process.cwd(), ".multiplayer-ai");
-}
-
-export function storeFile(): string {
-  return resolve(dataRoot(), "sessions.json");
 }
 
 export function barePath(id: string): string {
