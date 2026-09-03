@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
+import { agentById, type AgentAuth, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import {
   fetchAgents,
   fetchForkableRuns,
   fetchMentionTargets,
+  loginAgent,
+  logoutAgent,
   runAgent,
   type ForkableRun,
   type RunHandle,
@@ -92,6 +94,14 @@ export function AiPanel({
   const [connected, setConnected] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [installFor, setInstallFor] = useState<string | null>(null);
+  // Sign-in / sign-out for the connected agent's own account. `authBusy` holds
+  // the id being worked on; `authLog` is the login CLI's live output (the URL
+  // to visit, progress); `showAccount` expands the account card once signed in.
+  const [authBusy, setAuthBusy] = useState<string | null>(null);
+  const [authLog, setAuthLog] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const authHandle = useRef<RunHandle | null>(null);
   // Composer selectors. Reset together with the provider, since the options do.
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
@@ -307,6 +317,55 @@ export function AiPanel({
     setModel("");
     setEffort("");
     setInstallFor(null);
+    setShowAccount(false);
+    setAuthError(null);
+  }
+
+  /** Replace one agent's cached login state after a sign-in / sign-out. */
+  function patchAuth(agentId: string, auth: AgentAuth | null) {
+    setAgents((prev) => prev?.map((a) => (a.id === agentId ? { ...a, auth } : a)) ?? prev);
+  }
+
+  /**
+   * Start the agent's own browser sign-in. The CLI opens the OAuth page and we
+   * stream its output; on exit it reports the fresh login state, which flips the
+   * panel to ready. The app never sees the token — the CLI stores it itself.
+   */
+  function signIn(agentId: string) {
+    if (authBusy) return;
+    setAuthBusy(agentId);
+    setAuthLog("");
+    setAuthError(null);
+    setShowAccount(true);
+    authHandle.current = loginAgent(agentId, {
+      onEvent: (event) => {
+        if (event.t === "out" || event.t === "err") {
+          setAuthLog((prev) => (prev + event.d).slice(-4000));
+        } else if (event.t === "exit") {
+          patchAuth(agentId, event.auth);
+          if (!event.auth?.loggedIn) {
+            setAuthError("Sign-in did not complete. Try again.");
+          }
+        }
+      },
+      onError: setAuthError,
+      onDone: () => setAuthBusy(null),
+    });
+  }
+
+  async function signOut(agentId: string) {
+    if (authBusy) return;
+    setAuthBusy(agentId);
+    setAuthError(null);
+    try {
+      const auth = await logoutAgent(agentId);
+      patchAuth(agentId, auth);
+      setShowAccount(false);
+    } catch (cause) {
+      setAuthError(cause instanceof Error ? cause.message : "Could not sign out.");
+    } finally {
+      setAuthBusy(null);
+    }
   }
 
   function ask(prompt: string, contextRefs?: string[]) {
@@ -412,7 +471,12 @@ export function AiPanel({
   }
 
   const active = agents?.find((agent) => agent.id === connected) ?? null;
-  const ready = !!active?.installed && serverCanRun && canRun;
+  const activeAuth = active?.auth ?? null;
+  // An installed agent whose CLI has its own login must be signed in before it
+  // can run — otherwise a run would just fail with an auth error.
+  const authCapable = !!active?.installed && !!activeAuth;
+  const needsLogin = authCapable && !activeAuth!.loggedIn;
+  const ready = !!active?.installed && serverCanRun && canRun && !needsLogin;
   const hasConversation = turns.length > 0;
 
   // Static model / effort lists for the connected provider, and the installed
@@ -473,6 +537,24 @@ export function AiPanel({
             />
           </>
         )}
+        {authCapable && activeAuth?.loggedIn && (
+          <>
+            <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
+            <button
+              type="button"
+              onClick={() => setShowAccount((shown) => !shown)}
+              title={`Signed in as ${activeAuth.email ?? "your account"}${
+                activeAuth.plan ? ` · ${planLabel(activeAuth.plan)}` : ""
+              } — click to manage`}
+              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+            >
+              <StatusDot ok />
+              <span className="max-w-[6rem] truncate">
+                {activeAuth.plan ? planLabel(activeAuth.plan) : "Account"}
+              </span>
+            </button>
+          </>
+        )}
       </div>
     ) : undefined;
 
@@ -522,6 +604,20 @@ export function AiPanel({
       )}
       {serverCanRun && !canRun && (
         <Note tone="warn">You have read access here, and running an agent edits files.</Note>
+      )}
+
+      {active && authCapable && (needsLogin || showAccount || authBusy === active.id) && (
+        <ConnectionCard
+          agentName={active.name}
+          auth={activeAuth}
+          busy={authBusy === active.id}
+          log={authLog}
+          error={authError}
+          onSignIn={() => signIn(active.id)}
+          onSignOut={() => signOut(active.id)}
+          onCancel={() => authHandle.current?.cancel()}
+          onDismiss={() => setShowAccount(false)}
+        />
       )}
 
       <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
@@ -641,18 +737,24 @@ function AgentSelector({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium text-vs-fg">{agent.name}</span>
-                    {agent.installed && <StatusDot ok />}
+                    {agent.installed && <StatusDot ok={!agent.auth || agent.auth.loggedIn} />}
                   </span>
                   <span className="block truncate text-[10px] text-vs-muted">
-                    {agent.installed ? (agent.version ?? "connected") : `${agent.vendor} · not installed`}
+                    {agentSubtitle(agent)}
                   </span>
                 </span>
                 {agent.installed ? (
                   selected ? (
-                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-vs-accent">
-                      <CheckIcon className="h-3 w-3" />
-                      Connected
-                    </span>
+                    agent.auth && !agent.auth.loggedIn ? (
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-vs-accent">
+                        Sign in
+                      </span>
+                    ) : (
+                      <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-vs-accent">
+                        <CheckIcon className="h-3 w-3" />
+                        Connected
+                      </span>
+                    )
                   ) : (
                     <span className="shrink-0 text-[10px] text-vs-muted opacity-0 transition group-hover:opacity-100">
                       Select
@@ -686,6 +788,155 @@ function AgentSelector({
             </a>
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Account connection (sign in / out of the agent's own subscription)
+// ---------------------------------------------------------------------------
+
+/** Human label for a subscription tier the CLI reports (e.g. "max" → "Max"). */
+function planLabel(plan: string): string {
+  const known: Record<string, string> = { max: "Max", pro: "Pro", team: "Team", free: "Free" };
+  return known[plan.toLowerCase()] ?? plan.charAt(0).toUpperCase() + plan.slice(1);
+}
+
+/** The one-line status under an agent's name in the selector. */
+function agentSubtitle(agent: AgentStatus): string {
+  if (!agent.installed) return `${agent.vendor} · not installed`;
+  if (agent.auth) {
+    if (!agent.auth.loggedIn) return "installed · not signed in";
+    const who = agent.auth.email ?? "signed in";
+    return agent.auth.plan ? `${who} · ${planLabel(agent.auth.plan)}` : who;
+  }
+  return agent.version ?? "connected";
+}
+
+/** First http(s) URL in the login CLI's output, for a manual "open" fallback. */
+function firstUrl(text: string): string | null {
+  return text.match(/https?:\/\/[^\s'"]+/)?.[0] ?? null;
+}
+
+/**
+ * Sign in to / out of an agent's own account.
+ *
+ * The whole point of this — like Conductor — is to run on the operator's own
+ * Pro/Max subscription rather than metered API billing. Sign-in opens the
+ * CLI's browser OAuth flow; the token stays with the CLI, never this app.
+ */
+function ConnectionCard({
+  agentName,
+  auth,
+  busy,
+  log,
+  error,
+  onSignIn,
+  onSignOut,
+  onCancel,
+  onDismiss,
+}: {
+  agentName: string;
+  auth: AgentAuth | null;
+  busy: boolean;
+  log: string;
+  error: string | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
+  onCancel: () => void;
+  onDismiss: () => void;
+}) {
+  const loggedIn = !!auth?.loggedIn;
+  const url = busy ? firstUrl(log) : null;
+
+  return (
+    <div className="shrink-0 space-y-2 border-b border-vs-border bg-vs-editor px-3 py-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-vs-muted">
+          {agentName} account
+        </span>
+        {loggedIn && !busy && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="text-[10px] uppercase tracking-wide text-vs-muted transition hover:text-vs-fg"
+          >
+            Hide
+          </button>
+        )}
+      </div>
+
+      {busy ? (
+        <div className="space-y-2">
+          <p className="flex items-center gap-2 text-[11px] text-vs-fg">
+            <SpinnerIcon className="h-3.5 w-3.5 text-vs-accent" />
+            Signing in… complete it in the browser window that opened.
+          </p>
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate text-[11px] text-vs-accent underline-offset-2 hover:underline"
+            >
+              Open the sign-in page ↗
+            </a>
+          )}
+          {log.trim() && (
+            <pre className="vs-scroll max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-vs-border bg-vs-panel p-2 font-mono text-[10px] leading-4 text-vs-muted">
+              {log.trim()}
+            </pre>
+          )}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-vs-border px-2 py-0.5 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : loggedIn ? (
+        <div className="flex items-center gap-2">
+          <StatusDot ok />
+          <span className="min-w-0 flex-1 text-[11px] leading-4 text-vs-fg">
+            Signed in as <span className="font-medium">{auth?.email ?? "your account"}</span>
+            {auth?.plan && (
+              <span className="ml-1.5 rounded bg-vs-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-vs-accent">
+                {planLabel(auth.plan)}
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="shrink-0 rounded border border-vs-border px-2 py-0.5 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+          >
+            Sign out
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[11px] leading-4 text-vs-muted">
+            Sign in with your {agentName} subscription to run agents on your existing plan — no API
+            key, no per-token billing. Sign-in opens in your browser; the token stays with the CLI.
+          </p>
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="flex items-center gap-1.5 rounded-md bg-vs-accent px-2.5 py-1.5 text-[11px] font-medium text-vs-accent-fg transition hover:opacity-90"
+          >
+            <SparkleIcon className="h-3.5 w-3.5" />
+            Sign in with {agentName}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p className="flex items-start gap-1.5 text-[11px] leading-4 text-red-600 dark:text-red-300">
+          <AlertIcon className="mt-0.5 h-3 w-3 shrink-0" />
+          {error}
+        </p>
       )}
     </div>
   );
