@@ -77,6 +77,9 @@ export function Workspace({ session }: { session: Session }) {
   const readOnly = !canEdit(session.myRole);
 
   const [live, setLive] = useState(false);
+  // Bumped to force the live event stream to tear down and reopen now, rather
+  // than waiting out EventSource's automatic retry (useful after a re-login).
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   /** Files a teammate changed under an edit of ours, which we refuse to discard. */
   const [conflicts, setConflicts] = useState<Map<string, string>>(() => new Map());
   /** Set when a broadcast names a path we have never seen. */
@@ -529,7 +532,7 @@ export function Workspace({ session }: { session: Session }) {
       onStatus: setLive,
     });
     return () => stream.close();
-  }, [session.id, repo, applyRemoteSave, people]);
+  }, [session.id, repo, applyRemoteSave, people, reconnectNonce]);
 
   // A broadcast named a file we have never seen, so the tree is out of date.
   useEffect(() => {
@@ -761,6 +764,10 @@ export function Workspace({ session }: { session: Session }) {
         headSha={repo?.headSha ?? null}
         saveState={saveState}
         live={live}
+        onReconnect={() => {
+          setLive(false);
+          setReconnectNonce((n) => n + 1);
+        }}
       />
 
       {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}

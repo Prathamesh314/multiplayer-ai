@@ -16,6 +16,8 @@ type StatusBarProps = {
   saveState: "idle" | "saving" | "saved" | "error";
   /** Whether the event stream is currently connected. */
   live: boolean;
+  /** Force the live event stream to tear down and reopen immediately. */
+  onReconnect: () => void;
 };
 
 export function StatusBar({
@@ -26,6 +28,7 @@ export function StatusBar({
   headSha,
   saveState,
   live,
+  onReconnect,
 }: StatusBarProps) {
   const git = result?.git;
 
@@ -41,20 +44,30 @@ export function StatusBar({
       )}
 
       {headSha && (
-        <span
-          title={
-            live
-              ? "Connected — changes from other people appear as they are saved."
-              : "Reconnecting. Changes made elsewhere will not appear until this recovers."
-          }
-          className="flex items-center gap-1.5"
-        >
+        <span className="flex items-center gap-1.5">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              live ? "bg-emerald-500" : "bg-amber-500"
-            }`}
-          />
-          {live ? "live" : "reconnecting"}
+            title={
+              live
+                ? "Connected — changes from other people appear as they are saved."
+                : "Reconnecting. Changes made elsewhere will not appear until this recovers."
+            }
+            className="flex items-center gap-1.5"
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-amber-500"}`}
+            />
+            {live ? "live" : "reconnecting"}
+          </span>
+          {!live && (
+            <button
+              type="button"
+              onClick={onReconnect}
+              title="Reopen the live connection now instead of waiting for the automatic retry."
+              className="rounded border border-vs-border px-1.5 py-0.5 text-[10px] leading-none text-vs-fg transition hover:bg-vs-hover"
+            >
+              Reconnect
+            </button>
+          )}
         </span>
       )}
 
