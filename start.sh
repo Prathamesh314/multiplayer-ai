@@ -103,11 +103,28 @@ wait_for_postgres() {
 
 # --- app --------------------------------------------------------------------
 ensure_deps() {
+  # Reinstall whenever the lockfile changed since the last install, not just when
+  # node_modules is missing. Switching branches (or updating one) can change
+  # dependencies while node_modules still exists — a stale tree then fails at
+  # runtime with "Module not found: Can't resolve <pkg>". The stamp is a copy of
+  # the lockfile kept inside the (gitignored) node_modules, compared byte for byte.
+  local lock="package-lock.json"
+  local stamp="node_modules/.deps-stamp"
+
   if [ ! -d node_modules ]; then
     step "Installing npm dependencies (first run)"
     npm install
     ok "Dependencies installed"
+  elif [ ! -f "$lock" ]; then
+    : # No lockfile to track; leave the existing node_modules as-is.
+  elif [ ! -f "$stamp" ] || ! cmp -s "$lock" "$stamp"; then
+    step "Dependencies changed since last run — updating"
+    npm install
+    ok "Dependencies up to date"
   fi
+
+  # Record what is now installed so the next run can detect a change.
+  [ -f "$lock" ] && cp "$lock" "$stamp" 2>/dev/null || true
 }
 
 run_migrations() {
