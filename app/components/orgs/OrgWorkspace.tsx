@@ -448,8 +448,8 @@ function OrgPanel({
 
       <main className="grid min-w-0 flex-1 place-items-center p-8">
         <div className="max-w-md text-center">
-          <h1 className="text-lg font-semibold">{org.name}</h1>
-          <p className="mt-2 text-sm leading-6 text-vs-muted">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
+          <p className="mt-2.5 text-[15px] leading-7 text-vs-muted">
             Pick a room from a project to open its files, chat and agent runs. Rooms are shared with
             everyone on the project.
           </p>
@@ -573,8 +573,10 @@ function EmptyState({ loading, onCreate }: { loading: boolean; onCreate: () => v
         <SpinnerIcon className="h-5 w-5 text-vs-muted" />
       ) : (
         <div className="max-w-sm text-center">
-          <h1 className="text-lg font-semibold">Create your first organisation</h1>
-          <p className="mt-2 text-sm leading-6 text-vs-muted">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            Create your first organisation
+          </h1>
+          <p className="mt-2.5 text-[15px] leading-7 text-vs-muted">
             An organisation is like a Discord server — invite your team, connect repos as projects,
             and open rooms to work in.
           </p>

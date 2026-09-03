@@ -81,8 +81,10 @@ export function AuthForm() {
 
         {step === "email" ? (
           <>
-            <h1 className="mt-6 text-2xl font-semibold tracking-tight">Sign in or sign up</h1>
-            <p className="mt-1.5 text-xs leading-5 text-vs-muted">
+            <h1 className="font-display mt-6 text-[26px] font-semibold tracking-tight">
+              Sign in or sign up
+            </h1>
+            <p className="mt-2 text-[13px] leading-6 text-vs-muted">
               Enter your email and password. We&apos;ll sign you in, or start a new account if this
               is your first time.
             </p>
@@ -122,8 +124,10 @@ export function AuthForm() {
           </>
         ) : (
           <>
-            <h1 className="mt-6 text-2xl font-semibold tracking-tight">Pick a username</h1>
-            <p className="mt-1.5 text-xs leading-5 text-vs-muted">
+            <h1 className="font-display mt-6 text-[26px] font-semibold tracking-tight">
+              Pick a username
+            </h1>
+            <p className="mt-2 text-[13px] leading-6 text-vs-muted">
               Almost there — choose a username for{" "}
               <span className="text-vs-fg">{email.trim()}</span>. It&apos;s how teammates will see
               you.

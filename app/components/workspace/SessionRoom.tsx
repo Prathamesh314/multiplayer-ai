@@ -153,8 +153,10 @@ function LockedScreen({
           </span>
         </span>
 
-        <h1 className="mt-4 text-lg font-semibold">This session is locked</h1>
-        <p className="mt-1.5 text-xs leading-5 text-vs-muted">{reason}</p>
+        <h1 className="font-display mt-4 text-xl font-semibold tracking-tight">
+          This session is locked
+        </h1>
+        <p className="mt-1.5 text-[13px] leading-6 text-vs-muted">{reason}</p>
 
         <p className="mt-4 font-mono text-[11px] text-vs-muted">/s/{sessionId}</p>
 
