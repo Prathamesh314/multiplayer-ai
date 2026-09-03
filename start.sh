@@ -2,10 +2,14 @@
 #
 # One command to bring up the whole multiplayer-ai stack:
 #
-#   ./start.sh            services (Postgres, Redis, pgAdmin) → migrate → dev server
+#   ./start.sh            services (Postgres, Redis, pgAdmin, Mnemosyne) → migrate → dev server
 #   ./start.sh down       stop the services, keep the data
 #   ./start.sh reset      stop and WIPE the database, then start fresh
 #   ./start.sh services   just the Docker services + migrations, no dev server
+#
+# Mnemosyne (the semantic memory sidecar) is optional: the app degrades to
+# fork + @room/chat context when it is absent, so startup never blocks on it —
+# its first build pulls an embedding model and finishes in the background.
 #
 # Ctrl+C stops the dev server; the Docker services keep running so the next
 # start is instant. Use `./start.sh down` when you want them gone.
@@ -76,7 +80,10 @@ ensure_env() {
 
 # --- docker services --------------------------------------------------------
 compose_up() {
-  step "Starting services (Postgres, Redis, pgAdmin)"
+  step "Starting services (Postgres, Redis, pgAdmin, Mnemosyne)"
+  # Brings up every compose service. On the very first run this also builds the
+  # Mnemosyne image and pulls its embedding model, which can take a few minutes;
+  # the app starts regardless and picks memory up once the sidecar is ready.
   dc up -d
   ok "Containers up"
 }
@@ -121,6 +128,7 @@ start_services() {
   printf '%s   Postgres  %s\n' "$DIM" "${DATABASE_URL:-postgres://localhost:5432}${RESET}"
   printf '%s   pgAdmin   http://localhost:%s%s\n' "$DIM" "${PGADMIN_PORT:-5050}" "$RESET"
   printf '%s   Redis     %s%s\n' "$DIM" "${REDIS_URL:-redis://localhost:6380}" "$RESET"
+  printf '%s   Memory    %s%s\n' "$DIM" "${MNEMOSYNE_URL:-disabled (set MNEMOSYNE_URL to enable)}" "$RESET"
 }
 
 # --- subcommands ------------------------------------------------------------

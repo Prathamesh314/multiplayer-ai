@@ -13,6 +13,7 @@ import { checkRunAllowed } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
+import { buildSharedMemory, ingestExchange } from "../../../lib/ai/shared-memory";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { workPath } from "../../../lib/session/paths";
@@ -223,6 +224,40 @@ export async function POST(request: Request) {
     }
   }
 
+  // The semantic shared-memory layer: distilled memories the mnemosyne sidecar
+  // has learned across every chat this caller can see, ranked against this
+  // prompt. Unlike the FTS reference above (a specific chat, keyword-matched),
+  // this is ambient and meaning-ranked, and it fans out only over visible rooms
+  // so it can't widen access. Off entirely when no sidecar is configured.
+  let sharedMemory: string | null = null;
+  if (result.session.projectId) {
+    const memory = await buildSharedMemory({
+      projectId: result.session.projectId,
+      userId: result.user.id,
+      currentSessionId: sessionId,
+      prompt,
+    });
+    sharedMemory = memory.text;
+    if (memory.recalled > 0) {
+      const suffix =
+        memory.truncatedRooms > 0 ? ` (${memory.truncatedRooms} more rooms not searched)` : "";
+      const notice = await appendMessage({
+        runId: run.id,
+        role: "system",
+        body: `Recalled ${memory.recalled} memories from shared context${suffix}`,
+      });
+      await (await events()).publish(sessionId, {
+        type: "run.turn",
+        runId: run.id,
+        seq: notice.seq,
+        role: "system",
+        authorName: null,
+        body: notice.body,
+        at: Date.now(),
+      });
+    }
+  }
+
   // On a co-driven run (someone else has also sent prompts into it), tell the
   // agent who is speaking so two people's intents in one run don't blur into
   // one contradictory instruction. Solo runs — the common case — stay untagged,
@@ -254,6 +289,21 @@ export async function POST(request: Request) {
         : importedContext;
     agentPrompt = `<imported-context>\n${injected}\n</imported-context>\n\n${agentPrompt}`;
   }
+  // Injected last, so it sits outermost as background and takes only whatever
+  // budget the explicit, caller-chosen sources above left behind — recall is the
+  // softest of the three context layers.
+  if (sharedMemory) {
+    const budget = Math.max(0, MAX_PROMPT - agentPrompt.length - OVERHEAD);
+    // If the explicit sources already filled the budget, drop memory rather than
+    // emit an empty block.
+    if (budget > 0) {
+      const injected =
+        sharedMemory.length > budget
+          ? `${sharedMemory.slice(0, budget)}\n[…memory truncated for length…]`
+          : sharedMemory;
+      agentPrompt = `<memory>\n${injected}\n</memory>\n\n${agentPrompt}`;
+    }
+  }
 
   const promptTurn = await appendMessage({
     runId: run.id,
@@ -280,7 +330,7 @@ export async function POST(request: Request) {
 
   const author = { name: result.user.displayName, email: result.user.email };
   return new Response(
-    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(agentPrompt, runOptions), author),
+    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(agentPrompt, runOptions), author, prompt),
     {
       headers: {
         "content-type": "application/x-ndjson; charset=utf-8",
@@ -298,6 +348,7 @@ function runStream(
   bin: string,
   args: string[],
   author: { name: string; email: string },
+  userPrompt: string,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const cwd = workPath(sessionId);
@@ -431,6 +482,20 @@ function runStream(
             removedLines: stat?.removed ?? null,
           });
           broadcast({ type: "run.finished", runId, status, headSha: sha, at: Date.now() });
+
+          // Fold the completed exchange into the room's shared memory so future
+          // chats can recall it. Only successful runs are worth remembering — a
+          // failed run's output is an error, not knowledge. Fire-and-forget:
+          // ingestExchange has its own timeout and never throws, and the stream
+          // must not wait on the memory sidecar to close.
+          if (status === "completed") {
+            void ingestExchange({
+              sessionId,
+              prompt: userPrompt,
+              reply: trimmedOut,
+              changed: sha !== null,
+            });
+          }
         } catch {
           // The run record is best-effort; the live stream already succeeded.
         }
