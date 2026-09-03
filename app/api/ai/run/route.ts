@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { agentById, resolveChoice } from "../../../lib/ai/catalog";
 import { agentEnv } from "../../../lib/ai/env";
+import type { StreamParser } from "../../../lib/ai/stream";
 import {
   appendMessage,
   createRun,
@@ -54,6 +55,8 @@ export type AiRunRequest = {
 export type AiRunEvent =
   | { t: "start"; agent: string; cwd: string; runId: string }
   | { t: "out"; d: string }
+  | { t: "think"; d: string }
+  | { t: "act"; d: string }
   | { t: "err"; d: string }
   | { t: "notice"; message: string }
   | { t: "exit"; code: number | null; ms: number; headSha: string | null; committed: boolean };
@@ -101,7 +104,6 @@ export async function POST(request: Request) {
 
   const sessionId = result.session.id;
   const headSha = result.session.repo.headSha;
-  await withRepoLock(sessionId, () => ensureWork(sessionId, headSha));
 
   // A run is now durable. A follow-up prompt (join-as-editor, or the owner's
   // next turn) continues an existing run; otherwise a fresh one is opened. The
@@ -187,6 +189,26 @@ export async function POST(request: Request) {
     // run is marked running again so it holds a concurrency slot while it works.
     await joinRun(run.id, result.user.id, "editor");
     await reopenRun(run.id);
+  }
+
+  // The run row and its run.started event are out by now, so the chat already
+  // shows in everyone's sidebar. Only now do we materialize the working copy —
+  // a cold clone that would otherwise delay that appearance. It must succeed
+  // before the agent can spawn, so a failure here fails the run cleanly rather
+  // than leaving a dangling "running" row behind.
+  try {
+    await withRepoLock(sessionId, () => ensureWork(sessionId, headSha));
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    await finishRun(run.id, { status: "failed", error: message });
+    await (await events()).publish(sessionId, {
+      type: "run.finished",
+      runId: run.id,
+      status: "failed",
+      headSha: null,
+      at: Date.now(),
+    });
+    return Response.json({ error: `Could not prepare the workspace: ${message}` }, { status: 500 });
   }
 
   // Chats referenced with `@room/<run-id>` (picked in the composer, or a pasted
@@ -302,7 +324,16 @@ export async function POST(request: Request) {
 
   const author = { name: result.user.displayName, email: result.user.email };
   return new Response(
-    runStream(sessionId, run.id, headSha, agent.bin, agent.promptArgs(agentPrompt, runOptions), author, prompt),
+    runStream(
+      sessionId,
+      run.id,
+      headSha,
+      agent.bin,
+      agent.promptArgs(agentPrompt, runOptions),
+      author,
+      prompt,
+      agent.createStreamParser?.() ?? null,
+    ),
     {
       headers: {
         "content-type": "application/x-ndjson; charset=utf-8",
@@ -321,6 +352,8 @@ function runStream(
   args: string[],
   author: { name: string; email: string },
   userPrompt: string,
+  /** When set, stdout is JSON lines to decode into reply/thinking/activity; else raw. */
+  parser: StreamParser | null,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const cwd = workPath(sessionId);
@@ -328,6 +361,10 @@ function runStream(
 
   let closed = false;
   let bytes = 0;
+  // Thinking is streamed for live feedback but never stored and capped
+  // separately, so a long chain of thought can't crowd out the reply's budget.
+  let thinkBytes = 0;
+  const MAX_THINK_BYTES = 256 * 1024;
   // Buffered to persist as one consolidated turn at close; the live tail goes
   // out over the event bus chunk by chunk for watchers.
   let outBuf = "";
@@ -375,25 +412,76 @@ function runStream(
       }, MAX_RUN_MS);
       deadline.unref?.();
 
-      const forward = (stream: NodeJS.ReadableStream | null, kind: "out" | "err") => {
-        if (!stream) return;
-        stream.setEncoding("utf8");
-        stream.on("data", (chunk: string) => {
-          if (bytes >= MAX_OUTPUT_BYTES) return;
-          bytes += Buffer.byteLength(chunk);
-          send({ t: kind, d: chunk });
-          if (kind === "out") outBuf += chunk;
-          else errBuf += chunk;
-          broadcast({ type: "run.output", runId, stream: kind, chunk, at: Date.now() });
-          if (bytes >= MAX_OUTPUT_BYTES) {
-            send({ t: "notice", message: "Output limit reached — the run was stopped." });
-            kill(child);
-          }
-        });
+      // The reply: shown live, accumulated for storage, and broadcast to
+      // watchers. This is the only durable output — exactly the old "out" path.
+      const emitReply = (text: string) => {
+        if (bytes >= MAX_OUTPUT_BYTES) return;
+        bytes += Buffer.byteLength(text);
+        send({ t: "out", d: text });
+        outBuf += text;
+        broadcast({ type: "run.output", runId, stream: "out", chunk: text, at: Date.now() });
+        if (bytes >= MAX_OUTPUT_BYTES) {
+          send({ t: "notice", message: "Output limit reached — the run was stopped." });
+          kill(child);
+        }
       };
 
-      forward(child.stdout, "out");
-      forward(child.stderr, "err");
+      // Thinking and tool activity: streamed to the runner as live "it's
+      // working" feedback, never stored, and sharing one budget so a long chain
+      // of thought can't starve the reply's.
+      const emitThinking = (text: string) => {
+        if (thinkBytes >= MAX_THINK_BYTES) return;
+        thinkBytes += Buffer.byteLength(text);
+        send({ t: "think", d: text });
+      };
+      const emitActivity = (text: string) => {
+        if (thinkBytes >= MAX_THINK_BYTES) return;
+        thinkBytes += Buffer.byteLength(text);
+        send({ t: "act", d: text });
+      };
+
+      const emitErr = (chunk: string) => {
+        if (bytes >= MAX_OUTPUT_BYTES) return;
+        bytes += Buffer.byteLength(chunk);
+        send({ t: "err", d: chunk });
+        errBuf += chunk;
+        broadcast({ type: "run.output", runId, stream: "err", chunk, at: Date.now() });
+        if (bytes >= MAX_OUTPUT_BYTES) {
+          send({ t: "notice", message: "Output limit reached — the run was stopped." });
+          kill(child);
+        }
+      };
+
+      // stdout is either JSON events to decode (parser set) or the reply
+      // verbatim. JSON is newline-delimited, so it is buffered into whole lines
+      // before parsing; a trailing partial line is left for the next chunk.
+      let lineBuf = "";
+      const onStdout = (chunk: string) => {
+        if (!parser) {
+          emitReply(chunk);
+          return;
+        }
+        lineBuf += chunk;
+        let newline;
+        while ((newline = lineBuf.indexOf("\n")) >= 0) {
+          const line = lineBuf.slice(0, newline);
+          lineBuf = lineBuf.slice(newline + 1);
+          for (const piece of parser.push(line)) {
+            if (piece.kind === "reply") emitReply(piece.text);
+            else if (piece.kind === "thinking") emitThinking(piece.text);
+            else emitActivity(piece.text);
+          }
+        }
+      };
+
+      if (child.stdout) {
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", onStdout);
+      }
+      if (child.stderr) {
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", emitErr);
+      }
 
       child.on("close", async (code) => {
         clearTimeout(deadline);

@@ -72,6 +72,12 @@ type Turn = {
   agentName?: string | null;
   /** True while the agent is still writing into this turn. */
   streaming?: boolean;
+  /** Live reasoning trace (Claude's thinking) — ephemeral, not stored. */
+  thinking?: string;
+  /** Tool steps as they happen, e.g. "Read app/x.ts" — ephemeral, not stored. */
+  activities?: string[];
+  /** Epoch ms this agent turn began, for the live elapsed timer. */
+  startedAt?: number;
 };
 
 export function AiPanel({
@@ -423,7 +429,14 @@ export function AiPanel({
             localRunIdRef.current = event.runId; // so the room broadcast of our own run is ignored
             setTurns((prev) => [
               ...prev,
-              { id: agentTurnId, role: "agent", text: "", agentName, streaming: true },
+              {
+                id: agentTurnId,
+                role: "agent",
+                text: "",
+                agentName,
+                streaming: true,
+                startedAt: Date.now(),
+              },
             ]);
             onRunsChanged(); // the new run shows in the sidebar
             // Enter a freshly opened run so the next prompt continues it rather
@@ -439,6 +452,34 @@ export function AiPanel({
               const next = [...prev];
               const index = next.findIndex((turn) => turn.id === agentTurnId);
               if (index >= 0) next[index] = { ...next[index], text: next[index].text + event.d };
+              return next;
+            });
+          } else if (event.t === "think") {
+            // The reasoning trace, shown live and capped so a long chain of
+            // thought stays readable rather than unbounded.
+            setTurns((prev) => {
+              const next = [...prev];
+              const index = next.findIndex((turn) => turn.id === agentTurnId);
+              if (index >= 0) {
+                next[index] = {
+                  ...next[index],
+                  thinking: ((next[index].thinking ?? "") + event.d).slice(-8000),
+                };
+              }
+              return next;
+            });
+          } else if (event.t === "act") {
+            // One tool step. Keep the most recent so the trace doesn't grow
+            // without bound on a long, tool-heavy run.
+            setTurns((prev) => {
+              const next = [...prev];
+              const index = next.findIndex((turn) => turn.id === agentTurnId);
+              if (index >= 0) {
+                next[index] = {
+                  ...next[index],
+                  activities: [...(next[index].activities ?? []), event.d].slice(-50),
+                };
+              }
               return next;
             });
           } else if (event.t === "notice") {
@@ -1031,6 +1072,9 @@ function TurnBubble({ turn }: { turn: Turn }) {
     );
   }
 
+  const hasReply = !!turn.text.trim();
+  const hasTrace = !!turn.thinking?.trim() || (turn.activities?.length ?? 0) > 0;
+
   return (
     <article className="flex min-w-0 gap-3">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/15 text-vs-accent">
@@ -1042,14 +1086,105 @@ function TurnBubble({ turn }: { turn: Turn }) {
             {turn.agentName ?? "Agent"}
           </span>
           {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
+          {turn.startedAt && (
+            <LiveTimer startedAt={turn.startedAt} running={!!turn.streaming} />
+          )}
         </header>
-        {turn.streaming && !turn.text.trim() ? (
-          <p className="text-[13.5px] leading-6 text-vs-muted">Thinking…</p>
+        {hasTrace && (
+          <ActivityTrace
+            thinking={turn.thinking}
+            activities={turn.activities}
+            live={!!turn.streaming && !hasReply}
+          />
+        )}
+        {turn.streaming && !hasReply ? (
+          hasTrace ? null : <p className="text-[13.5px] leading-6 text-vs-muted">Thinking…</p>
         ) : (
           <Markdown text={turn.text} />
         )}
       </div>
     </article>
+  );
+}
+
+/** Ticking elapsed-seconds counter, like Conductor's run clock. Freezes when done. */
+function LiveTimer({ startedAt, running }: { startedAt: number; running: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+  const secs = Math.max(0, Math.round((now - startedAt) / 1000));
+  return (
+    <span className="shrink-0 tabular-nums text-[10px] text-vs-muted" title="Elapsed">
+      {secs}s
+    </span>
+  );
+}
+
+/**
+ * The live "it's working" trace: the reasoning stream plus each tool step as it
+ * happens. Expanded while the agent is still thinking (no answer yet), then
+ * auto-collapses to a toggle once the reply starts — the answer is the point,
+ * the trace is there if you want to see how it got there.
+ */
+function ActivityTrace({
+  thinking,
+  activities,
+  live,
+}: {
+  thinking?: string;
+  activities?: string[];
+  live: boolean;
+}) {
+  // Follow `live` by default — expanded while working, folded once the answer
+  // starts — until the user makes an explicit choice, which then sticks.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? live;
+
+  const steps = activities ?? [];
+  const trace = thinking?.trim() ?? "";
+
+  return (
+    <div className="mb-2 rounded-md border border-vs-border bg-vs-hover/30">
+      <button
+        type="button"
+        onClick={() => setUserOpen(!open)}
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wide text-vs-muted transition hover:text-vs-fg"
+      >
+        {live ? (
+          <SpinnerIcon className="h-3 w-3 text-vs-accent" />
+        ) : (
+          <SparkleIcon className="h-3 w-3 text-vs-muted" />
+        )}
+        <span>{live ? "Working" : "Thought & steps"}</span>
+        {steps.length > 0 && <span className="text-vs-muted/70">· {steps.length} steps</span>}
+        <span className="ml-auto">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="space-y-1.5 border-t border-vs-border px-2 py-1.5">
+          {trace && (
+            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[11px] italic leading-5 text-vs-muted">
+              {trace}
+            </p>
+          )}
+          {steps.length > 0 && (
+            <ul className="space-y-0.5">
+              {steps.map((step, i) => (
+                <li
+                  key={`${i}-${step}`}
+                  className="flex items-center gap-1.5 font-mono text-[10.5px] leading-4 text-vs-fg"
+                >
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-vs-accent" />
+                  <span className="truncate">{step}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
