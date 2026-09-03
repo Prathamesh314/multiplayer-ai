@@ -67,3 +67,7 @@ export type AddProjectMemberRequest = {
   userId: string;
   role?: ProjectRole;
 };
+
+export type UpdateProjectMemberRequest = {
+  role: ProjectRole;
+};

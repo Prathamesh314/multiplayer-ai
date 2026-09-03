@@ -290,6 +290,24 @@ export async function addProjectMember(
   }
 }
 
+/**
+ * Change an existing member's role in place. Returns false if there is no active
+ * membership to update (already removed, or never on the project).
+ */
+export async function setProjectMemberRole(
+  projectId: string,
+  userId: string,
+  role: ProjectRole,
+): Promise<boolean> {
+  const rows = await query<{ user_id: string }>(
+    `UPDATE project_members SET role = $3
+      WHERE project_id = $1 AND user_id = $2 AND removed_at IS NULL
+      RETURNING user_id`,
+    [projectId, userId, role],
+  );
+  return rows.length > 0;
+}
+
 export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
   await query(
     `UPDATE project_members SET removed_at = now()

@@ -23,6 +23,7 @@ import {
 } from "../../lib/org/types";
 import {
   addProjectMember,
+  changeProjectMemberRole,
   createProject,
   createRoom,
   fetchProjectMembers,
@@ -185,6 +186,7 @@ export function OrgWorkspace() {
         <ProjectMembersDialog
           org={dialog.org}
           project={dialog.project}
+          me={me}
           onClose={() => setDialog(null)}
         />
       )}
@@ -219,6 +221,26 @@ function OrgRail({
   onCreate: () => void;
   onSignOut: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close the profile menu on an outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!profileRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
     <nav
       aria-label="Organisations"
@@ -262,14 +284,57 @@ function OrgRail({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onSignOut}
-        title={me ? `${me.displayName} — sign out` : "Sign out"}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-vs-accent/12 text-[11px] font-semibold uppercase text-vs-accent transition hover:opacity-80"
-      >
-        {me ? initials(me.displayName) : "?"}
-      </button>
+      <div ref={profileRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          title={me ? me.displayName : "Profile"}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-vs-accent/12 text-[11px] font-semibold uppercase text-vs-accent transition hover:opacity-80"
+        >
+          {me ? initials(me.displayName) : "?"}
+        </button>
+
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute bottom-0 left-full z-50 ml-2 w-60 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
+          >
+            <div className="flex items-center gap-2.5 border-b border-vs-border px-3 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[11px] font-semibold uppercase text-vs-accent">
+                {me ? initials(me.displayName) : "?"}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium text-vs-fg">
+                  {me?.displayName ?? "Signed out"}
+                </p>
+                {me && (
+                  <p className="truncate text-[11px] text-vs-muted">@{me.handle}</p>
+                )}
+              </div>
+            </div>
+            {me?.email && (
+              <div className="px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-vs-muted">Email</p>
+                <p className="truncate text-[12px] text-vs-fg">{me.email}</p>
+              </div>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onSignOut();
+              }}
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[13px] text-vs-fg transition hover:bg-vs-hover hover:text-red-500"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
     </nav>
   );
 }
@@ -457,25 +522,28 @@ function ProjectRow({
           )}
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
         </button>
+        <button
+          type="button"
+          onClick={onManageMembers}
+          title={
+            canManageProject(project.myRole)
+              ? "View members & manage roles"
+              : "View project members"
+          }
+          className="flex shrink-0 items-center gap-1 rounded-md border border-vs-border px-1.5 py-0.5 text-[10px] font-medium text-vs-muted transition hover:bg-vs-active hover:text-vs-fg"
+        >
+          <UsersIcon className="h-3 w-3" />
+          Members
+        </button>
         {canManageProject(project.myRole) && (
-          <>
-            <button
-              type="button"
-              onClick={onManageMembers}
-              title="Project members & access"
-              className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover:opacity-100"
-            >
-              <UsersIcon className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={onNewRoom}
-              title="New room"
-              className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover:opacity-100"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={onNewRoom}
+            title="New room"
+            className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover:opacity-100"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
@@ -880,15 +948,20 @@ function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }) {
   );
 }
 
+const PROJECT_ROLES: ProjectRole[] = ["manager", "editor", "viewer"];
+
 function ProjectMembersDialog({
   org,
   project,
+  me,
   onClose,
 }: {
   org: Org;
   project: Project;
+  me: CurrentUser | null;
   onClose: () => void;
 }) {
+  const canManage = canManageProject(project.myRole);
   const [members, setMembers] = useState<ProjectMember[] | null>(null);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [role, setRole] = useState<ProjectRole>("editor");
@@ -896,13 +969,15 @@ function ProjectMembersDialog({
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    // Only project admins can list the org roster (to add people); everyone
+    // else just needs the project members.
     const [pm, om] = await Promise.all([
       fetchProjectMembers(org.slug, project.slug),
-      fetchOrgMembers(org.slug),
+      canManage ? fetchOrgMembers(org.slug) : Promise.resolve([]),
     ]);
     setMembers(pm);
     setOrgMembers(om);
-  }, [org.slug, project.slug]);
+  }, [org.slug, project.slug, canManage]);
 
   useEffect(() => {
     void reload();
@@ -925,6 +1000,19 @@ function ProjectMembersDialog({
     }
   }
 
+  async function changeRole(userId: string, next: ProjectRole) {
+    setPending(userId);
+    setError(null);
+    try {
+      await changeProjectMemberRole(org.slug, project.slug, userId, next);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not change that role.");
+    } finally {
+      setPending(null);
+    }
+  }
+
   async function remove(userId: string) {
     setPending(userId);
     setError(null);
@@ -941,7 +1029,11 @@ function ProjectMembersDialog({
   return (
     <Modal
       title={`${project.name} · members`}
-      description="Anyone here can open every room in this project. Add people from your organisation."
+      description={
+        canManage
+          ? "Anyone here can open every room in this project. Change roles, add people from your organisation, or remove members."
+          : "Everyone on this project can open its rooms. Only a project manager can change roles or membership."
+      }
       onClose={onClose}
       width="max-w-xl"
       footer={<GhostButton onClick={onClose}>Done</GhostButton>}
@@ -958,91 +1050,122 @@ function ProjectMembersDialog({
           </p>
         ) : (
           <ul className="mt-2 space-y-1">
-            {members.map((m) => (
-              <li
-                key={m.userId}
-                className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
-              >
-                <Avatar name={m.displayName} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{m.displayName}</span>
-                  <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
-                </span>
-                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
-                  {m.role}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => remove(m.userId)}
-                  disabled={pending === m.userId}
-                  title="Remove from project"
-                  className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+            {members.map((m) => {
+              const isSelf = m.userId === me?.id;
+              // A manager can manage everyone but themselves, so a project can't
+              // lock itself out by self-demotion or self-removal.
+              const editable = canManage && !isSelf;
+              return (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
                 >
-                  {pending === m.userId ? (
-                    <SpinnerIcon className="h-3.5 w-3.5" />
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">
+                      {m.displayName}
+                      {isSelf && <span className="text-vs-muted"> (you)</span>}
+                    </span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  {editable ? (
+                    <select
+                      value={m.role}
+                      onChange={(e) => changeRole(m.userId, e.target.value as ProjectRole)}
+                      disabled={pending === m.userId}
+                      aria-label={`Role for ${m.displayName}`}
+                      className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
+                    >
+                      {PROJECT_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    <CloseIcon className="h-3.5 w-3.5" />
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                      {m.role}
+                    </span>
                   )}
-                </button>
-              </li>
-            ))}
+                  {editable && (
+                    <button
+                      type="button"
+                      onClick={() => remove(m.userId)}
+                      disabled={pending === m.userId}
+                      title="Remove from project"
+                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                    >
+                      {pending === m.userId ? (
+                        <SpinnerIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
 
-      <div>
-        <div className="flex items-center justify-between">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
-            Add from organisation
-          </h3>
-          <label className="flex items-center gap-1.5 text-[11px] text-vs-muted">
-            Role
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as ProjectRole)}
-              className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] text-vs-fg outline-none"
-            >
-              <option value="manager">manager</option>
-              <option value="editor">editor</option>
-              <option value="viewer">viewer</option>
-            </select>
-          </label>
+      {canManage && (
+        <div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+              Add from organisation
+            </h3>
+            <label className="flex items-center gap-1.5 text-[11px] text-vs-muted">
+              Role
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as ProjectRole)}
+                className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] text-vs-fg outline-none"
+              >
+                {PROJECT_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {addable.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-vs-muted">
+              Everyone in {org.name} is already on this project. Invite more people to the org first.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {addable.map((m) => (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">{m.displayName}</span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => add(m.userId)}
+                    disabled={pending === m.userId}
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                  >
+                    {pending === m.userId ? (
+                      <SpinnerIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PlusIcon className="h-3.5 w-3.5" />
+                    )}
+                    Add
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-
-        {addable.length === 0 ? (
-          <p className="mt-2 text-xs leading-5 text-vs-muted">
-            Everyone in {org.name} is already on this project. Invite more people to the org first.
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {addable.map((m) => (
-              <li
-                key={m.userId}
-                className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
-              >
-                <Avatar name={m.displayName} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{m.displayName}</span>
-                  <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => add(m.userId)}
-                  disabled={pending === m.userId}
-                  className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
-                >
-                  {pending === m.userId ? (
-                    <SpinnerIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <PlusIcon className="h-3.5 w-3.5" />
-                  )}
-                  Add
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      )}
     </Modal>
   );
 }
