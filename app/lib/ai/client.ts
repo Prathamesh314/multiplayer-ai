@@ -1,12 +1,13 @@
-import type { AgentsResponse, AgentStatus } from "./catalog";
+import type { AgentAuth, AgentsResponse, AgentStatus } from "./catalog";
 import type { AiRunEvent } from "../../api/ai/run/route";
+import type { AiAuthEvent, AiAuthResult } from "../../api/ai/auth/route";
 import type { ForkableRunsResponse } from "../../api/sessions/[id]/forkable-runs/route";
 import type {
   MentionRoomDTO,
   MentionTargetsResponse,
 } from "../../api/sessions/[id]/mention-targets/route";
 
-export type { AgentStatus, AgentsResponse };
+export type { AgentAuth, AgentStatus, AgentsResponse };
 export type { ForkableRun } from "./memory";
 export type { MentionRoomDTO };
 
@@ -16,6 +17,88 @@ export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   });
   if (!response.ok) return { agents: [], canRun: false, reason: null };
   return (await response.json()) as AgentsResponse;
+}
+
+/**
+ * Signs an agent out of its account. Quick and unattended — resolves with the
+ * fresh login state (which should now be signed out).
+ */
+export async function logoutAgent(agentId: string): Promise<AgentAuth | null> {
+  const response = await fetch("/api/ai/auth", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agentId, action: "logout" }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? "Could not sign out.");
+  }
+  return ((await response.json()) as AiAuthResult).auth;
+}
+
+/**
+ * Starts an interactive sign-in and streams the CLI's progress. The CLI opens
+ * the vendor's browser flow itself; `onEvent` carries the URL and status lines
+ * so the UI can show what's happening, and the final `exit` event carries the
+ * refreshed login state.
+ */
+export function loginAgent(
+  agentId: string,
+  handlers: {
+    onEvent: (event: AiAuthEvent) => void;
+    onError: (message: string) => void;
+    onDone: () => void;
+  },
+): RunHandle {
+  const controller = new AbortController();
+
+  void (async () => {
+    try {
+      const response = await fetch("/api/ai/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId, action: "login" }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        handlers.onError(body?.error ?? "Could not start sign-in.");
+        handlers.onDone();
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newline;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          try {
+            handlers.onEvent(JSON.parse(line) as AiAuthEvent);
+          } catch {
+            // A truncated frame is not worth failing sign-in over.
+          }
+        }
+      }
+    } catch (cause) {
+      if ((cause as Error)?.name !== "AbortError") {
+        handlers.onError(cause instanceof Error ? cause.message : "Sign-in failed.");
+      }
+    } finally {
+      handlers.onDone();
+    }
+  })();
+
+  return { cancel: () => controller.abort() };
 }
 
 /** Candidate source chats for "import context from…" in this room. */

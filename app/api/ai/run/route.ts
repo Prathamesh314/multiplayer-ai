@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { agentById, resolveChoice } from "../../../lib/ai/catalog";
+import { agentEnv } from "../../../lib/ai/env";
 import {
   appendMessage,
   createRun,
@@ -493,26 +494,6 @@ function runStream(
       closed = true;
     },
   });
-}
-
-/**
- * The environment the agent gets.
- *
- * Markers left by whatever launched this server are stripped: a server started
- * from a shell inside Claude Code inherits CLAUDECODE=1, and the agent then
- * refuses to start because it believes it is being nested. It is not — this is
- * a separate process spawned by a server — so the stale marker is dropped
- * rather than the check bypassed.
- *
- * Credentials are deliberately left alone: the agent authenticates the same way
- * it does when the operator runs it by hand.
- */
-function agentEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_")) delete env[key];
-  }
-  return env;
 }
 
 /** Targets the process group so a helper the agent spawned dies with it. */

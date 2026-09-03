@@ -13,6 +13,23 @@ export type AgentId = "claude" | "gemini" | "codex";
 /** A selectable value (model or reasoning effort). Empty id → the CLI default. */
 export type AgentChoice = { id: string; label: string };
 
+/**
+ * An agent's account-login state, as reported by its own CLI.
+ *
+ * This is a *read* of a credential the CLI owns and stores itself (its keychain
+ * entry or config) — this app never sees, holds, or transmits the token. It is
+ * how the panel can say "signed in as you, on Max" versus "sign in first",
+ * exactly the way Conductor reuses the machine's existing Claude Code login.
+ */
+export type AgentAuth = {
+  loggedIn: boolean;
+  /** e.g. "claude.ai" (subscription) or "console" (API billing); null if unknown. */
+  method: string | null;
+  email: string | null;
+  /** Subscription tier when signed in with a subscription, e.g. "max"; else null. */
+  plan: string | null;
+};
+
 /** What the composer's Model / Capacity selectors send back with a prompt. */
 export type RunOptions = { model?: string; effort?: string };
 
@@ -33,6 +50,23 @@ export type AgentSpec = {
   models: AgentChoice[];
   /** Reasoning-effort levels offered, where the CLI supports them. May be empty. */
   efforts: AgentChoice[];
+  /**
+   * How to read and drive this agent's own account login, for the CLIs that
+   * expose it. Absent → the app can only tell whether the tool is installed,
+   * not whether it is signed in. Every arg list is passed as argv (never a
+   * shell string), and the app only ever *invokes* these — the CLI keeps the
+   * credential to itself.
+   */
+  auth?: {
+    /** Prints the current login state; parsed by `parseStatus`. */
+    statusArgs: string[];
+    /** Starts an interactive sign-in (opens the vendor's browser OAuth flow). */
+    loginArgs: string[];
+    /** Clears the stored login. */
+    logoutArgs: string[];
+    /** Normalizes the status command's stdout. Throws on unparseable output. */
+    parseStatus: (stdout: string) => AgentAuth;
+  };
   install: {
     /** Shown first: works the same on every platform. */
     command: string;
@@ -74,6 +108,31 @@ export const AGENTS: AgentSpec[] = [
     // Claude Code has no reasoning-effort flag in print mode; capability follows
     // the model tier instead.
     efforts: [],
+    /*
+     * Claude Code owns its own login. `auth status --json` reports it without
+     * spending a token; `auth login --claudeai` runs the subscription OAuth
+     * flow (a Max/Pro plan, not per-token API billing — the whole point of
+     * reusing it); `auth logout` clears it. The app never touches the token.
+     */
+    auth: {
+      statusArgs: ["auth", "status", "--json"],
+      loginArgs: ["auth", "login", "--claudeai"],
+      logoutArgs: ["auth", "logout"],
+      parseStatus: (stdout) => {
+        const data = JSON.parse(stdout) as {
+          loggedIn?: boolean;
+          authMethod?: string;
+          email?: string;
+          subscriptionType?: string;
+        };
+        return {
+          loggedIn: data.loggedIn === true,
+          method: data.authMethod ?? null,
+          email: data.email ?? null,
+          plan: data.subscriptionType ?? null,
+        };
+      },
+    },
     install: {
       command: "npm install -g @anthropic-ai/claude-code",
       alternative: "curl -fsSL https://claude.ai/install.sh | bash",
@@ -154,6 +213,12 @@ export type AgentStatus = {
   installed: boolean;
   /** Reported by the tool itself, when it is there. */
   version: string | null;
+  /**
+   * Login state, for agents whose CLI exposes it and that are installed.
+   * `null` means "not knowable here" (no auth mechanism, or not installed) —
+   * distinct from `{ loggedIn: false }`, which means "installed but signed out".
+   */
+  auth: AgentAuth | null;
   install: AgentSpec["install"];
 };
 
