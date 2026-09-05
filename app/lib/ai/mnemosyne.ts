@@ -238,6 +238,39 @@ export async function remember(input: {
   }
 }
 
+/** A durable canonical fact — a single-source-of-truth slot the sidecar keeps. */
+export type CanonicalFact = { category: string; name: string; body: string };
+
+/**
+ * List a room's canonical facts (the architecture / convention / tech-debt slots
+ * the sidecar's sleep model-refresh maintains).
+ *
+ * These live in a *key-retrieved* store that `recall` — a vector search over
+ * episodic memory — never returns, so a caller that wants them must ask for them
+ * explicitly. With only a `bank` and no category/name, the tool lists every slot
+ * for that bank's profile. Fail-open like `recall`: [] on any error or when the
+ * sidecar is off.
+ */
+export async function recallCanonical(input: { bank: string; limit?: number }): Promise<CanonicalFact[]> {
+  if (!endpoint()) return [];
+  try {
+    const payload = (await callTool(
+      "mnemosyne_recall_canonical",
+      { bank: input.bank, limit: input.limit ?? 20 },
+      RECALL_TIMEOUT_MS,
+    )) as { results?: Array<Record<string, unknown>> } | null;
+    return (payload?.results ?? [])
+      .map((row) => ({
+        category: String(row.category ?? ""),
+        name: String(row.name ?? ""),
+        body: String(row.body ?? ""),
+      }))
+      .filter((fact) => fact.body.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Trigger a consolidation ("sleep") pass for one room's bank: the sidecar
  * compresses that bank's working memories into episodic summaries and, with its

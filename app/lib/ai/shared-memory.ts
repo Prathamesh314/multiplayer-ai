@@ -17,7 +17,7 @@
 
 import { visibleRoomIds } from "../project/store";
 import { consolidationEnabled, scheduleConsolidation } from "../queue/consolidation";
-import { recall, remember, memoryEnabled } from "./mnemosyne";
+import { recall, recallCanonical, remember, memoryEnabled } from "./mnemosyne";
 import type { Memory } from "./mnemosyne";
 import { stageExchange } from "./memory-staging";
 
@@ -40,6 +40,8 @@ const PER_BANK = 4;
 const TOTAL = 8;
 /** One memory can't run away with the prompt budget. */
 const MAX_MEMORY_CHARS = 800;
+/** Durable canonical facts injected for the current room, before episodic hits. */
+const MAX_CANONICAL = 15;
 
 const clip = (text: string): string =>
   text.length > MAX_MEMORY_CHARS ? `${text.slice(0, MAX_MEMORY_CHARS)}…` : text;
@@ -92,10 +94,26 @@ export async function buildSharedMemory(input: {
   merged.sort((a, b) => b.score - a.score || b.importance - a.importance);
   const top = merged.slice(0, TOTAL);
 
-  if (top.length === 0) return { text: null, recalled: 0, truncatedRooms };
+  // Durable canonical facts for the current room — the architecture / convention
+  // / tech-debt slots the sidecar's sleep model-refresh maintains. They are
+  // key-retrieved, so the episodic vector recall above never returns them; we
+  // fetch them explicitly and put them first, as the load-bearing truths. Scoped
+  // to the current room only for now: its own durable facts, one extra call, no
+  // fan-out latency on the run's start path (cross-room canonical is a later step).
+  const canonicalSeen = new Set<string>();
+  const canonicalLines: string[] = [];
+  for (const fact of await recallCanonical({ bank: roomBank(input.currentSessionId) })) {
+    const key = `${fact.category}:${fact.name}`;
+    if (canonicalSeen.has(key)) continue;
+    canonicalSeen.add(key);
+    canonicalLines.push(`- (${fact.category}) ${clip(fact.body.trim())}`);
+    if (canonicalLines.length >= MAX_CANONICAL) break;
+  }
 
-  const text = top.map((memory) => `- ${clip(memory.content.trim())}`).join("\n");
-  return { text, recalled: top.length, truncatedRooms };
+  const lines = [...canonicalLines, ...top.map((memory) => `- ${clip(memory.content.trim())}`)];
+  if (lines.length === 0) return { text: null, recalled: 0, truncatedRooms };
+
+  return { text: lines.join("\n"), recalled: lines.length, truncatedRooms };
 }
 
 /**

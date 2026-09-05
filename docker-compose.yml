@@ -190,6 +190,16 @@ services:
       MNEMOSYNE_CONFLICT_LLM_BASE_URL: ${MNEMOSYNE_CONFLICT_LLM_BASE_URL:-http://litellm:4000/v1}
       MNEMOSYNE_CONFLICT_LLM_MODEL: ${MNEMOSYNE_CONFLICT_LLM_MODEL:-haiku-4-5}
       MNEMOSYNE_CONFLICT_LLM_API_KEY: ${MNEMOSYNE_CONFLICT_LLM_API_KEY:-sk-litellm-local}
+      # Model-refresh (canonical fact extraction) tuned for a code IDE: replace
+      # the default user,workflow,project taxonomy with IDE-relevant categories.
+      # Facts whose category isn't in this list are dropped by the parser, so
+      # this genuinely steers what becomes a durable canonical fact. The conflict
+      # thresholds are kept HIGH so a passing remark can't overwrite an
+      # established architectural decision (high confidence AND high evidence
+      # required to supersede a slot; lowering evidence would make that easier).
+      MNEMOSYNE_SLEEP_MODEL_REFRESH_CATEGORIES: ${MNEMOSYNE_SLEEP_MODEL_REFRESH_CATEGORIES:-architecture,convention,techdebt}
+      MNEMOSYNE_SLEEP_MODEL_REFRESH_CONFLICT_MIN_CONFIDENCE: ${MNEMOSYNE_SLEEP_MODEL_REFRESH_CONFLICT_MIN_CONFIDENCE:-0.8}
+      MNEMOSYNE_SLEEP_MODEL_REFRESH_CONFLICT_MIN_EVIDENCE: ${MNEMOSYNE_SLEEP_MODEL_REFRESH_CONFLICT_MIN_EVIDENCE:-5}
     ports:
       - "${MNEMOSYNE_PORT:-8787}:8787"
     volumes:
