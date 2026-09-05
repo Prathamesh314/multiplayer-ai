@@ -103,6 +103,9 @@ services:
       MNEMOSYNE_URL: http://mnemosyne:8787/mcp
       MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
       MULTIPLAYER_AI_DATA: /app/workspaces
+      # App-driven memory consolidation: ingest stages + debounces here, the
+      # worker triggers the sidecar's sleep. Pair with MNEMOSYNE_AUTO_SLEEP_ENABLED=false.
+      MEMORY_CONSOLIDATION: "1"
     ports:
       - "${WEB_PORT:-3000}:3000"
     volumes:
@@ -130,11 +133,30 @@ services:
       MNEMOSYNE_URL: http://mnemosyne:8787/mcp
       MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
       MULTIPLAYER_AI_DATA: /app/workspaces
+      # Runs the debounced consolidation worker that triggers the sidecar's sleep.
+      MEMORY_CONSOLIDATION: "1"
+      MEMORY_CONSOLIDATION_CONCURRENCY: ${MEMORY_CONSOLIDATION_CONCURRENCY:-2}
     volumes:
       # The same named volume at the same path as `web` — the whole point.
       - workspace_data:/app/workspaces
       # Reuse the machine's Claude login instead of an API key.
       - ${HOME}/.claude:/root/.claude:ro
+
+  litellm:
+    # OpenAI→Anthropic adapter for the memory sidecar's consolidation LLM. The
+    # sidecar speaks OpenAI; this translates to Claude (see docker/litellm/config.yaml).
+    # Part of the `app` profile — only needed when app-driven consolidation runs.
+    profiles: ["app"]
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: multiplayer-litellm
+    restart: unless-stopped
+    environment:
+      # Required for real consolidation; left soft so `docker compose config`
+      # still validates without it. Set it in .env before bringing the app up.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./docker/litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
 
   mnemosyne:
     # The semantic shared-memory sidecar. The app talks to it over MCP
@@ -152,9 +174,22 @@ services:
       # Host header values clients present: the compose service name and the
       # host mapping below. Anything else is refused.
       MNEMOSYNE_MCP_ALLOWED_HOSTS: "mnemosyne:8787,localhost:${MNEMOSYNE_PORT:-8787}"
-      # Distil working memory into long-term memory automatically once a bank
-      # accumulates enough turns — this is the cross-chat summarization pass.
-      MNEMOSYNE_AUTO_SLEEP: "true"
+      # Consolidation ("sleep") controls. NB: the real knob is
+      # MNEMOSYNE_AUTO_SLEEP_ENABLED — an earlier MNEMOSYNE_AUTO_SLEEP here was a
+      # no-op (the sidecar never reads that name). Defaults preserve host-dev
+      # behaviour (autonomous sleep on, no LLM); the containerized `app` profile
+      # flips these via .env: set MNEMOSYNE_AUTO_SLEEP_ENABLED=false so the app's
+      # BullMQ debouncer is the sole trigger, and enable the LLM so sleep does
+      # real fact extraction / conflict resolution through the LiteLLM proxy.
+      MNEMOSYNE_AUTO_SLEEP_ENABLED: ${MNEMOSYNE_AUTO_SLEEP_ENABLED:-true}
+      MNEMOSYNE_LLM_ENABLED: ${MNEMOSYNE_LLM_ENABLED:-false}
+      MNEMOSYNE_LLM_BASE_URL: ${MNEMOSYNE_LLM_BASE_URL:-http://litellm:4000/v1}
+      MNEMOSYNE_LLM_MODEL: ${MNEMOSYNE_LLM_MODEL:-haiku-4-5}
+      MNEMOSYNE_LLM_API_KEY: ${MNEMOSYNE_LLM_API_KEY:-sk-litellm-local}
+      MNEMOSYNE_LLM_CONFLICT_DETECTION: ${MNEMOSYNE_LLM_CONFLICT_DETECTION:-false}
+      MNEMOSYNE_CONFLICT_LLM_BASE_URL: ${MNEMOSYNE_CONFLICT_LLM_BASE_URL:-http://litellm:4000/v1}
+      MNEMOSYNE_CONFLICT_LLM_MODEL: ${MNEMOSYNE_CONFLICT_LLM_MODEL:-haiku-4-5}
+      MNEMOSYNE_CONFLICT_LLM_API_KEY: ${MNEMOSYNE_CONFLICT_LLM_API_KEY:-sk-litellm-local}
     ports:
       - "${MNEMOSYNE_PORT:-8787}:8787"
     volumes:

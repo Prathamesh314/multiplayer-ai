@@ -16,8 +16,10 @@
  */
 
 import { visibleRoomIds } from "../project/store";
+import { consolidationEnabled, scheduleConsolidation } from "../queue/consolidation";
 import { recall, remember, memoryEnabled } from "./mnemosyne";
 import type { Memory } from "./mnemosyne";
+import { stageExchange } from "./memory-staging";
 
 /** A room's memory bank. One bank per room keeps recall access-scoped per room. */
 export function roomBank(sessionId: string): string {
@@ -135,4 +137,18 @@ export async function ingestExchange(input: {
     channelId: input.sessionId,
     source: "chat",
   });
+
+  // With app-driven consolidation on, record the exchange for observability and
+  // (re)arm the room's debounce timer, so a `sleep` fires once the room goes
+  // quiet. Off by default: the `remember` above is all that happens, and the
+  // sidecar's own AUTO_SLEEP (if enabled) consolidates on its own cadence.
+  if (consolidationEnabled()) {
+    await stageExchange(input.sessionId, {
+      prompt,
+      reply,
+      changed: input.changed,
+      at: Date.now(),
+    });
+    await scheduleConsolidation(input.sessionId);
+  }
 }
