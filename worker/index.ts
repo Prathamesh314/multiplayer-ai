@@ -1,52 +1,80 @@
 /**
- * The agent-run worker.
+ * The background worker process.
  *
- * A standalone process — deliberately *not* part of the Next.js server — that
- * pulls agent-run jobs off the queue and executes them. This is the whole point
- * of the decoupling: the CPU-heavy, occasionally-runaway spawned CLI lives here,
- * so a job that spikes to 100% CPU or leaks a child process degrades this
- * process, never the web server every user shares.
+ * A standalone process — deliberately not part of the Next.js server — that
+ * runs two independent background jobs, each gated by its own flag:
  *
- * Run it with `npm run worker` (or `worker:dev` to reload on edit). It needs
- * `REDIS_URL` (the queue and the streaming bridge both require it) and the same
- * `MULTIPLAYER_AI_DATA` and `DATABASE_URL` the web server uses — in this first
- * slice web and worker share one machine and one data root, so the worker's
- * `ensureWork`/`commitWork` operate on the very same git state.
+ *  - Agent runs (AGENT_WORKER=1): pulls agent-run jobs and executes the CLI, so
+ *    a runaway spawn degrades this process, never the web server.
+ *  - Memory consolidation (MEMORY_CONSOLIDATION=1): the debounced "sleep" pass
+ *    that consolidates a room's memories once it goes quiet.
+ *
+ * Run it with `npm run worker` (or `worker:dev`). It needs `REDIS_URL` and the
+ * same `MULTIPLAYER_AI_DATA` / `DATABASE_URL` the web server uses.
  */
 import { executeAgentRun } from "../app/lib/ai/execute";
+import { drainStaged } from "../app/lib/ai/memory-staging";
+import { runSleep } from "../app/lib/ai/mnemosyne";
 import { publishRunEvent } from "../app/lib/ai/run-stream";
+import { roomBank } from "../app/lib/ai/shared-memory";
 import { createRunWorker, queueEnabled } from "../app/lib/queue";
+import {
+  consolidationEnabled,
+  createConsolidationWorker,
+} from "../app/lib/queue/consolidation";
 
-if (!queueEnabled()) {
+const closers: Array<() => Promise<void>> = [];
+
+if (queueEnabled()) {
+  const runWorker = createRunWorker((job) =>
+    // Live events go to the per-run Redis channel the web process forwards;
+    // everything durable is handled inside executeAgentRun, identically to
+    // inline mode.
+    executeAgentRun(job, (event) => {
+      void publishRunEvent(job.runId, event).catch(() => {});
+    }),
+  );
+  runWorker.on("ready", () => console.log("agent worker ready; waiting for jobs"));
+  runWorker.on("active", (job) => console.log(`run ${job.data.runId}: started (${job.data.agentId})`));
+  runWorker.on("completed", (job) => console.log(`run ${job.data.runId}: done`));
+  runWorker.on("failed", (job, err) =>
+    console.error(`run ${job?.data.runId ?? "?"}: failed — ${err?.message ?? err}`),
+  );
+  runWorker.on("error", (err) => console.error("agent worker error:", err));
+  closers.push(() => runWorker.close());
+}
+
+if (consolidationEnabled()) {
+  const consolidator = createConsolidationWorker(async (sessionId) => {
+    // The drained buffer is the app-side record of what landed since the last
+    // pass — used to skip a no-op sleep and to log. The actual input to `sleep`
+    // is the sidecar's own working memory (populated by `remember` on ingest).
+    const staged = await drainStaged(sessionId);
+    if (staged.length === 0) {
+      console.log(`consolidate ${sessionId}: nothing staged, skipping`);
+      return;
+    }
+    const ok = await runSleep(roomBank(sessionId));
+    console.log(`consolidate ${sessionId}: ${staged.length} exchange(s) → sleep ${ok ? "ok" : "skipped/failed"}`);
+  });
+  consolidator.on("ready", () => console.log("consolidation worker ready; waiting for jobs"));
+  consolidator.on("error", (err) => console.error("consolidation worker error:", err));
+  closers.push(() => consolidator.close());
+}
+
+if (closers.length === 0) {
   console.error(
-    "The agent worker needs AGENT_WORKER=1 and REDIS_URL. Without them the web server runs turns inline and no worker is required.",
+    "Nothing to do: set AGENT_WORKER=1 (needs REDIS_URL) for agent runs and/or MEMORY_CONSOLIDATION=1 for memory consolidation.",
   );
   process.exit(1);
 }
 
-const worker = createRunWorker((job) =>
-  // Each live event is forwarded to the per-run Redis channel the web process
-  // is subscribed to; everything durable (commit, turns, finishRun, watcher
-  // broadcasts) is handled inside executeAgentRun, identically to inline mode.
-  executeAgentRun(job, (event) => {
-    void publishRunEvent(job.runId, event).catch(() => {});
-  }),
-);
-
-worker.on("ready", () => console.log("agent worker ready; waiting for jobs"));
-worker.on("active", (job) => console.log(`run ${job.data.runId}: started (${job.data.agentId})`));
-worker.on("completed", (job) => console.log(`run ${job.data.runId}: done`));
-worker.on("failed", (job, err) =>
-  console.error(`run ${job?.data.runId ?? "?"}: failed — ${err?.message ?? err}`),
-);
-worker.on("error", (err) => console.error("worker error:", err));
-
-// Graceful shutdown: stop accepting new jobs and let an in-flight one finish, so
-// a deploy doesn't SIGKILL a run mid-commit and orphan its child process.
+// Graceful shutdown: stop accepting new jobs and let in-flight ones finish, so a
+// deploy doesn't SIGKILL a run mid-commit or a sleep mid-consolidation.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, async () => {
-    console.log(`${signal} received; draining worker…`);
-    await worker.close();
+    console.log(`${signal} received; draining workers…`);
+    await Promise.all(closers.map((close) => close().catch(() => {})));
     process.exit(0);
   });
 }

@@ -28,6 +28,11 @@ const PROTOCOL_VERSION = "2025-06-18";
 const RECALL_TIMEOUT_MS = 4000;
 /** Writes happen after a run finishes; a little more slack is fine. */
 const REMEMBER_TIMEOUT_MS = 6000;
+/**
+ * Consolidation runs off the critical path in a background worker and, once an
+ * LLM is wired, calls out to it — so it gets a much longer leash than recall.
+ */
+const SLEEP_TIMEOUT_MS = 120_000;
 
 function endpoint(): string | null {
   return process.env.MNEMOSYNE_URL?.trim() || null;
@@ -228,6 +233,65 @@ export async function remember(input: {
       REMEMBER_TIMEOUT_MS,
     )) as { status?: string } | null;
     return payload?.status === "stored";
+  } catch {
+    return false;
+  }
+}
+
+/** A durable canonical fact — a single-source-of-truth slot the sidecar keeps. */
+export type CanonicalFact = { category: string; name: string; body: string };
+
+/**
+ * List a room's canonical facts (the architecture / convention / tech-debt slots
+ * the sidecar's sleep model-refresh maintains).
+ *
+ * These live in a *key-retrieved* store that `recall` — a vector search over
+ * episodic memory — never returns, so a caller that wants them must ask for them
+ * explicitly. With only a `bank` and no category/name, the tool lists every slot
+ * for that bank's profile. Fail-open like `recall`: [] on any error or when the
+ * sidecar is off.
+ */
+export async function recallCanonical(input: { bank: string; limit?: number }): Promise<CanonicalFact[]> {
+  if (!endpoint()) return [];
+  try {
+    const payload = (await callTool(
+      "mnemosyne_recall_canonical",
+      { bank: input.bank, limit: input.limit ?? 20 },
+      RECALL_TIMEOUT_MS,
+    )) as { results?: Array<Record<string, unknown>> } | null;
+    return (payload?.results ?? [])
+      .map((row) => ({
+        category: String(row.category ?? ""),
+        name: String(row.name ?? ""),
+        body: String(row.body ?? ""),
+      }))
+      .filter((fact) => fact.body.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Trigger a consolidation ("sleep") pass for one room's bank: the sidecar
+ * compresses that bank's working memories into episodic summaries and, with its
+ * conflict/model-refresh LLM configured, reconciles canonical facts. `force`
+ * skips the sidecar's own age threshold because *we* own the cadence (the
+ * BullMQ debouncer decided it is time). Best-effort and fail-open like the rest.
+ *
+ * The `bank` maps to the sidecar's session scope (`session_id = mcp_<bank>`), so
+ * passing the room bank keeps consolidation scoped to that room. NB: the sleep
+ * tool schema advertises only all_sessions/dry_run/force — whether it threads
+ * `bank` is worth a smoke-test on first real run; passing it is harmless if not.
+ */
+export async function runSleep(bank: string): Promise<boolean> {
+  if (!endpoint()) return false;
+  try {
+    const payload = (await callTool(
+      "mnemosyne_sleep",
+      { bank, force: true },
+      SLEEP_TIMEOUT_MS,
+    )) as { status?: string; consolidated?: number } | null;
+    return payload != null;
   } catch {
     return false;
   }

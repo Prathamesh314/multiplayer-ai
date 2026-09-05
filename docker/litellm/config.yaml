@@ -1,0 +1,17 @@
+# LiteLLM proxy config.
+#
+# The mnemosyne sidecar's consolidation LLM speaks the OpenAI wire format, but we
+# want Claude doing the fact extraction / conflict resolution. LiteLLM is the
+# adapter: it exposes an OpenAI-compatible endpoint and translates to Anthropic.
+#
+# The sidecar is pointed at model name `haiku-4-5` (MNEMOSYNE_LLM_MODEL); that
+# alias maps here to the current fast Claude. `drop_params` discards
+# OpenAI-only fields the sidecar might send that the Anthropic API would reject.
+model_list:
+  - model_name: haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  drop_params: true
