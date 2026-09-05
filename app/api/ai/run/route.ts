@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
 import { agentById, resolveChoice } from "../../../lib/ai/catalog";
-import { agentEnv } from "../../../lib/ai/env";
-import type { StreamParser } from "../../../lib/ai/stream";
+import { executeAgentRun } from "../../../lib/ai/execute";
 import {
   appendMessage,
   createRun,
@@ -15,20 +13,26 @@ import { checkRunAllowed } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
-import { buildSharedMemory, ingestExchange } from "../../../lib/ai/shared-memory";
+import { buildSharedMemory } from "../../../lib/ai/shared-memory";
 import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
+import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
+import { subscribeRunEvents } from "../../../lib/ai/run-stream";
+import { enqueueRun, queueEnabled } from "../../../lib/queue";
 import { events } from "../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
-import { workPath } from "../../../lib/session/paths";
-import { commitWork, diffStat, ensureWork, withRepoLock } from "../../../lib/session/repo";
-import { setHeadSha } from "../../../lib/session/store";
 import { terminalAccess } from "../../../lib/terminal/guard";
+
+export type { AiRunEvent } from "../../../lib/ai/run-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_RUN_MS = 10 * 60 * 1000;
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+/**
+ * How long the response will wait on a worker before giving up. A worker that
+ * is SIGKILLed mid-run never emits `exit`; BullMQ fails the stalled job, but
+ * this stream would otherwise hang, so it is closed a little past the run cap.
+ */
+const RUN_STREAM_TIMEOUT_MS = 11 * 60 * 1000;
 
 export type AiRunRequest = {
   sessionId: string;
@@ -51,15 +55,6 @@ export type AiRunRequest = {
    */
   contextRefs?: string[];
 };
-
-export type AiRunEvent =
-  | { t: "start"; agent: string; cwd: string; runId: string }
-  | { t: "out"; d: string }
-  | { t: "think"; d: string }
-  | { t: "act"; d: string }
-  | { t: "err"; d: string }
-  | { t: "notice"; message: string }
-  | { t: "exit"; code: number | null; ms: number; headSha: string | null; committed: boolean };
 
 /**
  * Runs a coding agent against the session's working copy.
@@ -191,25 +186,11 @@ export async function POST(request: Request) {
     await reopenRun(run.id);
   }
 
-  // The run row and its run.started event are out by now, so the chat already
-  // shows in everyone's sidebar. Only now do we materialize the working copy —
-  // a cold clone that would otherwise delay that appearance. It must succeed
-  // before the agent can spawn, so a failure here fails the run cleanly rather
-  // than leaving a dangling "running" row behind.
-  try {
-    await withRepoLock(sessionId, () => ensureWork(sessionId, headSha));
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    await finishRun(run.id, { status: "failed", error: message });
-    await (await events()).publish(sessionId, {
-      type: "run.finished",
-      runId: run.id,
-      status: "failed",
-      headSha: null,
-      at: Date.now(),
-    });
-    return Response.json({ error: `Could not prepare the workspace: ${message}` }, { status: 500 });
-  }
+  // Materializing the working copy used to happen here; it now happens inside
+  // executeAgentRun (see below), so it is identical whether the turn runs inline
+  // or in a worker — and, in the worker case, on the machine that will actually
+  // spawn the agent. A prepare failure surfaces as the run's own failure event
+  // rather than a 500, keeping the run row and the live stream consistent.
 
   // Chats referenced with `@room/<run-id>` (picked in the composer, or a pasted
   // path). Run ids are read straight out of the prompt — and out of the explicit
@@ -323,250 +304,56 @@ export async function POST(request: Request) {
   };
 
   const author = { name: result.user.displayName, email: result.user.email };
-  return new Response(
-    runStream(
-      sessionId,
-      run.id,
-      headSha,
-      agent.bin,
-      agent.promptArgs(agentPrompt, runOptions),
-      author,
-      prompt,
-      agent.createStreamParser?.() ?? null,
-    ),
-    {
-      headers: {
-        "content-type": "application/x-ndjson; charset=utf-8",
-        "cache-control": "no-store, no-transform",
-        "x-accel-buffering": "no",
-      },
-    },
-  );
-}
 
-function runStream(
-  sessionId: string,
-  runId: string,
-  baseSha: string,
-  bin: string,
-  args: string[],
-  author: { name: string; email: string },
-  userPrompt: string,
-  /** When set, stdout is JSON lines to decode into reply/thinking/activity; else raw. */
-  parser: StreamParser | null,
-): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const cwd = workPath(sessionId);
-  const startedAt = Date.now();
-
-  let closed = false;
-  let bytes = 0;
-  // Thinking is streamed for live feedback but never stored and capped
-  // separately, so a long chain of thought can't crowd out the reply's budget.
-  let thinkBytes = 0;
-  const MAX_THINK_BYTES = 256 * 1024;
-  // Buffered to persist as one consolidated turn at close; the live tail goes
-  // out over the event bus chunk by chunk for watchers.
-  let outBuf = "";
-  let errBuf = "";
-
-  const broadcast = (event: Parameters<Awaited<ReturnType<typeof events>>["publish"]>[1]) => {
-    void events().then((bus) => bus.publish(sessionId, event)).catch(() => {});
+  // Everything the run needs is now plain data. The agent's bin/args/parser are
+  // rebuilt from agentId inside executeAgentRun, because they are functions and
+  // cannot cross a queue (see AgentRunJob).
+  const job: AgentRunJob = {
+    sessionId,
+    runId: run.id,
+    baseSha: headSha,
+    agentId: agent.id,
+    agentPrompt,
+    model: runOptions.model,
+    effort: runOptions.effort,
+    author,
+    userPrompt: prompt,
   };
 
+  const headers = {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store, no-transform",
+    "x-accel-buffering": "no",
+  };
+
+  // Two ways to run, one client contract. With Redis the turn goes to a worker
+  // and we forward its events off a per-run Redis channel; without Redis it runs
+  // inline in this process, exactly as before. The browser reads the same NDJSON
+  // stream either way.
+  return new Response(queueEnabled() ? queuedStream(job) : inlineStream(job), { headers });
+}
+
+const encoder = new TextEncoder();
+const frame = (event: AiRunEvent) => encoder.encode(`${JSON.stringify(event)}\n`);
+
+/**
+ * No Redis: run the turn inline in the web process and stream its events
+ * straight down the response. This is the pre-worker behaviour, preserved so
+ * local development needs no extra infrastructure.
+ */
+function inlineStream(job: AgentRunJob): ReadableStream<Uint8Array> {
+  let closed = false;
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: AiRunEvent) => {
+      void executeAgentRun(job, (event) => {
         if (closed) return;
-        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-      };
-
-      let child: ReturnType<typeof spawn>;
-      try {
-        child = spawn(bin, args, {
-          cwd,
-          detached: process.platform !== "win32",
-          env: { ...agentEnv(), CI: "1", NO_COLOR: "1" },
-          // stdin closed: these run in one-shot mode and must never sit
-          // waiting on input nobody can supply.
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-      } catch (cause) {
-        send({ t: "err", d: cause instanceof Error ? cause.message : String(cause) });
-        send({ t: "exit", code: null, ms: 0, headSha: null, committed: false });
-        void finishRun(runId, {
-          status: "failed",
-          error: cause instanceof Error ? cause.message : String(cause),
-        });
-        broadcast({ type: "run.finished", runId, status: "failed", headSha: null, at: Date.now() });
-        closed = true;
-        controller.close();
-        return;
-      }
-
-      send({ t: "start", agent: bin, cwd, runId });
-
-      const deadline = setTimeout(() => {
-        send({ t: "notice", message: `Stopped after ${MAX_RUN_MS / 60_000} minutes.` });
-        kill(child);
-      }, MAX_RUN_MS);
-      deadline.unref?.();
-
-      // The reply: shown live, accumulated for storage, and broadcast to
-      // watchers. This is the only durable output — exactly the old "out" path.
-      const emitReply = (text: string) => {
-        if (bytes >= MAX_OUTPUT_BYTES) return;
-        bytes += Buffer.byteLength(text);
-        send({ t: "out", d: text });
-        outBuf += text;
-        broadcast({ type: "run.output", runId, stream: "out", chunk: text, at: Date.now() });
-        if (bytes >= MAX_OUTPUT_BYTES) {
-          send({ t: "notice", message: "Output limit reached — the run was stopped." });
-          kill(child);
-        }
-      };
-
-      // Thinking and tool activity: streamed to the runner as live "it's
-      // working" feedback, never stored, and sharing one budget so a long chain
-      // of thought can't starve the reply's.
-      const emitThinking = (text: string) => {
-        if (thinkBytes >= MAX_THINK_BYTES) return;
-        thinkBytes += Buffer.byteLength(text);
-        send({ t: "think", d: text });
-      };
-      const emitActivity = (text: string) => {
-        if (thinkBytes >= MAX_THINK_BYTES) return;
-        thinkBytes += Buffer.byteLength(text);
-        send({ t: "act", d: text });
-      };
-
-      const emitErr = (chunk: string) => {
-        if (bytes >= MAX_OUTPUT_BYTES) return;
-        bytes += Buffer.byteLength(chunk);
-        send({ t: "err", d: chunk });
-        errBuf += chunk;
-        broadcast({ type: "run.output", runId, stream: "err", chunk, at: Date.now() });
-        if (bytes >= MAX_OUTPUT_BYTES) {
-          send({ t: "notice", message: "Output limit reached — the run was stopped." });
-          kill(child);
-        }
-      };
-
-      // stdout is either JSON events to decode (parser set) or the reply
-      // verbatim. JSON is newline-delimited, so it is buffered into whole lines
-      // before parsing; a trailing partial line is left for the next chunk.
-      let lineBuf = "";
-      const onStdout = (chunk: string) => {
-        if (!parser) {
-          emitReply(chunk);
-          return;
-        }
-        lineBuf += chunk;
-        let newline;
-        while ((newline = lineBuf.indexOf("\n")) >= 0) {
-          const line = lineBuf.slice(0, newline);
-          lineBuf = lineBuf.slice(newline + 1);
-          for (const piece of parser.push(line)) {
-            if (piece.kind === "reply") emitReply(piece.text);
-            else if (piece.kind === "thinking") emitThinking(piece.text);
-            else emitActivity(piece.text);
-          }
-        }
-      };
-
-      if (child.stdout) {
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", onStdout);
-      }
-      if (child.stderr) {
-        child.stderr.setEncoding("utf8");
-        child.stderr.on("data", emitErr);
-      }
-
-      child.on("close", async (code) => {
-        clearTimeout(deadline);
-
-        // Whatever it changed is committed here, so the session keeps its
-        // "never uncommitted" invariant and everyone else sees the result.
-        let sha: string | null = null;
         try {
-          sha = await withRepoLock(sessionId, () =>
-            commitWork(sessionId, `${bin}: agent run`, author.name, author.email),
-          );
-          if (sha) {
-            await setHeadSha(sessionId, sha);
-            await (await events()).publish(sessionId, {
-              type: "file.saved",
-              path: "",
-              headSha: sha,
-              authorId: "agent",
-              authorName: `${author.name} · ${bin}`,
-              originId: null,
-              at: Date.now(),
-            });
-          }
-        } catch (cause) {
-          send({ t: "err", d: `Could not commit the changes: ${String(cause)}\n` });
-        }
-
-        // Persist the run's output as one consolidated turn, then close it out.
-        // Errors here must not break the client stream, so they are swallowed.
-        try {
-          const trimmedOut = outBuf.trim();
-          if (trimmedOut) {
-            const turn = await appendMessage({ runId, role: "agent", body: trimmedOut });
-            broadcast({
-              type: "run.turn", runId, seq: turn.seq, role: "agent",
-              authorName: null, body: trimmedOut, at: Date.now(),
-            });
-          }
-          const trimmedErr = errBuf.trim();
-          const status = code === 0 ? "completed" : "failed";
-          // Only keep stderr when the run failed — then it is the error to show.
-          // On success it is just the CLI's own transcript (Codex echoes its
-          // whole session to stderr), which would render as a second copy of
-          // the reply when the run is reloaded.
-          if (trimmedErr && status === "failed") {
-            await appendMessage({ runId, role: "system", body: trimmedErr });
-          }
-          // Line counts of what the agent changed, for the sidebar's +N -N badge.
-          const stat = sha
-            ? await withRepoLock(sessionId, () => diffStat(sessionId, baseSha, sha!)).catch(() => null)
-            : { added: 0, removed: 0 };
-          await finishRun(runId, {
-            status,
-            resultSha: sha,
-            exitCode: code,
-            error: trimmedErr || null,
-            addedLines: stat?.added ?? null,
-            removedLines: stat?.removed ?? null,
-          });
-          broadcast({ type: "run.finished", runId, status, headSha: sha, at: Date.now() });
-
-          // Fold the completed exchange into the room's shared memory so future
-          // chats can recall it. Only successful runs are worth remembering — a
-          // failed run's output is an error, not knowledge. Fire-and-forget:
-          // ingestExchange has its own timeout and never throws, and the stream
-          // must not wait on the memory sidecar to close.
-          if (status === "completed") {
-            void ingestExchange({
-              sessionId,
-              prompt: userPrompt,
-              reply: trimmedOut,
-              changed: sha !== null,
-            });
-          }
+          controller.enqueue(frame(event));
         } catch {
-          // The run record is best-effort; the live stream already succeeded.
+          // The reader went away; the run finishes and commits regardless.
         }
-
-        send({
-          t: "exit",
-          code,
-          ms: Date.now() - startedAt,
-          headSha: sha,
-          committed: sha !== null,
-        });
+      }).finally(() => {
+        if (closed) return;
         closed = true;
         try {
           controller.close();
@@ -574,25 +361,85 @@ function runStream(
           // Already closed.
         }
       });
-
-      child.on("error", (cause) => send({ t: "err", d: `${cause.message}\n` }));
     },
-
     cancel() {
+      // The run keeps going in this process and still commits; a driver leaving
+      // must not abort work others are watching.
       closed = true;
     },
   });
 }
 
-/** Targets the process group so a helper the agent spawned dies with it. */
-function kill(child: ReturnType<typeof spawn>): void {
-  try {
-    process.kill(-(child.pid ?? 0), "SIGKILL");
-  } catch {
-    try {
-      child.kill("SIGKILL");
-    } catch {
-      // Already gone.
-    }
-  }
+/**
+ * Redis: the worker runs the turn; this forwards its events off the per-run
+ * channel. Subscribe *before* enqueuing so no early event slips through the gap
+ * between the worker picking the job up and us listening.
+ */
+function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
+  let closed = false;
+  let unsubscribe: (() => Promise<void>) | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const shutdown = () => {
+        if (closed) return;
+        closed = true;
+        if (timeout) clearTimeout(timeout);
+        void unsubscribe?.().catch(() => {});
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
+      };
+
+      unsubscribe = await subscribeRunEvents(job.runId, (event) => {
+        if (closed) return;
+        try {
+          controller.enqueue(frame(event));
+        } catch {
+          // Reader gone; the worker still finishes and commits.
+        }
+        // The worker's terminal event ends the response too.
+        if (event.t === "exit") shutdown();
+      });
+
+      try {
+        await enqueueRun(job);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        controller.enqueue(frame({ t: "err", d: `Could not queue the run: ${message}` }));
+        controller.enqueue(frame({ t: "exit", code: null, ms: 0, headSha: null, committed: false }));
+        await finishRun(job.runId, { status: "failed", error: message }).catch(() => {});
+        const bus = await events();
+        await bus
+          .publish(job.sessionId, {
+            type: "run.finished",
+            runId: job.runId,
+            status: "failed",
+            headSha: null,
+            at: Date.now(),
+          })
+          .catch(() => {});
+        shutdown();
+        return;
+      }
+
+      // Safety net: a worker SIGKILLed mid-run never emits `exit`. BullMQ fails
+      // the stalled job, but this response would otherwise hang, so close it a
+      // little past the run cap.
+      timeout = setTimeout(() => {
+        if (closed) return;
+        controller.enqueue(frame({ t: "notice", message: "The run stream timed out." }));
+        shutdown();
+      }, RUN_STREAM_TIMEOUT_MS);
+      timeout.unref?.();
+    },
+    cancel() {
+      closed = true;
+      if (timeout) clearTimeout(timeout);
+      void unsubscribe?.().catch(() => {});
+    },
+  });
 }

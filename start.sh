@@ -133,6 +133,39 @@ run_migrations() {
   ok "Schema up to date"
 }
 
+# --- agent worker -----------------------------------------------------------
+# When AGENT_WORKER=1, agent runs are dispatched to a separate worker process
+# rather than executed inline in the web server (see app/lib/queue). We start it
+# next to the dev server so `./start.sh` still brings up the whole stack in one
+# command, and tear it down with the app. The trap sends SIGTERM — what Docker
+# would send too — which lets BullMQ drain the in-flight job instead of dropping
+# it mid-commit and leaving a wedged git index.
+#
+# In this first slice web and worker share one host and one MULTIPLAYER_AI_DATA,
+# so the worker's commits are visible to the web server for free — no shared
+# volume to arrange. That only becomes a concern once the worker is a separate
+# container (see the `worker` profile in docker-compose.yml).
+WORKER_PID=""
+maybe_start_worker() {
+  [ "${AGENT_WORKER:-}" = "1" ] || return 0
+  step "Starting the agent worker (AGENT_WORKER=1)"
+  npm run worker &
+  WORKER_PID=$!
+  trap 'if [ -n "$WORKER_PID" ]; then kill "$WORKER_PID" 2>/dev/null || true; wait "$WORKER_PID" 2>/dev/null || true; fi' EXIT
+  ok "Worker started (pid $WORKER_PID)"
+}
+
+# Hand off to the dev server. With a worker running we must NOT exec (that would
+# replace this shell and skip the cleanup trap), so run it in the foreground and
+# let the EXIT trap reap the worker on Ctrl+C. With no worker, exec as before.
+run_dev() {
+  if [ -n "$WORKER_PID" ]; then
+    npm run dev
+  else
+    exec npm run dev
+  fi
+}
+
 start_services() {
   check_docker
   ensure_env
@@ -146,16 +179,22 @@ start_services() {
   printf '%s   pgAdmin   http://localhost:%s%s\n' "$DIM" "${PGADMIN_PORT:-5050}" "$RESET"
   printf '%s   Redis     %s%s\n' "$DIM" "${REDIS_URL:-redis://localhost:6380}" "$RESET"
   printf '%s   Memory    %s%s\n' "$DIM" "${MNEMOSYNE_URL:-disabled (set MNEMOSYNE_URL to enable)}" "$RESET"
+  if [ "${AGENT_WORKER:-}" = "1" ]; then
+    printf '%s   Runs      worker (AGENT_WORKER=1)%s\n' "$DIM" "$RESET"
+  else
+    printf '%s   Runs      inline (set AGENT_WORKER=1 to use the worker)%s\n' "$DIM" "$RESET"
+  fi
 }
 
 # --- subcommands ------------------------------------------------------------
 case "${1:-up}" in
   up)
     start_services
+    maybe_start_worker
     printf '\n'
     step "Starting the Next.js app (frontend + backend) — Ctrl+C to stop"
     printf '%s   http://localhost:3000%s\n\n' "$GREEN" "$RESET"
-    exec npm run dev
+    run_dev
     ;;
 
   services)
@@ -181,10 +220,11 @@ case "${1:-up}" in
     ok "Wiped. Starting fresh…"
     printf '\n'
     start_services
+    maybe_start_worker
     printf '\n'
     step "Starting the Next.js app — Ctrl+C to stop"
     printf '%s   http://localhost:3000%s\n\n' "$GREEN" "$RESET"
-    exec npm run dev
+    run_dev
     ;;
 
   *)

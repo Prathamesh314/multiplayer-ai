@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
 import type { TreeNode } from "../types";
+import { repoLock } from "./lock";
 import { barePath, projectBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
 import type { ChangedFile, SessionRepo } from "./types";
 
@@ -24,25 +25,18 @@ export function sessionBranchOf(id: string): string {
 /**
  * Git serialises on `index.lock`, so two concurrent commits in the same working
  * copy make one of them fail. Queue per session instead of letting them race.
+ *
+ * The queueing lives in `app/lib/session/lock.ts` now, because the racers are no
+ * longer always in one process: once agent runs move to a worker, a human's
+ * file-save (web process) and the agent's commit (worker process) contend for
+ * the same `index.lock`, and only a cross-process lock can see both. `repoLock`
+ * is that arbiter — Redis-backed when `REDIS_URL` is set, and the same
+ * in-process mutex this used to be otherwise. Every working-copy git op in this
+ * module routes through here, so they all serialise on one lock.
  */
-const locks = new Map<string, Promise<unknown>>();
-
 export async function withRepoLock<T>(id: string, task: () => Promise<T>): Promise<T> {
-  const previous = locks.get(id) ?? Promise.resolve();
-  const result = previous.then(task, task);
-  // A failure must not poison the queue, so what the next caller waits on is
-  // the settled form. The caller still sees the rejection through `result`.
-  const settled = result.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  locks.set(id, settled);
-  try {
-    return await result;
-  } finally {
-    if (locks.get(id) === settled) locks.delete(id);
-  }
+  const lock = await repoLock();
+  return lock.withLock(id, task);
 }
 
 /**
