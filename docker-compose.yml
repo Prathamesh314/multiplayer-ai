@@ -59,6 +59,83 @@ services:
       timeout: 3s
       retries: 10
 
+  # ── Containerized app (staging / production topology) ────────────────────
+  # `web` and `worker` sit behind the `app` profile, so a plain
+  # `docker compose up` still starts only the backing services that host-based
+  # development (./start.sh) uses. Bring the whole app up in containers with:
+  #
+  #     docker compose --profile app up --build
+  #
+  # then open http://localhost:3000. Reaching it on localhost matters: runs are
+  # remote code execution and the guard only accepts loopback Hosts.
+  #
+  # The heart of this setup is ONE named volume (workspace_data) mounted at the
+  # SAME absolute path (/app/workspaces) in BOTH containers. That is what makes
+  # the worker's commits visible to the web server — and, because neither
+  # container touches a host path, it eliminates the git absolute-gitdir
+  # path-identity problem that a host bind mount would have imposed.
+  #
+  # Both images install the agent CLIs and mount the machine's Claude login
+  # read-only: the worker to *run* them, the web tier to *detect* them so the
+  # composer has an agent to pick. Redis/Postgres are addressed by their compose
+  # network names, not the host port mappings.
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    container_name: multiplayer-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Route runs to the worker (enqueue, not inline) — the worker reads the
+      # same switch, and both tiers must agree on it.
+      AGENT_WORKER: "1"
+      # Runs are RCE; a production build refuses them without this opt-in, and
+      # even then only over a loopback Host (hence http://localhost:3000).
+      MULTIPLAYER_AI_TERMINAL: "1"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:-localdev}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
+      MNEMOSYNE_URL: http://mnemosyne:8787/mcp
+      MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
+      MULTIPLAYER_AI_DATA: /app/workspaces
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - workspace_data:/app/workspaces
+      # Reuse the machine's Claude login so the composer shows "signed in".
+      - ${HOME}/.claude:/root/.claude:ro
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    container_name: multiplayer-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      AGENT_WORKER: "1"
+      AGENT_WORKER_CONCURRENCY: ${AGENT_WORKER_CONCURRENCY:-2}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:-localdev}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
+      MNEMOSYNE_URL: http://mnemosyne:8787/mcp
+      MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
+      MULTIPLAYER_AI_DATA: /app/workspaces
+    volumes:
+      # The same named volume at the same path as `web` — the whole point.
+      - workspace_data:/app/workspaces
+      # Reuse the machine's Claude login instead of an API key.
+      - ${HOME}/.claude:/root/.claude:ro
+
   mnemosyne:
     # The semantic shared-memory sidecar. The app talks to it over MCP
     # streamable HTTP (see app/lib/ai/mnemosyne.ts); when this service is not
@@ -126,6 +203,10 @@ volumes:
   postgres-data:
   pgadmin-data:
   mnemosyne-data:
+  # Shared by the `web` and `worker` containers (the `app` profile), mounted at
+  # /app/workspaces in both. This is the session git state — the durable record
+  # — so unlike the presence Redis it must NOT be wiped casually.
+  workspace_data:
 # The schema is deliberately NOT applied through /docker-entrypoint-initdb.d.
 # Running the migration files that way would create the tables without
 # recording them in schema_migrations, so the next `npm run db:migrate` would
