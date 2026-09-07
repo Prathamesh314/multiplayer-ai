@@ -79,7 +79,7 @@ export function ExplorerPanel({
           <button
             type="button"
             onClick={() => setExpanded(new Set())}
-            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Collapse
           </button>
@@ -88,7 +88,7 @@ export function ExplorerPanel({
           <button
             type="button"
             onClick={() => void loadChanges()}
-            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Refresh
           </button>
@@ -103,7 +103,7 @@ export function ExplorerPanel({
           <TabButton active={view === "changes"} onClick={showChanges}>
             Changes
             {changes && changes.length > 0 && (
-              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[10px] text-vs-accent">
+              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[11px] text-vs-accent">
                 {changes.length}
               </span>
             )}
@@ -120,12 +120,12 @@ export function ExplorerPanel({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Filter files"
-                className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-2 text-xs text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
+                className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
               />
             </label>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-vs-fg">
+          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[12px] font-semibold uppercase tracking-wide text-vs-fg">
             <span className="truncate">{result.rootName}</span>
             {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
           </div>
@@ -174,7 +174,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center rounded px-2 py-1 text-xs transition ${
+      className={`flex items-center rounded px-2 py-1 text-sm transition ${
         active ? "bg-vs-hover font-medium text-vs-fg" : "text-vs-muted hover:text-vs-fg"
       }`}
     >
@@ -184,9 +184,9 @@ function TabButton({
 }
 
 const STATUS_META: Record<ChangedFile["status"], { label: string; className: string }> = {
-  A: { label: "A", className: "text-emerald-500" },
-  M: { label: "M", className: "text-amber-500" },
-  D: { label: "D", className: "text-red-500" },
+  A: { label: "A", className: "text-vs-success" },
+  M: { label: "M", className: "text-vs-warn" },
+  D: { label: "D", className: "text-vs-danger" },
   R: { label: "R", className: "text-vs-accent" },
   C: { label: "C", className: "text-vs-accent" },
 };
@@ -204,7 +204,7 @@ function ChangesList({
 }) {
   if (loading && changes === null) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-vs-muted">
+      <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-vs-muted">
         <SpinnerIcon className="h-3.5 w-3.5" />
         Reading changes…
       </div>
@@ -213,7 +213,7 @@ function ChangesList({
 
   if (!changes || changes.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-vs-muted">
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-vs-muted">
         No changes since the session started.
       </div>
     );
@@ -232,11 +232,11 @@ function ChangesList({
             disabled={deleted}
             onClick={() => onOpenFile(change.path)}
             title={change.path}
-            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] transition ${
+            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[14px] transition ${
               change.path === activePath ? "bg-vs-active" : "hover:bg-vs-hover"
             } ${deleted ? "cursor-default opacity-60" : ""}`}
           >
-            <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${meta.className}`}>
+            <span className={`w-3 shrink-0 text-center font-mono text-[12px] font-semibold ${meta.className}`}>
               {meta.label}
             </span>
             <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
@@ -271,17 +271,17 @@ function RepoInfo({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
       >
         <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         Repository
         {notices.length > 0 && (
-          <AlertIcon className="ml-auto h-3.5 w-3.5 text-amber-500" />
+          <AlertIcon className="ml-auto h-3.5 w-3.5 text-vs-warn" />
         )}
       </button>
 
       {open && (
-        <div className="space-y-2 px-3 pb-3 text-[11px] text-vs-muted">
+        <div className="space-y-2 px-3 pb-3 text-[12px] text-vs-muted">
           <p className="flex items-center gap-1.5">
             {git.isGit ? (
               <>
@@ -341,7 +341,7 @@ function RepoInfo({
 
           {notices.map((notice) => (
             <p key={notice} className="flex gap-1.5 leading-4">
-              <AlertIcon className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+              <AlertIcon className="mt-0.5 h-3 w-3 shrink-0 text-vs-warn" />
               {notice}
             </p>
           ))}
@@ -371,7 +371,7 @@ function CopyStructureButton({ result }: { result: ScanResult }) {
     <button
       type="button"
       onClick={copy}
-      className="w-full rounded border border-vs-border py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+      className="w-full rounded border border-vs-border py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
     >
       {copied ? "Copied structure" : "Copy structure"}
     </button>
@@ -391,7 +391,7 @@ function Row({
 }) {
   return (
     <div className="min-w-0" title={title}>
-      <dt className="text-[10px] uppercase tracking-wide">{label}</dt>
+      <dt className="text-[11px] uppercase tracking-wide">{label}</dt>
       <dd className={`truncate text-vs-fg ${mono ? "font-mono" : ""}`}>{value}</dd>
     </div>
   );

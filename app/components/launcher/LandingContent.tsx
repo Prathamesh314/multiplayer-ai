@@ -64,8 +64,8 @@ export function LandingContent() {
   return (
     <div className="mx-auto w-full max-w-4xl px-8 py-14">
       <section>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel px-2.5 py-1 text-[11px] font-medium text-vs-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel px-2.5 py-1 text-[12px] font-medium text-vs-muted">
+          <span className="h-1.5 w-1.5 rounded-full bg-vs-success" />
           Local-first collaborative workspace
         </span>
 
@@ -81,7 +81,7 @@ export function LandingContent() {
           someone holding both its link and its access code.
         </p>
 
-        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-vs-muted">
+        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-vs-muted">
           <span className="flex items-center gap-1.5">
             <ShieldIcon className="h-3.5 w-3.5 text-vs-accent" />
             Files never leave the browser
@@ -98,7 +98,7 @@ export function LandingContent() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vs-muted">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-vs-muted">
           What is inside a session
         </h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -111,35 +111,35 @@ export function LandingContent() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-vs-accent/12 text-vs-accent">
                   {feature.icon}
                 </span>
-                <h3 className="font-display min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
+                <h3 className="font-display min-w-0 flex-1 truncate text-[16px] font-semibold tracking-tight">
                   {feature.title}
                 </h3>
                 {feature.badge && (
-                  <span className="shrink-0 rounded border border-vs-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                  <span className="shrink-0 rounded border border-vs-border px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                     {feature.badge}
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-[13px] leading-6 text-vs-muted">{feature.body}</p>
+              <p className="mt-2.5 text-[14px] leading-6 text-vs-muted">{feature.body}</p>
             </article>
           ))}
         </div>
       </section>
 
       <section className="mt-14">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vs-muted">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-vs-muted">
           How it works
         </h2>
         <ol className="mt-4 grid gap-3 sm:grid-cols-3">
           {STEPS.map((step, index) => (
             <li key={step.title} className="rounded-xl border border-vs-border bg-vs-panel/50 p-4">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-vs-accent text-[11px] font-semibold text-vs-accent-fg">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-vs-accent text-[12px] font-semibold text-vs-accent-fg">
                 {index + 1}
               </span>
-              <h3 className="font-display mt-3 text-[15px] font-semibold tracking-tight">
+              <h3 className="font-display mt-3 text-[16px] font-semibold tracking-tight">
                 {step.title}
               </h3>
-              <p className="mt-1.5 text-[13px] leading-6 text-vs-muted">{step.body}</p>
+              <p className="mt-1.5 text-[14px] leading-6 text-vs-muted">{step.body}</p>
             </li>
           ))}
         </ol>
@@ -150,7 +150,7 @@ export function LandingContent() {
           <ShieldIcon className="h-4 w-4 text-vs-accent" />
           Why a link alone is not enough
         </h2>
-        <p className="mt-2 max-w-2xl text-[13px] leading-6 text-vs-muted">
+        <p className="mt-2 max-w-2xl text-[14px] leading-6 text-vs-muted">
           The session id in the address bar is not a credential. Access lives in a key your browser
           holds in an httpOnly cookie, which page scripts cannot read and a URL cannot carry. Anyone
           who only has the link — forwarded, pasted into a chat, copied off a screen — lands on a
@@ -158,9 +158,9 @@ export function LandingContent() {
         </p>
       </section>
 
-      <footer className="mt-14 border-t border-vs-border pt-5 text-xs leading-5 text-vs-muted">
-        Sessions are held in memory by the dev server for now, so they are cleared when it
-        restarts. Team chat and the AI panel are laid out but not yet connected to a backend.
+      <footer className="mt-14 border-t border-vs-border pt-5 text-sm leading-5 text-vs-muted">
+        Every session is a real git repository, not a snapshot — file edits, agent turns, and team
+        chat are all committed as they happen, so nothing is lost when the server restarts.
       </footer>
     </div>
   );

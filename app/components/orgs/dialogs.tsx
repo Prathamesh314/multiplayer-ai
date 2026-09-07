@@ -37,7 +37,7 @@ import {
   setRoomVisibility,
 } from "../../lib/session/client";
 import type { Session, SessionMember } from "../../lib/session/types";
-import { CloseIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { CloseIcon, PlusIcon, ShieldIcon, SpinnerIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { Avatar, CopyLink } from "./parts";
 
@@ -143,7 +143,7 @@ export function CreateProjectDialog({
             key={option}
             type="button"
             onClick={() => setSource(option)}
-            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition ${
+            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${
               source === option
                 ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
                 : "border-vs-border text-vs-muted hover:bg-vs-hover"
@@ -256,11 +256,15 @@ export function CreateRoomDialog({
                   : "border-vs-border hover:bg-vs-hover"
               }`}
             >
-              <span className="block text-[13px] font-medium">
-                {option.v === "private" ? "🔒 " : "# "}
+              <span className="flex items-center gap-1.5 text-[14px] font-medium">
+                {option.v === "private" ? (
+                  <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <span className="w-3.5 shrink-0 text-center">#</span>
+                )}
                 {option.title}
               </span>
-              <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+              <span className="mt-0.5 block text-[12px] leading-4 text-vs-muted">{option.hint}</span>
             </button>
           ))}
         </div>
@@ -322,7 +326,7 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
               setTab(option);
               setResult(null);
             }}
-            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
               tab === option
                 ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
                 : "border-vs-border text-vs-muted hover:bg-vs-hover"
@@ -350,7 +354,7 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
               key={option}
               type="button"
               onClick={() => setRole(option)}
-              className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
+              className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition ${
                 role === option
                   ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
                   : "border-vs-border text-vs-muted hover:bg-vs-hover"
@@ -363,14 +367,14 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
       </Field>
 
       {result && (
-        <div className="rounded-lg border border-vs-border bg-vs-editor p-3 text-xs">
+        <div className="rounded-lg border border-vs-border bg-vs-editor p-3 text-sm">
           {result.startsWith("http") ? (
             <>
               <p className="mb-1.5 text-vs-muted">Share this one-time link:</p>
               <CopyLink url={result} />
             </>
           ) : (
-            <p className="text-emerald-500">{result}</p>
+            <p className="text-vs-success">{result}</p>
           )}
         </div>
       )}
@@ -487,11 +491,11 @@ export function ProjectMembersDialog({
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
           On this project ({members?.length ?? 0})
         </h3>
         {members === null ? (
-          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+          <p className="mt-2 flex items-center gap-2 text-sm text-vs-muted">
             <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
           </p>
         ) : (
@@ -508,11 +512,11 @@ export function ProjectMembersDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">
+                    <span className="block truncate text-[14px]">
                       {m.displayName}
                       {isSelf && <span className="text-vs-muted"> (you)</span>}
                     </span>
-                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   {editable ? (
                     <select
@@ -520,7 +524,7 @@ export function ProjectMembersDialog({
                       onChange={(e) => changeRole(m.userId, e.target.value as ProjectRole)}
                       disabled={pending === m.userId}
                       aria-label={`Role for ${m.displayName}`}
-                      className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
+                      className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[12px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
                     >
                       {PROJECT_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -529,7 +533,7 @@ export function ProjectMembersDialog({
                       ))}
                     </select>
                   ) : (
-                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                       {m.role}
                     </span>
                   )}
@@ -539,7 +543,7 @@ export function ProjectMembersDialog({
                       onClick={() => remove(m.userId)}
                       disabled={pending === m.userId}
                       title="Remove from project"
-                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-danger disabled:opacity-50"
                     >
                       {pending === m.userId ? (
                         <SpinnerIcon className="h-3.5 w-3.5" />
@@ -558,15 +562,15 @@ export function ProjectMembersDialog({
       {canManage && (
         <div>
           <div className="flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
               Add from organisation
             </h3>
-            <label className="flex items-center gap-1.5 text-[11px] text-vs-muted">
+            <label className="flex items-center gap-1.5 text-[12px] text-vs-muted">
               Role
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as ProjectRole)}
-                className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] text-vs-fg outline-none"
+                className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[12px] text-vs-fg outline-none"
               >
                 {PROJECT_ROLES.map((r) => (
                   <option key={r} value={r}>
@@ -578,7 +582,7 @@ export function ProjectMembersDialog({
           </div>
 
           {addable.length === 0 ? (
-            <p className="mt-2 text-xs leading-5 text-vs-muted">
+            <p className="mt-2 text-sm leading-5 text-vs-muted">
               Everyone in {org.name} is already on this project. Invite more people to the org first.
             </p>
           ) : (
@@ -590,14 +594,14 @@ export function ProjectMembersDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">{m.displayName}</span>
-                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[14px]">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => add(m.userId)}
                     disabled={pending === m.userId}
-                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[12px] transition hover:bg-vs-hover disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />
@@ -745,26 +749,30 @@ export function RoomSettingsDialog({
                 : "border-vs-border hover:bg-vs-hover"
             }`}
           >
-            <span className="block text-[13px] font-medium">
-              {option.v === "private" ? "🔒 " : "# "}
+            <span className="flex items-center gap-1.5 text-[14px] font-medium">
+              {option.v === "private" ? (
+                <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <span className="w-3.5 shrink-0 text-center">#</span>
+              )}
               {option.title}
             </span>
-            <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
+            <span className="mt-0.5 block text-[12px] leading-4 text-vs-muted">{option.hint}</span>
           </button>
         ))}
       </div>
       {!isOwner && (
-        <p className="text-[11px] text-vs-muted">
+        <p className="text-[12px] text-vs-muted">
           Only the room owner can change its privacy or manage who&apos;s in it.
         </p>
       )}
 
       <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
           In this room ({members?.length ?? 0})
         </h3>
         {members === null ? (
-          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+          <p className="mt-2 flex items-center gap-2 text-sm text-vs-muted">
             <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
           </p>
         ) : (
@@ -776,10 +784,10 @@ export function RoomSettingsDialog({
               >
                 <Avatar name={m.displayName} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{m.displayName}</span>
-                  <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  <span className="block truncate text-[14px]">{m.displayName}</span>
+                  <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                 </span>
-                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                   {m.userId === ownerId ? "owner" : m.role}
                 </span>
                 {isOwner && m.userId !== ownerId && (
@@ -788,7 +796,7 @@ export function RoomSettingsDialog({
                     onClick={() => remove(m.userId)}
                     disabled={pending === m.userId}
                     title="Remove from room"
-                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-danger disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />
@@ -805,11 +813,11 @@ export function RoomSettingsDialog({
 
       {isOwner && visibility === "private" && (
         <div>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
             Add from the project
           </h3>
           {addable.length === 0 ? (
-            <p className="mt-2 text-xs leading-5 text-vs-muted">
+            <p className="mt-2 text-sm leading-5 text-vs-muted">
               Everyone on {project.name} is already in this room.
             </p>
           ) : (
@@ -821,14 +829,14 @@ export function RoomSettingsDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">{m.displayName}</span>
-                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[14px]">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => add(m.userId)}
                     disabled={pending === m.userId}
-                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover disabled:opacity-50"
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[12px] transition hover:bg-vs-hover disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />

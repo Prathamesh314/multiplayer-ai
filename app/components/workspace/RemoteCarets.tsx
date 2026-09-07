@@ -38,7 +38,7 @@ export function RemoteCarets({ people }: { people: FilePresence[] }) {
               style={{ height: LINE_HEIGHT }}
             />
             <span
-              className={`absolute whitespace-nowrap rounded px-1 py-px text-[9px] font-semibold leading-[12px] ${color.chip}`}
+              className={`absolute whitespace-nowrap rounded px-1 py-px text-[10px] font-semibold leading-[12px] ${color.chip}`}
               style={
                 labelAbove
                   ? { bottom: LINE_HEIGHT - 6, left: -1 }

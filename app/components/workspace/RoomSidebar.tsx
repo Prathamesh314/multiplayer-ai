@@ -106,7 +106,7 @@ function SectionHeader({
       <button
         type="button"
         onClick={onToggle}
-        className="flex flex-1 items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
+        className="flex flex-1 items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
       >
         <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         {title}
@@ -253,7 +253,7 @@ function AgentRunsBrowser({
 
   if (people.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-4 text-center text-[11px] text-vs-muted">
+      <div className="flex flex-1 items-center justify-center p-4 text-center text-[12px] text-vs-muted">
         No one has run an agent yet.
       </div>
     );
@@ -281,7 +281,7 @@ function AgentRunsBrowser({
                 setEditingId(null);
               }
             }}
-            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[12px] text-vs-fg outline-none"
+            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[13px] text-vs-fg outline-none"
           />
         </div>
       );
@@ -309,19 +309,19 @@ function AgentRunsBrowser({
           }`}
         >
           {run.status === "running" ? (
-            <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-vs-warn" />
           ) : (
             <GitBranchIcon
               className={`h-3.5 w-3.5 shrink-0 ${
                 active
                   ? "text-vs-accent"
                   : run.status === "failed"
-                    ? "text-red-500"
+                    ? "text-vs-danger"
                     : "text-vs-muted"
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[12px]">
+          <span className="min-w-0 flex-1 truncate text-[13px]">
             {run.title ?? `${run.agentId} run`}
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
@@ -333,7 +333,7 @@ function AgentRunsBrowser({
           label="Copy chat path"
         >
           {copiedId === run.id ? (
-            <CheckIcon className="h-3.5 w-3.5 text-green-500" />
+            <CheckIcon className="h-3.5 w-3.5 text-vs-success" />
           ) : (
             <LinkIcon className="h-3.5 w-3.5" />
           )}
@@ -398,18 +398,18 @@ function AgentRunsBrowser({
             >
               <ChevronIcon className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition-transform ${open ? "rotate-90" : ""}`} />
               <span
-                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${color.chip}`}
+                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${color.chip}`}
               >
                 {initialsOf(person.name)}
               </span>
               {/* Always the person's real name, so the folder reads the same to
                   everyone; your own is marked "(you)" rather than a viewer-relative "Me". */}
-              <span className={`min-w-0 flex-1 truncate text-[12px] ${person.isSelf ? "font-medium" : ""}`}>
+              <span className={`min-w-0 flex-1 truncate text-[13px] ${person.isSelf ? "font-medium" : ""}`}>
                 {person.name}
                 {person.isSelf && <span className="ml-1 font-normal text-vs-muted">(you)</span>}
               </span>
               {bucket.active.length > 0 && (
-                <span className="shrink-0 text-[10px] tabular-nums text-vs-muted/70">{bucket.active.length}</span>
+                <span className="shrink-0 text-[11px] tabular-nums text-vs-muted/70">{bucket.active.length}</span>
               )}
             </button>
 
@@ -419,7 +419,7 @@ function AgentRunsBrowser({
                   <button
                     type="button"
                     onClick={onNewRun}
-                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-vs-border px-2 py-1.5 text-[12px] text-vs-muted transition hover:border-vs-accent hover:text-vs-fg"
+                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-vs-border px-2 py-1.5 text-[13px] text-vs-muted transition hover:border-vs-accent hover:text-vs-fg"
                   >
                     <PlusIcon className="h-3.5 w-3.5" />
                     New chat
@@ -427,7 +427,7 @@ function AgentRunsBrowser({
                 )}
 
                 {bucket.active.length === 0 ? (
-                  <p className="px-2 py-2 text-[11px] text-vs-muted">No chats yet.</p>
+                  <p className="px-2 py-2 text-[12px] text-vs-muted">No chats yet.</p>
                 ) : (
                   bucket.active.map((run) => renderRun(run, person.isSelf))
                 )}
@@ -438,7 +438,7 @@ function AgentRunsBrowser({
                     <button
                       type="button"
                       onClick={() => setArchivedOpen((s) => toggle(s, person.id))}
-                      className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
+                      className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
                     >
                       <ChevronIcon
                         className={`h-3 w-3 shrink-0 transition-transform ${archivedOpen.has(person.id) ? "rotate-90" : ""}`}
@@ -516,9 +516,9 @@ function UnarchiveIcon({ className }: { className?: string }) {
 function DiffStat({ added, removed }: { added: number | null; removed: number | null }) {
   if (!added && !removed) return null;
   return (
-    <span className="shrink-0 font-mono text-[10px] tabular-nums">
-      {added ? <span className="text-emerald-500">+{added}</span> : null}
-      {removed ? <span className="ml-1 text-red-500">-{removed}</span> : null}
+    <span className="shrink-0 font-mono text-[11px] tabular-nums">
+      {added ? <span className="text-vs-success">+{added}</span> : null}
+      {removed ? <span className="ml-1 text-vs-danger">-{removed}</span> : null}
     </span>
   );
 }
