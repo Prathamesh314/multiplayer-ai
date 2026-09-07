@@ -63,19 +63,19 @@ export function CodeEditor({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-vs-editor">
       {readOnly && (
-        <p className="border-b border-vs-border bg-vs-hover px-3 py-1.5 text-xs text-vs-muted">
+        <p className="border-b border-vs-border bg-vs-hover px-3 py-1.5 text-sm text-vs-muted">
           Read-only — you have view access to this session.
         </p>
       )}
 
       {tooBig && !readOnly && (
-        <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
+        <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
           {humanBytes(text.length)} of text — opened read-only to keep highlighting responsive.
         </p>
       )}
 
       <div ref={scrollRef} className="vs-scroll min-h-0 flex-1 overflow-auto">
-        <div className="flex min-h-full w-max min-w-full font-mono text-[13px] leading-[20px]">
+        <div className="flex min-h-full w-max min-w-full font-mono text-[14px] leading-[20px]">
           <div
             aria-hidden
             className="sticky left-0 z-10 shrink-0 select-none bg-vs-editor py-2 pl-4 pr-3 text-right tabular-nums text-vs-gutter"
@@ -110,7 +110,7 @@ export function CodeEditor({
               onKeyUp={(event) => reportCaret(event.currentTarget)}
               onClick={(event) => reportCaret(event.currentTarget)}
               onSelect={(event) => reportCaret(event.currentTarget)}
-              className="absolute inset-0 resize-none overflow-hidden whitespace-pre border-0 bg-transparent px-0 py-2 pr-8 font-mono text-[13px] leading-[20px] text-transparent caret-vs-fg outline-none selection:bg-vs-accent/30"
+              className="absolute inset-0 resize-none overflow-hidden whitespace-pre border-0 bg-transparent px-0 py-2 pr-8 font-mono text-[14px] leading-[20px] text-transparent caret-vs-fg outline-none selection:bg-vs-accent/30"
             />
 
             <RemoteCarets people={remote} />

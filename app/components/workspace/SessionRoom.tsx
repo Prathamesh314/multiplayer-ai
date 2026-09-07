@@ -91,7 +91,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
     return (
       <Centered>
         <SpinnerIcon className="h-6 w-6 text-vs-accent" />
-        <p className="text-sm text-vs-muted">{state.label}</p>
+        <p className="text-base text-vs-muted">{state.label}</p>
       </Centered>
     );
   }
@@ -100,7 +100,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
     return (
       <Centered>
         <AlertIcon className="h-6 w-6 text-vs-warn" />
-        <p className="max-w-sm text-center text-sm text-vs-muted">{state.message}</p>
+        <p className="max-w-sm text-center text-base text-vs-muted">{state.message}</p>
       </Centered>
     );
   }
@@ -146,7 +146,7 @@ function LockedScreen({
   return (
     <Centered>
       <div className="w-full max-w-md rounded-xl border border-vs-border bg-vs-panel p-6">
-        <span className="flex items-center gap-2 text-sm font-semibold">
+        <span className="flex items-center gap-2 text-base font-semibold">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
             multiplayer<span className="text-vs-muted">-ai</span>
@@ -156,11 +156,11 @@ function LockedScreen({
         <h1 className="font-display mt-4 text-xl font-semibold tracking-tight">
           This session is locked
         </h1>
-        <p className="mt-1.5 text-[13px] leading-6 text-vs-muted">{reason}</p>
+        <p className="mt-1.5 text-[14px] leading-6 text-vs-muted">{reason}</p>
 
-        <p className="mt-4 font-mono text-[11px] text-vs-muted">/s/{sessionId}</p>
+        <p className="mt-4 font-mono text-[12px] text-vs-muted">/s/{sessionId}</p>
 
-        <label className="mt-4 block text-xs font-medium uppercase tracking-wide text-vs-muted">
+        <label className="mt-4 block text-sm font-medium uppercase tracking-wide text-vs-muted">
           Access code
           <input
             autoFocus
@@ -170,12 +170,12 @@ function LockedScreen({
               if (event.key === "Enter" && !busy) void unlock();
             }}
             placeholder="A1B2-C3D4"
-            className="mt-1.5 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2 font-mono text-sm font-normal tracking-[0.12em] text-vs-fg outline-none placeholder:tracking-normal placeholder:text-vs-muted focus:border-vs-accent"
+            className="mt-1.5 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2 font-mono text-base font-normal tracking-[0.12em] text-vs-fg outline-none placeholder:tracking-normal placeholder:text-vs-muted focus:border-vs-accent"
           />
         </label>
 
         {error && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs leading-5 text-vs-danger">
+          <p className="mt-3 flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
             <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </p>
@@ -186,7 +186,7 @@ function LockedScreen({
             type="button"
             onClick={unlock}
             disabled={busy}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
           >
             {busy && <SpinnerIcon className="h-4 w-4" />}
             {busy ? "Unlocking…" : "Unlock session"}
@@ -194,7 +194,7 @@ function LockedScreen({
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="rounded-lg border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover"
+            className="rounded-lg border border-vs-border px-4 py-2 text-base transition hover:bg-vs-hover"
           >
             Start over
           </button>

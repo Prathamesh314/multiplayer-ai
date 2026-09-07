@@ -43,9 +43,9 @@ export function Modal({
       >
         <header className="flex items-start gap-3 border-b border-vs-border px-5 py-4">
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-[15px] font-semibold tracking-tight">{title}</h2>
+            <h2 className="font-display text-[16px] font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p className="mt-1 text-[13px] leading-5 text-vs-muted">{description}</p>
+              <p className="mt-1 text-[14px] leading-5 text-vs-muted">{description}</p>
             )}
           </div>
           <button
@@ -81,17 +81,17 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
         {label}
       </span>
       {children}
-      {hint && <span className="mt-1.5 block text-[11px] text-vs-muted">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-[12px] text-vs-muted">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
+  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
 
 export function PrimaryButton({
   children,
@@ -101,7 +101,7 @@ export function PrimaryButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-full bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-full bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {children}
     </button>
@@ -116,7 +116,7 @@ export function GhostButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-full border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-full border border-vs-border px-4 py-2 text-base transition hover:bg-vs-hover disabled:opacity-60"
     >
       {children}
     </button>
@@ -125,7 +125,7 @@ export function GhostButton({
 
 export function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs leading-5 text-vs-danger">
+    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
       <span aria-hidden>⚠</span>
       {children}
     </p>

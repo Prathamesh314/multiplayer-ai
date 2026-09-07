@@ -43,9 +43,9 @@ export default function InvitePage() {
       <div className="max-w-sm text-center">
         <SparkleIcon className="mx-auto h-6 w-6 text-vs-accent" />
         {error ? (
-          <p className="mt-4 text-sm text-vs-danger">{error}</p>
+          <p className="mt-4 text-base text-vs-danger">{error}</p>
         ) : (
-          <p className="mt-4 flex items-center justify-center gap-2 text-sm text-vs-muted">
+          <p className="mt-4 flex items-center justify-center gap-2 text-base text-vs-muted">
             <SpinnerIcon className="h-4 w-4" /> Joining the organisation…
           </p>
         )}

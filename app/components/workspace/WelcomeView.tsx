@@ -43,13 +43,13 @@ export function WelcomeView({
         {seeding ? (
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
-            <p className="text-sm text-vs-fg">
+            <p className="text-base text-vs-fg">
               Adding to the session…{" "}
               {seeding.total > 0
                 ? `${humanCount(seeding.uploaded)} of ${humanCount(seeding.total)} files`
                 : `${humanCount(seeding.uploaded)} files`}
             </p>
-            <p className="max-w-sm text-xs leading-5 text-vs-muted">
+            <p className="max-w-sm text-sm leading-5 text-vs-muted">
               The folder is being committed to this session so it survives the tab closing and
               opens for anyone you invite.
             </p>
@@ -57,7 +57,7 @@ export function WelcomeView({
         ) : scanning ? (
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
-            <p className="text-sm text-vs-fg">Reading folder… {humanCount(progress)} entries</p>
+            <p className="text-base text-vs-fg">Reading folder… {humanCount(progress)} entries</p>
           </>
         ) : (
           <>
@@ -66,7 +66,7 @@ export function WelcomeView({
               <p className="font-display text-xl font-semibold tracking-tight text-vs-fg">
                 {hasFolder ? "Select a file to start editing" : "Drop a folder anywhere"}
               </p>
-              <p className="mt-1.5 text-sm leading-6 text-vs-muted">
+              <p className="mt-1.5 text-base leading-6 text-vs-muted">
                 {hasRepo
                   ? "Pick a file from the Explorer on the left to open it here."
                   : "A Git repository or any plain folder. It is uploaded to this session and committed, so it is still here when you come back."}
@@ -77,7 +77,7 @@ export function WelcomeView({
                 <button
                   type="button"
                   onClick={onOpenPicker}
-                  className="rounded bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90"
+                  className="rounded bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90"
                 >
                   {supportsPicker ? "Open folder…" : "Select folder…"}
                 </button>
@@ -85,7 +85,7 @@ export function WelcomeView({
                   <button
                     type="button"
                     onClick={onOpenInput}
-                    className="rounded border border-vs-border px-4 py-2 text-sm text-vs-fg transition hover:bg-vs-hover"
+                    className="rounded border border-vs-border px-4 py-2 text-base text-vs-fg transition hover:bg-vs-hover"
                   >
                     Upload folder instead
                   </button>
@@ -93,7 +93,7 @@ export function WelcomeView({
               </div>
             )}
             {!hasRepo && !supportsPicker && (
-              <p className="max-w-md text-xs text-vs-muted">
+              <p className="max-w-md text-sm text-vs-muted">
                 This browser has no folder picker, so uploads are used instead. Some browsers hide
                 dot-folders like <code className="font-mono">.git</code> from uploads, which can
                 make Git detection fail.
@@ -103,7 +103,7 @@ export function WelcomeView({
         )}
 
         {error && (
-          <p className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-sm text-vs-danger">
+          <p className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-base text-vs-danger">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
           </p>

@@ -40,7 +40,7 @@ export function TopBar({
         type="button"
         onClick={onLeave}
         title="Back to all sessions"
-        className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[13px] font-semibold text-vs-fg transition hover:bg-vs-hover"
+        className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[14px] font-semibold text-vs-fg transition hover:bg-vs-hover"
       >
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
         <span className="whitespace-nowrap">
@@ -50,7 +50,7 @@ export function TopBar({
 
       <span
         title={`Session ${session.id}`}
-        className="max-w-48 shrink-0 truncate rounded bg-vs-hover px-2 py-0.5 text-xs text-vs-fg"
+        className="max-w-48 shrink-0 truncate rounded bg-vs-hover px-2 py-0.5 text-sm text-vs-fg"
       >
         {session.name}
       </span>
@@ -59,13 +59,13 @@ export function TopBar({
         <button
           type="button"
           onClick={onOpenFolder}
-          className="shrink-0 rounded px-2 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          className="shrink-0 rounded px-2 py-0.5 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
         >
           Open folder…
         </button>
       )}
 
-      <div className="mx-auto flex min-w-0 items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-xs text-vs-muted">
+      <div className="mx-auto flex min-w-0 items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-sm text-vs-muted">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -86,7 +86,7 @@ export function TopBar({
       <button
         type="button"
         onClick={onInvite}
-        className="flex shrink-0 items-center gap-1.5 rounded bg-vs-accent px-2.5 py-1 text-xs font-medium text-vs-accent-fg transition hover:opacity-90"
+        className="flex shrink-0 items-center gap-1.5 rounded bg-vs-accent px-2.5 py-1 text-sm font-medium text-vs-accent-fg transition hover:opacity-90"
       >
         <UserPlusIcon className="h-3.5 w-3.5" />
         Invite
@@ -141,7 +141,7 @@ function PublishControls({ sessionId }: { sessionId: string }) {
         onClick={() => run("sync")}
         disabled={busy !== null}
         title="Pull the project's latest main into this room"
-        className="rounded px-2 py-1 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+        className="rounded px-2 py-1 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
       >
         {busy === "sync" ? "Syncing…" : "Sync"}
       </button>
@@ -150,14 +150,14 @@ function PublishControls({ sessionId }: { sessionId: string }) {
         onClick={() => run("publish")}
         disabled={busy !== null}
         title="Merge this room's work back into the project's main"
-        className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-xs text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
+        className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-sm text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
       >
         <GitBranchIcon className="h-3 w-3" />
         {busy === "publish" ? "Publishing…" : "Publish"}
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[11px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
+          className={`max-w-64 truncate text-[12px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}

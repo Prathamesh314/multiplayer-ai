@@ -109,7 +109,7 @@ export function CreateSessionDialog({
       </Field>
 
       <div>
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+        <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
           Project folder
         </span>
 
@@ -130,14 +130,14 @@ export function CreateSessionDialog({
           <div className="mt-1.5 flex items-center gap-3 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5">
             <FolderIcon open className="h-4 w-4 text-sky-500 dark:text-sky-400" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm">{chosen.name}</span>
-              <span className="block text-[11px] text-vs-muted">{chosen.detail}</span>
+              <span className="block truncate text-base">{chosen.name}</span>
+              <span className="block text-[12px] text-vs-muted">{chosen.detail}</span>
             </span>
             <CheckIcon className="h-4 w-4 text-vs-success" />
             <button
               type="button"
               onClick={() => setSource(null)}
-              className="rounded px-2 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="rounded px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               Change
             </button>
@@ -155,7 +155,7 @@ export function CreateSessionDialog({
             }`}
           >
             <FolderUpIcon className="h-7 w-7 text-vs-muted" />
-            <p className="text-xs text-vs-muted">
+            <p className="text-sm text-vs-muted">
               Drop a folder here — a Git repo or any plain folder.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -166,7 +166,7 @@ export function CreateSessionDialog({
                 <button
                   type="button"
                   onClick={() => inputRef.current?.click()}
-                  className="rounded-lg px-3 py-2 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                  className="rounded-lg px-3 py-2 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
                 >
                   Upload instead
                 </button>
@@ -176,7 +176,7 @@ export function CreateSessionDialog({
         )}
       </div>
 
-      <p className="text-[11px] leading-5 text-vs-muted">
+      <p className="text-[12px] leading-5 text-vs-muted">
         Folders are read in your browser — nothing is uploaded to a server.
       </p>
 

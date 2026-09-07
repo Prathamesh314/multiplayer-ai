@@ -84,7 +84,7 @@ export function EditorArea({
             <button
               type="button"
               onClick={onSelectPinned}
-              className="flex items-center gap-2 px-3 py-1.5 text-[13px]"
+              className="flex items-center gap-2 px-3 py-1.5 text-[14px]"
             >
               {pinned.icon}
               <span>{pinned.label}</span>
@@ -99,7 +99,7 @@ export function EditorArea({
           return (
             <div
               key={path}
-              className={`group flex shrink-0 items-center gap-2 border-r border-vs-border pl-3 pr-2 text-[13px] ${
+              className={`group flex shrink-0 items-center gap-2 border-r border-vs-border pl-3 pr-2 text-[14px] ${
                 isActive
                   ? "border-t-2 border-t-vs-accent bg-vs-editor pt-0 text-vs-fg"
                   : "border-t-2 border-t-transparent text-vs-muted hover:bg-vs-hover"
@@ -113,7 +113,7 @@ export function EditorArea({
               >
                 <FileIcon className="h-3.5 w-3.5" />
                 <span className="max-w-52 truncate">{baseName(path)}</span>
-                {dirty && <span className="text-xs text-vs-fg">●</span>}
+                {dirty && <span className="text-sm text-vs-fg">●</span>}
                 <EditingBadge people={editing.get(path) ?? []} />
               </button>
               <button
@@ -136,7 +136,7 @@ export function EditorArea({
       )}
 
       {showFile && activePath && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-vs-border px-4 py-1 text-[11px] text-vs-muted">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
           {activePath.split("/").map((segment, index, all) => (
             <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
               {segment}
@@ -147,7 +147,7 @@ export function EditorArea({
       )}
 
       {showFile && activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
-        <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[11px] text-vs-muted">
+        <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[12px] text-vs-muted">
           <EditingBadge people={editing.get(activePath) ?? []} />
           <span>
             {(editing.get(activePath) ?? []).map((p) => p.name).join(", ")}
@@ -158,7 +158,7 @@ export function EditorArea({
 
       {showFile &&
         (!active || active.loading ? (
-        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-vs-muted">
+        <div className="flex flex-1 items-center justify-center gap-2 text-base text-vs-muted">
           <SpinnerIcon className="h-4 w-4" />
           Opening file…
         </div>
@@ -172,7 +172,7 @@ export function EditorArea({
       ) : (
         <>
           {conflictAuthor && activePath && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
+            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
               <span>
                 {conflictAuthor} changed this file while you were editing it. Your version is
                 still here and was not overwritten.
@@ -180,7 +180,7 @@ export function EditorArea({
               <button
                 type="button"
                 onClick={() => onReload(activePath)}
-                className="rounded border border-vs-border px-2 py-0.5 text-[11px] transition hover:bg-vs-hover"
+                className="rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover"
               >
                 Discard mine and reload
               </button>
@@ -188,7 +188,7 @@ export function EditorArea({
           )}
 
           {active.truncated && (
-            <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
+            <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
               Showing the first 2 MB of a {humanBytes(active.size)} file.
             </p>
           )}
@@ -210,8 +210,8 @@ export function EditorArea({
 function Notice({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-      <p className="text-sm text-vs-fg">{title}</p>
-      <p className="text-xs text-vs-muted">{detail}</p>
+      <p className="text-base text-vs-fg">{title}</p>
+      <p className="text-sm text-vs-muted">{detail}</p>
     </div>
   );
 }

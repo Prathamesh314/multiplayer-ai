@@ -23,7 +23,7 @@ export function Avatar({
   size?: "sm" | "md";
   selected?: boolean;
 }) {
-  const dimensions = size === "sm" ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-[11px]";
+  const dimensions = size === "sm" ? "h-6 w-6 text-[11px]" : "h-8 w-8 text-[12px]";
 
   return (
     <span className="relative inline-flex shrink-0">
@@ -67,10 +67,10 @@ export function MessageList({
             {author.avatar}
             <div className="min-w-0 flex-1">
               <header className="flex items-baseline gap-2">
-                <span className="truncate text-xs font-semibold text-vs-fg">{author.name}</span>
-                <span className="shrink-0 text-[10px] text-vs-muted">{message.time}</span>
+                <span className="truncate text-sm font-semibold text-vs-fg">{author.name}</span>
+                <span className="shrink-0 text-[11px] text-vs-muted">{message.time}</span>
               </header>
-              <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-5 text-vs-fg/90">
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-5 text-vs-fg/90">
                 {message.text}
               </p>
             </div>
@@ -282,11 +282,11 @@ export function Composer({
 
   const popover = popoverOpen && (
     <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg">
-      <div className="border-b border-vs-border px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-vs-muted">
+      <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
         {mention?.stage === "room" ? "Reference a room" : "Pick a chat"}
       </div>
       {items.length === 0 ? (
-        <p className="px-2.5 py-2 text-[11px] text-vs-muted">No chats yet in this room.</p>
+        <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
       ) : (
       <ul className="vs-scroll max-h-56 overflow-y-auto py-1">
         {items.map((item, index) => (
@@ -298,12 +298,12 @@ export function Composer({
                 pick(item.id);
               }}
               onMouseEnter={() => setHighlight(index)}
-              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] ${
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
                 index === highlight ? "bg-vs-hover text-vs-fg" : "text-vs-fg/90"
               }`}
             >
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              {item.sub && <span className="shrink-0 text-[10px] text-vs-muted">{item.sub}</span>}
+              {item.sub && <span className="shrink-0 text-[11px] text-vs-muted">{item.sub}</span>}
             </button>
           </li>
         ))}
@@ -325,7 +325,7 @@ export function Composer({
       onKeyDown={onKeyDown}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
-      className={`vs-scroll flex-1 resize-none bg-transparent text-[13px] text-vs-fg outline-none placeholder:text-vs-muted ${
+      className={`vs-scroll flex-1 resize-none bg-transparent text-[14px] text-vs-fg outline-none placeholder:text-vs-muted ${
         tall ? "max-h-64 min-h-24" : "max-h-28 min-h-5"
       }`}
     />
