@@ -587,7 +587,7 @@ export function AiPanel({
               title={`Signed in as ${activeAuth.email ?? "your account"}${
                 activeAuth.plan ? ` · ${planLabel(activeAuth.plan)}` : ""
               } — click to manage`}
-              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
             >
               <StatusDot ok />
               <span className="max-w-[6rem] truncate">
@@ -672,7 +672,7 @@ export function AiPanel({
           />
         )}
         {error && (
-          <p className="mx-3 mb-3 flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] leading-5 text-red-600 dark:text-red-300">
+          <p className="mx-3 mb-3 flex items-start gap-2 rounded-md border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-[11px] leading-5 text-vs-danger">
             <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </p>
@@ -974,7 +974,7 @@ function ConnectionCard({
       )}
 
       {error && (
-        <p className="flex items-start gap-1.5 text-[11px] leading-4 text-red-600 dark:text-red-300">
+        <p className="flex items-start gap-1.5 text-[11px] leading-4 text-vs-danger">
           <AlertIcon className="mt-0.5 h-3 w-3 shrink-0" />
           {error}
         </p>
@@ -1314,7 +1314,7 @@ function SelectChip({
   return (
     <label
       title={title}
-      className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
+      className="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
     >
       {icon}
       <select
@@ -1375,7 +1375,7 @@ function CopyLine({ command }: { command: string }) {
     >
       <span className="min-w-0 flex-1 truncate">{command}</span>
       {copied ? (
-        <CheckIcon className="h-3 w-3 shrink-0 text-emerald-500" />
+        <CheckIcon className="h-3 w-3 shrink-0 text-vs-success" />
       ) : (
         <span className="shrink-0 text-[9px] uppercase text-vs-muted">copy</span>
       )}
@@ -1386,7 +1386,7 @@ function CopyLine({ command }: { command: string }) {
 function StatusDot({ ok }: { ok: boolean }) {
   return (
     <span
-      className={`h-1.5 w-1.5 shrink-0 rounded-full ${ok ? "bg-emerald-500" : "bg-vs-muted"}`}
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${ok ? "bg-vs-success" : "bg-vs-muted"}`}
     />
   );
 }
@@ -1395,10 +1395,10 @@ function Note({ children, tone }: { children: React.ReactNode; tone: "warn" }) {
   return (
     <p
       className={`flex items-start gap-2 border-b border-vs-border px-3 py-2 text-[11px] leading-5 text-vs-fg ${
-        tone === "warn" ? "bg-amber-500/10" : ""
+        tone === "warn" ? "bg-vs-warn/10" : ""
       }`}
     >
-      <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+      <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vs-warn" />
       {children}
     </p>
   );

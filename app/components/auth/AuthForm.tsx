@@ -203,7 +203,7 @@ function SubmitButton({ busy, children }: { busy: boolean; children: React.React
 
 function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
+    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs leading-5 text-vs-danger">
       <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       {children}
     </p>

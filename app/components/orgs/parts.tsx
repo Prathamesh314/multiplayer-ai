@@ -50,7 +50,7 @@ export function CopyLink({ url }: { url: string }) {
         onClick={copy}
         className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1.5 text-[11px] font-medium transition ${
           copied
-            ? "border-emerald-500/50 text-emerald-500"
+            ? "border-vs-success/50 text-vs-success"
             : "border-vs-border text-vs-muted hover:bg-vs-hover hover:text-vs-fg"
         }`}
       >

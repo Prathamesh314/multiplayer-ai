@@ -50,7 +50,7 @@ function PersonChip({ member }: { member: SessionMember }) {
         {initialsOf(member.displayName)}
       </span>
       {member.online && (
-        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-vs-chrome bg-emerald-500" />
+        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-vs-chrome bg-vs-success" />
       )}
     </span>
   );

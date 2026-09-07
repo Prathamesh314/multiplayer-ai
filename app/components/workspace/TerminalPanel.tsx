@@ -123,7 +123,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
       {disabled ? (
         <div className="flex flex-1 items-center justify-center bg-vs-terminal px-6">
           <p className="flex max-w-md items-start gap-2 text-xs leading-5 text-vs-muted">
-            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-warn" />
             {status?.reason}
           </p>
         </div>

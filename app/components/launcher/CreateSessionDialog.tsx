@@ -133,7 +133,7 @@ export function CreateSessionDialog({
               <span className="block truncate text-sm">{chosen.name}</span>
               <span className="block text-[11px] text-vs-muted">{chosen.detail}</span>
             </span>
-            <CheckIcon className="h-4 w-4 text-emerald-500" />
+            <CheckIcon className="h-4 w-4 text-vs-success" />
             <button
               type="button"
               onClick={() => setSource(null)}

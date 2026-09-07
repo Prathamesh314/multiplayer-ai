@@ -120,7 +120,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           )}
 
           {error && (
-            <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+            <p className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs text-vs-danger">
               {error}
             </p>
           )}
@@ -219,7 +219,7 @@ function ActiveLinks({
             <button
               type="button"
               onClick={() => onRevoke(link.id)}
-              className="shrink-0 rounded px-1.5 py-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-red-500"
+              className="shrink-0 rounded px-1.5 py-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-danger"
             >
               Revoke
             </button>
@@ -274,7 +274,7 @@ function CopyRow({
           onClick={copy}
           className="flex shrink-0 items-center gap-1.5 rounded-lg border border-vs-border px-3 py-2 text-sm transition hover:bg-vs-hover"
         >
-          {copied && <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />}
+          {copied && <CheckIcon className="h-3.5 w-3.5 text-vs-success" />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

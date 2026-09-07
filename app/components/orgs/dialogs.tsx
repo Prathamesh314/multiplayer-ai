@@ -37,7 +37,7 @@ import {
   setRoomVisibility,
 } from "../../lib/session/client";
 import type { Session, SessionMember } from "../../lib/session/types";
-import { CloseIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { CloseIcon, PlusIcon, ShieldIcon, SpinnerIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { Avatar, CopyLink } from "./parts";
 
@@ -256,8 +256,12 @@ export function CreateRoomDialog({
                   : "border-vs-border hover:bg-vs-hover"
               }`}
             >
-              <span className="block text-[13px] font-medium">
-                {option.v === "private" ? "🔒 " : "# "}
+              <span className="flex items-center gap-1.5 text-[13px] font-medium">
+                {option.v === "private" ? (
+                  <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <span className="w-3.5 shrink-0 text-center">#</span>
+                )}
                 {option.title}
               </span>
               <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
@@ -370,7 +374,7 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
               <CopyLink url={result} />
             </>
           ) : (
-            <p className="text-emerald-500">{result}</p>
+            <p className="text-vs-success">{result}</p>
           )}
         </div>
       )}
@@ -539,7 +543,7 @@ export function ProjectMembersDialog({
                       onClick={() => remove(m.userId)}
                       disabled={pending === m.userId}
                       title="Remove from project"
-                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-danger disabled:opacity-50"
                     >
                       {pending === m.userId ? (
                         <SpinnerIcon className="h-3.5 w-3.5" />
@@ -745,8 +749,12 @@ export function RoomSettingsDialog({
                 : "border-vs-border hover:bg-vs-hover"
             }`}
           >
-            <span className="block text-[13px] font-medium">
-              {option.v === "private" ? "🔒 " : "# "}
+            <span className="flex items-center gap-1.5 text-[13px] font-medium">
+              {option.v === "private" ? (
+                <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <span className="w-3.5 shrink-0 text-center">#</span>
+              )}
               {option.title}
             </span>
             <span className="mt-0.5 block text-[11px] leading-4 text-vs-muted">{option.hint}</span>
@@ -788,7 +796,7 @@ export function RoomSettingsDialog({
                     onClick={() => remove(m.userId)}
                     disabled={pending === m.userId}
                     title="Remove from room"
-                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                    className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-danger disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />

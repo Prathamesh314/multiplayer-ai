@@ -157,7 +157,7 @@ function PublishControls({ sessionId }: { sessionId: string }) {
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[11px] ${status.tone === "ok" ? "text-emerald-500" : "text-red-500"}`}
+          className={`max-w-64 truncate text-[11px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}

@@ -69,7 +69,7 @@ export function CodeEditor({
       )}
 
       {tooBig && !readOnly && (
-        <p className="border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
+        <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
           {humanBytes(text.length)} of text — opened read-only to keep highlighting responsive.
         </p>
       )}

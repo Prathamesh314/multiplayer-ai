@@ -172,7 +172,7 @@ export function EditorArea({
       ) : (
         <>
           {conflictAuthor && activePath && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
+            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
               <span>
                 {conflictAuthor} changed this file while you were editing it. Your version is
                 still here and was not overwritten.
@@ -188,7 +188,7 @@ export function EditorArea({
           )}
 
           {active.truncated && (
-            <p className="border-b border-vs-border bg-amber-500/10 px-3 py-1.5 text-xs text-vs-fg">
+            <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-xs text-vs-fg">
               Showing the first 2 MB of a {humanBytes(active.size)} file.
             </p>
           )}

@@ -309,14 +309,14 @@ function AgentRunsBrowser({
           }`}
         >
           {run.status === "running" ? (
-            <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-vs-warn" />
           ) : (
             <GitBranchIcon
               className={`h-3.5 w-3.5 shrink-0 ${
                 active
                   ? "text-vs-accent"
                   : run.status === "failed"
-                    ? "text-red-500"
+                    ? "text-vs-danger"
                     : "text-vs-muted"
               }`}
             />
@@ -333,7 +333,7 @@ function AgentRunsBrowser({
           label="Copy chat path"
         >
           {copiedId === run.id ? (
-            <CheckIcon className="h-3.5 w-3.5 text-green-500" />
+            <CheckIcon className="h-3.5 w-3.5 text-vs-success" />
           ) : (
             <LinkIcon className="h-3.5 w-3.5" />
           )}
@@ -517,8 +517,8 @@ function DiffStat({ added, removed }: { added: number | null; removed: number | 
   if (!added && !removed) return null;
   return (
     <span className="shrink-0 font-mono text-[10px] tabular-nums">
-      {added ? <span className="text-emerald-500">+{added}</span> : null}
-      {removed ? <span className="ml-1 text-red-500">-{removed}</span> : null}
+      {added ? <span className="text-vs-success">+{added}</span> : null}
+      {removed ? <span className="ml-1 text-vs-danger">-{removed}</span> : null}
     </span>
   );
 }

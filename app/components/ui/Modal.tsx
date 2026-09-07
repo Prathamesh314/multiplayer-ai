@@ -39,7 +39,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
-        className={`w-full ${width} overflow-hidden rounded-2xl border border-vs-border bg-vs-panel text-vs-fg shadow-2xl`}
+        className={`w-full ${width} overflow-hidden rounded-2xl border border-vs-border bg-vs-panel text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)]`}
       >
         <header className="flex items-start gap-3 border-b border-vs-border px-5 py-4">
           <div className="min-w-0 flex-1">
@@ -101,7 +101,7 @@ export function PrimaryButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-full bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {children}
     </button>
@@ -116,7 +116,7 @@ export function GhostButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-lg border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-full border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover disabled:opacity-60"
     >
       {children}
     </button>
@@ -125,7 +125,7 @@ export function GhostButton({
 
 export function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
+    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs leading-5 text-vs-danger">
       <span aria-hidden>⚠</span>
       {children}
     </p>

@@ -54,7 +54,7 @@ export function StatusBar({
             className="flex items-center gap-1.5"
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-amber-500"}`}
+              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-success" : "bg-vs-warn"}`}
             />
             {live ? "live" : "reconnecting"}
           </span>
@@ -79,7 +79,7 @@ export function StatusBar({
               : `Every edit is committed to the session branch. HEAD is ${headSha}.`
           }
           className={
-            saveState === "error" ? "text-red-500 dark:text-red-400" : "font-mono text-vs-fg"
+            saveState === "error" ? "text-vs-danger" : "font-mono text-vs-fg"
           }
         >
           {saveState === "saving"

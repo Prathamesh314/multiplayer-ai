@@ -167,7 +167,7 @@ export function TeamChatPanel({
       </div>
 
       {error && (
-        <p className="shrink-0 border-t border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-600 dark:text-red-300">
+        <p className="shrink-0 border-t border-vs-danger/40 bg-vs-danger/10 px-3 py-1.5 text-[11px] text-vs-danger">
           {error}
         </p>
       )}

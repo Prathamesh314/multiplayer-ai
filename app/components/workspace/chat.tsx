@@ -337,9 +337,9 @@ export function Composer({
       onClick={send}
       disabled={draft.trim().length === 0}
       aria-label="Send message"
-      className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40 disabled:hover:bg-transparent"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30"
     >
-      <SendIcon className="h-4 w-4" />
+      <SendIcon className="h-3.5 w-3.5" />
     </button>
   );
 
@@ -348,7 +348,7 @@ export function Composer({
       <div className={`relative ${narrow ? "mx-auto w-full max-w-4xl" : ""}`}>
         {popover}
         {footer ? (
-          <div className="rounded-lg border border-vs-border bg-vs-editor px-2.5 py-2 focus-within:border-vs-accent">
+          <div className="rounded-2xl border border-vs-border bg-vs-panel px-3 py-2.5 shadow-sm focus-within:border-vs-muted">
             <div className="flex">{textarea}</div>
             <div className="mt-1.5 flex items-center gap-1">
               {footer}
@@ -356,7 +356,7 @@ export function Composer({
             </div>
           </div>
         ) : (
-          <div className="flex items-end gap-1.5 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 focus-within:border-vs-accent">
+          <div className="flex items-end gap-1.5 rounded-2xl border border-vs-border bg-vs-panel px-2.5 py-2 shadow-sm focus-within:border-vs-muted">
             {textarea}
             {sendButton}
           </div>

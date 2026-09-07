@@ -65,7 +65,7 @@ export function LandingContent() {
     <div className="mx-auto w-full max-w-4xl px-8 py-14">
       <section>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel px-2.5 py-1 text-[11px] font-medium text-vs-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="h-1.5 w-1.5 rounded-full bg-vs-success" />
           Local-first collaborative workspace
         </span>
 
@@ -159,8 +159,8 @@ export function LandingContent() {
       </section>
 
       <footer className="mt-14 border-t border-vs-border pt-5 text-xs leading-5 text-vs-muted">
-        Sessions are held in memory by the dev server for now, so they are cleared when it
-        restarts. Team chat and the AI panel are laid out but not yet connected to a backend.
+        Every session is a real git repository, not a snapshot — file edits, agent turns, and team
+        chat are all committed as they happen, so nothing is lost when the server restarts.
       </footer>
     </div>
   );

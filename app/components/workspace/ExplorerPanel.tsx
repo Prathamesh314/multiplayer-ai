@@ -184,9 +184,9 @@ function TabButton({
 }
 
 const STATUS_META: Record<ChangedFile["status"], { label: string; className: string }> = {
-  A: { label: "A", className: "text-emerald-500" },
-  M: { label: "M", className: "text-amber-500" },
-  D: { label: "D", className: "text-red-500" },
+  A: { label: "A", className: "text-vs-success" },
+  M: { label: "M", className: "text-vs-warn" },
+  D: { label: "D", className: "text-vs-danger" },
   R: { label: "R", className: "text-vs-accent" },
   C: { label: "C", className: "text-vs-accent" },
 };
@@ -276,7 +276,7 @@ function RepoInfo({
         <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         Repository
         {notices.length > 0 && (
-          <AlertIcon className="ml-auto h-3.5 w-3.5 text-amber-500" />
+          <AlertIcon className="ml-auto h-3.5 w-3.5 text-vs-warn" />
         )}
       </button>
 
@@ -341,7 +341,7 @@ function RepoInfo({
 
           {notices.map((notice) => (
             <p key={notice} className="flex gap-1.5 leading-4">
-              <AlertIcon className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+              <AlertIcon className="mt-0.5 h-3 w-3 shrink-0 text-vs-warn" />
               {notice}
             </p>
           ))}

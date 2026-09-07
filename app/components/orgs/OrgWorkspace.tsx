@@ -25,6 +25,7 @@ import {
   CloseIcon,
   GitBranchIcon,
   PlusIcon,
+  ShieldIcon,
   SparkleIcon,
   SpinnerIcon,
   UserPlusIcon,
@@ -301,7 +302,7 @@ function OrgRail({
                 setMenuOpen(false);
                 onSignOut();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[13px] text-vs-fg transition hover:bg-vs-hover hover:text-red-500"
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[13px] text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
             >
               <CloseIcon className="h-3.5 w-3.5" />
               Sign out
@@ -546,7 +547,11 @@ function ProjectRow({
                   onClick={() => onOpenRoom(room.id)}
                   className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[13px]"
                 >
-                  <span className="text-vs-muted">{room.visibility === "private" ? "🔒" : "#"}</span>
+                  {room.visibility === "private" ? (
+                    <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
+                  ) : (
+                    <span className="w-3.5 shrink-0 text-center text-vs-muted">#</span>
+                  )}
                   <span className="min-w-0 flex-1 truncate">{room.name}</span>
                 </button>
                 <button
@@ -615,7 +620,7 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   return (
     <div className="flex items-center gap-3 border-b border-vs-border px-4 py-1.5 text-[11px] text-vs-muted">
       <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
-        <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-amber-500" : "bg-emerald-500"}`} />
+        <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-vs-warn" : "bg-vs-success"}`} />
         {usage.concurrency.used}/{usage.concurrency.limit} running
       </span>
       {usage.monthly.limit != null && (

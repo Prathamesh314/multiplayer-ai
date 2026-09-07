@@ -99,7 +99,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
   if (state.kind === "error") {
     return (
       <Centered>
-        <AlertIcon className="h-6 w-6 text-amber-500" />
+        <AlertIcon className="h-6 w-6 text-vs-warn" />
         <p className="max-w-sm text-center text-sm text-vs-muted">{state.message}</p>
       </Centered>
     );
@@ -175,7 +175,7 @@ function LockedScreen({
         </label>
 
         {error && (
-          <p className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
+          <p className="mt-3 flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-xs leading-5 text-vs-danger">
             <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </p>

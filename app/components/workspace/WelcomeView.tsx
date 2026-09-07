@@ -103,7 +103,7 @@ export function WelcomeView({
         )}
 
         {error && (
-          <p className="flex items-start gap-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-left text-sm text-red-600 dark:text-red-300">
+          <p className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-sm text-vs-danger">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
           </p>
