@@ -1,3 +1,4 @@
+import { publishRoleChanged } from "../../../../lib/events";
 import { presence } from "../../../../lib/presence";
 import { projectRoleOf } from "../../../../lib/project/store";
 import { access, denied, forbidden } from "../../../../lib/session/auth";
@@ -73,5 +74,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
 
   const role = body.role === "viewer" ? "viewer" : "editor";
   await addMember(id, userId, role, "owner", result.user.id);
+  await publishRoleChanged([id], userId);
   return Response.json({ added: true }, { status: 201 });
 }

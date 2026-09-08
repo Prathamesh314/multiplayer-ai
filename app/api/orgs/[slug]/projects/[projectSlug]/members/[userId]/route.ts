@@ -1,5 +1,10 @@
+import { publishRoleChanged } from "../../../../../../../lib/events";
 import { forbidden, orgDenied, projectAccess } from "../../../../../../../lib/org/auth";
-import { removeProjectMember, setProjectMemberRole } from "../../../../../../../lib/project/store";
+import {
+  removeProjectMember,
+  setProjectMemberRole,
+  visibleRoomIds,
+} from "../../../../../../../lib/project/store";
 import { canManageProject } from "../../../../../../../lib/project/types";
 import type { ProjectRole, UpdateProjectMemberRequest } from "../../../../../../../lib/project/types";
 
@@ -33,9 +38,13 @@ export async function PATCH(
     return Response.json({ error: "Pick a valid role." }, { status: 400 });
   }
 
+  // Capture the rooms they can currently see *before* the change, then notify
+  // after it commits so each room's client re-derives the new role.
+  const rooms = await visibleRoomIds(result.project.id, userId);
   const updated = await setProjectMemberRole(result.project.id, userId, body.role);
   if (!updated) return Response.json({ error: "That person is not on this project." }, { status: 404 });
 
+  await publishRoleChanged(rooms, userId);
   return Response.json({ updated: true });
 }
 
@@ -53,6 +62,8 @@ export async function DELETE(
     return forbidden("Only a project admin can remove members.");
   }
 
+  const rooms = await visibleRoomIds(result.project.id, userId);
   await removeProjectMember(result.project.id, userId);
+  await publishRoleChanged(rooms, userId);
   return Response.json({ removed: true });
 }

@@ -29,6 +29,12 @@ export type OrgMember = {
 
 export type OrgMembersResponse = { members: OrgMember[] };
 
+/** Admin changes a member's role and/or active status. Either field may be sent. */
+export type UpdateOrgMemberRequest = {
+  role?: OrgRole;
+  status?: "active" | "suspended";
+};
+
 export type OrgListResponse = { orgs: Org[] };
 
 export type CreateOrgRequest = { name: string; slug?: string };

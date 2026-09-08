@@ -11,16 +11,21 @@ import type { CurrentUser } from "../../lib/auth/types";
 import {
   createOrg,
   fetchOrgMembers,
+  fetchOrgUsage,
   inviteByConnectCode,
   inviteByEmail,
+  type OrgUsage,
+  removeOrgMember,
+  updateOrgMember,
 } from "../../lib/org/client";
-import type { Org, OrgMember } from "../../lib/org/types";
+import type { Org, OrgMember, OrgRole } from "../../lib/org/types";
 import {
   addProjectMember,
   changeProjectMemberRole,
   createProject,
   createRoom,
   fetchProjectMembers,
+  listProjects,
   removeProjectMember,
 } from "../../lib/project/client";
 import {
@@ -37,7 +42,7 @@ import {
   setRoomVisibility,
 } from "../../lib/session/client";
 import type { Session, SessionMember } from "../../lib/session/types";
-import { CloseIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { CloseIcon, PlusIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { Avatar, CopyLink } from "./parts";
 
@@ -374,6 +379,242 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
           )}
         </div>
       )}
+    </Modal>
+  );
+}
+
+const ORG_ROLES: OrgRole[] = ["owner", "admin", "member"];
+
+/**
+ * The org admin dashboard: manage the roster (roles, suspension, removal), and
+ * see projects and pooled usage in one place. Opened from the org header by
+ * owners and admins. Mutations mirror the server's guardrails — you can't act on
+ * yourself, and only an owner can touch (or mint) another owner.
+ */
+export function OrgAdminDialog({
+  org,
+  me,
+  onClose,
+  onManageProject,
+}: {
+  org: Org;
+  me: CurrentUser | null;
+  onClose: () => void;
+  onManageProject: (project: Project) => void;
+}) {
+  const callerIsOwner = org.myRole === "owner";
+  const [members, setMembers] = useState<OrgMember[] | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [usage, setUsage] = useState<OrgUsage | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setMembers(await fetchOrgMembers(org.slug));
+  }, [org.slug]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      fetchOrgMembers(org.slug),
+      listProjects(org.slug),
+      fetchOrgUsage(org.slug),
+    ])
+      .then(([m, p, u]) => {
+        if (cancelled) return;
+        setMembers(m);
+        setProjects(p);
+        setUsage(u);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMembers([]);
+        setProjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [org.slug]);
+
+  // Run a mutation for one member, then refresh — surfacing the server's message
+  // (e.g. the last-owner guard) rather than swallowing it.
+  async function mutate(userId: string, fn: () => Promise<void>) {
+    setPending(userId);
+    setError(null);
+    try {
+      await fn();
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const roleOptions: OrgRole[] = callerIsOwner ? ORG_ROLES : ["admin", "member"];
+
+  return (
+    <Modal
+      title={`${org.name} · admin`}
+      description="Manage who's in the organisation and what they can do."
+      onClose={onClose}
+      width="max-w-2xl"
+      footer={<GhostButton onClick={onClose}>Done</GhostButton>}
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      {/* Pooled usage overview */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-vs-border px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-vs-muted">Running now</p>
+          <p className="mt-0.5 text-[15px] font-semibold">
+            {usage ? `${usage.concurrency.used} / ${usage.concurrency.limit}` : "—"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-vs-border px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-vs-muted">Runs this month</p>
+          <p className="mt-0.5 text-[15px] font-semibold">
+            {usage
+              ? usage.monthly.limit != null
+                ? `${usage.monthly.used} / ${usage.monthly.limit}`
+                : usage.monthly.used
+              : "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* Roster */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          Members ({members?.length ?? 0})
+        </h3>
+        {members === null ? (
+          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+            <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {members.map((m) => {
+              const isSelf = m.userId === me?.id;
+              const targetIsOwner = m.role === "owner";
+              // Admins manage members and admins, never owners; nobody edits
+              // themselves here. The server enforces the same rules.
+              const editable = !isSelf && (callerIsOwner || !targetIsOwner);
+              const suspended = m.status === "suspended";
+              const busy = pending === m.userId;
+              return (
+                <li
+                  key={m.userId}
+                  className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+                >
+                  <Avatar name={m.displayName} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">
+                      {m.displayName}
+                      {isSelf && <span className="text-vs-muted"> (you)</span>}
+                      {suspended && (
+                        <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] uppercase tracking-wide text-amber-500">
+                          Suspended
+                        </span>
+                      )}
+                    </span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
+                  </span>
+
+                  {editable ? (
+                    <>
+                      <select
+                        value={m.role}
+                        onChange={(e) =>
+                          mutate(m.userId, () =>
+                            updateOrgMember(org.slug, m.userId, { role: e.target.value as OrgRole }),
+                          )
+                        }
+                        disabled={busy}
+                        aria-label={`Role for ${m.displayName}`}
+                        className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[11px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
+                      >
+                        {roleOptions.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mutate(m.userId, () =>
+                            updateOrgMember(org.slug, m.userId, {
+                              status: suspended ? "active" : "suspended",
+                            }),
+                          )
+                        }
+                        disabled={busy}
+                        title={suspended ? "Reactivate" : "Suspend"}
+                        className="rounded border border-vs-border px-1.5 py-1 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+                      >
+                        {suspended ? "Reactivate" : "Suspend"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mutate(m.userId, () => removeOrgMember(org.slug, m.userId))
+                        }
+                        disabled={busy}
+                        title="Remove from organisation"
+                        className="rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-red-500 disabled:opacity-50"
+                      >
+                        {busy ? (
+                          <SpinnerIcon className="h-3.5 w-3.5" />
+                        ) : (
+                          <CloseIcon className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
+                      {m.role}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Projects — hands off to the per-project members dialog */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+          Projects ({projects?.length ?? 0})
+        </h3>
+        {projects === null ? (
+          <p className="mt-2 flex items-center gap-2 text-xs text-vs-muted">
+            <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+          </p>
+        ) : projects.length === 0 ? (
+          <p className="mt-2 text-xs leading-5 text-vs-muted">No projects yet.</p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {projects.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
+                <button
+                  type="button"
+                  onClick={() => onManageProject(p)}
+                  className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover"
+                >
+                  <UsersIcon className="h-3.5 w-3.5" />
+                  Members
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </Modal>
   );
 }

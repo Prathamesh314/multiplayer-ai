@@ -84,7 +84,14 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
   }, [sessionId, router]);
 
   if (state.kind === "ready") {
-    return <Workspace session={state.session} />;
+    return (
+      <Workspace
+        session={state.session}
+        onAccessLost={(reason) =>
+          setState({ kind: "locked", reason: reason ?? "Your access to this room has changed." })
+        }
+      />
+    );
   }
 
   if (state.kind === "loading") {

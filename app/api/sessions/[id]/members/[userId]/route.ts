@@ -1,3 +1,4 @@
+import { publishRoleChanged } from "../../../../../lib/events";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
 import { removeMember } from "../../../../../lib/session/store";
 
@@ -26,5 +27,6 @@ export async function DELETE(
   }
 
   await removeMember(id, userId);
+  await publishRoleChanged([id], userId);
   return Response.json({ removed: true });
 }

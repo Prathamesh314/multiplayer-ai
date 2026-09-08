@@ -230,6 +230,30 @@ export async function visibleRoomIds(projectId: string, userId: string): Promise
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * Every room across the whole org that a user can currently see — the org-wide
+ * sibling of visibleRoomIds. An org role change can alter a member's access in
+ * every project at once (owner/admin get implicit manager everywhere via
+ * EFFECTIVE_ROLE), so a role-change broadcast must reach all of these rooms.
+ */
+export async function visibleRoomIdsInOrg(orgId: string, userId: string): Promise<Set<string>> {
+  const rows = await query<{ id: string }>(
+    `SELECT s.id
+       FROM sessions s
+       JOIN projects p ON p.id = s.project_id
+      WHERE p.org_id = $1 AND s.deleted_at IS NULL
+        AND (
+          s.visibility = 'public'
+          OR EXISTS (
+            SELECT 1 FROM session_members m
+             WHERE m.session_id = s.id AND m.user_id = $2 AND m.removed_at IS NULL
+          )
+        )`,
+    [orgId, userId],
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
 // ---------------------------------------------------------------------------
 // Roster
 // ---------------------------------------------------------------------------

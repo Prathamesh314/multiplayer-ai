@@ -161,6 +161,78 @@ export async function listOrgMembers(orgId: string): Promise<OrgMember[]> {
   }));
 }
 
+/** One person's role and status, regardless of whether they're active — the
+ * management path needs to see suspended members too, so it can't reuse
+ * orgRoleOf (which is scoped to active members for access checks). */
+export async function getOrgMembership(
+  orgId: string,
+  userId: string,
+): Promise<{ role: OrgRole; status: "active" | "suspended" } | null> {
+  return queryOne<{ role: OrgRole; status: "active" | "suspended" }>(
+    `SELECT role, status FROM org_members WHERE org_id = $1 AND user_id = $2`,
+    [orgId, userId],
+  );
+}
+
+// The deferred "keep an owner" trigger surfaces as a check_violation; we turn it
+// into a message the admin UI can show rather than a 500.
+const KEEP_OWNER_ERROR = "An organisation must always keep at least one active owner.";
+const isCheckViolation = (cause: unknown) => (cause as { code?: string }).code === "23514";
+
+/**
+ * Change a member's role and/or active status. The last-active-owner guard is
+ * enforced by the database trigger; we translate its violation into a friendly
+ * error. Returns false when there is no such membership to update.
+ */
+export async function updateOrgMember(
+  orgId: string,
+  userId: string,
+  changes: { role?: OrgRole; status?: "active" | "suspended" },
+): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
+  const sets: string[] = [];
+  const params: unknown[] = [orgId, userId];
+  if (changes.role !== undefined) {
+    params.push(changes.role);
+    sets.push(`role = $${params.length}`);
+  }
+  if (changes.status !== undefined) {
+    params.push(changes.status);
+    sets.push(`status = $${params.length}`);
+  }
+  if (sets.length === 0) return { ok: true, updated: false };
+
+  try {
+    const rows = await query<{ user_id: string }>(
+      `UPDATE org_members SET ${sets.join(", ")}
+        WHERE org_id = $1 AND user_id = $2
+        RETURNING user_id`,
+      params,
+    );
+    return { ok: true, updated: rows.length > 0 };
+  } catch (cause) {
+    if (isCheckViolation(cause)) return { ok: false, error: KEEP_OWNER_ERROR };
+    throw cause;
+  }
+}
+
+/**
+ * Remove someone from the org entirely. Cascades their team and project
+ * memberships (composite foreign keys), and the keep-an-owner trigger backstops
+ * removing the last owner.
+ */
+export async function removeOrgMember(
+  orgId: string,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await query(`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, [orgId, userId]);
+    return { ok: true };
+  } catch (cause) {
+    if (isCheckViolation(cause)) return { ok: false, error: KEEP_OWNER_ERROR };
+    throw cause;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Invitations
 // ---------------------------------------------------------------------------

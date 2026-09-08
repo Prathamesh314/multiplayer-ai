@@ -3,6 +3,7 @@ import type {
   FileEditingEvent,
   FileSavedEvent,
   MessageCreatedEvent,
+  RoleChangedEvent,
   RunFinishedEvent,
   RunOutputEvent,
   RunStartedEvent,
@@ -18,6 +19,8 @@ export type SessionStreamOptions = {
   /** A chat message from anyone, including this account's other tabs. */
   onMessage?: (event: MessageCreatedEvent) => void;
   onMembersChanged?: () => void;
+  /** This account's role in the room changed — refresh permissions live. */
+  onRoleChanged?: (event: RoleChangedEvent) => void;
   /** A new agent run opened in the room. */
   onRunStarted?: (event: RunStartedEvent) => void;
   /** A live output chunk from a run in progress. */
@@ -72,6 +75,11 @@ export function openSessionStream(
   });
 
   source.addEventListener("members.changed", () => options.onMembersChanged?.());
+
+  source.addEventListener("role.changed", (message) => {
+    const event = parse(message);
+    if (event?.type === "role.changed") options.onRoleChanged?.(event);
+  });
 
   source.addEventListener("run.started", (message) => {
     const event = parse(message);
