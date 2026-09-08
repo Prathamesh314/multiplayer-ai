@@ -134,12 +134,12 @@ export function TeamChatPanel({
         className="vs-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3"
       >
         {messages === null ? (
-          <p className="flex items-center justify-center gap-2 py-4 text-xs text-vs-muted">
+          <p className="flex items-center justify-center gap-2 py-4 text-sm text-vs-muted">
             <SpinnerIcon className="h-3.5 w-3.5" />
             Loading…
           </p>
         ) : messages.length === 0 ? (
-          <p className="py-4 text-center text-xs leading-5 text-vs-muted">
+          <p className="py-4 text-center text-sm leading-5 text-vs-muted">
             No messages yet. Everyone in this session sees what you write here.
           </p>
         ) : (
@@ -149,7 +149,7 @@ export function TeamChatPanel({
                 type="button"
                 onClick={loadOlder}
                 disabled={loadingMore}
-                className="mx-auto shrink-0 rounded border border-vs-border px-2 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+                className="mx-auto shrink-0 rounded border border-vs-border px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
               >
                 {loadingMore ? "Loading…" : "Load earlier messages"}
               </button>
@@ -167,7 +167,7 @@ export function TeamChatPanel({
       </div>
 
       {error && (
-        <p className="shrink-0 border-t border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-600 dark:text-red-300">
+        <p className="shrink-0 border-t border-vs-danger/40 bg-vs-danger/10 px-3 py-1.5 text-[12px] text-vs-danger">
           {error}
         </p>
       )}
@@ -186,7 +186,7 @@ function Message({ message, grouped }: { message: ChatMessage; grouped: boolean 
       <span className="w-6 shrink-0">
         {!grouped && (
           <span
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold ${color.chip}`}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ${color.chip}`}
           >
             {initialsOf(message.userName || "…")}
           </span>
@@ -195,13 +195,13 @@ function Message({ message, grouped }: { message: ChatMessage; grouped: boolean 
       <div className="min-w-0 flex-1">
         {!grouped && (
           <header className="flex items-baseline gap-2">
-            <span className="truncate text-xs font-semibold text-vs-fg">
+            <span className="truncate text-sm font-semibold text-vs-fg">
               {message.userName || "Sending…"}
             </span>
-            <span className="shrink-0 text-[10px] text-vs-muted">{clockOf(message.createdAt)}</span>
+            <span className="shrink-0 text-[11px] text-vs-muted">{clockOf(message.createdAt)}</span>
           </header>
         )}
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-5 text-vs-fg/90">
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-5 text-vs-fg/90">
           {message.body}
         </p>
       </div>
@@ -224,7 +224,7 @@ export function PanelHeader({
 }) {
   return (
     <header className="flex h-9 shrink-0 items-center gap-2 border-b border-vs-border px-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">{title}</h2>
+      <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">{title}</h2>
       <div className="ml-auto flex items-center gap-2">
         {children}
         {onClose && (

@@ -33,7 +33,7 @@ export function StatusBar({
   const git = result?.git;
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-vs-border bg-vs-chrome px-3 text-[11px] text-vs-muted">
+    <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-vs-border bg-vs-chrome px-3 text-[12px] text-vs-muted">
       {git?.isGit ? (
         <span className="flex items-center gap-1 text-vs-fg" title={git.commit ?? undefined}>
           <GitBranchIcon className="h-3.5 w-3.5" />
@@ -54,7 +54,7 @@ export function StatusBar({
             className="flex items-center gap-1.5"
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-amber-500"}`}
+              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-success" : "bg-vs-warn"}`}
             />
             {live ? "live" : "reconnecting"}
           </span>
@@ -63,7 +63,7 @@ export function StatusBar({
               type="button"
               onClick={onReconnect}
               title="Reopen the live connection now instead of waiting for the automatic retry."
-              className="rounded border border-vs-border px-1.5 py-0.5 text-[10px] leading-none text-vs-fg transition hover:bg-vs-hover"
+              className="rounded border border-vs-border px-1.5 py-0.5 text-[11px] leading-none text-vs-fg transition hover:bg-vs-hover"
             >
               Reconnect
             </button>
@@ -79,7 +79,7 @@ export function StatusBar({
               : `Every edit is committed to the session branch. HEAD is ${headSha}.`
           }
           className={
-            saveState === "error" ? "text-red-500 dark:text-red-400" : "font-mono text-vs-fg"
+            saveState === "error" ? "text-vs-danger" : "font-mono text-vs-fg"
           }
         >
           {saveState === "saving"

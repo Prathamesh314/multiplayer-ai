@@ -72,7 +72,7 @@ export function AuthForm() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-vs-editor px-6 py-12 text-vs-fg">
       <div className="w-full max-w-sm">
-        <span className="flex items-center gap-2 text-sm font-semibold">
+        <span className="flex items-center gap-2 text-base font-semibold">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
             multiplayer<span className="text-vs-muted">-ai</span>
@@ -81,10 +81,10 @@ export function AuthForm() {
 
         {step === "email" ? (
           <>
-            <h1 className="font-display mt-6 text-[26px] font-semibold tracking-tight">
+            <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
               Sign in or sign up
             </h1>
-            <p className="mt-2 text-[13px] leading-6 text-vs-muted">
+            <p className="mt-2 text-[14px] leading-6 text-vs-muted">
               Enter your email and password. We&apos;ll sign you in, or start a new account if this
               is your first time.
             </p>
@@ -124,10 +124,10 @@ export function AuthForm() {
           </>
         ) : (
           <>
-            <h1 className="font-display mt-6 text-[26px] font-semibold tracking-tight">
+            <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
               Pick a username
             </h1>
-            <p className="mt-2 text-[13px] leading-6 text-vs-muted">
+            <p className="mt-2 text-[14px] leading-6 text-vs-muted">
               Almost there — choose a username for{" "}
               <span className="text-vs-fg">{email.trim()}</span>. It&apos;s how teammates will see
               you.
@@ -156,7 +156,7 @@ export function AuthForm() {
                   setStep("email");
                   setError(null);
                 }}
-                className="w-full text-center text-xs text-vs-muted underline-offset-2 hover:text-vs-fg hover:underline"
+                className="w-full text-center text-sm text-vs-muted underline-offset-2 hover:text-vs-fg hover:underline"
               >
                 Use a different email
               </button>
@@ -164,7 +164,7 @@ export function AuthForm() {
           </>
         )}
 
-        <p className="mt-5 text-center text-[11px] leading-5 text-vs-muted">
+        <p className="mt-5 text-center text-[12px] leading-5 text-vs-muted">
           New accounts need a password of at least {MIN_PASSWORD_LENGTH} characters.
         </p>
       </div>
@@ -193,7 +193,7 @@ function SubmitButton({ busy, children }: { busy: boolean; children: React.React
     <button
       type="submit"
       disabled={busy}
-      className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {busy && <SpinnerIcon className="h-4 w-4" />}
       {children}
@@ -203,7 +203,7 @@ function SubmitButton({ busy, children }: { busy: boolean; children: React.React
 
 function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-600 dark:text-red-300">
+    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
       <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       {children}
     </p>
@@ -211,7 +211,7 @@ function ErrorNote({ children }: { children: React.ReactNode }) {
 }
 
 const inputClass =
-  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-panel px-3 py-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
+  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-panel px-3 py-2 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
 
 function Field({
   label,
@@ -224,11 +224,11 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
         {label}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-[11px] text-vs-muted">{hint}</span>}
+      {hint && <span className="mt-1 block text-[12px] text-vs-muted">{hint}</span>}
     </label>
   );
 }

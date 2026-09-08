@@ -760,7 +760,7 @@ export function Workspace({
                   pinnedActive={showTree}
                   onSelectPinned={() => setShowTree(true)}
                   emptyState={
-                    <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-vs-muted">
+                    <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                       Pick a file from the Files tab to open it here.
                     </div>
                   }
@@ -778,7 +778,7 @@ export function Workspace({
                 <button
                   type="button"
                   onClick={() => setTerminalOpen(true)}
-                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[11px] text-vs-muted transition hover:text-vs-fg"
+                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
                 >
                   <TerminalIcon className="h-3.5 w-3.5" />
                   Terminal

@@ -96,7 +96,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
             href={`http://localhost:${port}`}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1 rounded border border-vs-border px-2 py-0.5 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="flex items-center gap-1 rounded border border-vs-border px-2 py-0.5 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             <LinkIcon className="h-3 w-3" />
             Open :{port}
@@ -105,7 +105,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => handles.current.get(activeId)?.clear()}
             title="Clear (or Ctrl+L)"
-            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Clear
           </button>
@@ -122,8 +122,8 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
 
       {disabled ? (
         <div className="flex flex-1 items-center justify-center bg-vs-terminal px-6">
-          <p className="flex max-w-md items-start gap-2 text-xs leading-5 text-vs-muted">
-            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <p className="flex max-w-md items-start gap-2 text-sm leading-5 text-vs-muted">
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-warn" />
             {status?.reason}
           </p>
         </div>
@@ -165,7 +165,7 @@ function TabButton({
 }) {
   return (
     <span
-      className={`group flex shrink-0 items-center gap-1.5 rounded-md py-1 pl-2 pr-1 text-[12px] transition ${
+      className={`group flex shrink-0 items-center gap-1.5 rounded-md py-1 pl-2 pr-1 text-[13px] transition ${
         active ? "bg-vs-terminal text-vs-fg" : "text-vs-muted hover:bg-vs-hover hover:text-vs-fg"
       }`}
     >
