@@ -57,6 +57,15 @@ export async function GET(request: Request, context: RouteContext<"/api/sessions
       send(`event: ready\ndata: ${JSON.stringify({ sessionId: id })}\n\n`);
 
       unsubscribe = await bus.subscribe(id, (event: SessionEvent) => {
+        // A role change aimed at this subscriber: re-authorise live. access()
+        // re-derives the current role from the DB, so a demoted-but-present user
+        // keeps the stream while a removed/suspended one has it torn down — the
+        // read side stops the moment their access does.
+        if (event.type === "role.changed" && event.userId === result.user.id) {
+          void access(id).then((recheck) => {
+            if (!recheck) finish();
+          });
+        }
         send(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
       });
 

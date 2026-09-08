@@ -57,6 +57,18 @@ export type MembersChangedEvent = {
   at: number;
 };
 
+/**
+ * One person's role in this room may have changed — promoted, demoted, or their
+ * access revoked entirely. Carries only the affected user's id: others ignore
+ * it, and the named user re-reads their own role through the authorised route
+ * rather than trusting a role pushed over the wire.
+ */
+export type RoleChangedEvent = {
+  type: "role.changed";
+  userId: string;
+  at: number;
+};
+
 /** An agent run opened in this room — tells everyone a new run exists to watch. */
 export type RunStartedEvent = {
   type: "run.started";
@@ -105,6 +117,7 @@ export type SessionEvent =
   | FileEditingEvent
   | MessageCreatedEvent
   | MembersChangedEvent
+  | RoleChangedEvent
   | RunStartedEvent
   | RunOutputEvent
   | RunTurnEvent

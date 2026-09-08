@@ -13,7 +13,7 @@ import type { PickedSource } from "../../lib/folder";
 import { fetchMe } from "../../lib/auth/client";
 import { readDroppedFolder, scanDirectoryHandle, scanFileList } from "../../lib/scan";
 import { openSessionStream } from "../../lib/events/client";
-import { notifyEditing } from "../../lib/session/client";
+import { loadSession, notifyEditing } from "../../lib/session/client";
 import type { FileSavedEvent } from "../../lib/events/types";
 import type { ChatMessage } from "../../lib/session/types";
 import { startHeartbeat } from "../../lib/presence/client";
@@ -52,8 +52,28 @@ const noopSubscribe = () => () => {};
 const hasPicker = () => !!window.showDirectoryPicker;
 const noPicker = () => false;
 
-export function Workspace({ session }: { session: Session }) {
+export function Workspace({
+  session: initialSession,
+  onAccessLost,
+}: {
+  session: Session;
+  /** Called when a live role change revokes this account's access to the room. */
+  onAccessLost?: (reason?: string) => void;
+}) {
   const router = useRouter();
+
+  // The room's session held in state, not read straight from the prop, so a live
+  // role change can refresh it in place — `readOnly` and every capability gate
+  // below derive from `session.myRole`, so updating it re-locks or unlocks the UI
+  // without a reload. If the parent hands us a genuinely different session object
+  // (e.g. after unlocking), resync during render rather than in an effect.
+  const [session, setSession] = useState(initialSession);
+  const [syncedFrom, setSyncedFrom] = useState(initialSession);
+  if (syncedFrom !== initialSession) {
+    setSyncedFrom(initialSession);
+    setSession(initialSession);
+  }
+
   const inputRef = useRef<HTMLInputElement>(null);
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -529,10 +549,23 @@ export function Workspace({ session }: { session: Session }) {
       onFileEditing: people.onEditing,
       onMessage: (event) => setIncoming((previous) => [...previous, event.message]),
       onMembersChanged: people.refresh,
+      onRoleChanged: (event) => {
+        // Only the named user reacts, and they re-read their own role through the
+        // authorised route rather than trusting anything pushed over the wire.
+        if (!myUserId || event.userId !== myUserId) return;
+        void loadSession(session.id)
+          .then((loaded) => {
+            if (loaded.state === "ready") setSession(loaded.session);
+            else onAccessLost?.(loaded.state === "locked" ? loaded.reason : undefined);
+          })
+          .catch(() => {
+            // A transient failure shouldn't nuke the room; keep the current role.
+          });
+      },
       onStatus: setLive,
     });
     return () => stream.close();
-  }, [session.id, repo, applyRemoteSave, people, reconnectNonce]);
+  }, [session.id, repo, applyRemoteSave, people, reconnectNonce, myUserId, onAccessLost]);
 
   // A broadcast named a file we have never seen, so the tree is out of date.
   useEffect(() => {

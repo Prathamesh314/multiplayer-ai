@@ -37,6 +37,7 @@ import {
   CreateProjectDialog,
   CreateRoomDialog,
   InviteDialog,
+  OrgAdminDialog,
   ProjectMembersDialog,
   RoomSettingsDialog,
 } from "./dialogs";
@@ -45,6 +46,7 @@ import { initials } from "./parts";
 type Dialog =
   | { kind: "createOrg" }
   | { kind: "invite"; org: Org }
+  | { kind: "orgAdmin"; org: Org }
   | { kind: "createProject"; org: Org }
   | { kind: "createRoom"; org: Org; project: Project }
   | { kind: "projectMembers"; org: Org; project: Project }
@@ -115,6 +117,7 @@ export function OrgWorkspace() {
           invitations={invitations.filter((i) => i.orgSlug === activeOrg.slug)}
           onAcceptInvite={onAcceptInvite}
           onInvite={() => setDialog({ kind: "invite", org: activeOrg })}
+          onOpenAdmin={() => setDialog({ kind: "orgAdmin", org: activeOrg })}
           onNewProject={() => setDialog({ kind: "createProject", org: activeOrg })}
           onNewRoom={(project) => setDialog({ kind: "createRoom", org: activeOrg, project })}
           onManageMembers={(project) =>
@@ -141,6 +144,16 @@ export function OrgWorkspace() {
       )}
       {dialog?.kind === "invite" && (
         <InviteDialog org={dialog.org} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === "orgAdmin" && (
+        <OrgAdminDialog
+          org={dialog.org}
+          me={me}
+          onClose={() => setDialog(null)}
+          onManageProject={(project) =>
+            setDialog({ kind: "projectMembers", org: dialog.org, project })
+          }
+        />
       )}
       {dialog?.kind === "createProject" && (
         <CreateProjectDialog
@@ -323,6 +336,7 @@ function OrgPanel({
   invitations,
   onAcceptInvite,
   onInvite,
+  onOpenAdmin,
   onNewProject,
   onNewRoom,
   onManageMembers,
@@ -333,6 +347,7 @@ function OrgPanel({
   invitations: PendingInvitation[];
   onAcceptInvite: (id: string) => void;
   onInvite: () => void;
+  onOpenAdmin: () => void;
   onNewProject: () => void;
   onNewRoom: (project: Project) => void;
   onManageMembers: (project: Project) => void;
@@ -366,14 +381,24 @@ function OrgPanel({
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
           <span className="min-w-0 truncate text-[14px] font-semibold">{org.name}</span>
           {canManageOrg(org.myRole) && (
-            <button
-              type="button"
-              onClick={onInvite}
-              title="Invite people"
-              className="shrink-0 rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-            >
-              <UserPlusIcon className="h-4 w-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                title="Organisation admin"
+                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              >
+                <ShieldIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onInvite}
+                title="Invite people"
+                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              >
+                <UserPlusIcon className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </header>
 

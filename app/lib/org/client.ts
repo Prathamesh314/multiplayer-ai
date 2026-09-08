@@ -5,6 +5,7 @@ import type {
   OrgListResponse,
   OrgMember,
   OrgMembersResponse,
+  OrgRole,
   PendingInvitation,
   PendingInvitationsResponse,
 } from "./types";
@@ -48,6 +49,32 @@ export async function fetchOrgMembers(slug: string): Promise<OrgMember[]> {
   const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/members`, { cache: "no-store" });
   if (!response.ok) return [];
   return ((await response.json()) as OrgMembersResponse).members;
+}
+
+/** Change a member's org role and/or active status. Org admins only. */
+export async function updateOrgMember(
+  slug: string,
+  userId: string,
+  changes: { role?: OrgRole; status?: "active" | "suspended" },
+): Promise<void> {
+  const response = await fetch(
+    `/api/orgs/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    },
+  );
+  if (!response.ok) throw new Error(await readError(response, "Could not update that member."));
+}
+
+/** Remove someone from the org entirely. Org admins only. */
+export async function removeOrgMember(slug: string, userId: string): Promise<void> {
+  const response = await fetch(
+    `/api/orgs/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw new Error(await readError(response, "Could not remove that member."));
 }
 
 /** Invite by pasting a connect code. Returns nothing useful; success is a 201. */
