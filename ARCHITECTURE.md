@@ -35,6 +35,10 @@ checkout:
 - `publishRoom` merges the room back onto the project's `main` (fetch → merge →
   fast-forward push; a conflict aborts cleanly and is reported, leaving both
   sides untouched). `syncRoom` is the reverse — pull `main` into a room.
+- Rooms are not opened by hand: each project member has exactly **one** room
+  (migration 017, `ensureMemberRoom`), created for them, named after their
+  handle, renameable. AI sessions (`agent_runs`) multiply *inside* a room, not
+  rooms inside a project. Viewers, being read-only, own no room until promoted.
 
 **Why not a single shared repo everyone branches inside?** A working tree has
 exactly one HEAD and serializes on `index.lock` (hence `withRepoLock`), so

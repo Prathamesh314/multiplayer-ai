@@ -47,7 +47,9 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
 
-  if (result.role !== "owner") {
+  // Ownership is checked directly as well: in a public project room the
+  // derived role shadows the roster, and an editor still owns their own room.
+  if (result.role !== "owner" && result.session.ownerId !== result.user.id) {
     return forbidden("Only the room owner can add people to this room.");
   }
 

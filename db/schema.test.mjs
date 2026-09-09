@@ -363,6 +363,45 @@ await test("deleting a session takes its repo and roster with it", async () => {
   assert.equal(members.rows[0].n, 0);
 });
 
+// --- one room per member per project ----------------------------------------
+
+await test("a member cannot hold two rooms in the same project", async () => {
+  await db.query(
+    `INSERT INTO sessions (id, owner_id, org_id, project_id, name, join_code)
+     VALUES ('roomaliceweb', $1, $2, $3, 'alice', 'EEEE-FFFF')`,
+    [alice, acme, acmeProject],
+  );
+  await rejects(
+    db,
+    `INSERT INTO sessions (id, owner_id, org_id, project_id, name, join_code)
+     VALUES ('roomalicetwo', $1, $2, $3, 'alice again', 'FFFF-GGGG')`,
+    [alice, acme, acmeProject],
+    /sessions_member_room_key/,
+  );
+});
+
+await test("another member gets a room of their own in the same project", async () => {
+  await db.query(
+    `INSERT INTO sessions (id, owner_id, org_id, project_id, name, join_code)
+     VALUES ('roombobwebbb', $1, $2, $3, 'bob', 'GGGG-HHHH')`,
+    [bob, acme, acmeProject],
+  );
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM sessions WHERE project_id = $1`,
+    [acmeProject],
+  );
+  assert.equal(rows[0].n, 2);
+});
+
+await test("personal rooms are not limited to one per owner", async () => {
+  await db.query(
+    `INSERT INTO sessions (id, owner_id, name, join_code)
+     VALUES ('persaliceaaa', $1, 'Personal A', 'HHHH-JJJJ'),
+            ('persalicebbb', $1, 'Personal B', 'JJJJ-KKKK')`,
+    [alice],
+  );
+});
+
 // --- project members: the access gate --------------------------------------
 
 await test("a github project must name a repo", async () => {

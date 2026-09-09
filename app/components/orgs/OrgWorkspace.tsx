@@ -35,7 +35,6 @@ import { PrimaryButton } from "../ui/Modal";
 import {
   CreateOrgDialog,
   CreateProjectDialog,
-  CreateRoomDialog,
   InviteDialog,
   OrgAdminDialog,
   ProjectMembersDialog,
@@ -48,7 +47,6 @@ type Dialog =
   | { kind: "invite"; org: Org }
   | { kind: "orgAdmin"; org: Org }
   | { kind: "createProject"; org: Org }
-  | { kind: "createRoom"; org: Org; project: Project }
   | { kind: "projectMembers"; org: Org; project: Project }
   | { kind: "roomSettings"; org: Org; project: Project; room: Session }
   | null;
@@ -119,7 +117,6 @@ export function OrgWorkspace() {
           onInvite={() => setDialog({ kind: "invite", org: activeOrg })}
           onOpenAdmin={() => setDialog({ kind: "orgAdmin", org: activeOrg })}
           onNewProject={() => setDialog({ kind: "createProject", org: activeOrg })}
-          onNewRoom={(project) => setDialog({ kind: "createRoom", org: activeOrg, project })}
           onManageMembers={(project) =>
             setDialog({ kind: "projectMembers", org: activeOrg, project })
           }
@@ -162,14 +159,6 @@ export function OrgWorkspace() {
           onCreated={() => setDialog(null)}
         />
       )}
-      {dialog?.kind === "createRoom" && (
-        <CreateRoomDialog
-          org={dialog.org}
-          project={dialog.project}
-          onClose={() => setDialog(null)}
-          onCreated={(id) => router.push(`/s/${id}`)}
-        />
-      )}
       {dialog?.kind === "projectMembers" && (
         <ProjectMembersDialog
           org={dialog.org}
@@ -183,6 +172,7 @@ export function OrgWorkspace() {
           org={dialog.org}
           project={dialog.project}
           room={dialog.room}
+          me={me}
           onClose={() => setDialog(null)}
         />
       )}
@@ -338,7 +328,6 @@ function OrgPanel({
   onInvite,
   onOpenAdmin,
   onNewProject,
-  onNewRoom,
   onManageMembers,
   onRoomSettings,
   onOpenRoom,
@@ -349,7 +338,6 @@ function OrgPanel({
   onInvite: () => void;
   onOpenAdmin: () => void;
   onNewProject: () => void;
-  onNewRoom: (project: Project) => void;
   onManageMembers: (project: Project) => void;
   onRoomSettings: (project: Project, room: Session) => void;
   onOpenRoom: (id: string) => void;
@@ -461,7 +449,6 @@ function OrgPanel({
                   key={project.id}
                   org={org}
                   project={project}
-                  onNewRoom={() => onNewRoom(project)}
                   onManageMembers={() => onManageMembers(project)}
                   onRoomSettings={(room) => onRoomSettings(project, room)}
                   onOpenRoom={onOpenRoom}
@@ -476,8 +463,8 @@ function OrgPanel({
         <div className="max-w-md text-center">
           <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
           <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
-            Pick a room from a project to open its files, chat and agent runs. Rooms are shared with
-            everyone on the project.
+            Everyone on a project has a room of their own — open yours to run AI sessions on the
+            project&apos;s repo, or drop into a teammate&apos;s to see what they are working on.
           </p>
         </div>
       </main>
@@ -488,14 +475,12 @@ function OrgPanel({
 function ProjectRow({
   org,
   project,
-  onNewRoom,
   onManageMembers,
   onRoomSettings,
   onOpenRoom,
 }: {
   org: Org;
   project: Project;
-  onNewRoom: () => void;
   onManageMembers: () => void;
   onRoomSettings: (room: Session) => void;
   onOpenRoom: (id: string) => void;
@@ -543,16 +528,6 @@ function ProjectRow({
           <UsersIcon className="h-3 w-3" />
           Members
         </button>
-        {canManageProject(project.myRole) && (
-          <button
-            type="button"
-            onClick={onNewRoom}
-            title="New room"
-            className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover:opacity-100"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-          </button>
-        )}
       </div>
 
       {open && (
@@ -560,7 +535,9 @@ function ProjectRow({
           {rooms === null ? (
             <li className="px-2 py-1 text-[12px] text-vs-muted">Loading…</li>
           ) : rooms.length === 0 ? (
-            <li className="px-2 py-1 text-[12px] text-vs-muted">No rooms yet.</li>
+            <li className="px-2 py-1 text-[12px] text-vs-muted">
+              No rooms yet — yours is created when this list loads.
+            </li>
           ) : (
             rooms.map((room) => (
               <li

@@ -7,6 +7,7 @@ import {
 } from "../../../../../../../lib/project/store";
 import { canManageProject } from "../../../../../../../lib/project/types";
 import type { ProjectRole, UpdateProjectMemberRequest } from "../../../../../../../lib/project/types";
+import { ensureMemberRoom } from "../../../../../../../lib/session/memberRoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,9 @@ export async function PATCH(
   const rooms = await visibleRoomIds(result.project.id, userId);
   const updated = await setProjectMemberRole(result.project.id, userId, body.role);
   if (!updated) return Response.json({ error: "That person is not on this project." }, { status: 404 });
+
+  // A promotion out of viewer earns them their member room on the spot.
+  await ensureMemberRoom(result.project, userId, body.role).catch(() => null);
 
   await publishRoleChanged(rooms, userId);
   return Response.json({ updated: true });

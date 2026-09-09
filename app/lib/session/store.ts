@@ -194,6 +194,8 @@ export type CreateSessionOptions = {
   projectId?: string | null;
   /** 'private' makes the room invite-only; defaults to 'public'. */
   visibility?: "public" | "private";
+  /** Pinned rooms are exempt from the retention sweep. */
+  pinned?: boolean;
 };
 
 export async function createSession(
@@ -206,6 +208,7 @@ export async function createSession(
   const orgId = options.orgId ?? null;
   const projectId = options.projectId ?? null;
   const visibility = options.visibility === "private" ? "private" : "public";
+  const pinned = options.pinned === true;
 
   // The session and its owner row must appear together: a session nobody can
   // open is not a state worth being able to reach. For an org project room the
@@ -215,8 +218,8 @@ export async function createSession(
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const id = randomString(12, ID_ALPHABET);
       const inserted = await tx.query<SessionRow>(
-        `INSERT INTO sessions (id, owner_id, org_id, project_id, visibility, name, join_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO sessions (id, owner_id, org_id, project_id, visibility, name, join_code, pinned)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (id) DO NOTHING
          RETURNING id, name, join_code, owner_id, org_id, project_id, visibility, root_name,
                    created_at, last_active_at, pinned, archived_at,
@@ -224,7 +227,7 @@ export async function createSession(
                    NULL AS head_sha, NULL AS dep_lockfile_hash, NULL AS spec_doc_sha,
                    NULL AS container_image_digest, NULL AS last_test_status,
                    NULL AS last_test_sha, NULL AS repo_root_name, NULL AS seeded_at`,
-        [id, ownerId, orgId, projectId, visibility, name, joinCode],
+        [id, ownerId, orgId, projectId, visibility, name, joinCode, pinned],
       );
 
       if (inserted.rows.length === 0) continue; // id collision, try another
@@ -240,6 +243,22 @@ export async function createSession(
 
     throw new Error("Could not allocate a session id.");
   });
+}
+
+/**
+ * A member's own room in a project. The sessions_member_room_key index makes
+ * this at most one row: a member has exactly one room per project.
+ */
+export async function memberRoomInProject(
+  projectId: string,
+  ownerId: string,
+): Promise<Session | null> {
+  const row = await queryOne<SessionRow>(
+    `${SELECT_SESSION}
+      WHERE s.project_id = $1 AND s.owner_id = $2 AND s.deleted_at IS NULL`,
+    [projectId, ownerId],
+  );
+  return row ? toSession(row) : null;
 }
 
 /**
