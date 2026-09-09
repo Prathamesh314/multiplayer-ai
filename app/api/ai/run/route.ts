@@ -13,7 +13,7 @@ import { checkRunAllowed } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
-import { buildSharedMemory } from "../../../lib/ai/shared-memory";
+import { buildKnowledgeContext } from "../../../lib/knowledge";
 import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
 import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
 import { subscribeRunEvents } from "../../../lib/ai/run-stream";
@@ -228,27 +228,36 @@ export async function POST(request: Request) {
     }
   }
 
-  // The semantic shared-memory layer: distilled memories the mnemosyne sidecar
-  // has learned across every chat this caller can see, ranked against this
-  // prompt. Unlike the FTS reference above (a specific chat, keyword-matched),
-  // this is ambient and meaning-ranked, and it fans out only over visible rooms
-  // so it can't widen access. Off entirely when no sidecar is configured.
+  // The knowledge layer: the prompt is routed over the project's knowledge
+  // graph (project → rooms → runs, plus the indexed repo node), and the right
+  // banks are recalled — distilled cross-chat memory, the room's canonical
+  // facts, and repo context when the prompt is code-shaped. Unlike the FTS
+  // reference above (a specific chat, keyword-matched), this is ambient and
+  // meaning-ranked, and it fans out only over visible rooms so it can't widen
+  // access. Off entirely when no sidecar is configured.
   let sharedMemory: string | null = null;
+  let repoContext: string | null = null;
   if (result.session.projectId) {
-    const memory = await buildSharedMemory({
+    const knowledge = await buildKnowledgeContext({
       projectId: result.session.projectId,
       userId: result.user.id,
       currentSessionId: sessionId,
       prompt,
     });
-    sharedMemory = memory.text;
-    if (memory.recalled > 0) {
+    sharedMemory = knowledge.memoryText;
+    repoContext = knowledge.repoText;
+    if (knowledge.recalled > 0 || knowledge.repoRecalled > 0) {
+      const parts: string[] = [];
+      if (knowledge.recalled > 0) parts.push(`${knowledge.recalled} memories from shared context`);
+      if (knowledge.repoRecalled > 0) parts.push(`${knowledge.repoRecalled} repo facts`);
       const suffix =
-        memory.truncatedRooms > 0 ? ` (${memory.truncatedRooms} more rooms not searched)` : "";
+        knowledge.truncatedRooms > 0
+          ? ` (${knowledge.truncatedRooms} more rooms not searched)`
+          : "";
       const notice = await appendMessage({
         runId: run.id,
         role: "system",
-        body: `Recalled ${memory.recalled} memories from shared context${suffix}`,
+        body: `Recalled ${parts.join(" and ")}${suffix}`,
       });
       await (await events()).publish(sessionId, {
         type: "run.turn",
@@ -269,7 +278,7 @@ export async function POST(request: Request) {
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
 
   // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT.
-  // The three context layers are woven and budgeted in assembleAgentPrompt (see
+  // The four context layers are woven and budgeted in assembleAgentPrompt (see
   // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
   // keeps the full import regardless.
   const agentPrompt = assembleAgentPrompt({
@@ -277,6 +286,7 @@ export async function POST(request: Request) {
     handle: coDriven ? result.user.handle : null,
     referencedContext,
     importedContext,
+    repoContext,
     sharedMemory,
   });
 

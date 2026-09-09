@@ -50,18 +50,57 @@ test("each context layer is wrapped only when present", () => {
   assert.ok(mem.includes("<memory>\nM\n</memory>"));
 });
 
-test("layers nest outermost→innermost: memory, imported, referenced, prompt", () => {
+test("layers nest outermost→innermost: memory, repo, imported, referenced, prompt", () => {
   const out = assembleAgentPrompt({
     prompt: "PROMPT",
     referencedContext: "REF",
     importedContext: "IMP",
+    repoContext: "REPO",
     sharedMemory: "MEM",
   });
   const iMem = out.indexOf("<memory>");
+  const iRepo = out.indexOf("<repo-context>");
   const iImp = out.indexOf("<imported-context>");
   const iRef = out.indexOf("<referenced-context>");
   const iPrompt = out.indexOf("PROMPT");
-  assert.ok(iMem < iImp && iImp < iRef && iRef < iPrompt, `unexpected order: ${out}`);
+  assert.ok(
+    iMem < iRepo && iRepo < iImp && iImp < iRef && iRef < iPrompt,
+    `unexpected order: ${out}`,
+  );
+});
+
+test("repo context is wrapped only when present", () => {
+  const out = assembleAgentPrompt({ prompt: "p", repoContext: "REPO" });
+  assert.ok(out.includes("<repo-context>\nREPO\n</repo-context>"));
+  assert.ok(!assembleAgentPrompt({ prompt: "p" }).includes("<repo-context>"));
+});
+
+test("repo context keeps its head and marks truncation when it partially fits", () => {
+  const out = assembleAgentPrompt({ prompt: "p", repoContext: "C".repeat(500), maxPrompt: 200 });
+  assert.ok(out.includes("<repo-context>\nCCC"), "head of repo context is kept");
+  assert.ok(out.includes("[…repo context truncated for length…]"));
+});
+
+test("repo context is dropped when explicit sources fill the budget", () => {
+  const out = assembleAgentPrompt({
+    prompt: "p",
+    referencedContext: "R".repeat(1000),
+    repoContext: "C".repeat(50),
+    maxPrompt: 150,
+  });
+  assert.ok(!out.includes("<repo-context>"), "no empty repo block");
+});
+
+test("repo context takes leftover budget before memory does", () => {
+  // Budget fits the repo block but leaves nothing after it; memory must drop.
+  const out = assembleAgentPrompt({
+    prompt: "p",
+    repoContext: "C".repeat(600),
+    sharedMemory: "M".repeat(50),
+    maxPrompt: 400,
+  });
+  assert.ok(out.includes("<repo-context>"), "repo context survives");
+  assert.ok(!out.includes("<memory>"), "memory yields to repo context");
 });
 
 test("referenced context keeps its head and marks the truncation", () => {

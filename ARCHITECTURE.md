@@ -74,3 +74,33 @@ absent:
 - **Shared memory:** the mnemosyne sidecar when `MNEMOSYNE_URL` is set; recall
   and ingest are skipped entirely otherwise, falling back to fork + `@room/chat`
   context (`app/lib/ai/mnemosyne.ts`).
+
+## The knowledge layer
+
+Cross-chat context is organized as a **knowledge graph** over the project
+(`app/lib/knowledge/`): project → rooms → runs, plus one repo node. Each room
+node maps to a vector bank in the sidecar (`session:<roomId>` — ingest writes
+there, `app/lib/ai/shared-memory.ts`); the repo node maps to a per-SHA bank
+(`repo:<projectId>:<sha12>`) distilled from the project's canonical `main`
+(file map, manifests, docs, export signatures — `repo-context.ts`).
+
+- The graph is **derived, never stored** — Postgres already owns the
+  hierarchy, so deletion propagates for free: a deleted room never enters the
+  graph and its bank is never queried again; an advanced `main` orphans the old
+  repo bank. Only the indexed-SHA pointer is stored (migration 018).
+- Every retrieval is gated by `visibleRoomIds` before the graph is built, so
+  recall can never widen access.
+- Ingestion is **approval-gated**: an exchange whose run changed files is a
+  proposal, not knowledge — it stages in Postgres (migration 019) and enters
+  the room's bank only when the user approves the code by *publishing* the
+  room to `main` (`ingestApprovedExchanges`, hooked in the publish route,
+  which also re-indexes repo context for the new HEAD). Unpublished work never
+  becomes shared memory; pure Q&A exchanges ingest immediately, having no code
+  to approve.
+- A deterministic **router** (`router.ts`) classifies each prompt: code-shaped
+  → repo context + own-room memory; conversation-shaped → project-wide memory,
+  no repo; mixed/neutral → both. No LLM on the critical path, and the matched
+  signals are returned so the choice is explainable.
+- All recalls (episodic banks, canonical facts, repo bank) go out in one
+  parallel wave (`index.ts`), bounded by the sidecar's 4s timeout; everything
+  fails open per the section above.
