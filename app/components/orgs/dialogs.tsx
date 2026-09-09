@@ -23,7 +23,6 @@ import {
   addProjectMember,
   changeProjectMemberRole,
   createProject,
-  createRoom,
   fetchProjectMembers,
   listProjects,
   removeProjectMember,
@@ -39,6 +38,7 @@ import {
   fetchMembers,
   loadSession,
   removeRoomMember,
+  renameSession,
   setRoomVisibility,
 } from "../../lib/session/client";
 import type { Session, SessionMember } from "../../lib/session/types";
@@ -185,95 +185,6 @@ export function CreateProjectDialog({
           />
         </Field>
       )}
-    </Modal>
-  );
-}
-
-export function CreateRoomDialog({
-  org,
-  project,
-  onClose,
-  onCreated,
-}: {
-  org: Org;
-  project: Project;
-  onClose: () => void;
-  onCreated: (id: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      const room = await createRoom(org.slug, project.slug, name.trim() || undefined, visibility);
-      onCreated(room.id);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong.");
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      title={`New room in ${project.name}`}
-      description="A room is one line of work on this project's repo."
-      onClose={onClose}
-      footer={
-        <>
-          <GhostButton onClick={onClose}>Cancel</GhostButton>
-          <PrimaryButton onClick={submit} disabled={busy}>
-            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
-          </PrimaryButton>
-        </>
-      }
-    >
-      {error && <ErrorNote>{error}</ErrorNote>}
-      <Field label="Name" hint="Optional — a name is generated if you leave it blank.">
-        <input
-          autoFocus
-          className={inputClass}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Fix the parser"
-        />
-      </Field>
-
-      <Field label="Visibility">
-        <div className="mt-1.5 grid grid-cols-2 gap-2">
-          {(
-            [
-              { v: "public", title: "Public", hint: "Anyone on the project can drop in." },
-              { v: "private", title: "Private", hint: "Invite-only. You add who can see it." },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.v}
-              type="button"
-              onClick={() => setVisibility(option.v)}
-              className={`rounded-lg border px-3 py-2 text-left transition ${
-                visibility === option.v
-                  ? "border-vs-accent bg-vs-accent/10"
-                  : "border-vs-border hover:bg-vs-hover"
-              }`}
-            >
-              <span className="flex items-center gap-1.5 text-[14px] font-medium">
-                {option.v === "private" ? (
-                  <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <span className="w-3.5 shrink-0 text-center">#</span>
-                )}
-                {option.title}
-              </span>
-              <span className="mt-0.5 block text-[12px] leading-4 text-vs-muted">{option.hint}</span>
-            </button>
-          ))}
-        </div>
-      </Field>
     </Modal>
   );
 }
@@ -865,14 +776,18 @@ export function RoomSettingsDialog({
   org,
   project,
   room,
+  me,
   onClose,
 }: {
   org: Org;
   project: Project;
   room: Session;
+  me: CurrentUser | null;
   onClose: () => void;
 }) {
   const [visibility, setVisibilityState] = useState<"public" | "private">(room.visibility);
+  const [name, setName] = useState(room.name);
+  const [savedName, setSavedName] = useState(room.name);
   const [myRole, setMyRole] = useState<Session["myRole"]>(null);
   const [ownerId, setOwnerId] = useState(room.ownerId);
   const [members, setMembers] = useState<SessionMember[] | null>(null);
@@ -898,6 +813,7 @@ export function RoomSettingsDialog({
       setMyRole(loaded.session.myRole);
       setVisibilityState(loaded.session.visibility);
       setOwnerId(loaded.session.ownerId);
+      setSavedName(loaded.session.name);
     }
     setMembers(roster);
     setProjectMembers(pm);
@@ -911,6 +827,8 @@ export function RoomSettingsDialog({
         setMyRole(loaded.session.myRole);
         setVisibilityState(loaded.session.visibility);
         setOwnerId(loaded.session.ownerId);
+        setName(loaded.session.name);
+        setSavedName(loaded.session.name);
       }
       setMembers(roster);
       setProjectMembers(pm);
@@ -920,7 +838,9 @@ export function RoomSettingsDialog({
     };
   }, [load]);
 
-  const isOwner = myRole === "owner";
+  // In a public project room the derived role can shadow ownership (an editor
+  // whose own room this is still reads as editor), so check the owner directly.
+  const isOwner = myRole === "owner" || (me !== null && ownerId === me.id);
   const onRoster = new Set((members ?? []).map((m) => m.userId));
   const addable = projectMembers.filter((m) => !onRoster.has(m.userId));
 
@@ -933,6 +853,20 @@ export function RoomSettingsDialog({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not change visibility.");
       setVisibilityState((v) => (v === next ? room.visibility : v));
+    }
+  }
+
+  async function saveName() {
+    const next = name.trim();
+    if (!next || next === savedName) return;
+    setError(null);
+    try {
+      const updated = await renameSession(room.id, next);
+      setName(updated.name);
+      setSavedName(updated.name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename the room.");
+      setName(savedName);
     }
   }
 
@@ -964,13 +898,24 @@ export function RoomSettingsDialog({
 
   return (
     <Modal
-      title={`${room.name} · privacy`}
+      title={`${savedName} · settings`}
       description="Public rooms are open to everyone on the project. Private rooms are invite-only."
       onClose={onClose}
       width="max-w-xl"
       footer={<GhostButton onClick={onClose}>Done</GhostButton>}
     >
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      <Field label="Name" hint="Your room starts out named after you — rename it to anything.">
+        <input
+          className={inputClass}
+          value={name}
+          disabled={!isOwner}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveName}
+          onKeyDown={(e) => e.key === "Enter" && saveName()}
+        />
+      </Field>
 
       <div className="grid grid-cols-2 gap-2">
         {(
@@ -1004,7 +949,7 @@ export function RoomSettingsDialog({
       </div>
       {!isOwner && (
         <p className="text-[12px] text-vs-muted">
-          Only the room owner can change its privacy or manage who&apos;s in it.
+          Only the room owner can rename it, change its privacy or manage who&apos;s in it.
         </p>
       )}
 

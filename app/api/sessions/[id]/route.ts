@@ -25,7 +25,11 @@ export async function PATCH(request: Request, context: RouteContext<"/api/sessio
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
 
-  if (result.role !== "owner") {
+  // Settings belong to whoever owns the room, plus anyone whose project role
+  // already derives to owner (managers). Ownership is checked directly because
+  // in a public project room the derived role shadows the roster: an editor's
+  // own member room must still be theirs to rename.
+  if (result.role !== "owner" && result.session.ownerId !== result.user.id) {
     return forbidden("Only the session owner can change its settings.");
   }
 

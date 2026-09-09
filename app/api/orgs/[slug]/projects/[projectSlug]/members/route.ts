@@ -1,5 +1,6 @@
 import { forbidden, orgDenied, projectAccess } from "../../../../../../lib/org/auth";
 import { addProjectMember, listProjectMembers } from "../../../../../../lib/project/store";
+import { ensureMemberRoom } from "../../../../../../lib/session/memberRoom";
 import { canManageProject } from "../../../../../../lib/project/types";
 import type { AddProjectMemberRequest, ProjectMembersResponse } from "../../../../../../lib/project/types";
 
@@ -49,6 +50,10 @@ export async function POST(
 
   const outcome = await addProjectMember(result.project.id, result.org.id, userId, role, result.user.id);
   if (!outcome.ok) return Response.json({ error: outcome.error }, { status: 409 });
+
+  // Their one room in this project, ready before they first look. Best-effort:
+  // if seeding fails here, listing the rooms provisions it instead.
+  await ensureMemberRoom(result.project, userId, role).catch(() => null);
 
   return Response.json({ added: true }, { status: 201 });
 }

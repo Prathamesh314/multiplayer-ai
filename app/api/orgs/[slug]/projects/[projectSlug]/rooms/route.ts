@@ -1,14 +1,17 @@
-import { forbidden, orgDenied, projectAccess } from "../../../../../../lib/org/auth";
-import { forkRoomFromProject, gitAvailable } from "../../../../../../lib/session/repo";
-import { attachRepo, createSession, listRoomsInProject } from "../../../../../../lib/session/store";
-import { canEdit } from "../../../../../../lib/session/types";
-import { projectRoleToSessionRole } from "../../../../../../lib/project/types";
+import { orgDenied, projectAccess } from "../../../../../../lib/org/auth";
+import { ensureMemberRoom } from "../../../../../../lib/session/memberRoom";
+import { listRoomsInProject } from "../../../../../../lib/session/store";
 import type { SessionListResponse } from "../../../../../../lib/session/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Rooms in a project. Every project member can open every one of them. */
+/**
+ * Rooms in a project. Rooms are not opened by hand any more: every member has
+ * exactly one, so listing them provisions the caller's own room first. That
+ * also covers members who predate the one-room rule and org admins whose
+ * project access is implicit — the first look at the project creates theirs.
+ */
 export async function GET(
   _request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/rooms">,
@@ -18,50 +21,14 @@ export async function GET(
   const refusal = orgDenied(result);
   if (refusal || !result) return refusal!;
 
+  // Best-effort: a seeding failure (git missing, disk trouble) should not make
+  // the rest of the project's rooms unlistable.
+  await ensureMemberRoom(result.project, result.user.id, result.role, result.user.handle).catch(
+    () => null,
+  );
+
   const sessions = await listRoomsInProject(result.project.id, result.user.id);
   return Response.json({ sessions } satisfies SessionListResponse, {
     headers: { "cache-control": "no-store" },
   });
-}
-
-/** Open a new room on the project's repo. Requires edit access to the project. */
-export async function POST(
-  request: Request,
-  context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/rooms">,
-) {
-  const { slug, projectSlug } = await context.params;
-  const result = await projectAccess(slug, projectSlug);
-  const refusal = orgDenied(result);
-  if (refusal || !result) return refusal!;
-
-  if (!canEdit(projectRoleToSessionRole(result.role))) {
-    return forbidden("You need edit access to this project to open a room.");
-  }
-
-  if (!(await gitAvailable())) {
-    return Response.json(
-      { error: "git is not installed on the server, so rooms cannot be created." },
-      { status: 503 },
-    );
-  }
-
-  let body: { name?: string; visibility?: "public" | "private" } = {};
-  try {
-    body = (await request.json()) as { name?: string; visibility?: "public" | "private" };
-  } catch {
-    // An empty body is fine; the room gets a generated name and is public.
-  }
-
-  const session = await createSession(result.user.id, body.name, {
-    orgId: result.org.id,
-    projectId: result.project.id,
-    visibility: body.visibility === "private" ? "private" : "public",
-  });
-
-  // The room forks from the project's canonical main, so it opens already
-  // holding the shared source of truth — a branch of the project, not an island.
-  const repo = await forkRoomFromProject(session.id, result.project.id, session.name);
-  const updated = (await attachRepo(session.id, repo, result.project.upstreamUrl)) ?? session;
-
-  return Response.json(updated, { status: 201 });
 }

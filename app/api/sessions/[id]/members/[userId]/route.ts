@@ -19,7 +19,9 @@ export async function DELETE(
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
 
-  if (result.role !== "owner") {
+  // Same ownership check as adding: an editor still owns their own room even
+  // when the project-derived role shadows their roster row.
+  if (result.role !== "owner" && result.session.ownerId !== result.user.id) {
     return forbidden("Only the room owner can remove people from this room.");
   }
   if (userId === result.session.ownerId) {
