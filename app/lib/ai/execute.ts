@@ -243,11 +243,14 @@ export function executeAgentRun(
           broadcast({ type: "run.finished", runId, status, headSha: sha, at: Date.now() });
 
           // Fold a successful exchange into shared memory. A failed run's output
-          // is an error, not knowledge. Fire-and-forget: it has its own timeout
-          // and never throws, and the run must not wait on the memory sidecar.
+          // is an error, not knowledge, and a code-changing exchange only stages
+          // here — it becomes memory when the user approves it by publishing
+          // (see shared-memory.ts). Fire-and-forget: it has its own timeout and
+          // never throws, and the run must not wait on the memory sidecar.
           if (status === "completed") {
             void ingestExchange({
               sessionId,
+              runId,
               prompt: userPrompt,
               reply: trimmedOut,
               changed: sha !== null,

@@ -1,4 +1,6 @@
+import { ingestApprovedExchanges } from "../../../../lib/ai/shared-memory";
 import { events } from "../../../../lib/events";
+import { ensureRepoIndexed } from "../../../../lib/knowledge/repo-context";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { ensureWork, publishRoom, withRepoLock } from "../../../../lib/session/repo";
 import { setHeadSha } from "../../../../lib/session/store";
@@ -42,6 +44,14 @@ export async function POST(_request: Request, context: RouteContext<"/api/sessio
   }
 
   await setHeadSha(id, outcome.sha);
+
+  // Publishing is the approval event for the knowledge layer: the room's
+  // staged agent exchanges become shared memory now, and the freshly advanced
+  // `main` is re-indexed for repo context. Both are best-effort background
+  // work — neither delays nor fails the publish response.
+  void ingestApprovedExchanges(id);
+  void ensureRepoIndexed(result.session.projectId);
+
   await (await events()).publish(id, {
     type: "file.saved",
     path: "",

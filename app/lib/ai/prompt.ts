@@ -1,18 +1,19 @@
 /*
  * Assembling the one argv string sent to the agent CLI.
  *
- * A run weaves up to three context layers around the user's prompt, all sharing
+ * A run weaves up to four context layers around the user's prompt, all sharing
  * a single character budget (everything travels as one argv element). This is
  * pure string work with fiddly truncation rules, so it lives here — apart from
  * the run route's I/O and process management — where it can be reasoned about
  * and tested directly.
  *
  * Ordering (outermost → innermost, i.e. furthest from the prompt → nearest):
- *   <memory> · <imported-context> · <referenced-context> · [prompt]
+ *   <memory> · <repo-context> · <imported-context> · <referenced-context> · [prompt]
  * Budget priority is the reverse: the explicit, caller-chosen sources
- * (referenced, then imported) are woven first and take budget first; ambient
- * recalled memory takes only what is left and is dropped entirely if nothing
- * remains.
+ * (referenced, then imported) are woven first and take budget first; the
+ * ambient, machine-recalled layers (repo context, then memory) take only what
+ * is left and are dropped entirely if nothing remains. Repo context outranks
+ * memory because it is the more directly actionable of the two for code edits.
  */
 
 /** Hard cap on the whole argv string; also the validation limit in the route. */
@@ -30,7 +31,9 @@ export type PromptContext = {
   referencedContext?: string | null;
   /** Whole transcript imported once when a chat was forked (memory.ts). */
   importedContext?: string | null;
-  /** Semantically recalled cross-chat memory (shared-memory.ts). */
+  /** Indexed repo-context recall, when the router chose it (knowledge/). */
+  repoContext?: string | null;
+  /** Semantically recalled cross-chat memory (knowledge/). */
   sharedMemory?: string | null;
   /** Overridable only for tests; defaults to MAX_PROMPT. */
   maxPrompt?: number;
@@ -74,6 +77,19 @@ export function assembleAgentPrompt(ctx: PromptContext): string {
         ? `[…earlier context truncated for length…]\n${ctx.importedContext.slice(ctx.importedContext.length - budget)}`
         : ctx.importedContext;
     agentPrompt = `<imported-context>\n${injected}\n</imported-context>\n\n${agentPrompt}`;
+  }
+
+  // Repo context is machine-recalled like memory, but more directly actionable
+  // for code work, so it takes budget first of the two. Same drop-not-empty rule.
+  if (ctx.repoContext) {
+    const budget = remaining(agentPrompt, maxPrompt);
+    if (budget > 0) {
+      const injected =
+        ctx.repoContext.length > budget
+          ? `${ctx.repoContext.slice(0, budget)}\n[…repo context truncated for length…]`
+          : ctx.repoContext;
+      agentPrompt = `<repo-context>\n${injected}\n</repo-context>\n\n${agentPrompt}`;
+    }
   }
 
   // Ambient recalled memory sits outermost and takes only leftover budget; if

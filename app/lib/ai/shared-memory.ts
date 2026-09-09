@@ -1,120 +1,35 @@
 /*
- * The semantic shared-memory layer.
+ * The shared-memory *write* path: folding finished exchanges into a room's
+ * memory bank, and scheduling the consolidation that distills them.
  *
- * This sits alongside the two existing context mechanisms — fork (whole
- * transcript copied once, see memory.ts) and `@room/chat` FTS reference
- * (context.ts) — and adds the piece neither has: cross-chat semantic recall,
- * distilled over time by the mnemosyne sidecar. Where the FTS reference answers
- * "pull the relevant bits of *this specific* chat", this answers "surface what
- * we've learned across *all* the chats this person can see", ranked by meaning
- * rather than keyword overlap.
+ * Reading — which banks a prompt recalls from, and in what order — lives in
+ * the knowledge layer (app/lib/knowledge/), which routes each prompt over the
+ * project's knowledge graph. This module is the ingest side of that graph, and
+ * it is **approval-gated**:
  *
- * Access is never widened here. Each room's memories live in their own bank
- * (`session:<id>`), and recall only ever fans out over the caller's
- * visibleRoomIds — the same gate the FTS reference layer uses — so one team's
- * memory can't surface in another's prompt.
+ * - An exchange whose run *changed files* is not knowledge yet — it is a
+ *   proposal the human hasn't accepted. It is staged in Postgres
+ *   (`staged_memory_exchanges`, migration 019) and ingested only when the user
+ *   approves the code by publishing the room to the project's `main`
+ *   (`ingestApprovedExchanges`, called from the publish route). Work that is
+ *   never published never becomes shared memory.
+ * - A pure Q&A exchange (no commit produced) has no code to approve, so it
+ *   ingests immediately, as it always did.
+ *
+ * Access framing is unchanged: each room's memories live in their own bank
+ * (`session:<id>`), so recall — however it is orchestrated — can only fan out
+ * over banks whose rooms the caller can see.
  */
 
-import { visibleRoomIds } from "../project/store";
+import { query } from "../db/client";
 import { consolidationEnabled, scheduleConsolidation } from "../queue/consolidation";
-import { recall, recallCanonical, remember, memoryEnabled } from "./mnemosyne";
-import type { Memory } from "./mnemosyne";
+import { remember, memoryEnabled } from "./mnemosyne";
+import { roomBank } from "../knowledge/graph";
 import { stageExchange } from "./memory-staging";
 
-/** A room's memory bank. One bank per room keeps recall access-scoped per room. */
-export function roomBank(sessionId: string): string {
-  return `session:${sessionId}`;
-}
-
-/**
- * Cap on how many rooms one recall fans out over. Recall issues one backend call
- * per bank, so an unbounded project would mean an unbounded number of calls on
- * the run's critical path. The caller's own room is always included; the rest
- * are the most-recently-visible ones. When we truncate, the caller is told
- * (buildSharedMemory returns `truncatedRooms`) rather than silently narrowing.
- */
-const MAX_BANKS = 8;
-/** Memories kept per bank before the cross-bank merge. */
-const PER_BANK = 4;
-/** Memories kept after merging every bank's hits. */
-const TOTAL = 8;
-/** One memory can't run away with the prompt budget. */
-const MAX_MEMORY_CHARS = 800;
-/** Durable canonical facts injected for the current room, before episodic hits. */
-const MAX_CANONICAL = 15;
-
-const clip = (text: string): string =>
-  text.length > MAX_MEMORY_CHARS ? `${text.slice(0, MAX_MEMORY_CHARS)}…` : text;
-
-/**
- * Build the injectable <memory> block: the most relevant distilled memories
- * across the rooms this caller can see, ranked by the mnemosyne sidecar and
- * merged into one list. Returns null text when memory is off, nothing matched,
- * or the sidecar is unreachable — all of which are non-fatal for the run.
- *
- * `currentSessionId` is always searched and always counts against the bank cap
- * first, so a chat can always recall its own memory even in a huge project.
- */
-export async function buildSharedMemory(input: {
-  projectId: string;
-  userId: string;
-  currentSessionId: string;
-  prompt: string;
-}): Promise<{ text: string | null; recalled: number; truncatedRooms: number }> {
-  if (!memoryEnabled() || !input.prompt.trim()) {
-    return { text: null, recalled: 0, truncatedRooms: 0 };
-  }
-
-  const visible = await visibleRoomIds(input.projectId, input.userId);
-  // Current room first, then the rest, so the cap never drops the caller's own.
-  const ordered = [
-    input.currentSessionId,
-    ...[...visible].filter((id) => id !== input.currentSessionId),
-  ].filter((id) => visible.has(id) || id === input.currentSessionId);
-
-  const chosen = ordered.slice(0, MAX_BANKS);
-  const truncatedRooms = Math.max(0, ordered.length - chosen.length);
-
-  const perBank = await Promise.all(
-    chosen.map((sessionId) =>
-      recall({ bank: roomBank(sessionId), query: input.prompt, topK: PER_BANK }),
-    ),
-  );
-
-  // Merge, drop exact-duplicate memories (the sidecar distills across rooms, but
-  // the same fact can still surface from two banks), and keep the top by score.
-  const seen = new Set<string>();
-  const merged: Memory[] = [];
-  for (const memory of perBank.flat()) {
-    const key = memory.content.trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    merged.push(memory);
-  }
-  merged.sort((a, b) => b.score - a.score || b.importance - a.importance);
-  const top = merged.slice(0, TOTAL);
-
-  // Durable canonical facts for the current room — the architecture / convention
-  // / tech-debt slots the sidecar's sleep model-refresh maintains. They are
-  // key-retrieved, so the episodic vector recall above never returns them; we
-  // fetch them explicitly and put them first, as the load-bearing truths. Scoped
-  // to the current room only for now: its own durable facts, one extra call, no
-  // fan-out latency on the run's start path (cross-room canonical is a later step).
-  const canonicalSeen = new Set<string>();
-  const canonicalLines: string[] = [];
-  for (const fact of await recallCanonical({ bank: roomBank(input.currentSessionId) })) {
-    const key = `${fact.category}:${fact.name}`;
-    if (canonicalSeen.has(key)) continue;
-    canonicalSeen.add(key);
-    canonicalLines.push(`- (${fact.category}) ${clip(fact.body.trim())}`);
-    if (canonicalLines.length >= MAX_CANONICAL) break;
-  }
-
-  const lines = [...canonicalLines, ...top.map((memory) => `- ${clip(memory.content.trim())}`)];
-  if (lines.length === 0) return { text: null, recalled: 0, truncatedRooms };
-
-  return { text: lines.join("\n"), recalled: lines.length, truncatedRooms };
-}
+// The bank naming lives with the graph now; re-exported so the consolidation
+// worker (worker/index.ts) keeps one import site for "the bank of this room".
+export { roomBank };
 
 /**
  * Importance heuristic for an ingested turn. A turn whose run actually changed
@@ -128,27 +43,22 @@ function importanceFor(input: { changed: boolean; length: number }): number {
   return Math.min(0.9, base + lengthBonus);
 }
 
-/**
- * Ingest one completed exchange into the room's memory bank. Called after a run
- * finishes, with the user's prompt and the agent's reply already persisted.
- * Best-effort: a failed write is dropped, never surfaced to the run.
- */
-export async function ingestExchange(input: {
+/** The one canonical shape an exchange takes as memory content. */
+function exchangeContent(prompt: string, reply: string): string {
+  return [prompt && `User: ${prompt}`, reply && `Agent: ${reply}`].filter(Boolean).join("\n");
+}
+
+/** Write one exchange into its room's bank and keep consolidation armed. */
+async function rememberExchange(input: {
   sessionId: string;
   prompt: string;
   reply: string;
   changed: boolean;
-}): Promise<void> {
-  if (!memoryEnabled()) return;
-  const reply = input.reply.trim();
-  const prompt = input.prompt.trim();
-  if (!prompt && !reply) return;
+}): Promise<boolean> {
+  const content = exchangeContent(input.prompt, input.reply);
+  if (!content) return false;
 
-  const content = [prompt && `User: ${prompt}`, reply && `Agent: ${reply}`]
-    .filter(Boolean)
-    .join("\n");
-
-  await remember({
+  const stored = await remember({
     bank: roomBank(input.sessionId),
     content,
     importance: importanceFor({ changed: input.changed, length: content.length }),
@@ -162,11 +72,87 @@ export async function ingestExchange(input: {
   // sidecar's own AUTO_SLEEP (if enabled) consolidates on its own cadence.
   if (consolidationEnabled()) {
     await stageExchange(input.sessionId, {
-      prompt,
-      reply,
+      prompt: input.prompt,
+      reply: input.reply,
       changed: input.changed,
       at: Date.now(),
     });
     await scheduleConsolidation(input.sessionId);
   }
+  return stored;
+}
+
+/**
+ * Ingest one completed exchange. Called after a run finishes, with the user's
+ * prompt and the agent's reply already persisted. Best-effort: a failed write
+ * is dropped, never surfaced to the run.
+ *
+ * Code-changing exchanges are *staged*, not remembered — see the module header.
+ */
+export async function ingestExchange(input: {
+  sessionId: string;
+  runId: string;
+  prompt: string;
+  reply: string;
+  changed: boolean;
+}): Promise<void> {
+  if (!memoryEnabled()) return;
+  const reply = input.reply.trim();
+  const prompt = input.prompt.trim();
+  if (!prompt && !reply) return;
+
+  if (input.changed) {
+    try {
+      await query(
+        `INSERT INTO staged_memory_exchanges (session_id, run_id, prompt, reply)
+         VALUES ($1, $2, $3, $4)`,
+        [input.sessionId, input.runId, prompt, reply],
+      );
+    } catch {
+      // Staging is best-effort like every memory write; the exchange is lost
+      // to memory but the run and its transcript are untouched.
+    }
+    return;
+  }
+
+  await rememberExchange({ sessionId: input.sessionId, prompt, reply, changed: false });
+}
+
+/**
+ * The approval event: the user published this room to the project's `main`,
+ * accepting its work — so the room's staged exchanges become shared memory now.
+ *
+ * The drain is a single DELETE … RETURNING, so two racing publishes claim
+ * disjoint rows and nothing is remembered twice. Claim-first means a sidecar
+ * failure after the claim drops those exchanges (at-most-once) — consistent
+ * with every other memory write being best-effort.
+ */
+export async function ingestApprovedExchanges(sessionId: string): Promise<number> {
+  if (!memoryEnabled()) return 0;
+  let drained: Array<{ prompt: string; reply: string }> = [];
+  try {
+    drained = await query<{ prompt: string; reply: string }>(
+      `WITH drained AS (
+         DELETE FROM staged_memory_exchanges
+          WHERE session_id = $1
+          RETURNING prompt, reply, created_at
+       )
+       SELECT prompt, reply FROM drained ORDER BY created_at`,
+      [sessionId],
+    );
+  } catch {
+    return 0;
+  }
+
+  let ingested = 0;
+  for (const exchange of drained) {
+    const stored = await rememberExchange({
+      sessionId,
+      prompt: exchange.prompt,
+      reply: exchange.reply,
+      changed: true,
+    });
+    if (stored) ingested += 1;
+  }
+  return ingested;
 }

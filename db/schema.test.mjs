@@ -603,6 +603,90 @@ await test("deleting a run takes its messages and participants with it", async (
   assert.equal(parts.rows[0].n, 0);
 });
 
+// --- approval-gated memory staging ------------------------------------------
+
+const stagedRun = (
+  await db.query(
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+     VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+    [runSession, alice],
+  )
+).rows[0].id;
+
+/** The drain used by ingestApprovedExchanges (app/lib/ai/shared-memory.ts). */
+const drainSql = `
+  WITH drained AS (
+    DELETE FROM staged_memory_exchanges
+     WHERE session_id = $1
+     RETURNING prompt, reply, created_at
+  )
+  SELECT prompt, reply FROM drained ORDER BY created_at`;
+
+await test("publishing drains staged exchanges exactly once, oldest first", async () => {
+  await db.query(
+    `INSERT INTO staged_memory_exchanges (session_id, run_id, prompt, reply)
+     VALUES ($1, $2, 'first prompt', 'first reply'), ($1, $2, 'second prompt', 'second reply')`,
+    [runSession, stagedRun],
+  );
+  const first = await db.query(drainSql, [runSession]);
+  assert.deepEqual(
+    first.rows.map((r) => r.prompt),
+    ["first prompt", "second prompt"],
+    "drained in ingestion order",
+  );
+  const second = await db.query(drainSql, [runSession]);
+  assert.equal(second.rows.length, 0, "a second publish claims nothing — no double ingest");
+});
+
+await test("deleting a run discards its never-approved staged exchanges", async () => {
+  await db.query(
+    `INSERT INTO staged_memory_exchanges (session_id, run_id, prompt, reply)
+     VALUES ($1, $2, 'orphan', 'orphan')`,
+    [runSession, stagedRun],
+  );
+  await db.query(`DELETE FROM agent_runs WHERE id = $1`, [stagedRun]);
+  const { rows } = await db.query(`SELECT count(*)::int AS n FROM staged_memory_exchanges`);
+  assert.equal(rows[0].n, 0, "cascade cleared the backlog");
+});
+
+// --- repo-context index -----------------------------------------------------
+
+/**
+ * The indexer's claim upsert (app/lib/knowledge/repo-context.ts): it must
+ * return a row only when the stored SHA actually changes, so two servers
+ * racing to index the same HEAD distill it exactly once.
+ */
+const claimSql = `
+  INSERT INTO repo_context_index (project_id, head_sha)
+  VALUES ($1, $2)
+  ON CONFLICT (project_id) DO UPDATE
+     SET head_sha = EXCLUDED.head_sha, indexed_at = now()
+   WHERE repo_context_index.head_sha IS DISTINCT FROM EXCLUDED.head_sha
+  RETURNING head_sha`;
+
+await test("the repo-index claim wins on first insert and on a new SHA", async () => {
+  const first = await db.query(claimSql, [acmeProject, "sha-one"]);
+  assert.equal(first.rows.length, 1, "first index claims");
+  const advanced = await db.query(claimSql, [acmeProject, "sha-two"]);
+  assert.equal(advanced.rows.length, 1, "a new HEAD claims again");
+});
+
+await test("the repo-index claim is a no-op when the SHA is unchanged", async () => {
+  const repeat = await db.query(claimSql, [acmeProject, "sha-two"]);
+  assert.equal(repeat.rows.length, 0, "same HEAD → no claim, no re-index");
+});
+
+await test("one repo index per project; deleting the project clears it", async () => {
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM repo_context_index WHERE project_id = $1`,
+    [acmeProject],
+  );
+  assert.equal(rows[0].n, 1);
+  await db.query(`DELETE FROM projects WHERE id = $1`, [acmeProject]);
+  const after = await db.query(`SELECT count(*)::int AS n FROM repo_context_index`);
+  assert.equal(after.rows[0].n, 0, "cascade removed the pointer");
+});
+
 // --- time-ordered keys ------------------------------------------------------
 
 await test("primary keys are time-ordered (uuidv7 where available)", async () => {

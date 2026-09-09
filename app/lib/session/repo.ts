@@ -275,6 +275,45 @@ export async function projectHeadSha(projectId: string): Promise<string | null> 
   }
 }
 
+/**
+ * Every tracked path at the project's `main` HEAD, read straight from the bare
+ * repo — no working copy needed, so this is safe from any process. Used by the
+ * repo-context indexer (app/lib/knowledge/repo-context.ts).
+ */
+export async function listProjectFiles(projectId: string): Promise<string[]> {
+  const bare = projectBarePath(projectId);
+  if (!(await exists(bare))) return [];
+  try {
+    const out = await git(bare, ["ls-tree", "-r", "--name-only", BASE_BRANCH]);
+    return out.split("\n").map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * One file's text at the project's `main` HEAD, or null when it is missing,
+ * binary, or the path is unsafe. Truncated to `maxBytes` — the callers distill
+ * summaries, so a file's head is all they need.
+ */
+export async function readProjectFileText(
+  projectId: string,
+  relative: string,
+  maxBytes = 64 * 1024,
+): Promise<string | null> {
+  const path = safeRelativePath(relative);
+  if (!path) return null;
+  const bare = projectBarePath(projectId);
+  if (!(await exists(bare))) return null;
+  try {
+    const out = await git(bare, ["show", `${BASE_BRANCH}:${path}`]);
+    if (out.includes("\0")) return null;
+    return out.length > maxBytes ? out.slice(0, maxBytes) : out;
+  } catch {
+    return null;
+  }
+}
+
 async function conflictedFiles(work: string): Promise<string[]> {
   try {
     const out = await git(work, ["diff", "--name-only", "--diff-filter=U"]);
