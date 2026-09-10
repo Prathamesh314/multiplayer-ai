@@ -47,6 +47,19 @@ per-room repos also give the isolation boundary that makes retention
 (archive/delete per room) and public/private room access control tractable —
 git has no per-ref ACLs within one repo.
 
+**A room is not bound to its project's codebase.** Beyond its fork, a room can
+hold any number of *imported* repos (`room_repos`, migration 020;
+`app/lib/session/roomRepos.ts`): a member picks a folder in the composer's
+repo dropdown and chats about it right there. Each import mints an id from the
+session alphabet, so the whole git layer — `barePath`/`workPath`, seeding,
+locking, `ensureWork`, `commitWork` — operates on it unchanged; the id *is*
+the repo handle. Every chat (`agent_runs.repo_id`) is bound to the repo it
+works on (null = the fork), a thread never switches codebases midway, and the
+sidebar sub-groups each person's chats per repo. Imported repos are
+standalone: no project remote, so publish/sync never touch them, and — having
+no publish step to approve their work — their exchanges skip the
+approval-gated memory staging and ingest directly.
+
 ## Known boundary: run execution is server-local
 
 Repos, working copies, and spawned agent CLI processes all live on the machine

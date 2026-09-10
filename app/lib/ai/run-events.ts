@@ -38,6 +38,12 @@ export type AiRunEvent =
 export type AgentRunJob = {
   sessionId: string;
   runId: string;
+  /**
+   * The room repo the run works on, or null for the room's own project fork.
+   * The executor derives every repo path from this (falling back to the
+   * session id), so an imported repo reuses the whole git layer unchanged.
+   */
+  repoId: string | null;
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;
   agentId: string;
