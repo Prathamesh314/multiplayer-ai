@@ -41,9 +41,20 @@ import {
   ProjectMembersDialog,
   RoomSettingsDialog,
 } from "./dialogs";
+import { OrgSettingsDialog } from "./OrgSettingsDialog";
 import { initials } from "./parts";
 import { agentReady, ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { fetchAgents } from "../../lib/ai/client";
+
+// Minimal settings gear icon
+function SettingsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
 
 type Dialog =
   | { kind: "createOrg" }
@@ -51,6 +62,7 @@ type Dialog =
   | { kind: "connectAi" }
   | { kind: "invite"; org: Org }
   | { kind: "orgAdmin"; org: Org }
+  | { kind: "orgSettings"; org: Org }
   | { kind: "createProject"; org: Org }
   | { kind: "projectMembers"; org: Org; project: Project }
   | { kind: "roomSettings"; org: Org; project: Project; room: Session }
@@ -59,8 +71,6 @@ type Dialog =
 export function OrgWorkspace() {
   const router = useRouter();
   const [me, setMe] = useState<CurrentUser | null>(null);
-  // The caller's own connect code, surfaced in the Join dialog so a teammate's
-  // admin can add them without any invitation round-trip.
   const [connectCode, setConnectCode] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<Org[] | null>(null);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
@@ -85,9 +95,6 @@ export function OrgWorkspace() {
         setConnectCode(who.connectCode);
         setInvitations(await listPendingInvitations());
 
-        // First-run gate: before anyone can chat, at least one AI provider
-        // must be connected (a cloud CLI signed in, or a local model). Shown
-        // once automatically; afterwards it lives in the profile menu.
         const { agents } = await fetchAgents();
         if (
           !cancelled &&
@@ -142,6 +149,7 @@ export function OrgWorkspace() {
           onAcceptInvite={onAcceptInvite}
           onInvite={() => setDialog({ kind: "invite", org: activeOrg })}
           onOpenAdmin={() => setDialog({ kind: "orgAdmin", org: activeOrg })}
+          onOpenSettings={() => setDialog({ kind: "orgSettings", org: activeOrg })}
           onNewProject={() => setDialog({ kind: "createProject", org: activeOrg })}
           onManageMembers={(project) =>
             setDialog({ kind: "projectMembers", org: activeOrg, project })
@@ -196,6 +204,16 @@ export function OrgWorkspace() {
           }
         />
       )}
+      {dialog?.kind === "orgSettings" && (
+        <OrgSettingsDialog
+          org={dialog.org}
+          onClose={() => setDialog(null)}
+          onUpdated={async () => {
+            setDialog(null);
+            await reloadOrgs();
+          }}
+        />
+      )}
       {dialog?.kind === "createProject" && (
         <CreateProjectDialog
           org={dialog.org}
@@ -225,7 +243,7 @@ export function OrgWorkspace() {
 }
 
 // ---------------------------------------------------------------------------
-// Far-left rail: one icon per org, Discord style
+// Far-left rail
 // ---------------------------------------------------------------------------
 
 function OrgRail({
@@ -250,7 +268,8 @@ function OrgRail({
   const [menuOpen, setMenuOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  // Close the profile menu on an outside click or Escape.
+  console.log("org: ", orgs);
+  
   useEffect(() => {
     if (!menuOpen) return;
     function onPointerDown(event: PointerEvent) {
@@ -286,16 +305,20 @@ function OrgRail({
               type="button"
               onClick={() => onSelect(org.slug)}
               title={org.name}
-              className={`relative flex h-11 w-11 items-center justify-center rounded-2xl text-[14px] font-semibold uppercase transition ${
+              className={`relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-[14px] font-semibold uppercase transition ${
                 active
                   ? "rounded-xl bg-vs-accent text-vs-accent-fg"
                   : "bg-vs-panel text-vs-fg hover:rounded-xl hover:bg-vs-hover"
               }`}
             >
               {active && (
-                <span className="absolute -left-3 h-6 w-1 rounded-r bg-vs-accent" />
+                <span className="absolute -left-3 h-6 w-1 rounded-r bg-vs-accent z-10" />
               )}
-              {initials(org.name)}
+              {org.image ? (
+                <img src={org.image} alt={org.name} className="h-full w-full object-cover" />
+              ) : (
+                initials(org.name)
+              )}
             </button>
           );
         })}
@@ -386,7 +409,7 @@ function OrgRail({
 }
 
 // ---------------------------------------------------------------------------
-// Org content column: projects → rooms
+// Org content column
 // ---------------------------------------------------------------------------
 
 function OrgPanel({
@@ -395,6 +418,7 @@ function OrgPanel({
   onAcceptInvite,
   onInvite,
   onOpenAdmin,
+  onOpenSettings,
   onNewProject,
   onManageMembers,
   onRoomSettings,
@@ -405,6 +429,7 @@ function OrgPanel({
   onAcceptInvite: (id: string) => void;
   onInvite: () => void;
   onOpenAdmin: () => void;
+  onOpenSettings: () => void;
   onNewProject: () => void;
   onManageMembers: (project: Project) => void;
   onRoomSettings: (project: Project, room: Session) => void;
@@ -413,9 +438,6 @@ function OrgPanel({
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
 
-  // Reset to the loading state the instant the org changes — during render, not
-  // in the effect, so switching orgs never flashes the previous org's projects
-  // (and without a synchronous setState inside the effect body).
   if (loadedSlug !== org.slug) {
     setLoadedSlug(org.slug);
     setProjects(null);
@@ -435,9 +457,22 @@ function OrgPanel({
     <div className="flex min-w-0 flex-1">
       <aside className="flex w-80 shrink-0 flex-col border-r border-vs-border bg-vs-panel">
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
-          <span className="min-w-0 truncate text-[14px] font-semibold">{org.name}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            {org.image && (
+              <img src={org.image} alt={org.name} className="h-5 w-5 rounded object-cover" />
+            )}
+            <span className="min-w-0 truncate text-[14px] font-semibold">{org.name}</span>
+          </div>
           {canManageOrg(org.myRole) && (
             <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                title="Organisation settings"
+                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              >
+                <SettingsIcon className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={onOpenAdmin}
@@ -529,6 +564,13 @@ function OrgPanel({
 
       <main className="grid min-w-0 flex-1 place-items-center p-8">
         <div className="max-w-md text-center">
+          {org.image && (
+            <img
+              src={org.image}
+              alt={org.name}
+              className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-vs-border object-cover shadow-md"
+            />
+          )}
           <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
           <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
             Everyone on a project has a room of their own — open yours to run AI sessions on the
@@ -648,7 +690,6 @@ function EmptyState({
   onJoin,
 }: {
   loading: boolean;
-  /** Pending invitations for this user, so "Join" can announce them. */
   inviteCount: number;
   onCreate: () => void;
   onJoin: () => void;
@@ -683,10 +724,6 @@ function EmptyState({
   );
 }
 
-/**
- * The org's pooled AI-run usage — the visible side of resource pooling. Refreshes
- * on a light interval so "N running now" stays roughly live.
- */
 function UsageBadge({ orgSlug }: { orgSlug: string }) {
   const [usage, setUsage] = useState<OrgUsage | null>(null);
 

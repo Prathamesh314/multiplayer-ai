@@ -11,6 +11,7 @@ export type Org = {
   id: string;
   slug: string;
   name: string;
+  image: string;
   /** The requesting account's role, for gating the manage UI. */
   myRole: OrgRole;
   createdAt: number;

@@ -25,6 +25,7 @@ type OrgRow = {
   id: string;
   slug: string;
   name: string;
+  image: string;
   created_at: Date;
   my_role: OrgRole;
 };
@@ -34,6 +35,7 @@ const toOrg = (row: OrgRow): Org => ({
   slug: row.slug,
   name: row.name,
   myRole: row.my_role,
+  image: row.image,
   createdAt: row.created_at.getTime(),
 });
 
@@ -73,9 +75,9 @@ export async function createOrg(
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
       const org = await transaction(async (tx) => {
-        const inserted = await tx.query<{ id: string; slug: string; name: string; created_at: Date }>(
+        const inserted = await tx.query<{ id: string; slug: string; name: string; image: string; created_at: Date }>(
           `INSERT INTO orgs (slug, name, created_by) VALUES ($1, $2, $3)
-           RETURNING id, slug, name, created_at`,
+           RETURNING id, image, slug, name, created_at`,
           [slug, cleanName, userId],
         );
         const row = inserted.rows[0];
@@ -102,7 +104,7 @@ export async function createOrg(
 /** Orgs this user is an active member of, for the sidebar rail. */
 export async function listOrgsForUser(userId: string): Promise<Org[]> {
   const rows = await query<OrgRow>(
-    `SELECT o.id, o.slug, o.name, o.created_at, m.role AS my_role
+    `SELECT o.id, o.slug, o.name, o.image, o.created_at, m.role AS my_role
        FROM orgs o
        JOIN org_members m ON m.org_id = o.id
       WHERE m.user_id = $1 AND m.status = 'active' AND o.deleted_at IS NULL
@@ -408,4 +410,32 @@ export async function acceptInvitationByToken(
     const slug = await tx.query<{ slug: string }>(`SELECT slug FROM orgs WHERE id = $1`, [org_id]);
     return { ok: true as const, orgSlug: slug.rows[0].slug };
   });
+}
+
+
+export async function updateOrgDetails(
+  orgId: string,
+  updates: { name?: string; image?: string | null },
+): Promise<{ id: string; name: string; slug: string; image: string | null }> {
+  const result = await query<{
+    id: string;
+    name: string;
+    slug: string;
+    image: string | null;
+  }>(
+    `UPDATE orgs
+        SET name = COALESCE($2, name),
+            image = CASE WHEN $3::boolean THEN $4 ELSE image END,
+            updated_at = now()
+      WHERE id = $1
+    RETURNING id, name, slug, image`,
+    [
+      orgId,
+      updates.name ?? null,
+      updates.image !== undefined, // true when caller intends to update/clear image
+      updates.image ?? null,
+    ],
+  );
+
+  return result[0];
 }

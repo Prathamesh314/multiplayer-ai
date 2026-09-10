@@ -130,3 +130,16 @@ export async function acceptInvitationToken(token: string): Promise<string> {
   if (!response.ok) throw new Error(await readError(response, "That invitation link is not valid."));
   return ((await response.json()) as { orgSlug: string }).orgSlug;
 }
+
+export async function updateOrgSettings(
+  slug: string,
+  data: { name: string; image?: string | null }
+): Promise<Org> {
+  const res = await fetch(`/api/orgs/${slug}/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update organization settings");
+  return res.json();
+}

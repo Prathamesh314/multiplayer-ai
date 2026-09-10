@@ -5,6 +5,7 @@ CREATE TABLE orgs (
   id         uuid PRIMARY KEY DEFAULT new_id(),
   slug       citext NOT NULL UNIQUE,
   name       text NOT NULL,
+  image      text,
   created_by uuid NOT NULL REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
