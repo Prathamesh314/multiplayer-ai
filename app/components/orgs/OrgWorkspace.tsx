@@ -31,19 +31,24 @@ import {
   UserPlusIcon,
   UsersIcon,
 } from "../icons";
-import { PrimaryButton } from "../ui/Modal";
+import { GhostButton, PrimaryButton } from "../ui/Modal";
 import {
   CreateOrgDialog,
   CreateProjectDialog,
   InviteDialog,
+  JoinOrgDialog,
   OrgAdminDialog,
   ProjectMembersDialog,
   RoomSettingsDialog,
 } from "./dialogs";
 import { initials } from "./parts";
+import { agentReady, ConnectAiDialog } from "../ai/ConnectAiDialog";
+import { fetchAgents } from "../../lib/ai/client";
 
 type Dialog =
   | { kind: "createOrg" }
+  | { kind: "joinOrg" }
+  | { kind: "connectAi" }
   | { kind: "invite"; org: Org }
   | { kind: "orgAdmin"; org: Org }
   | { kind: "createProject"; org: Org }
@@ -54,6 +59,9 @@ type Dialog =
 export function OrgWorkspace() {
   const router = useRouter();
   const [me, setMe] = useState<CurrentUser | null>(null);
+  // The caller's own connect code, surfaced in the Join dialog so a teammate's
+  // admin can add them without any invitation round-trip.
+  const [connectCode, setConnectCode] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<Org[] | null>(null);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
@@ -72,8 +80,24 @@ export function OrgWorkspace() {
       try {
         await reloadOrgs();
         if (cancelled) return;
-        setMe((await fetchMe()).user);
+        const who = await fetchMe();
+        setMe(who.user);
+        setConnectCode(who.connectCode);
         setInvitations(await listPendingInvitations());
+
+        // First-run gate: before anyone can chat, at least one AI provider
+        // must be connected (a cloud CLI signed in, or a local model). Shown
+        // once automatically; afterwards it lives in the profile menu.
+        const { agents } = await fetchAgents();
+        if (
+          !cancelled &&
+          agents.length > 0 &&
+          !agents.some(agentReady) &&
+          !localStorage.getItem("ma-ai-connect-seen")
+        ) {
+          localStorage.setItem("ma-ai-connect-seen", "1");
+          setDialog((current) => current ?? { kind: "connectAi" });
+        }
       } catch (cause) {
         if (cancelled) return;
         if (cause instanceof NotSignedIn) router.replace("/login");
@@ -102,6 +126,8 @@ export function OrgWorkspace() {
         activeSlug={activeSlug}
         onSelect={setActiveSlug}
         onCreate={() => setDialog({ kind: "createOrg" })}
+        onJoin={() => setDialog({ kind: "joinOrg" })}
+        onOpenProviders={() => setDialog({ kind: "connectAi" })}
         onSignOut={async () => {
           await logout();
           router.replace("/login");
@@ -126,7 +152,12 @@ export function OrgWorkspace() {
           onOpenRoom={(id) => router.push(`/s/${id}`)}
         />
       ) : (
-        <EmptyState loading={orgs === null} onCreate={() => setDialog({ kind: "createOrg" })} />
+        <EmptyState
+          loading={orgs === null}
+          inviteCount={invitations.length}
+          onCreate={() => setDialog({ kind: "createOrg" })}
+          onJoin={() => setDialog({ kind: "joinOrg" })}
+        />
       )}
 
       {dialog?.kind === "createOrg" && (
@@ -136,6 +167,19 @@ export function OrgWorkspace() {
             setDialog(null);
             await reloadOrgs();
             setActiveSlug(org.slug);
+          }}
+        />
+      )}
+      {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} />}
+      {dialog?.kind === "joinOrg" && (
+        <JoinOrgDialog
+          connectCode={connectCode}
+          onClose={() => setDialog(null)}
+          onJoined={async (slug) => {
+            setDialog(null);
+            await reloadOrgs();
+            setActiveSlug(slug);
+            setInvitations(await listPendingInvitations());
           }}
         />
       )}
@@ -190,6 +234,8 @@ function OrgRail({
   activeSlug,
   onSelect,
   onCreate,
+  onJoin,
+  onOpenProviders,
   onSignOut,
 }: {
   orgs: Org[] | null;
@@ -197,6 +243,8 @@ function OrgRail({
   activeSlug: string | null;
   onSelect: (slug: string) => void;
   onCreate: () => void;
+  onJoin: () => void;
+  onOpenProviders: () => void;
   onSignOut: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -260,6 +308,14 @@ function OrgRail({
         >
           <PlusIcon className="h-5 w-5" />
         </button>
+        <button
+          type="button"
+          onClick={onJoin}
+          title="Join an organisation"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-vs-panel text-vs-muted transition hover:rounded-xl hover:bg-vs-hover hover:text-vs-accent"
+        >
+          <UserPlusIcon className="h-5 w-5" />
+        </button>
       </div>
 
       <div ref={profileRef} className="relative">
@@ -298,6 +354,18 @@ function OrgRail({
                 <p className="truncate text-[13px] text-vs-fg">{me.email}</p>
               </div>
             )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenProviders();
+              }}
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+            >
+              <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
+              AI providers
+            </button>
             <button
               type="button"
               role="menuitem"
@@ -573,24 +641,41 @@ function ProjectRow({
   );
 }
 
-function EmptyState({ loading, onCreate }: { loading: boolean; onCreate: () => void }) {
+function EmptyState({
+  loading,
+  inviteCount,
+  onCreate,
+  onJoin,
+}: {
+  loading: boolean;
+  /** Pending invitations for this user, so "Join" can announce them. */
+  inviteCount: number;
+  onCreate: () => void;
+  onJoin: () => void;
+}) {
   return (
     <div className="grid flex-1 place-items-center p-8">
       {loading ? (
         <SpinnerIcon className="h-5 w-5 text-vs-muted" />
       ) : (
         <div className="max-w-sm text-center">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Create your first organisation
-          </h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Get started</h1>
           <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
             An organisation is like a Discord server — invite your team, connect repos as projects,
-            and open rooms to work in.
+            and open rooms to work in. Create your own, or join one you were invited to.
           </p>
-          <div className="mt-4 flex justify-center">
+          <div className="mt-4 flex justify-center gap-2">
             <PrimaryButton onClick={onCreate}>
               <PlusIcon className="h-4 w-4" /> New organisation
             </PrimaryButton>
+            <GhostButton onClick={onJoin}>
+              <UserPlusIcon className="h-4 w-4" /> Join an organisation
+              {inviteCount > 0 && (
+                <span className="rounded-full bg-vs-accent px-1.5 text-[11px] font-semibold text-vs-accent-fg">
+                  {inviteCount}
+                </span>
+              )}
+            </GhostButton>
           </div>
         </div>
       )}

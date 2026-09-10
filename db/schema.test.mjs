@@ -706,6 +706,60 @@ await test("deleting a room takes its imported repos with it", async () => {
   assert.equal(rows[0].n, 0, "cascade removed the imports");
 });
 
+// --- runner devices ----------------------------------------------------------
+
+const aliceDevice = (
+  await db.query(
+    `INSERT INTO runner_devices (user_id, name, token_hash) VALUES ($1, 'MacBook', $2) RETURNING id`,
+    [alice, Buffer.from("device-token-hash-1")],
+  )
+).rows[0].id;
+
+await test("two devices cannot share a token hash", async () => {
+  await rejects(
+    db,
+    `INSERT INTO runner_devices (user_id, name, token_hash) VALUES ($1, 'Clone', $2)`,
+    [alice, Buffer.from("device-token-hash-1")],
+    /duplicate key|unique/i,
+  );
+});
+
+await test("a pairing code cannot expire before it was minted", async () => {
+  await rejects(
+    db,
+    `INSERT INTO runner_pairing_codes (code_hash, user_id, expires_at)
+     VALUES ($1, $2, now() - interval '1 minute')`,
+    [Buffer.from("code-hash-1"), alice],
+    /runner_pairing_codes_expiry/,
+  );
+});
+
+await test("a run's execution mode is constrained to server or local", async () => {
+  await rejects(
+    db,
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha, execution)
+     VALUES ($1, $2, 'claude', 'abc123', 'cloud9')`,
+    [runSession, alice],
+    /check/i,
+  );
+});
+
+await test("revoking a device row leaves its past runs readable", async () => {
+  const localRun = (
+    await db.query(
+      `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha, execution, assigned_device_id)
+       VALUES ($1, $2, 'claude', 'abc123', 'local', $3) RETURNING id`,
+      [runSession, alice, aliceDevice],
+    )
+  ).rows[0].id;
+  await db.query(`DELETE FROM runner_devices WHERE id = $1`, [aliceDevice]);
+  const { rows } = await db.query(`SELECT assigned_device_id, execution FROM agent_runs WHERE id = $1`, [
+    localRun,
+  ]);
+  assert.equal(rows[0].assigned_device_id, null, "device link nulled, not cascaded");
+  assert.equal(rows[0].execution, "local", "the run's history is intact");
+});
+
 // --- repo-context index -----------------------------------------------------
 
 /**

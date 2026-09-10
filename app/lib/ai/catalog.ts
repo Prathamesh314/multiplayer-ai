@@ -10,7 +10,7 @@ import { createClaudeStreamParser, type StreamParser } from "./stream";
  * Each is driven in its one-shot, non-interactive mode. Their interactive TUIs
  * need a pty, which is a much larger piece of work than this.
  */
-export type AgentId = "claude" | "gemini" | "codex";
+export type AgentId = "claude" | "gemini" | "codex" | "ollama";
 
 /** A selectable value (model or reasoning effort). Empty id → the CLI default. */
 export type AgentChoice = { id: string; label: string };
@@ -212,6 +212,40 @@ export const AGENTS: AgentSpec[] = [
       docs: "https://github.com/google-gemini/gemini-cli",
     },
     blurb: "Large-context agent for reading and changing a codebase.",
+  },
+  {
+    /*
+     * The local-AI option: models served by Ollama on this machine. No account,
+     * no login, nothing leaves the computer — the row is "connected" the moment
+     * the tool answers `--version`. `ollama run <model> <prompt>` is a true
+     * one-shot: it streams the answer to stdout and exits, so the run pipeline
+     * drives it exactly like the cloud CLIs. Unlike them it is a chat model,
+     * not a coding agent — it discusses the code but cannot edit files, so its
+     * runs simply never produce a commit (the `changed:false` path).
+     *
+     * Ollama requires an explicit model (it has no "default"), so the first
+     * catalog entry doubles as the fallback in promptArgs.
+     */
+    id: "ollama",
+    name: "Ollama",
+    vendor: "Local",
+    bin: "ollama",
+    versionArgs: ["--version"],
+    promptArgs: (prompt, opts) => ["run", opts?.model || "qwen2.5-coder:7b", prompt],
+    models: [
+      { id: "qwen2.5-coder:7b", label: "Qwen 2.5 Coder 7B" },
+      { id: "llama3.1:8b", label: "Llama 3.1 8B" },
+      { id: "deepseek-r1:8b", label: "DeepSeek R1 8B" },
+      { id: "gpt-oss:20b", label: "GPT-OSS 20B" },
+    ],
+    efforts: [],
+    install: {
+      command: "brew install ollama",
+      alternative: "Download the installer from ollama.com",
+      docs: "https://ollama.com",
+    },
+    blurb:
+      "Your own models on your own machine — private and offline. Discusses the code; can't edit files.",
   },
 ];
 

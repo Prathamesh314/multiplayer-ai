@@ -9,16 +9,19 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CurrentUser } from "../../lib/auth/types";
 import {
+  acceptInvitation,
+  acceptInvitationToken,
   createOrg,
   fetchOrgMembers,
   fetchOrgUsage,
   inviteByConnectCode,
   inviteByEmail,
+  listPendingInvitations,
   type OrgUsage,
   removeOrgMember,
   updateOrgMember,
 } from "../../lib/org/client";
-import type { Org, OrgMember, OrgRole } from "../../lib/org/types";
+import type { Org, OrgMember, OrgRole, PendingInvitation } from "../../lib/org/types";
 import {
   addProjectMember,
   changeProjectMemberRole,
@@ -45,6 +48,150 @@ import type { Session, SessionMember } from "../../lib/session/types";
 import { CloseIcon, PlusIcon, ShieldIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { Avatar, CopyLink } from "./parts";
+
+/**
+ * The other half of getting started: joining an organisation someone else
+ * runs. Three ways in, all of which already exist server-side — accept a
+ * pending connect-code invitation, paste an email invite link, or share your
+ * connect code so an admin can add you. This dialog just makes them reachable
+ * from the start screen instead of only from inside an org you're already in.
+ */
+export function JoinOrgDialog({
+  connectCode,
+  onClose,
+  onJoined,
+}: {
+  /** The caller's own code (from /api/auth/me), shown so they can share it. */
+  connectCode: string | null;
+  onClose: () => void;
+  /** Called with the joined org's slug so the workspace can open it. */
+  onJoined: (orgSlug: string) => void;
+}) {
+  const [invitations, setInvitations] = useState<PendingInvitation[] | null>(null);
+  const [link, setLink] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listPendingInvitations().then((list) => {
+      if (!cancelled) setInvitations(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function accept(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      onJoined(await acceptInvitation(id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not accept that invitation.");
+      setBusyId(null);
+    }
+  }
+
+  async function joinByLink() {
+    // Accepts the pasted form people actually have: the full /invite/<token>
+    // URL from the email, or the bare token.
+    const token = link.trim().split("/invite/").pop()?.replace(/[/?#].*$/, "").trim() ?? "";
+    if (!token) return;
+    setBusyId("link");
+    setError(null);
+    try {
+      onJoined(await acceptInvitationToken(token));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "That invitation link is not valid.");
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Modal
+      title="Join an organisation"
+      description="Accept an invitation, or share your connect code with an admin."
+      onClose={onClose}
+      footer={<GhostButton onClick={onClose}>Close</GhostButton>}
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+
+      <div>
+        <p className="text-[11px] uppercase tracking-wider text-vs-muted">Invitations for you</p>
+        {invitations === null ? (
+          <div className="flex justify-center py-4">
+            <SpinnerIcon className="h-4 w-4 text-vs-muted" />
+          </div>
+        ) : invitations.length === 0 ? (
+          <p className="mt-1.5 text-[13px] text-vs-muted">
+            Nothing yet — ask a teammate to invite you.
+          </p>
+        ) : (
+          <ul className="mt-1.5 space-y-1.5">
+            {invitations.map((invite) => (
+              <li
+                key={invite.id}
+                className="flex items-center gap-2.5 rounded-lg border border-vs-border px-3 py-2"
+              >
+                <Avatar name={invite.orgName} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium text-vs-fg">{invite.orgName}</p>
+                  <p className="truncate text-[12px] text-vs-muted">
+                    {invite.invitedByName} invited you as {invite.role}
+                  </p>
+                </div>
+                <PrimaryButton onClick={() => accept(invite.id)} disabled={busyId !== null}>
+                  {busyId === invite.id ? <SpinnerIcon className="h-4 w-4" /> : null} Accept
+                </PrimaryButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Field label="Invite link" hint="Paste the link from an invitation email.">
+        <div className="flex gap-2">
+          <input
+            value={link}
+            onChange={(event) => setLink(event.target.value)}
+            placeholder="https://…/invite/…"
+            className={inputClass}
+          />
+          <div className="mt-1.5">
+            <GhostButton onClick={joinByLink} disabled={busyId !== null || !link.trim()}>
+              {busyId === "link" ? <SpinnerIcon className="h-4 w-4" /> : null} Join
+            </GhostButton>
+          </div>
+        </div>
+      </Field>
+
+      {connectCode && (
+        <Field
+          label="Your connect code"
+          hint="Share it with an org admin — they can add you directly."
+        >
+          <div className="mt-1.5 flex items-center gap-2">
+            <code className="flex-1 rounded-md border border-vs-border bg-vs-editor px-3 py-2 font-mono text-[13px] text-vs-fg">
+              {connectCode}
+            </code>
+            <GhostButton
+              onClick={() => {
+                void navigator.clipboard.writeText(connectCode).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </GhostButton>
+          </div>
+        </Field>
+      )}
+    </Modal>
+  );
+}
 
 export function CreateOrgDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (org: Org) => void }) {
   const [name, setName] = useState("");
