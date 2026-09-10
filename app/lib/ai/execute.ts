@@ -5,7 +5,7 @@ import { workPath } from "../session/paths";
 import { agentById } from "./catalog";
 import { agentEnv } from "./env";
 import { finalizeAgentRun } from "./finalize";
-import { finishRun } from "./runs";
+import { appendMessage, finishRun } from "./runs";
 import type { AgentRunJob, AiRunEvent } from "./run-events";
 
 /**
@@ -91,6 +91,20 @@ export function executeAgentRun(
       const send = (event: AiRunEvent) => {
         if (closed) return;
         onEvent(event);
+        // Warnings ("stopped after N minutes", "output limit reached") must
+        // outlive the live stream: everyone reading the chat later should see
+        // why the run ended the way it did. Fire-and-forget, like all
+        // best-effort persistence here.
+        if (event.t === "notice") {
+          void appendMessage({ runId, role: "system", body: event.message })
+            .then((turn) =>
+              broadcast({
+                type: "run.turn", runId, seq: turn.seq, role: "system",
+                authorName: null, body: turn.body, at: Date.now(),
+              }),
+            )
+            .catch(() => {});
+        }
       };
 
       let child: ReturnType<typeof spawn>;
@@ -204,7 +218,7 @@ export function executeAgentRun(
         // Everything from here — head advance, transcript, diff stats, room
         // events, memory ingest — is the shared close-out the runner protocol's
         // /complete route also runs, so cloud and local runs end identically.
-        await finalizeAgentRun({
+        const finalized = await finalizeAgentRun({
           sessionId,
           runId,
           repoId: job.repoId,
@@ -217,11 +231,19 @@ export function executeAgentRun(
           output: outBuf,
           errOutput: errBuf,
           onError: (message) => send({ t: "err", d: message }),
-        }).catch(() => {
-          // The run record is best-effort; the live stream already succeeded.
-        });
+        }).catch(() => null);
+        // The run record is best-effort; the live stream already succeeded.
 
-        send({ t: "exit", code, ms: Date.now() - startedAt, headSha: sha, committed: sha !== null });
+        send({
+          t: "exit",
+          code,
+          ms: Date.now() - startedAt,
+          headSha: sha,
+          committed: sha !== null,
+          // The driver's stream builds its "changed files" line from this;
+          // watchers and later readers get the durable system turn instead.
+          changes: finalized && finalized.changes.length > 0 ? finalized.changes : undefined,
+        });
         closed = true;
         resolve();
       });

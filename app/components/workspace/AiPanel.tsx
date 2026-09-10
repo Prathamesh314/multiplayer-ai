@@ -90,6 +90,14 @@ type Turn = {
   activities?: string[];
   /** Epoch ms this agent turn began, for the live elapsed timer. */
   startedAt?: number;
+  /**
+   * The run's stderr, live. Nothing the AI emits is hidden from the chat: the
+   * log is always openable under the turn, and surfaces expanded when the run
+   * fails — that's where the reason lives.
+   */
+  errText?: string;
+  /** Set from the exit event when the run ended non-zero. */
+  failed?: boolean;
 };
 
 export function AiPanel({
@@ -185,18 +193,11 @@ export function AiPanel({
       const { messages } = await fetchRun(sessionId, target.id);
       setTurns(
         messages
-          // On a run that finished cleanly, a stored system turn is the CLI's own
-          // stderr transcript (Codex echoes its whole session there), which just
-          // duplicates the agent reply. Drop it, but keep deliberate notices such
-          // as the imported-context marker. A failed run keeps stderr — it's the error.
-          .filter(
-            (message) =>
-              !(
-                message.role === "system" &&
-                target.status === "completed" &&
-                !message.body.startsWith("Imported context")
-              ),
-          )
+          // Every stored turn shows — replies, notices, warnings, errors, the
+          // changed-files record. The old blanket drop of system turns on
+          // completed runs guarded against a stderr transcript being stored on
+          // success; the server no longer stores stderr except on failure,
+          // where it is exactly the thing to show.
           .map((message) => {
             // "tool" turns are the agent's own machinery; show them as agent output.
             const role: Turn["role"] =
@@ -478,11 +479,25 @@ export function AiPanel({
                 .catch(() => {});
             }
           } else if (event.t === "out") {
-            // Only stdout — the reply. stderr (event.t === "err") is dropped.
             setTurns((prev) => {
               const next = [...prev];
               const index = next.findIndex((turn) => turn.id === agentTurnId);
               if (index >= 0) next[index] = { ...next[index], text: next[index].text + event.d };
+              return next;
+            });
+          } else if (event.t === "err") {
+            // stderr is part of what the AI said, so it is never dropped — it
+            // collects under the turn as an openable log, and pops open by
+            // itself when the run fails.
+            setTurns((prev) => {
+              const next = [...prev];
+              const index = next.findIndex((turn) => turn.id === agentTurnId);
+              if (index >= 0) {
+                next[index] = {
+                  ...next[index],
+                  errText: ((next[index].errText ?? "") + event.d).slice(-16000),
+                };
+              }
               return next;
             });
           } else if (event.t === "think") {
@@ -516,14 +531,30 @@ export function AiPanel({
           } else if (event.t === "notice") {
             setTurns((prev) => [...prev, { id: uid(), role: "system", text: event.message }]);
           } else if (event.t === "exit") {
-            const summary =
-              `Finished in ${(event.ms / 1000).toFixed(1)}s` +
-              (event.committed ? ` · committed ${event.headSha?.slice(0, 8)}` : " · no file changes");
+            const failed = event.code !== 0;
+            const summary = failed
+              ? `Run failed after ${(event.ms / 1000).toFixed(1)}s${event.code !== null ? ` (exit ${event.code})` : ""}`
+              : `Finished in ${(event.ms / 1000).toFixed(1)}s` +
+                (event.committed ? ` · committed ${event.headSha?.slice(0, 8)}` : " · no file changes");
             setTurns((prev) => {
               const next = prev.map((turn) =>
-                turn.id === agentTurnId ? { ...turn, streaming: false } : turn,
+                turn.id === agentTurnId ? { ...turn, streaming: false, failed } : turn,
               );
               next.push({ id: uid(), role: "system", text: summary });
+              // Which files changed, line counts included — same wording as
+              // the durable system turn everyone else sees via the room feed.
+              if (event.changes && event.changes.length > 0) {
+                const added = event.changes.reduce((sum, file) => sum + file.added, 0);
+                const removed = event.changes.reduce((sum, file) => sum + file.removed, 0);
+                next.push({
+                  id: uid(),
+                  role: "system",
+                  text: [
+                    `Changed ${event.changes.length} file${event.changes.length === 1 ? "" : "s"} (+${added} −${removed})`,
+                    ...event.changes.map((file) => `· ${file.path}  +${file.added} −${file.removed}`),
+                  ].join("\n"),
+                });
+              }
               return next;
             });
           }
@@ -1170,6 +1201,21 @@ function TurnBubble({ turn }: { turn: Turn }) {
           hasTrace ? null : <p className="text-[15px] leading-6 text-vs-muted">Thinking…</p>
         ) : (
           <Markdown text={turn.text} />
+        )}
+        {!!turn.errText?.trim() && (
+          <details
+            open={turn.failed}
+            className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60"
+          >
+            <summary
+              className={`cursor-pointer px-3 py-1.5 text-[12px] ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
+            >
+              {turn.failed ? "Run failed — agent log" : "Agent log"}
+            </summary>
+            <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-4 text-vs-muted">
+              {turn.errText.trim()}
+            </pre>
+          </details>
         )}
       </div>
     </article>

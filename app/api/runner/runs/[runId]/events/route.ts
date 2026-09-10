@@ -1,5 +1,6 @@
 import { events } from "../../../../../lib/events";
 import { publishRunEvent } from "../../../../../lib/ai/run-stream";
+import { appendMessage } from "../../../../../lib/ai/runs";
 import type { AiRunEvent } from "../../../../../lib/ai/run-events";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
 import { claimedJob, renewLease } from "../../../../../lib/runner/jobs";
@@ -57,6 +58,18 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
           chunk: event.d,
           at: Date.now(),
         })
+        .catch(() => {});
+    }
+    // Warnings survive the stream: persisted exactly like the server
+    // executor's own notices, so later readers see why a run went how it did.
+    if (event.t === "notice") {
+      await appendMessage({ runId, role: "system", body: event.message })
+        .then((turn) =>
+          bus.publish(job.sessionId, {
+            type: "run.turn", runId, seq: turn.seq, role: "system",
+            authorName: null, body: turn.body, at: Date.now(),
+          }),
+        )
         .catch(() => {});
     }
   }
