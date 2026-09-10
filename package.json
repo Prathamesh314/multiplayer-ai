@@ -1,37 +1,29 @@
 {
-  "name": "ts-server-boilerplate",
-  "version": "1.0.0",
+  "name": "multiplayer-ai",
+  "version": "0.1.0",
   "private": true,
-  "description": "A starting boilerplate for a TypeScript Node.js server application",
-  "main": "dist/index.js",
-  "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
   "dependencies": {
-    "@types/pg": "^8.23.1",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
     "kysely": "^0.29.5",
-    "next": "^16.3.4",
+    "next": "16.3.4",
     "pg": "^8.23.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@types/node": "^20.19.43",
-    "tsx": "^4.23.13",
-    "typescript": "^5.9.3"
-  },
-  "keywords": [
-    "typescript",
-    "server",
-    "nodejs"
-  ],
-  "author": "",
-  "license": "ISC"
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
 }

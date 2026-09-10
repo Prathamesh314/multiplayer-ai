@@ -2,16 +2,20 @@ import {
   Kysely,
   PostgresDialect,
   sql,
-  type Transaction,
+  Transaction,
 } from 'kysely';
-import { Pool, type PoolConfig } from 'pg';
-import type { DB } from '@/src/types/db-types';
-import { Env } from '@/src/lib/env';
-import { log } from '@/src/utils/logger';
+import { Pool, PoolConfig } from 'pg';
+import { DB } from '@/types/db-types';
+import { Env } from '@/lib/env_config';
+import { log } from '@/utils/logger';
 
-// Optimized pool configuration using DATABASE_URL
+// Optimized pool configuration for high concurrency
 const dbConfig: PoolConfig = {
-  connectionString: Env.DATABASE_URL || process.env.DATABASE_URL,
+  user: Env.POSTGRES_USER,
+  host: Env.POSTGRES_HOST,
+  database: Env.POSTGRES_DB_NAME,
+  password: Env.POSTGRES_PASSWORD,
+  port: Env.POSTGRES_PORT,
   // Connection pool settings - CRITICAL for performance
   max: 50,                      // Maximum connections in pool (increase for load)
   min: 5,                       // Minimum connections to keep warm
@@ -20,9 +24,10 @@ const dbConfig: PoolConfig = {
   allowExitOnIdle: false,       // Keep pool alive
 };
 
-log.info('Postgres DB Config initialized', { maxPool: dbConfig.max });
+log.info('Postgres DB Config initialized', { host: dbConfig.host, database: dbConfig.database, maxPool: dbConfig.max })
 
-export const tables = {};
+export const tables = {
+};
 
 export class Postgres {
   private static instance: Postgres;
@@ -69,9 +74,14 @@ export class Postgres {
 
       log.info('Database connected successfully', {
         timestamp: (result.rows[0] as any).now,
+        host: Env.POSTGRES_HOST,
+        database: Env.POSTGRES_DB_NAME
       });
     } catch (error) {
-      log.error('Failed to connect to database', error);
+      log.error('Failed to connect to database', error, {
+        host: Env.POSTGRES_HOST,
+        database: Env.POSTGRES_DB_NAME
+      });
       throw error;
     }
   }
@@ -84,10 +94,9 @@ export class Postgres {
 
     log.info('Initializing database schema...');
     try {
-      // Add your schema initialization queries here
+      // app_user
       await sql`
-        
-      `.execute(this.db);
+        `.execute(this.db);
 
       this.isInitialized = true;
       log.info('Database schema initialized successfully');
@@ -97,9 +106,7 @@ export class Postgres {
     }
   }
 
-  public async transaction<T>(
-    callback: (trx: Transaction<DB>) => Promise<T>
-  ): Promise<T> {
+  public async transaction<T>(callback: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(callback);
   }
 

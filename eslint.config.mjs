@@ -12,17 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Compiled output for the presence tests.
-    ".test-build/**",
-    // Session repos and working copies — a runtime cache, not our source.
-    ".multiplayer-ai/**",
   ]),
-  {
-    // Node test harnesses, run directly rather than bundled. CommonJS is what
-    // lets them require the compiled TypeScript without an extension dance.
-    files: ["tests/**/*.cjs"],
-    rules: { "@typescript-eslint/no-require-imports": "off" },
-  },
 ]);
 
 export default eslintConfig;

@@ -1,4 +1,12 @@
-import type EnvConfig from './env_config';
+export interface EnvConfig {
+  POSTGRES_USER: string;
+  POSTGRES_HOST: string;
+  POSTGRES_DB_NAME: string;
+  POSTGRES_PASSWORD: string;
+  POSTGRES_PORT: number;
+  DATABASE_URL: string;
+};
+
 
 export const Env: EnvConfig = {
   POSTGRES_USER: process.env.POSTGRES_USER ?? 'postgres',
