@@ -69,7 +69,7 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     sha = body.resultSha;
   }
 
-  await finalizeAgentRun({
+  const finalized = await finalizeAgentRun({
     sessionId: job.sessionId,
     runId,
     repoId: job.repoId,
@@ -92,6 +92,7 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     ms,
     headSha: sha,
     committed: sha !== null,
+    changes: finalized.changes.length > 0 ? finalized.changes : undefined,
   }).catch(() => {});
 
   await completeJob(runId, device.id);

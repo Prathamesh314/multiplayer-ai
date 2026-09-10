@@ -173,6 +173,32 @@ async function run() {
     );
   });
 
+  await test("per-file diff stats come straight from the bare repo", async () => {
+    const p = "proj5";
+    await repo.ensureProjectRepo(p);
+    await repo.forkRoomFromProject("p5-ra", p, "root");
+    const base = await repo.headSha("p5-ra");
+
+    // Two files changed: one brand new, one replacing seeded content.
+    put("p5-ra", "fresh.txt", "one\ntwo\nthree\n");
+    put("p5-ra", "root/hello.txt", "rewritten\n");
+    const [name, email] = author("Eve");
+    const sha = await repo.commitWork("p5-ra", "Eve: two files", name, email);
+    assert.ok(sha);
+
+    const files = await repo.diffFilesBare("p5-ra", base, sha);
+    const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
+    assert.equal(files.length, 2, `expected two changed files, got ${JSON.stringify(files)}`);
+    assert.equal(byPath["fresh.txt"].added, 3);
+    assert.equal(byPath["fresh.txt"].removed, 0);
+    assert.ok(byPath["root/hello.txt"], "the rewritten file is named");
+
+    // The totals variant agrees with the per-file sum — one source of truth.
+    const totals = await repo.diffStatBare("p5-ra", base, sha);
+    assert.equal(totals.added, files.reduce((s, f) => s + f.added, 0));
+    assert.equal(totals.removed, files.reduce((s, f) => s + f.removed, 0));
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }

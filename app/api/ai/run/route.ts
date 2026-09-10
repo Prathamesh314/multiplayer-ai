@@ -565,9 +565,19 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
           if (closed) return;
           const reclaimed = await reclaimForServer(job.runId).catch(() => null);
           if (!reclaimed) return; // a runner has it; its events keep flowing
-          controller.enqueue(
-            frame({ t: "notice", message: "No runner picked this up — running in the cloud instead." }),
-          );
+          const fallbackNotice = "No runner picked this up — running in the cloud instead.";
+          controller.enqueue(frame({ t: "notice", message: fallbackNotice }));
+          // Durable, like every other run notice: the chat should always tell
+          // where a run actually executed and why.
+          void appendMessage({ runId: job.runId, role: "system", body: fallbackNotice })
+            .then(async (notice) => {
+              const bus = await events();
+              await bus.publish(job.sessionId, {
+                type: "run.turn", runId: job.runId, seq: notice.seq, role: "system",
+                authorName: null, body: notice.body, at: Date.now(),
+              });
+            })
+            .catch(() => {});
           if (queueEnabled()) {
             await enqueueRun(reclaimed).catch((cause) => fail(`Could not queue the run: ${String(cause)}`));
           } else {

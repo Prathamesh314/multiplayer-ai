@@ -515,6 +515,33 @@ export async function diffStatBare(
   return countNumstat(stdout);
 }
 
+/** One file's line delta between two commits. */
+export type FileChange = { path: string; added: number; removed: number };
+
+/**
+ * Per-file line deltas straight from the bare repo — what the chat shows as
+ * "which files changed, and by how much" when a run finishes. Same source of
+ * truth as diffStatBare, just not collapsed to totals. Binary files report
+ * no line counts and come back as 0/0 rather than being dropped, so a run
+ * that only touched an image still names the file.
+ */
+export async function diffFilesBare(id: string, base: string, head: string): Promise<FileChange[]> {
+  const stdout = await git(barePath(id), ["diff", "--numstat", base, head]).catch(() => "");
+  const files: FileChange[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [a, r, ...rest] = line.split("\t");
+    const path = rest.join("\t");
+    if (!path) continue;
+    files.push({
+      path,
+      added: a && a !== "-" ? Number(a) || 0 : 0,
+      removed: r && r !== "-" ? Number(r) || 0 : 0,
+    });
+  }
+  return files;
+}
+
 function countNumstat(stdout: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;

@@ -23,7 +23,15 @@ export type AiRunEvent =
   | { t: "act"; d: string }
   | { t: "err"; d: string }
   | { t: "notice"; message: string }
-  | { t: "exit"; code: number | null; ms: number; headSha: string | null; committed: boolean };
+  | {
+      t: "exit";
+      code: number | null;
+      ms: number;
+      headSha: string | null;
+      committed: boolean;
+      /** Per-file line deltas of the run's commit, when it produced one. */
+      changes?: { path: string; added: number; removed: number }[];
+    };
 
 /**
  * Everything a worker needs to run one turn, and nothing it doesn't.

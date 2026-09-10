@@ -15,7 +15,8 @@
  */
 
 import { events } from "../events";
-import { diffStatBare } from "../session/repo";
+import { diffFilesBare, diffStatBare } from "../session/repo";
+import type { FileChange } from "../session/repo";
 import { setRoomRepoHeadSha } from "../session/roomRepos";
 import { setHeadSha } from "../session/store";
 import { appendMessage, finishRun } from "./runs";
@@ -41,8 +42,33 @@ export type FinalizeInput = {
   onError?: (message: string) => void;
 };
 
-/** The run's terminal status, as the transcript and the room will record it. */
-export async function finalizeAgentRun(input: FinalizeInput): Promise<"completed" | "failed"> {
+/** How many files the durable changes turn names before summarizing the rest. */
+const MAX_CHANGED_FILES_LISTED = 20;
+
+export type FinalizeResult = {
+  status: "completed" | "failed";
+  /** Per-file line deltas of the run's commit; empty when nothing changed. */
+  changes: FileChange[];
+};
+
+/** The one line-per-file format both the transcript and the live exit use. */
+export function formatChanges(changes: FileChange[]): string {
+  const added = changes.reduce((sum, file) => sum + file.added, 0);
+  const removed = changes.reduce((sum, file) => sum + file.removed, 0);
+  const lines = changes
+    .slice(0, MAX_CHANGED_FILES_LISTED)
+    .map((file) => `· ${file.path}  +${file.added} −${file.removed}`);
+  if (changes.length > MAX_CHANGED_FILES_LISTED) {
+    lines.push(`…and ${changes.length - MAX_CHANGED_FILES_LISTED} more files`);
+  }
+  return [
+    `Changed ${changes.length} file${changes.length === 1 ? "" : "s"} (+${added} −${removed})`,
+    ...lines,
+  ].join("\n");
+}
+
+/** The run's terminal record, as the transcript and the room will keep it. */
+export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeResult> {
   const { sessionId, runId, repoId, sha } = input;
   const repoRef = repoId ?? sessionId;
   const status = input.code === 0 ? "completed" : "failed";
@@ -73,6 +99,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<"completed
 
   // Persist the output as one consolidated turn, then close the run out.
   // Errors here must not break the live stream, so they are swallowed.
+  let changes: FileChange[] = [];
   try {
     const trimmedOut = input.output.trim();
     if (trimmedOut) {
@@ -87,11 +114,33 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<"completed
     // On success it is just the CLI's own transcript, which would render
     // as a second copy of the reply when the run is reloaded.
     if (trimmedErr && status === "failed") {
-      await appendMessage({ runId, role: "system", body: trimmedErr });
+      const errTurn = await appendMessage({ runId, role: "system", body: trimmedErr });
+      broadcast({
+        type: "run.turn", runId, seq: errTurn.seq, role: "system",
+        authorName: null, body: trimmedErr, at: Date.now(),
+      });
     }
-    // Against the bare repo, which is the one place the commit is guaranteed
-    // to be whichever machine executed — a runner pushed it there, and the
-    // server executor's commitWork did too. No lock: bare reads don't race.
+
+    // What the run touched, file by file — against the bare repo, the one
+    // place the commit is guaranteed to be whichever machine executed (a
+    // runner pushed it there; the server executor's commitWork did too).
+    // Recorded as a durable system turn so every viewer of the chat — live
+    // watchers, later readers — sees which files changed and by how much.
+    if (sha) {
+      changes = await diffFilesBare(repoRef, input.baseSha, sha).catch(() => []);
+      if (changes.length > 0) {
+        const changesTurn = await appendMessage({
+          runId,
+          role: "system",
+          body: formatChanges(changes),
+        });
+        broadcast({
+          type: "run.turn", runId, seq: changesTurn.seq, role: "system",
+          authorName: null, body: changesTurn.body, at: Date.now(),
+        });
+      }
+    }
+
     const stat = sha
       ? await diffStatBare(repoRef, input.baseSha, sha).catch(() => null)
       : { added: 0, removed: 0 };
@@ -126,5 +175,5 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<"completed
     // The run record is best-effort; the live stream already succeeded.
   }
 
-  return status;
+  return { status, changes };
 }
