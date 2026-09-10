@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { events } from "../events";
 import { commitWork, diffStat, ensureWork, withRepoLock } from "../session/repo";
 import { workPath } from "../session/paths";
+import { setRoomRepoHeadSha } from "../session/roomRepos";
 import { setHeadSha } from "../session/store";
 import { agentById } from "./catalog";
 import { agentEnv } from "./env";
@@ -39,6 +40,10 @@ export function executeAgentRun(
   onEvent: (event: AiRunEvent) => void,
 ): Promise<void> {
   const { sessionId, runId, baseSha, author, userPrompt } = job;
+  // The id every git operation keys on. A chat on an imported repo works in
+  // that repo's bare/work pair; the default chat works in the room's own —
+  // same helpers either way, because the id is the repo handle.
+  const repoRef = job.repoId ?? sessionId;
 
   const broadcast = (event: Parameters<Awaited<ReturnType<typeof events>>["publish"]>[1]) => {
     void events().then((bus) => bus.publish(sessionId, event)).catch(() => {});
@@ -68,7 +73,7 @@ export function executeAgentRun(
       // clone would otherwise stall the first event, so it happens here rather
       // than upstream, and a failure fails the run cleanly.
       try {
-        await withRepoLock(sessionId, () => ensureWork(sessionId, baseSha));
+        await withRepoLock(repoRef, () => ensureWork(repoRef, baseSha));
       } catch (cause) {
         await failFast(
           `Could not prepare the workspace: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -77,7 +82,7 @@ export function executeAgentRun(
         return;
       }
 
-      const cwd = workPath(sessionId);
+      const cwd = workPath(repoRef);
       const startedAt = Date.now();
       let closed = false;
       let bytes = 0;
@@ -191,11 +196,14 @@ export function executeAgentRun(
         // uncommitted" invariant and letting everyone else see the result.
         let sha: string | null = null;
         try {
-          sha = await withRepoLock(sessionId, () =>
-            commitWork(sessionId, `${bin}: agent run`, author.name, author.email),
+          sha = await withRepoLock(repoRef, () =>
+            commitWork(repoRef, `${bin}: agent run`, author.name, author.email),
           );
           if (sha) {
-            await setHeadSha(sessionId, sha);
+            // Advance whichever record owns this repo's head: the imported
+            // repo's row, or the room's session_repos as always.
+            if (job.repoId) await setRoomRepoHeadSha(job.repoId, sha);
+            else await setHeadSha(sessionId, sha);
             broadcast({
               type: "file.saved",
               path: "",
@@ -230,7 +238,7 @@ export function executeAgentRun(
             await appendMessage({ runId, role: "system", body: trimmedErr });
           }
           const stat = sha
-            ? await withRepoLock(sessionId, () => diffStat(sessionId, baseSha, sha!)).catch(() => null)
+            ? await withRepoLock(repoRef, () => diffStat(repoRef, baseSha, sha!)).catch(() => null)
             : { added: 0, removed: 0 };
           await finishRun(runId, {
             status,
@@ -254,6 +262,9 @@ export function executeAgentRun(
               prompt: userPrompt,
               reply: trimmedOut,
               changed: sha !== null,
+              // Only the project fork has a publish step to approve its work;
+              // an imported repo's exchanges ingest immediately.
+              publishGated: job.repoId === null,
             });
           }
         } catch {

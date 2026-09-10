@@ -649,6 +649,63 @@ await test("deleting a run discards its never-approved staged exchanges", async 
   assert.equal(rows[0].n, 0, "cascade cleared the backlog");
 });
 
+// --- room repos ---------------------------------------------------------------
+
+await test("a room repo takes only session-alphabet ids", async () => {
+  await rejects(
+    db,
+    `INSERT INTO room_repos (id, session_id, root_name, created_by) VALUES ('BAD-ID!!', $1, 'x', $2)`,
+    [runSession, alice],
+    /check/i,
+  );
+});
+
+await test("a room holds several repos, but names stay unique within it", async () => {
+  await db.query(
+    `INSERT INTO room_repos (id, session_id, root_name, created_by)
+     VALUES ('zzzzyyyyxxxx', $1, 'side-project', $2), ('aaaabbbbccc2', $1, 'other-app', $2)`,
+    [runSession, alice],
+  );
+  await rejects(
+    db,
+    `INSERT INTO room_repos (id, session_id, root_name, created_by)
+     VALUES ('ccccddddeee2', $1, 'side-project', $2)`,
+    [runSession, alice],
+    /unique|duplicate/i,
+  );
+});
+
+await test("a chat binds to a room repo; removing the repo keeps the chat", async () => {
+  const bound = (
+    await db.query(
+      `INSERT INTO agent_runs (session_id, repo_id, started_by, agent_id, base_sha)
+       VALUES ($1, 'zzzzyyyyxxxx', $2, 'claude', 'abc123') RETURNING id`,
+      [runSession, alice],
+    )
+  ).rows[0].id;
+  await db.query(`DELETE FROM room_repos WHERE id = 'zzzzyyyyxxxx'`);
+  const { rows } = await db.query(`SELECT repo_id FROM agent_runs WHERE id = $1`, [bound]);
+  assert.equal(rows[0].repo_id, null, "the conversation survives, unbound");
+});
+
+await test("deleting a room takes its imported repos with it", async () => {
+  await db.query(
+    `INSERT INTO sessions (id, owner_id, name, join_code)
+     VALUES ('reporoomabcd', $1, 'Repo room', 'RRRR-2345')`,
+    [alice],
+  );
+  await db.query(
+    `INSERT INTO room_repos (id, session_id, root_name, created_by)
+     VALUES ('ddddeeeeffff', 'reporoomabcd', 'doomed', $1)`,
+    [alice],
+  );
+  await db.query(`DELETE FROM sessions WHERE id = 'reporoomabcd'`);
+  const { rows } = await db.query(
+    `SELECT count(*)::int AS n FROM room_repos WHERE session_id = 'reporoomabcd'`,
+  );
+  assert.equal(rows[0].n, 0, "cascade removed the imports");
+});
+
 // --- repo-context index -----------------------------------------------------
 
 /**

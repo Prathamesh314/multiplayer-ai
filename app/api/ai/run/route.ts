@@ -19,6 +19,7 @@ import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
 import { subscribeRunEvents } from "../../../lib/ai/run-stream";
 import { enqueueRun, queueEnabled } from "../../../lib/queue";
 import { events } from "../../../lib/events";
+import { getRoomRepo } from "../../../lib/session/roomRepos";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { terminalAccess } from "../../../lib/terminal/guard";
 
@@ -54,6 +55,12 @@ export type AiRunRequest = {
    * works even without this field. Applies to new and continuing runs alike.
    */
   contextRefs?: string[];
+  /**
+   * Which of the room's repos this (new) chat works on: a room_repos id, or
+   * omitted for the room's own project fork. A continued run keeps the repo it
+   * started on — a thread never switches codebases midway.
+   */
+  repoId?: string;
 };
 
 /**
@@ -98,13 +105,30 @@ export async function POST(request: Request) {
   }
 
   const sessionId = result.session.id;
-  const headSha = result.session.repo.headSha;
 
   // A run is now durable. A follow-up prompt (join-as-editor, or the owner's
   // next turn) continues an existing run; otherwise a fresh one is opened. The
   // prompt is stored as the first turn either way, attributed to whoever sent it.
   let run = body.runId ? await getRun(body.runId) : null;
   if (run && run.sessionId !== sessionId) run = null;
+
+  // Which repo the chat works on. A continued run keeps the repo it started
+  // on; a new one takes the picker's choice — an imported room repo, or the
+  // room's own project fork by default. Validated against this room before
+  // anything is created, and an import still mid-upload takes no runs.
+  let repoId: string | null = run ? run.repoId : null;
+  if (!run && typeof body.repoId === "string" && body.repoId) repoId = body.repoId;
+  let headSha = result.session.repo.headSha;
+  if (repoId) {
+    const roomRepo = await getRoomRepo(repoId);
+    if (!roomRepo || roomRepo.sessionId !== sessionId) {
+      return Response.json({ error: "That repo isn't in this room." }, { status: 404 });
+    }
+    if (!roomRepo.seededAt || !roomRepo.headSha) {
+      return Response.json({ error: "That repo is still importing." }, { status: 409 });
+    }
+    headSha = roomRepo.headSha;
+  }
 
   // "Import context from…" only makes sense for a brand new chat. Resolved
   // (and validated against project room visibility, via listForkableRuns)
@@ -144,6 +168,7 @@ export async function POST(request: Request) {
   if (!run) {
     run = await createRun({
       sessionId,
+      repoId,
       startedBy: result.user.id,
       agentId: agent.id,
       baseSha: headSha,
@@ -321,6 +346,7 @@ export async function POST(request: Request) {
   const job: AgentRunJob = {
     sessionId,
     runId: run.id,
+    repoId,
     baseSha: headSha,
     agentId: agent.id,
     agentPrompt,

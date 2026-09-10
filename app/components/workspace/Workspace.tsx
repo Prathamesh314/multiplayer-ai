@@ -20,8 +20,11 @@ import { startHeartbeat } from "../../lib/presence/client";
 import { takeFolder } from "../../lib/session/handoff";
 import {
   createSaver,
+  fetchRoomRepos,
+  importRoomRepo,
   scanSession,
   seedSession,
+  type RoomRepo,
   type SeedProgress,
 } from "../../lib/session/remote";
 import { canEdit, type Session, type SessionRepo } from "../../lib/session/types";
@@ -138,6 +141,69 @@ export function Workspace({
   // Shared so the sidebar/header "Fork" actions and the composer picker agree.
   const [forkFromRunId, setForkFromRunId] = useState<string | null>(null);
 
+  // Additional repos imported into this room, and which one the next new chat
+  // targets (null = the room's own project fork). A room is not bound to its
+  // project's codebase: any folder can be imported and chatted about here.
+  const [roomRepos, setRoomRepos] = useState<RoomRepo[]>([]);
+  const [chatRepoId, setChatRepoId] = useState<string | null>(null);
+  const [importingRepo, setImportingRepo] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRoomRepos(session.id).then((repos) => {
+      if (!cancelled) setRoomRepos(repos);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id]);
+
+  /**
+   * Import a picked folder as a new repo in the room. Deliberately separate
+   * from the seeding `scan()` below: that one swaps the editor's tree to the
+   * scanned folder, which must not happen for an import — the editor stays on
+   * the room's own repo; the imported one exists for its chats.
+   */
+  const importRepoFromSource = useCallback(
+    async (source: PickedSource) => {
+      setImportingRepo(true);
+      setError(null);
+      try {
+        const scanned =
+          source.kind === "handle"
+            ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
+            : await scanFileList(source.files, "input", { includeIgnored: false });
+        const { repo: imported, skipped } = await importRoomRepo(session.id, scanned);
+        setRoomRepos((previous) => [...previous, imported]);
+        // The next new chat targets what was just imported — that's why it was.
+        setChatRepoId(imported.id);
+        setEnteredRun(null);
+        if (skipped.length > 0) {
+          setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+      } finally {
+        setImportingRepo(false);
+      }
+    },
+    [session.id],
+  );
+
+  async function openImportPicker() {
+    if (!window.showDirectoryPicker) {
+      importInputRef.current?.click();
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "read" });
+      await importRepoFromSource({ kind: "handle", handle, origin: "picker" });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setError(cause instanceof Error ? cause.message : "Could not open that folder.");
+    }
+  }
+
   // The signed-in user's id, resolved directly rather than inferred from the
   // roster: a public room is entered by project role, so the viewer may have no
   // session_members row to carry an `isSelf` flag. This is what marks "you".
@@ -152,11 +218,25 @@ export function Workspace({
     };
   }, []);
 
-  // Open a fresh chat with nothing carried over.
+  // Open a fresh chat with nothing carried over. The repo selection is kept —
+  // staying in the codebase you were just working in is the common case.
   const startNewRun = () => {
     setEnteredRun(null);
     setForkFromRunId(null);
   };
+
+  // What the composer's repo picker and the sidebar's grouping both read:
+  // the room's own repo first (the project fork, or the seeded folder for a
+  // personal room), then every finished import.
+  const repoOptions = useMemo(() => {
+    const defaultLabel = session.projectId ? "Project" : (repo?.rootName ?? session.name);
+    return [
+      { id: "", label: defaultLabel },
+      ...roomRepos
+        .filter((imported) => imported.seededAt)
+        .map((imported) => ({ id: imported.id, label: imported.rootName })),
+    ];
+  }, [session.projectId, session.name, repo, roomRepos]);
   // Fork a chat: a fresh chat that imports the source run's context on send.
   const startFork = (run: AgentRun) => {
     setEnteredRun(null);
@@ -653,6 +733,22 @@ export function Workspace({
         onChange={onInputChange}
         className="hidden"
       />
+      {/* Fallback folder picker for importing an additional repo into the room. */}
+      <input
+        ref={importInputRef}
+        type="file"
+        multiple
+        webkitdirectory=""
+        directory=""
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          event.target.value = "";
+          if (files.length > 0) {
+            void importRepoFromSource({ kind: "files", files, origin: "input" });
+          }
+        }}
+        className="hidden"
+      />
 
       <div className="flex min-h-0 flex-1">
         {!repo ? (
@@ -685,6 +781,7 @@ export function Workspace({
                 myUserId={myUserId}
                 incoming={incoming}
                 runs={runs}
+                repos={repoOptions}
                 enteredRunId={enteredRun?.id ?? null}
                 onEnter={setEnteredRun}
                 onNewRun={startNewRun}
@@ -708,6 +805,11 @@ export function Workspace({
                 onForkFromChange={setForkFromRunId}
                 onForkEntered={startFork}
                 onNewRun={startNewRun}
+                repoOptions={repoOptions}
+                repoId={chatRepoId}
+                onRepoChange={setChatRepoId}
+                onImportRepo={() => void openImportPicker()}
+                importingRepo={importingRepo}
               />
             </div>
 

@@ -17,6 +17,8 @@ export type RunParticipantRole = "owner" | "editor" | "viewer";
 export type AgentRun = {
   id: string;
   sessionId: string;
+  /** The room repo this chat works on; null = the room's own project fork. */
+  repoId: string | null;
   startedBy: string;
   startedByName: string;
   agentId: string;
@@ -54,6 +56,7 @@ export type StartRunRequest = { agentId: AgentId; prompt: string; title?: string
 type RunRow = {
   id: string;
   session_id: string;
+  repo_id: string | null;
   started_by: string;
   started_by_name: string;
   agent_id: string;
@@ -74,6 +77,7 @@ type RunRow = {
 const toRun = (row: RunRow): AgentRun => ({
   id: row.id,
   sessionId: row.session_id,
+  repoId: row.repo_id,
   startedBy: row.started_by,
   startedByName: row.started_by_name,
   agentId: row.agent_id,
@@ -92,7 +96,7 @@ const toRun = (row: RunRow): AgentRun => ({
 });
 
 const RUN_COLUMNS = `
-  r.id, r.session_id, r.started_by, u.display_name AS started_by_name, r.agent_id,
+  r.id, r.session_id, r.repo_id, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
   r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at
 `;
@@ -107,13 +111,22 @@ export async function createRun(input: {
   agentId: AgentId;
   baseSha: string;
   title?: string | null;
+  /** Which room repo the chat targets; null/omitted = the project fork. */
+  repoId?: string | null;
 }): Promise<AgentRun> {
   return transaction(async (tx) => {
     const inserted = await tx.query<{ id: string }>(
-      `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha, title, status, started_at)
-       VALUES ($1, $2, $3, $4, $5, 'running', now())
+      `INSERT INTO agent_runs (session_id, repo_id, started_by, agent_id, base_sha, title, status, started_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'running', now())
        RETURNING id`,
-      [input.sessionId, input.startedBy, input.agentId, input.baseSha, input.title ?? null],
+      [
+        input.sessionId,
+        input.repoId ?? null,
+        input.startedBy,
+        input.agentId,
+        input.baseSha,
+        input.title ?? null,
+      ],
     );
     const id = inserted.rows[0].id;
     await tx.query(

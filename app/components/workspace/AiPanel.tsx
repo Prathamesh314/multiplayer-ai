@@ -59,6 +59,18 @@ type AiPanelProps = {
   onForkEntered: (run: AgentRun) => void;
   /** Clear the entered run to compose a fresh one. */
   onNewRun: () => void;
+  /**
+   * The repos a new chat can work on: the room's own (id "") first, then each
+   * imported one. Controlled by the parent, which also owns the import flow —
+   * a continued chat keeps the repo it started on, so the picker only shows
+   * while composing fresh.
+   */
+  repoOptions: { id: string; label: string }[];
+  repoId: string | null;
+  onRepoChange: (repoId: string | null) => void;
+  /** Open the folder picker to import a new repo into the room. */
+  onImportRepo: () => void;
+  importingRepo: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
   onClose?: () => void;
 };
@@ -92,6 +104,11 @@ export function AiPanel({
   onForkFromChange,
   onForkEntered,
   onNewRun,
+  repoOptions,
+  repoId,
+  onRepoChange,
+  onImportRepo,
+  importingRepo,
   onClose,
 }: AiPanelProps) {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
@@ -421,8 +438,22 @@ export function AiPanel({
     // and is never shown in the chat.
     const agentTurnId = uid();
 
+    // The repo pick only shapes a fresh chat; a continuation stays on the repo
+    // its run started with (the server enforces the same).
+    const repoForRun = continuing ? undefined : repoId || undefined;
+
     run.current = runAgent(
-      { sessionId, agentId, prompt, runId: continuing, model, effort, forkFromRunId: forkFromRun, contextRefs },
+      {
+        sessionId,
+        agentId,
+        prompt,
+        runId: continuing,
+        model,
+        effort,
+        forkFromRunId: forkFromRun,
+        contextRefs,
+        repoId: repoForRun,
+      },
       {
         onEvent: (event) => {
           if (event.t === "start") {
@@ -543,9 +574,34 @@ export function AiPanel({
     })),
   ];
 
+  // The repo the next fresh chat works on. "__import__" is the picker's action
+  // row: choosing it opens the folder picker instead of selecting anything.
+  const repoChoices: AgentChoice[] = [
+    ...repoOptions,
+    { id: "__import__", label: importingRepo ? "Importing…" : "Import new project…" },
+  ];
+
   const composerFooter =
     ready && activeSpec ? (
       <div className="flex min-w-0 items-center gap-0.5">
+        {!entered && (
+          <>
+            <SelectChip
+              icon={<GitBranchIcon className="h-3.5 w-3.5 text-vs-muted" />}
+              value={repoId ?? ""}
+              onChange={(id) => {
+                if (id === "__import__") {
+                  if (!importingRepo) onImportRepo();
+                  return;
+                }
+                onRepoChange(id || null);
+              }}
+              options={repoChoices}
+              title="Repository this chat works on"
+            />
+            <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
+          </>
+        )}
         <SelectChip
           icon={<SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />}
           value={connected ?? ""}
@@ -599,9 +655,22 @@ export function AiPanel({
       </div>
     ) : undefined;
 
+  // Name the codebase an opened chat works on — legible at a glance when a
+  // room mixes chats across several repos (only imported ones are called out).
+  const enteredRepoLabel = entered?.repoId
+    ? (repoOptions.find((option) => option.id === entered.repoId)?.label ?? "removed repo")
+    : null;
+
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader title={entered ? entered.title ?? "Agent run" : "New chat"} onClose={onClose}>
+      <PanelHeader
+        title={
+          entered
+            ? `${entered.title ?? "Agent run"}${enteredRepoLabel ? ` · ${enteredRepoLabel}` : ""}`
+            : "New chat"
+        }
+        onClose={onClose}
+      >
         {entered &&
           (enteredIsMine ? (
             <button

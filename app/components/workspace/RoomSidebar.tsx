@@ -18,6 +18,12 @@ type RoomSidebarProps = {
   myUserId: string | null;
   incoming: ChatMessage[];
   runs: AgentRun[];
+  /**
+   * The room's repos, picker-ordered: the room's own (id "") first, then each
+   * import. With more than one, a person's chats are sub-grouped per repo so
+   * different codebases and their conversations stay visually separate.
+   */
+  repos: { id: string; label: string }[];
   enteredRunId: string | null;
   onEnter: (run: AgentRun) => void;
   onNewRun: () => void;
@@ -38,6 +44,7 @@ export function RoomSidebar({
   myUserId,
   incoming,
   runs,
+  repos,
   enteredRunId,
   onEnter,
   onNewRun,
@@ -76,6 +83,7 @@ export function RoomSidebar({
             members={members}
             myUserId={myUserId}
             runs={runs}
+            repos={repos}
             enteredRunId={enteredRunId}
             onEnter={onEnter}
             onNewRun={onNewRun}
@@ -129,6 +137,7 @@ function AgentRunsBrowser({
   members,
   myUserId,
   runs,
+  repos,
   enteredRunId,
   onEnter,
   onNewRun,
@@ -140,6 +149,7 @@ function AgentRunsBrowser({
   members: SessionMember[];
   myUserId: string | null;
   runs: AgentRun[];
+  repos: { id: string; label: string }[];
   enteredRunId: string | null;
   onEnter: (run: AgentRun) => void;
   onNewRun: () => void;
@@ -152,6 +162,28 @@ function AgentRunsBrowser({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Sub-group a person's chats per repo when the room works on more than one
+  // codebase; with a single repo the list stays flat, exactly as before. A
+  // chat whose repo row was removed still labels its group rather than being
+  // lumped into the room's own repo.
+  const multiRepo = repos.length > 1 || runs.some((run) => run.repoId !== null);
+  const repoLabelOf = (repoId: string | null): string =>
+    repos.find((repo) => repo.id === (repoId ?? ""))?.label ?? "Removed repo";
+  const groupByRepo = (list: AgentRun[]): { key: string; label: string; runs: AgentRun[] }[] => {
+    const grouped = new Map<string, AgentRun[]>();
+    for (const run of list) {
+      const key = run.repoId ?? "";
+      const bucket = grouped.get(key) ?? [];
+      bucket.push(run);
+      grouped.set(key, bucket);
+    }
+    // Picker order first — the room's own repo leads — then any stragglers.
+    const keys = [...repos.map((repo) => repo.id), ...grouped.keys()].filter(
+      (key, index, all) => grouped.has(key) && all.indexOf(key) === index,
+    );
+    return keys.map((key) => ({ key, label: repoLabelOf(key || null), runs: grouped.get(key)! }));
+  };
 
   // Copy an `@room/<run-id>` path to reference this chat from another room's
   // composer — the id is what the server resolves, the name is just readable.
@@ -428,8 +460,18 @@ function AgentRunsBrowser({
 
                 {bucket.active.length === 0 ? (
                   <p className="px-2 py-2 text-[12px] text-vs-muted">No chats yet.</p>
-                ) : (
+                ) : !multiRepo ? (
                   bucket.active.map((run) => renderRun(run, person.isSelf))
+                ) : (
+                  groupByRepo(bucket.active).map((group) => (
+                    <div key={group.key || "room"}>
+                      <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+                        <GitBranchIcon className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{group.label}</span>
+                      </div>
+                      {group.runs.map((run) => renderRun(run, person.isSelf))}
+                    </div>
+                  ))
                 )}
 
                 {/* You manage your own archive; others' archived chats stay hidden. */}

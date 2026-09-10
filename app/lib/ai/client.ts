@@ -133,6 +133,8 @@ export function runAgent(
     forkFromRunId?: string;
     /** Run ids of chats referenced with `@room/<run-id>` in the prompt. */
     contextRefs?: string[];
+    /** Which room repo a new chat works on; omitted = the room's project fork. */
+    repoId?: string;
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

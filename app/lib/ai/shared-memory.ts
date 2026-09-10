@@ -95,13 +95,20 @@ export async function ingestExchange(input: {
   prompt: string;
   reply: string;
   changed: boolean;
+  /**
+   * Whether this exchange's changes travel through the publish-approval flow.
+   * True for the room's project fork (publish is the approval event). False
+   * for an imported repo: it has no publish step, so gating would mean
+   * "never" — its owner drives it directly, and the exchange ingests now.
+   */
+  publishGated: boolean;
 }): Promise<void> {
   if (!memoryEnabled()) return;
   const reply = input.reply.trim();
   const prompt = input.prompt.trim();
   if (!prompt && !reply) return;
 
-  if (input.changed) {
+  if (input.changed && input.publishGated) {
     try {
       await query(
         `INSERT INTO staged_memory_exchanges (session_id, run_id, prompt, reply)
@@ -115,7 +122,7 @@ export async function ingestExchange(input: {
     return;
   }
 
-  await rememberExchange({ sessionId: input.sessionId, prompt, reply, changed: false });
+  await rememberExchange({ sessionId: input.sessionId, prompt, reply, changed: input.changed });
 }
 
 /**

@@ -11,6 +11,9 @@ import type {
   SessionRepo,
   TreeResponse,
 } from "./types";
+import type { RoomRepo } from "./roomRepos";
+
+export type { RoomRepo };
 
 /**
  * The client half of "git is the source of truth". Once a folder has been
@@ -34,14 +37,16 @@ async function readError(response: Response, fallback: string): Promise<string> 
 export type SeedProgress = { uploaded: number; total: number };
 
 /**
- * Uploads a scanned folder into a session, in batches, and commits it. Returns
- * the git state that becomes the session's entire persistent record.
+ * The shared batch uploader behind both seed targets: the session's own repo
+ * and a room repo being imported. Streams the scan in bounded batches to
+ * `url`, fires the final (committing) call even when empty, and returns the
+ * final response body for the caller to read its own shape out of.
  */
-export async function seedSession(
-  sessionId: string,
+async function uploadScan<T extends { skipped: string[] }>(
+  url: string,
   result: ScanResult,
   onProgress?: (progress: SeedProgress) => void,
-): Promise<{ repo: SessionRepo; skipped: string[] }> {
+): Promise<{ final: T; skipped: string[] }> {
   const paths = filePathsOf(result.root);
   const skipped: string[] = [];
   let uploaded = 0;
@@ -49,8 +54,8 @@ export async function seedSession(
   let batch: { path: string; data: string }[] = [];
   let batchBytes = 0;
 
-  const flush = async (done: boolean) => {
-    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/seed`, {
+  const flush = async (done: boolean): Promise<T> => {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -62,14 +67,14 @@ export async function seedSession(
     });
     if (!response.ok) throw new Error(await readError(response, "Could not upload the folder."));
 
-    const body = (await response.json()) as SeedResponse;
+    const body = (await response.json()) as T;
     skipped.push(...body.skipped);
     uploaded += batch.length;
     onProgress?.({ uploaded, total: paths.length });
 
     batch = [];
     batchBytes = 0;
-    return body.repo;
+    return body;
   };
 
   for (const path of paths) {
@@ -86,10 +91,66 @@ export async function seedSession(
   }
 
   // The final call always runs, even with an empty batch: it is what commits.
-  const repo = await flush(true);
-  if (!repo) throw new Error("The folder uploaded but the session repository was not created.");
+  const final = await flush(true);
+  return { final, skipped };
+}
 
-  return { repo, skipped };
+/**
+ * Uploads a scanned folder into a session, in batches, and commits it. Returns
+ * the git state that becomes the session's entire persistent record.
+ */
+export async function seedSession(
+  sessionId: string,
+  result: ScanResult,
+  onProgress?: (progress: SeedProgress) => void,
+): Promise<{ repo: SessionRepo; skipped: string[] }> {
+  const { final, skipped } = await uploadScan<SeedResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/seed`,
+    result,
+    onProgress,
+  );
+  if (!final.repo) throw new Error("The folder uploaded but the session repository was not created.");
+  return { repo: final.repo, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Room repos (additional codebases imported into a room)
+// ---------------------------------------------------------------------------
+
+export async function fetchRoomRepos(sessionId: string): Promise<RoomRepo[]> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos`, {
+    cache: "no-store",
+  });
+  if (!response.ok) return [];
+  const body = (await response.json()) as { repos: RoomRepo[] };
+  return body.repos ?? [];
+}
+
+/**
+ * Imports a scanned folder as a new repo in the room: allocates the record,
+ * then streams the files into it and commits. Returns the finished repo.
+ */
+export async function importRoomRepo(
+  sessionId: string,
+  result: ScanResult,
+  onProgress?: (progress: SeedProgress) => void,
+): Promise<{ repo: RoomRepo; skipped: string[] }> {
+  const name = result.rootName?.trim() || "imported";
+  const created = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!created.ok) throw new Error(await readError(created, "Could not create the repo."));
+  const { repo } = (await created.json()) as { repo: RoomRepo };
+
+  const { final, skipped } = await uploadScan<{ skipped: string[]; headSha: string | null }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/repos/${encodeURIComponent(repo.id)}/seed`,
+    result,
+    onProgress,
+  );
+  if (!final.headSha) throw new Error("The folder uploaded but the repo was not committed.");
+  return { repo: { ...repo, headSha: final.headSha, seededAt: Date.now() }, skipped };
 }
 
 function filePathsOf(root: TreeNode): string[] {

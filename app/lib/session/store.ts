@@ -496,6 +496,16 @@ function constantTimeEquals(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
+/**
+ * Mint an id from the session alphabet. Room repos (roomRepos.ts) share this
+ * because a repo's disk location is derived from its id exactly like a
+ * session's — `repos/<id>.git`, `work/<id>` — and the paths layer validates
+ * against this alphabet (`isSessionId`).
+ */
+export function mintPathId(): string {
+  return randomString(12, ID_ALPHABET);
+}
+
 function randomString(length: number, alphabet: string): string {
   const bytes = randomBytes(length);
   let out = "";
