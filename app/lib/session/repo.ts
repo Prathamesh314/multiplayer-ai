@@ -497,7 +497,25 @@ export async function diffStat(
 ): Promise<{ added: number; removed: number }> {
   const work = workPath(id);
   const stdout = await git(work, ["diff", "--numstat", base, head]).catch(() => "");
+  return countNumstat(stdout);
+}
 
+/**
+ * Line counts straight from the bare repo — no working copy needed. This is
+ * the one a *finished* run must use: a locally-executed run pushed its commit
+ * to the bare repo, but the server's working copy (if any) hasn't fetched it,
+ * so diffing there would silently report nothing changed.
+ */
+export async function diffStatBare(
+  id: string,
+  base: string,
+  head: string,
+): Promise<{ added: number; removed: number }> {
+  const stdout = await git(barePath(id), ["diff", "--numstat", base, head]).catch(() => "");
+  return countNumstat(stdout);
+}
+
+function countNumstat(stdout: string): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
   for (const line of stdout.split("\n")) {

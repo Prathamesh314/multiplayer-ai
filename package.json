@@ -10,6 +10,7 @@
     "build": "next build",
     "worker": "tsx worker/index.ts",
     "worker:dev": "tsx watch worker/index.ts",
+    "runner": "tsx runner/index.ts",
     "start": "electron desktop/main.js",
     "next:start": "next start",
     "desktop:attach": "DESKTOP_SPAWN_SERVER=0 electron desktop/main.js",

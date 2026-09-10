@@ -15,7 +15,7 @@
  */
 
 import { events } from "../events";
-import { diffStat, withRepoLock } from "../session/repo";
+import { diffStatBare } from "../session/repo";
 import { setRoomRepoHeadSha } from "../session/roomRepos";
 import { setHeadSha } from "../session/store";
 import { appendMessage, finishRun } from "./runs";
@@ -89,8 +89,11 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<"completed
     if (trimmedErr && status === "failed") {
       await appendMessage({ runId, role: "system", body: trimmedErr });
     }
+    // Against the bare repo, which is the one place the commit is guaranteed
+    // to be whichever machine executed — a runner pushed it there, and the
+    // server executor's commitWork did too. No lock: bare reads don't race.
     const stat = sha
-      ? await withRepoLock(repoRef, () => diffStat(repoRef, input.baseSha, sha)).catch(() => null)
+      ? await diffStatBare(repoRef, input.baseSha, sha).catch(() => null)
       : { added: 0, removed: 0 };
     await finishRun(runId, {
       status,

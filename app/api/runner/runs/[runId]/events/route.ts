@@ -21,7 +21,7 @@ export type RunnerEventsRequest = { events: AiRunEvent[] };
  * how a healthy long run stays claimed.
  */
 const MAX_EVENTS_PER_BATCH = 500;
-const ALLOWED = new Set(["out", "think", "act", "err", "notice"]);
+const ALLOWED = new Set(["start", "out", "think", "act", "err", "notice"]);
 
 export async function POST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/events">) {
   const device = await deviceFromToken(bearerToken(request));
