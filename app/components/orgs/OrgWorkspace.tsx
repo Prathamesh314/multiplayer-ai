@@ -28,6 +28,7 @@ import {
   ShieldIcon,
   SparkleIcon,
   SpinnerIcon,
+  TerminalIcon,
   UserPlusIcon,
   UsersIcon,
 } from "../icons";
@@ -44,6 +45,7 @@ import {
 import { OrgSettingsDialog } from "./OrgSettingsDialog";
 import { initials } from "./parts";
 import { agentReady, ConnectAiDialog } from "../ai/ConnectAiDialog";
+import { DevicesDialog } from "../ai/DevicesDialog";
 import { fetchAgents } from "../../lib/ai/client";
 
 // Minimal settings gear icon
@@ -60,6 +62,7 @@ type Dialog =
   | { kind: "createOrg" }
   | { kind: "joinOrg" }
   | { kind: "connectAi" }
+  | { kind: "devices" }
   | { kind: "invite"; org: Org }
   | { kind: "orgAdmin"; org: Org }
   | { kind: "orgSettings"; org: Org }
@@ -135,6 +138,7 @@ export function OrgWorkspace() {
         onCreate={() => setDialog({ kind: "createOrg" })}
         onJoin={() => setDialog({ kind: "joinOrg" })}
         onOpenProviders={() => setDialog({ kind: "connectAi" })}
+        onOpenDevices={() => setDialog({ kind: "devices" })}
         onSignOut={async () => {
           await logout();
           router.replace("/login");
@@ -179,6 +183,7 @@ export function OrgWorkspace() {
         />
       )}
       {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} />}
+      {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === "joinOrg" && (
         <JoinOrgDialog
           connectCode={connectCode}
@@ -254,6 +259,7 @@ function OrgRail({
   onCreate,
   onJoin,
   onOpenProviders,
+  onOpenDevices,
   onSignOut,
 }: {
   orgs: Org[] | null;
@@ -263,6 +269,7 @@ function OrgRail({
   onCreate: () => void;
   onJoin: () => void;
   onOpenProviders: () => void;
+  onOpenDevices: () => void;
   onSignOut: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -388,6 +395,18 @@ function OrgRail({
             >
               <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
               AI providers
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenDevices();
+              }}
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+            >
+              <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
+              Your computers
             </button>
             <button
               type="button"

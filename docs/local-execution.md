@@ -161,11 +161,11 @@ protocol calls above.
 
 ### 3.6 Security model (this is remote → local code execution; treat it as such)
 
-- **Only your own runs execute on your machine.** A co-editor's follow-up
-  prompt into your run would otherwise execute *their* words on *your*
-  laptop: default policy routes co-driven turns to cloud fallback; a device
-  setting ("allow teammates' turns in my runs to use this machine") opts in
-  explicitly.
+- **Prompts execute only on their author's machine.** Routing is keyed by the
+  *sender* of each turn, not the run's starter: your prompt goes to your own
+  device (or the cloud), even when you co-drive a teammate's run. Nobody
+  else's words ever execute on your hardware — the consent question answers
+  itself structurally, with no setting to get wrong.
 - Runner works only inside its own workspace directory; the tray UI shows
   what is running and offers per-run kill. (Agents can still touch the
   machine — the same trust model Conductor ships with; we say so plainly.)
@@ -197,7 +197,7 @@ protocol calls above.
 | **1. Git over HTTP** ✅ *(shipped)* | Smart-HTTP endpoint (`app/api/git/[repoRef]/…`) with device auth, room-role authz (`app/lib/runner/git-access.ts`), denyNonFastForwards + denyDeletes | Live against `next dev`: clone + push round-trip succeeded; no/wrong token refused; force-push and branch deletion rejected by the server |
 | **2. Runner protocol** ✅ *(shipped)* | `runner_jobs` queue (migration 022) with atomic SKIP LOCKED claim; long-poll claim (a v1 simplification of the SSE feed — sub-2s delivery, proxy-proof), events up-stream onto the per-run channel + watcher bus, `/complete` with commit verification (`verifyPushedCommit`); local-first routing in the run route with a 20s atomic reclaim to the cloud path; shared finalization (`app/lib/ai/finalize.ts`) | Live simulated runner: claim → smart-HTTP clone → push → events → complete; driver stream byte-identical to a worker run incl. verified exit; runner-sent `exit` filtered; foreign-run events 404; unclaimed job reclaimed with notice + cloud dispatch |
 | **3. Headless runner** ✅ *(shipped)* | `runner/` CLI (`npm run runner -- pair\|start [--once]`): config with 600-perm token file, heartbeat loop, long-poll claim, smart-HTTP repo cache, agent spawn reusing the catalog + stream parsers with executor-equivalent caps, 250ms event batching, commit/push, completion report; diff stats moved to the bare repo (`diffStatBare`) so locally-pushed commits count | Live: a real `claude` run claimed by the real CLI — paired via `runner pair`, cloned, executed on the machine's own login, streamed start/act/think/out frames to the driver, pushed its commit, `/complete` verified; file content confirmed in the room's repo |
-| **4. Desktop integration** | Tray, pairing UX, auto-start, devices page, co-driver consent policy | Manual click-through matrix: pair, run, revoke, offline fallback |
+| **4. Desktop integration** ✅ *(shipped — packaging/icons remain)* | "Your computers" dialog (list/liveness/revoke + pair-this-computer with minted code and copyable command, completion shows itself); profile-menu entry; Electron supervises the runner when paired with a tray (state glyph on macOS, pause/resume, pair entry); consent is structural — sender-keyed routing (§3.6) | Live API round-trip: mint → `runner pair` → device online in list → revoke → runner's next request 401s; UI verified by typecheck; tray needs a manual desktop click-through |
 | **5. Monetize** | Stripe plans; cloud-fallback metering; per-plan gates; cap badge split | Billing round-trip in test mode |
 
 Honest sizing: phases 0–2 are the engineering heart (~2–3 weeks of focused
