@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
 import { events } from "../events";
-import { commitWork, diffStat, ensureWork, withRepoLock } from "../session/repo";
+import { commitWork, ensureWork, withRepoLock } from "../session/repo";
 import { workPath } from "../session/paths";
-import { setRoomRepoHeadSha } from "../session/roomRepos";
-import { setHeadSha } from "../session/store";
 import { agentById } from "./catalog";
 import { agentEnv } from "./env";
-import { appendMessage, finishRun } from "./runs";
-import { ingestExchange } from "./shared-memory";
+import { finalizeAgentRun } from "./finalize";
+import { finishRun } from "./runs";
 import type { AgentRunJob, AiRunEvent } from "./run-events";
 
 /**
@@ -199,77 +197,29 @@ export function executeAgentRun(
           sha = await withRepoLock(repoRef, () =>
             commitWork(repoRef, `${bin}: agent run`, author.name, author.email),
           );
-          if (sha) {
-            // Advance whichever record owns this repo's head: the imported
-            // repo's row, or the room's session_repos as always.
-            if (job.repoId) await setRoomRepoHeadSha(job.repoId, sha);
-            else await setHeadSha(sessionId, sha);
-            broadcast({
-              type: "file.saved",
-              path: "",
-              headSha: sha,
-              authorId: "agent",
-              authorName: `${author.name} · ${bin}`,
-              originId: null,
-              at: Date.now(),
-            });
-          }
         } catch (cause) {
           send({ t: "err", d: `Could not commit the changes: ${String(cause)}\n` });
         }
 
-        // Persist the output as one consolidated turn, then close the run out.
-        // Errors here must not break the live stream, so they are swallowed.
-        try {
-          const trimmedOut = outBuf.trim();
-          if (trimmedOut) {
-            const turn = await appendMessage({ runId, role: "agent", body: trimmedOut });
-            broadcast({
-              type: "run.turn", runId, seq: turn.seq, role: "agent",
-              authorName: null, body: trimmedOut, at: Date.now(),
-            });
-          }
-          const trimmedErr = errBuf.trim();
-          const status = code === 0 ? "completed" : "failed";
-          // Only keep stderr when the run failed — then it is the error to show.
-          // On success it is just the CLI's own transcript, which would render
-          // as a second copy of the reply when the run is reloaded.
-          if (trimmedErr && status === "failed") {
-            await appendMessage({ runId, role: "system", body: trimmedErr });
-          }
-          const stat = sha
-            ? await withRepoLock(repoRef, () => diffStat(repoRef, baseSha, sha!)).catch(() => null)
-            : { added: 0, removed: 0 };
-          await finishRun(runId, {
-            status,
-            resultSha: sha,
-            exitCode: code,
-            error: trimmedErr || null,
-            addedLines: stat?.added ?? null,
-            removedLines: stat?.removed ?? null,
-          });
-          broadcast({ type: "run.finished", runId, status, headSha: sha, at: Date.now() });
-
-          // Fold a successful exchange into shared memory. A failed run's output
-          // is an error, not knowledge, and a code-changing exchange only stages
-          // here — it becomes memory when the user approves it by publishing
-          // (see shared-memory.ts). Fire-and-forget: it has its own timeout and
-          // never throws, and the run must not wait on the memory sidecar.
-          if (status === "completed") {
-            void ingestExchange({
-              sessionId,
-              runId,
-              prompt: userPrompt,
-              reply: trimmedOut,
-              changed: sha !== null,
-              // Only the project fork has a publish step to approve its work;
-              // an imported repo's exchanges ingest immediately.
-              publishGated: job.repoId === null,
-            });
-          }
-        } catch {
+        // Everything from here — head advance, transcript, diff stats, room
+        // events, memory ingest — is the shared close-out the runner protocol's
+        // /complete route also runs, so cloud and local runs end identically.
+        await finalizeAgentRun({
+          sessionId,
+          runId,
+          repoId: job.repoId,
+          baseSha,
+          userPrompt,
+          binName: bin,
+          author,
+          sha,
+          code,
+          output: outBuf,
+          errOutput: errBuf,
+          onError: (message) => send({ t: "err", d: message }),
+        }).catch(() => {
           // The run record is best-effort; the live stream already succeeded.
-        }
+        });
 
         send({ t: "exit", code, ms: Date.now() - startedAt, headSha: sha, committed: sha !== null });
         closed = true;
