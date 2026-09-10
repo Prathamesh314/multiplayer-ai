@@ -760,6 +760,61 @@ await test("revoking a device row leaves its past runs readable", async () => {
   assert.equal(rows[0].execution, "local", "the run's history is intact");
 });
 
+// --- runner jobs --------------------------------------------------------------
+
+const jobRun = (
+  await db.query(
+    `INSERT INTO agent_runs (session_id, started_by, agent_id, base_sha)
+     VALUES ($1, $2, 'claude', 'abc123') RETURNING id`,
+    [runSession, alice],
+  )
+).rows[0].id;
+
+/** The claim shape used by claimNextJob (app/lib/runner/jobs.ts). */
+const claimJobSql = `
+  UPDATE runner_jobs SET status = 'claimed', claimed_at = now()
+   WHERE run_id = (
+     SELECT run_id FROM runner_jobs
+      WHERE user_id = $1 AND status = 'queued'
+      ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+   )
+   RETURNING run_id`;
+
+await test("a queued job is claimed exactly once", async () => {
+  await db.query(
+    `INSERT INTO runner_jobs (run_id, user_id, payload) VALUES ($1, $2, '{"runId":"x"}')`,
+    [jobRun, alice],
+  );
+  const first = await db.query(claimJobSql, [alice]);
+  assert.equal(first.rows.length, 1, "first claim wins");
+  const second = await db.query(claimJobSql, [alice]);
+  assert.equal(second.rows.length, 0, "second claim finds nothing");
+});
+
+await test("the cloud fallback cannot reclaim a job a runner already has", async () => {
+  const reclaimed = await db.query(
+    `UPDATE runner_jobs SET status = 'reclaimed'
+      WHERE run_id = $1 AND status = 'queued' RETURNING run_id`,
+    [jobRun],
+  );
+  assert.equal(reclaimed.rows.length, 0, "claimed job stays with its runner");
+});
+
+await test("a job status outside the lifecycle is rejected", async () => {
+  await rejects(
+    db,
+    `UPDATE runner_jobs SET status = 'paused' WHERE run_id = $1`,
+    [jobRun],
+    /check/i,
+  );
+});
+
+await test("deleting the run takes its queue entry with it", async () => {
+  await db.query(`DELETE FROM agent_runs WHERE id = $1`, [jobRun]);
+  const { rows } = await db.query(`SELECT count(*)::int AS n FROM runner_jobs`);
+  assert.equal(rows[0].n, 0);
+});
+
 // --- repo-context index -----------------------------------------------------
 
 /**

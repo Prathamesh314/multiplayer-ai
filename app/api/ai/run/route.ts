@@ -16,8 +16,15 @@ import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
 import { buildKnowledgeContext } from "../../../lib/knowledge";
 import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
 import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
-import { subscribeRunEvents } from "../../../lib/ai/run-stream";
+import { publishRunEvent, subscribeRunEvents } from "../../../lib/ai/run-stream";
 import { enqueueRun, queueEnabled } from "../../../lib/queue";
+import { hasOnlineDevice } from "../../../lib/runner/devices";
+import {
+  CLAIM_FALLBACK_MS,
+  enqueueLocalJob,
+  localRunnersEnabled,
+  reclaimForServer,
+} from "../../../lib/runner/jobs";
 import { events } from "../../../lib/events";
 import { getRoomRepo } from "../../../lib/session/roomRepos";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
@@ -362,10 +369,15 @@ export async function POST(request: Request) {
     "x-accel-buffering": "no",
   };
 
-  // Two ways to run, one client contract. With Redis the turn goes to a worker
-  // and we forward its events off a per-run Redis channel; without Redis it runs
-  // inline in this process, exactly as before. The browser reads the same NDJSON
-  // stream either way.
+  // Three ways to run, one client contract. Local-first: when the initiating
+  // user has a runner online, the job goes to *their machine* — their CPU,
+  // their AI login (docs/local-execution.md) — and this response forwards the
+  // runner's events off the same per-run channel a worker would use. No
+  // runner online: with Redis the turn goes to a server worker; without, it
+  // runs inline. The browser reads the same NDJSON stream in every case.
+  if (localRunnersEnabled() && (await hasOnlineDevice(result.user.id))) {
+    return new Response(localStream(job, result.user.id), { headers });
+  }
   return new Response(queueEnabled() ? queuedStream(job) : inlineStream(job), { headers });
 }
 
@@ -475,6 +487,113 @@ function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
     cancel() {
       closed = true;
       if (timeout) clearTimeout(timeout);
+      void unsubscribe?.().catch(() => {});
+    },
+  });
+}
+
+/**
+ * Local runner: the job waits in runner_jobs for one of the user's devices to
+ * claim it; the runner's events arrive back over the same per-run channel a
+ * server worker would use, so this forwards them identically to queuedStream.
+ * The one extra duty is the fallback: if no device collects the job within
+ * CLAIM_FALLBACK_MS, it is atomically reclaimed (impossible once a runner has
+ * it) and dispatched to the cloud path instead — a closed laptop must cost
+ * twenty seconds, not the run.
+ */
+function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Array> {
+  let closed = false;
+  let unsubscribe: (() => Promise<void>) | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let fallback: ReturnType<typeof setTimeout> | null = null;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const shutdown = () => {
+        if (closed) return;
+        closed = true;
+        if (timeout) clearTimeout(timeout);
+        if (fallback) clearTimeout(fallback);
+        void unsubscribe?.().catch(() => {});
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
+      };
+
+      const fail = async (message: string) => {
+        controller.enqueue(frame({ t: "err", d: message }));
+        controller.enqueue(frame({ t: "exit", code: null, ms: 0, headSha: null, committed: false }));
+        await finishRun(job.runId, { status: "failed", error: message }).catch(() => {});
+        const bus = await events();
+        await bus
+          .publish(job.sessionId, {
+            type: "run.finished",
+            runId: job.runId,
+            status: "failed",
+            headSha: null,
+            at: Date.now(),
+          })
+          .catch(() => {});
+        shutdown();
+      };
+
+      // Subscribe before enqueueing so no early event slips through the gap.
+      unsubscribe = await subscribeRunEvents(job.runId, (event) => {
+        if (closed) return;
+        try {
+          controller.enqueue(frame(event));
+        } catch {
+          // Reader gone; the runner still finishes and reports.
+        }
+        if (event.t === "exit") shutdown();
+      });
+
+      try {
+        await enqueueLocalJob(job, userId);
+      } catch (cause) {
+        await fail(`Could not queue the run: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return;
+      }
+
+      // The fallback: reclaim is atomic on 'queued', so it either takes the
+      // whole job back (no device ever saw it) or leaves the runner entirely
+      // alone — never both executing.
+      fallback = setTimeout(() => {
+        void (async () => {
+          if (closed) return;
+          const reclaimed = await reclaimForServer(job.runId).catch(() => null);
+          if (!reclaimed) return; // a runner has it; its events keep flowing
+          controller.enqueue(
+            frame({ t: "notice", message: "No runner picked this up — running in the cloud instead." }),
+          );
+          if (queueEnabled()) {
+            await enqueueRun(reclaimed).catch((cause) => fail(`Could not queue the run: ${String(cause)}`));
+          } else {
+            // Inline fallback still publishes through the per-run channel this
+            // stream already forwards (Redis is present whenever local routing
+            // is on), so the browser contract holds.
+            void executeAgentRun(reclaimed, (event) => {
+              void publishRunEvent(job.runId, event).catch(() => {});
+            });
+          }
+        })();
+      }, CLAIM_FALLBACK_MS);
+      fallback.unref?.();
+
+      // Safety net: same stream timeout as the worker path.
+      timeout = setTimeout(() => {
+        if (closed) return;
+        controller.enqueue(frame({ t: "notice", message: "The run stream timed out." }));
+        shutdown();
+      }, RUN_STREAM_TIMEOUT_MS);
+      timeout.unref?.();
+    },
+    cancel() {
+      closed = true;
+      if (timeout) clearTimeout(timeout);
+      if (fallback) clearTimeout(fallback);
       void unsubscribe?.().catch(() => {});
     },
   });

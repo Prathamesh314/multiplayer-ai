@@ -60,22 +60,33 @@ standalone: no project remote, so publish/sync never touch them, and — having
 no publish step to approve their work — their exchanges skip the
 approval-gated memory staging and ingest directly.
 
-## Known boundary: run execution is server-local
+## Run execution is local-first, cloud-fallback
 
-Repos, working copies, and spawned agent CLI processes all live on the machine
-that handles the request:
+Agents execute on the *initiating member's own machine* when one of their
+paired devices is online (docs/local-execution.md) — their CPU, their AI
+login — and on the server otherwise. One job shape (`AgentRunJob`), three
+transports, one browser contract:
 
-- `dataRoot()` is a local filesystem path.
-- The run route `spawn`s the agent CLI as a child of the Next.js server process
-  and streams its stdout/stderr back over the same request.
+1. **Local:** the run route parks the job in `runner_jobs`; the user's runner
+   claims it (atomic `SKIP LOCKED`, long-poll `/api/runner/claim`), fetches
+   the repo over the device-authenticated git smart-HTTP endpoint
+   (`/api/git/[repoRef]/…` — deny non-fast-forward, deny deletes), executes,
+   streams events up (`/api/runner/runs/[id]/events` → the per-run Redis
+   channel), and reports `/complete`, where the claimed commit is verified
+   against the bare repo before any head moves. Requires Redis; a job no
+   device collects within ~20s is atomically reclaimed and falls back.
+2. **Server worker:** BullMQ, when the queue is enabled.
+3. **Inline:** in the web process, so local dev needs no extra infrastructure.
 
-This ties a run to one machine. **The execution layer cannot be horizontally
-scaled** without either shared storage for the data root plus sticky routing of
-a room to its owning instance, or moving execution into per-room workers
-addressed over a queue. This is a deliberate, acceptable ceiling for now — named
-here so it is a conscious choice rather than an accidental assumption. A server
-restart mid-run also orphans the child process and can leave a `running` row
-that a reaper later reconciles; a durable job/worker model is the eventual fix.
+Local and cloud runs end through one shared finalization
+(`app/lib/ai/finalize.ts`): head advance, transcript turn, diff stats, room
+events, memory ingest — indistinguishable from the transcript out. The runner
+itself stays dumb: it states facts and never writes the database.
+
+Server-side execution still ties a run to the machine that starts it (the
+data root is a local path), so the *cloud* path scales only with the
+worker/queue model — an acceptable ceiling now that it is the fallback, not
+the product.
 
 ## Graceful degradation
 

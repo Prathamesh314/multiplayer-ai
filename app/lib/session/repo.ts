@@ -276,6 +276,25 @@ export async function projectHeadSha(projectId: string): Promise<string | null> 
 }
 
 /**
+ * Verify a commit a runner claims to have produced: it must exist in the bare
+ * repo and extend the base the run started from. This is what stops a
+ * completion report from pointing the head at history that was never pushed
+ * through the guarded smart-HTTP endpoint (or at someone else's commit).
+ */
+export async function verifyPushedCommit(
+  repoRef: string,
+  baseSha: string,
+  sha: string,
+): Promise<boolean> {
+  const bare = barePath(repoRef);
+  if (!(await exists(bare))) return false;
+  if (!/^[0-9a-f]{40}$/i.test(sha)) return false;
+  const inRepo = await gitOk(bare, ["cat-file", "-e", `${sha}^{commit}`]);
+  if (!inRepo) return false;
+  return gitOk(bare, ["merge-base", "--is-ancestor", baseSha, sha]);
+}
+
+/**
  * Every tracked path at the project's `main` HEAD, read straight from the bare
  * repo — no working copy needed, so this is safe from any process. Used by the
  * repo-context indexer (app/lib/knowledge/repo-context.ts).
