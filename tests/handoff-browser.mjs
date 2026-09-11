@@ -123,9 +123,42 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
-    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: welcome.txt"]\')?.checkVisibility()'), "files visible on initial room open");
-    for (const view of [sender]) {
+    for (const view of [sender, recipient]) {
+      await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility() && Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Chats & team" && button.getAttribute("aria-expanded") === "true")'), "Chats & team open by default");
       await view.click("Chats & team");
+      await eventually(() => view.evaluate('!document.querySelector(".room-sidebar")?.checkVisibility()'), "Chats & team can be hidden");
+      await view.click("Chats & team");
+      await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility()'), "Chats & team can be reopened");
+    }
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: welcome.txt"]\')?.checkVisibility()'), "files visible on initial room open");
+    const catalogToken = randomBytes(32).toString("base64url");
+    const catalogDevice = (await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids) VALUES ($1,'Catalog fixture',$2,'2',ARRAY['codex','opencode']) RETURNING id`, [bob, createHash("sha256").update(catalogToken).digest()])).rows[0].id;
+    const inventory = id => ({ choices: [{ id, label: id, efforts: [{ id: "high", label: "High" }] }], source: "Test provider", checkedAt: Date.now(), refreshedAt: Date.now(), stale: false });
+    const advertise = async id => {
+      const response = await fetch(`${server}/api/runner/heartbeat`, { method: "POST", headers: { authorization: `Bearer ${catalogToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ version: "2", agentIds: ["codex", "opencode"], modelCatalog: { codex: inventory(""), opencode: inventory(id) } }) });
+      assert.equal(response.status, 200);
+    };
+    await advertise("test-provider/release-one");
+    await recipient.evaluate('window.dispatchEvent(new Event("focus"))');
+    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll(\'select[aria-label="Provider"] option\')).some(option => option.value === "opencode")'), "discovered multi-provider execution option");
+    await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Provider"]'); select.value = "opencode"; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-one")'), "runner model discovery in picker");
+    await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-one")).click()');
+    assert.equal(JSON.stringify(await (await request(tokens[0], "/api/ai/agents")).json()).includes("test-provider/release-one"), false, "Runner model catalogs are scoped to their owner");
+    await advertise("test-provider/release-two");
+    await recipient.evaluate('window.dispatchEvent(new Event("focus"))');
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\')?.textContent.includes("Unavailable: test-provider/release-one")'), "removed model stays pinned but is unavailable");
+    const removed = await request(tokens[1], "/api/ai/run", "POST", { sessionId: roomId, agentId: "opencode", model: "test-provider/release-one", prompt: "Do not execute unavailable models" });
+    assert.equal(removed.status, 409);
+    await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-two")'), "new release appears without a code update");
+    await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-two")).click()');
+    await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Provider"]'); select.value = "codex"; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await sql(`UPDATE runner_devices SET revoked_at = now() WHERE id = $1`, [catalogDevice]);
+    console.log("  ok live model-picker updates, new and retired models, per-user catalog isolation, and unavailable-model refusal");
+    for (const view of [sender]) {
       await eventually(() => view.evaluate("Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Browser handoff'))"), "chat listing");
       await view.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Browser handoff')).click()");
       await eventually(() => view.evaluate("!!document.querySelector('section[aria-label=\"Chat control\"]')"), "handoff controls");

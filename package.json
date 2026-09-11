@@ -25,8 +25,9 @@
     "test:prompt": "tsc app/lib/ai/prompt.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/prompt.test.cjs",
     "test:knowledge": "tsc app/lib/knowledge/graph.ts app/lib/knowledge/router.ts app/lib/knowledge/repo-summary.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/knowledge.test.cjs",
     "test:stream": "tsc app/lib/ai/stream.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/stream.test.cjs",
+    "test:models": "node --import tsx tests/models.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:stream && npm run test:handoff"
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:stream && npm run test:handoff && npm run test:models"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

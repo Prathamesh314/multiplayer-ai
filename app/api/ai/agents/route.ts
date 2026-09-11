@@ -1,7 +1,7 @@
 import { query } from "../../../lib/db/client";
 import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
-import type { AgentsResponse } from "../../../lib/ai/catalog";
+import { AGENTS, type ModelInventory, type AgentStatus, type AgentsResponse } from "../../../lib/ai/catalog";
 import { detectAgents, invalidateAgentCache } from "../../../lib/ai/detect";
 import { terminalAccess } from "../../../lib/terminal/guard";
 
@@ -26,14 +26,32 @@ export async function GET(request: Request) {
 
   const access = terminalAccess(request);
 
-  const devices = localRunnersEnabled() ? await query<{ agent_ids: string[] }>(
-    `SELECT agent_ids FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
+  const devices = localRunnersEnabled() ? await query<{ agent_ids: string[]; model_catalog: Record<string, ModelInventory> }>(
+    `SELECT agent_ids, model_catalog FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
       AND last_seen_at > now() - interval '30 seconds'`, [user.id],
   ) : [];
   const localIds = new Set(devices.flatMap(device => device.agent_ids));
-  const agents = (await detectAgents(refresh)).map(agent => localIds.has(agent.id)
-    ? { ...agent, installed: true, auth: null, execution: "runner" as const }
-    : { ...agent, installed: access.allowed && agent.installed });
+  const detected: AgentStatus[] = access.allowed ? await detectAgents(refresh) : AGENTS.map(spec => ({
+    id: spec.id, name: spec.name, vendor: spec.vendor, blurb: spec.blurb, installed: false, version: null, auth: null, install: spec.install,
+  }));
+  const agents = detected.map(agent => {
+    const matching = devices.filter(device => device.agent_ids.includes(agent.id));
+    if (!matching.length) return agent;
+    const spec = AGENTS.find(spec => spec.id === agent.id)!;
+    const inventories = matching.map(device => device.model_catalog?.[agent.id] ?? {
+      choices: spec.requiresModel ? [] : [{ id: "", label: "Auto · update runner for model discovery", efforts: spec.efforts }],
+      source: "Older runner", checkedAt: 0, refreshedAt: null, stale: true,
+    });
+    const choices = new Map<string, (typeof spec.models)[number]>();
+    for (const inventory of inventories) for (const choice of inventory.choices) {
+      const previous = choices.get(choice.id);
+      choices.set(choice.id, { ...choice, efforts: [...new Map([...(previous?.efforts ?? []), ...(choice.efforts ?? [])].map(effort => [effort.id, effort])).values()] });
+    }
+    return { ...agent, installed: true, auth: null, execution: "runner" as const,
+      models: { choices: [...choices.values()], source: "Your runner · " + [...new Set(inventories.map(item => item.source))].join(", "),
+        checkedAt: Math.max(...inventories.map(item => item.checkedAt)), refreshedAt: Math.max(...inventories.map(item => item.refreshedAt ?? 0)) || null,
+        stale: inventories.some(item => item.stale), error: inventories.some(item => item.stale) ? "Some runner inventories are unavailable or cached." : undefined } };
+  });
   return Response.json(
     {
       agents,

@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { continuationContext } from "../../../lib/ai/handoff";
 import { ControlError, isUuid, reserveTurn, prepareTurn, failTurn } from "../../../lib/ai/turns";
 import { queryOne } from "../../../lib/db/client";
-import { agentById, resolveChoice } from "../../../lib/ai/catalog";
+import { modelInventory, validModelId } from "../../../lib/ai/model-discovery";
+import { agentById } from "../../../lib/ai/catalog";
 import { executeAgentRun } from "../../../lib/ai/execute";
 import {
   appendMessage,
@@ -122,7 +123,18 @@ export async function POST(request: Request) {
     return Response.json({ error: "Use at most 12,000 characters, leaving room for conversation context." }, { status: 413 });
   }
 
-  const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id);
+  if (body.model != null && body.model !== "" && !validModelId(body.model)) return Response.json({ error: "Invalid model ID." }, { status: 400 });
+  if (body.effort != null && body.effort !== "" && (typeof body.effort !== "string" || !/^[a-z]{1,20}$/.test(body.effort))) return Response.json({ error: "Invalid reasoning effort." }, { status: 400 });
+  if (agent.requiresModel && !body.model) return Response.json({ error: "Choose a model available on your execution machine." }, { status: 400 });
+  const runOptions = { model: body.model || undefined, effort: body.effort || undefined };
+  const hasRunner = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, undefined, undefined, true);
+  const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
+  if (!useLocal && hasRunner) return Response.json({ error: "This model or effort is not available on an online runner. Refresh models or reconnect the device; nothing ran on the server." }, { status: 409 });
+  if (!useLocal && gate.allowed) {
+    const inventory = await modelInventory(agent);
+    const selected = inventory.choices.find(choice => choice.id === (runOptions.model ?? ""));
+    if (!selected || (runOptions.effort && !selected.efforts?.some(effort => effort.id === runOptions.effort))) return Response.json({ error: "This model or effort is no longer available. Refresh the provider inventory." }, { status: 409 });
+  }
   if (!useLocal && !gate.allowed) return Response.json({ error: "Connect your runner with this agent installed and signed in. Server execution is disabled." }, { status: 409 });
 
   const sessionId = result.session.id;
@@ -366,10 +378,6 @@ export async function POST(request: Request) {
   });
 
   // Only values the agent actually offers reach the argv; anything else is dropped.
-  const runOptions = {
-    model: resolveChoice(agent.models, body.model),
-    effort: resolveChoice(agent.efforts, body.effort),
-  };
 
   const author = { name: result.user.displayName, email: result.user.email };
 

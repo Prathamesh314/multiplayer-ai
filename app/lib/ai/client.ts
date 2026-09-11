@@ -15,7 +15,7 @@ export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   const response = await fetch(`/api/ai/agents${refresh ? "?refresh=1" : ""}`, {
     cache: "no-store",
   });
-  if (!response.ok) return { agents: [], canRun: false, reason: null };
+  if (!response.ok) throw new Error("Could not refresh providers.");
   return (await response.json()) as AgentsResponse;
 }
 

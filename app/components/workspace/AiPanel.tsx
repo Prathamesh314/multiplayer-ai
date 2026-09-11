@@ -1,5 +1,7 @@
 "use client";
 
+import { ModelPicker } from "./ModelPicker";
+
 import { useEffect, useRef, useState } from "react";
 import { agentById, type AgentAuth, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import {
@@ -138,6 +140,7 @@ export function AiPanel({
   const authHandle = useRef<RunHandle | null>(null);
   // Composer selectors. Reset together with the provider, since the options do.
   const [model, setModel] = useState("");
+  const [showProviders, setShowProviders] = useState(false);
   const [effort, setEffort] = useState("");
   // Candidate chats to import context from. The chosen one (forkFromRunId) is
   // controlled by the parent so a "Fork" action elsewhere preselects it here.
@@ -308,7 +311,7 @@ export function AiPanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetchAgents().then((response) => {
+    const refresh = () => { void fetchAgents().then((response) => {
       if (cancelled) return;
       setAgents(response.agents);
       setServerCanRun(response.canRun);
@@ -321,9 +324,14 @@ export function AiPanel({
         const codex = installed.find((a) => a.id === "codex");
         return codex?.id ?? installed[0]?.id ?? null;
       });
-    });
+    }).catch(() => {}); };
+    refresh();
+    const timer = setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
     };
   }, []);
 
@@ -335,11 +343,13 @@ export function AiPanel({
 
   async function recheck() {
     setRefreshing(true);
-    const response = await fetchAgents(true);
-    setAgents(response.agents);
-    setServerCanRun(response.canRun);
-    setBlockedReason(response.reason);
-    setRefreshing(false);
+    try {
+      const response = await fetchAgents(true);
+      setAgents(response.agents);
+      setServerCanRun(response.canRun);
+      setBlockedReason(response.reason);
+    } catch { setError("Could not refresh providers. Your previous choices are preserved."); }
+    finally { setRefreshing(false); }
   }
 
   // Switching provider clears the model/effort picks, whose options differ per agent.
@@ -401,6 +411,7 @@ export function AiPanel({
 
   function ask(prompt: string, contextRefs?: string[]) {
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
+    if (!modelAvailable || !effortAvailable) { setError("Choose an available model and reasoning effort before sending."); return; }
     setRunning(true);
     setError(null);
 
@@ -590,10 +601,13 @@ export function AiPanel({
   const ready = !!active?.installed && serverCanRun && canRun && !needsLogin;
   const hasConversation = turns.length > 0;
 
-  // Static model / effort lists for the connected provider, and the installed
-  // providers to switch between — all from the shared catalog.
   const activeSpec = connected ? agentById(connected) : undefined;
   const installedAgents = agents?.filter((agent) => agent.installed) ?? [];
+  const inventory = active?.models ?? { choices: activeSpec?.models ?? [], source: "CLI defaults", checkedAt: 0, refreshedAt: null, stale: false };
+  const selectedModel = inventory.choices.find(choice => choice.id === model);
+  const modelAvailable = !!selectedModel;
+  const efforts = selectedModel?.efforts ?? activeSpec?.efforts ?? [];
+  const effortAvailable = !effort || efforts.some(choice => choice.id === effort);
 
   // Every visible room in the project — including empty ones — for the @ picker,
   // with only the chat currently in view removed (you can't reference the one
@@ -649,15 +663,15 @@ export function AiPanel({
           title="Provider"
         />
         <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
-        <SelectChip value={model} onChange={setModel} options={activeSpec.models} title="Model" />
-        {activeSpec.efforts.length > 0 && (
+        <ModelPicker inventory={inventory} value={model} onChange={value => { setModel(value); setEffort(""); }} provider={active!.name} onRefresh={() => void recheck()} refreshing={refreshing} />
+        {efforts.length > 0 && (
           <>
             <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
             <SelectChip
               icon={<BarsIcon className="h-3 w-3 text-vs-muted" />}
               value={effort}
               onChange={setEffort}
-              options={activeSpec.efforts}
+              options={[{ id: "", label: "Auto" }, ...efforts.filter(choice => choice.id)]}
               title="Capacity"
             />
           </>
@@ -731,13 +745,14 @@ export function AiPanel({
               Fork
             </button>
           ))}
+        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover">Providers</button>
         <WatchingCluster members={members} />
       </PanelHeader>
       {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} />}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
-      {!ready && (
+      {(!ready || showProviders) && (
         <AgentSelector
           agents={agents}
           connected={connected}
@@ -788,6 +803,7 @@ export function AiPanel({
         )}
       </div>
 
+      {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
       {running ? (
         <div className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel p-2.5 text-sm text-vs-muted">
           <SpinnerIcon className="h-3.5 w-3.5 text-vs-accent" />
@@ -807,7 +823,7 @@ export function AiPanel({
       ) : (
         <Composer
           key={`${entered?.id ?? "new"}:${repoId ?? "default"}`}
-          disabled={!ready}
+          disabled={!ready || !modelAvailable || !effortAvailable}
           tall
           narrow
           footer={composerFooter}

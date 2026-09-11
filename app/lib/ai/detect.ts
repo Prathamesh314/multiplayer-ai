@@ -1,3 +1,4 @@
+import { modelInventory } from "./model-discovery";
 import { execFile } from "node:child_process";
 import { AGENTS, type AgentAuth, type AgentSpec, type AgentStatus } from "./catalog";
 
@@ -78,6 +79,7 @@ export async function detectAgents(force = false): Promise<AgentStatus[]> {
         version,
         auth,
         install: agent.install,
+        models: version !== null ? await modelInventory(agent, force) : undefined,
       } satisfies AgentStatus;
     }),
   );

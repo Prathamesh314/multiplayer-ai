@@ -358,6 +358,24 @@ try {
     await deliverCompletions(data, { async complete(turnId) { retried.push(turnId); } });
     assert.deepEqual(retried, [failed]);
   });
+  await test("model-aware routing only claims on the owner's device advertising the exact model and effort", async () => {
+    const target = await createRun({ sessionId: roomId, startedBy: carol, agentId: "opencode", baseSha: seed.headSha });
+    const job = { ...makeJob(randomUUID(), carol, 0), runId: target.id, agentId: "opencode", model: "provider/new-model", effort: "high" };
+    await reserveTurn(target.id, carol, job.turnId, 0);
+    await prepareTurn(job); await enqueueLocalJob(job, carol);
+    const device = async catalog => (await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,model_catalog) VALUES ($1,'model-router',$2,'2',ARRAY['opencode'],$3) RETURNING id`, [carol, Buffer.from(randomUUID()), JSON.stringify(catalog)])).rows[0].id;
+    const wrong = await device({ opencode: { choices: [{ id: "provider/old-model", efforts: [{ id: "high" }] }] } });
+    const missingEffort = await device({ opencode: { choices: [{ id: "provider/new-model", efforts: [] }] } });
+    const right = await device({ opencode: { choices: [{ id: "provider/new-model", efforts: [{ id: "high" }] }] } });
+    assert.equal(await claimNextJob({ userId: carol, deviceId: wrong }), null);
+    assert.equal(await claimNextJob({ userId: carol, deviceId: missingEffort }), null);
+    assert.equal(await claimNextJob({ userId: bob, deviceId: right }), null);
+    assert.equal((await claimNextJob({ userId: carol, deviceId: right })).job.turnId, job.turnId);
+    await failTurn(job.turnId, "Test cleanup");
+    assert.equal((await sql(`SELECT runner_supports_model('{}','ollama','',NULL) AS allowed`)).rows[0].allowed, false);
+    assert.equal((await sql(`SELECT runner_supports_model('{}','codex',NULL,NULL) AS allowed`)).rows[0].allowed, true);
+    assert.equal((await sql(`SELECT runner_supports_model('{}','codex','unadvertised',NULL) AS allowed`)).rows[0].allowed, false);
+  });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");
     const { browserChecks } = await import("./handoff-browser.mjs");

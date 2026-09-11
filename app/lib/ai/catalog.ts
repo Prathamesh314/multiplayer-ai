@@ -1,3 +1,4 @@
+import { createOpenCodeStreamParser } from "./opencode-stream";
 import { createClaudeStreamParser, type StreamParser } from "./stream";
 
 /**
@@ -10,10 +11,19 @@ import { createClaudeStreamParser, type StreamParser } from "./stream";
  * Each is driven in its one-shot, non-interactive mode. Their interactive TUIs
  * need a pty, which is a much larger piece of work than this.
  */
-export type AgentId = "claude" | "gemini" | "codex" | "ollama";
+export type AgentId = "claude" | "gemini" | "codex" | "ollama" | "opencode" | "codex-ollama" | "codex-lmstudio";
 
 /** A selectable value (model or reasoning effort). Empty id → the CLI default. */
-export type AgentChoice = { id: string; label: string };
+export type AgentChoice = { id: string; label: string; efforts?: AgentChoice[] };
+
+export type ModelInventory = {
+  choices: AgentChoice[];
+  source: string;
+  checkedAt: number;
+  refreshedAt: number | null;
+  stale: boolean;
+  error?: string;
+};
 
 /**
  * An agent's account-login state, as reported by its own CLI.
@@ -37,6 +47,7 @@ export type RunOptions = { model?: string; effort?: string };
 
 export type AgentSpec = {
   id: AgentId;
+  requiresModel?: boolean;
   name: string;
   vendor: string;
   /** Executable looked up on PATH. */
@@ -201,11 +212,7 @@ export const AGENTS: AgentSpec[] = [
       "-p",
       prompt,
     ],
-    models: [
-      { id: "", label: "Auto" },
-      { id: "gemini-2.5-pro", label: "2.5 Pro" },
-      { id: "gemini-2.5-flash", label: "2.5 Flash" },
-    ],
+    models: [{ id: "", label: "Auto · CLI default" }],
     efforts: [],
     install: {
       command: "npm install -g @google/gemini-cli",
@@ -214,30 +221,14 @@ export const AGENTS: AgentSpec[] = [
     blurb: "Large-context agent for reading and changing a codebase.",
   },
   {
-    /*
-     * The local-AI option: models served by Ollama on this machine. No account,
-     * no login, nothing leaves the computer — the row is "connected" the moment
-     * the tool answers `--version`. `ollama run <model> <prompt>` is a true
-     * one-shot: it streams the answer to stdout and exits, so the run pipeline
-     * drives it exactly like the cloud CLIs. Unlike them it is a chat model,
-     * not a coding agent — it discusses the code but cannot edit files, so its
-     * runs simply never produce a commit (the `changed:false` path).
-     *
-     * Ollama requires an explicit model (it has no "default"), so the first
-     * catalog entry doubles as the fallback in promptArgs.
-     */
     id: "ollama",
     name: "Ollama",
     vendor: "Local",
     bin: "ollama",
     versionArgs: ["--version"],
-    promptArgs: (prompt, opts) => ["run", opts?.model || "qwen2.5-coder:7b", prompt],
-    models: [
-      { id: "qwen2.5-coder:7b", label: "Qwen 2.5 Coder 7B" },
-      { id: "llama3.1:8b", label: "Llama 3.1 8B" },
-      { id: "deepseek-r1:8b", label: "DeepSeek R1 8B" },
-      { id: "gpt-oss:20b", label: "GPT-OSS 20B" },
-    ],
+    requiresModel: true,
+    promptArgs: (prompt, opts) => ["run", requiredModel(opts), "--", prompt],
+    models: [],
     efforts: [],
     install: {
       command: "brew install ollama",
@@ -245,9 +236,32 @@ export const AGENTS: AgentSpec[] = [
       docs: "https://ollama.com",
     },
     blurb:
-      "Your own models on your own machine — private and offline. Discusses the code; can't edit files.",
+      "Models installed in Ollama. Chat only; use Codex + Ollama for file editing. Endpoint configuration determines where inference runs.",
   },
+  {
+    id: "opencode", name: "OpenCode · multi-provider", vendor: "Multi-provider",
+    bin: "opencode", versionArgs: ["--version"], requiresModel: true,
+    promptArgs: (prompt, opts) => ["run", "--format", "json", "--model", requiredModel(opts), ...(opts?.effort ? ["--variant", opts.effort] : []), "--", prompt],
+    createStreamParser: createOpenCodeStreamParser,
+    models: [], efforts: [],
+    install: { command: "npm install -g opencode-ai", docs: "https://opencode.ai/docs/providers/" },
+    blurb: "Coding agents through configured providers: OpenRouter, Anthropic, Google, OpenAI, DeepSeek, Groq, and more. Connect accounts once with opencode auth login on your runner.",
+  },
+  ...(["ollama", "lmstudio"] as const).map(provider => ({
+    id: `codex-${provider}` as AgentId,
+    name: provider === "ollama" ? "Codex + Ollama" : "Codex + LM Studio",
+    vendor: "Local", bin: "codex", versionArgs: ["--version"], requiresModel: true,
+    promptArgs: (prompt: string, opts?: RunOptions) => ["exec", "--sandbox", "workspace-write", "--oss", "--local-provider", provider, "-m", requiredModel(opts), "--", prompt],
+    models: [], efforts: [],
+    install: { command: "npm install -g @openai/codex", docs: provider === "ollama" ? "https://docs.ollama.com/" : "https://lmstudio.ai/docs/developer" },
+    blurb: "Local coding through Codex's workspace-write sandbox. Start the local model server and install a tool-capable model first.",
+  })),
 ];
+
+function requiredModel(opts?: RunOptions): string {
+  if (!opts?.model) throw new Error("Choose an available model before running this provider.");
+  return opts.model;
+}
 
 /** Validates a choice id against a spec's allow-list; empty/unknown → undefined. */
 export function resolveChoice(choices: AgentChoice[], id: unknown): string | undefined {
@@ -266,6 +280,7 @@ export type AgentStatus = {
   blurb: string;
   installed: boolean;
   execution?: "runner";
+  models?: ModelInventory;
   /** Reported by the tool itself, when it is there. */
   version: string | null;
   /**

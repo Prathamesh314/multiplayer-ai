@@ -22,7 +22,8 @@
 export type StreamPiece =
   | { kind: "reply"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "activity"; text: string };
+  | { kind: "activity"; text: string }
+  | { kind: "error"; text: string };
 
 /** A stateful, line-at-a-time decoder. `push` returns 0+ pieces per line. */
 export type StreamParser = { push: (line: string) => StreamPiece[] };

@@ -1,3 +1,4 @@
+import { assertAvailableModel } from "./model-discovery";
 import { startTurn, failTurn } from "./turns";
 import { spawn } from "node:child_process";
 import { events } from "../events";
@@ -69,7 +70,15 @@ export function executeAgentRun(
       }
 
       const bin = agent.bin;
-      const args = agent.promptArgs(job.agentPrompt, { model: job.model, effort: job.effort });
+      let args: string[];
+      try {
+        await assertAvailableModel(agent, job.model, job.effort);
+        args = agent.promptArgs(job.agentPrompt, { model: job.model, effort: job.effort });
+      } catch (cause) {
+        await failFast(cause instanceof Error ? cause.message : "Model unavailable.");
+        resolve();
+        return;
+      }
       const parser = agent.createStreamParser?.() ?? null;
 
       // Materialize the working copy at the run's base before spawning. A cold
@@ -88,6 +97,7 @@ export function executeAgentRun(
 
       const startedAt = Date.now();
       let closed = false;
+      let parserFailed = false;
       let bytes = 0;
       let thinkBytes = 0;
       let outBuf = "";
@@ -117,7 +127,7 @@ export function executeAgentRun(
         child = spawn(bin, args, {
           cwd,
           detached: process.platform !== "win32",
-          env: { ...agentEnv(), CI: "1", NO_COLOR: "1" },
+          env: { ...agentEnv(agent.id), CI: "1", NO_COLOR: "1" },
           // stdin closed: these run one-shot and must never sit waiting on
           // input nobody can supply.
           stdio: ["ignore", "pipe", "pipe"],
@@ -192,6 +202,7 @@ export function executeAgentRun(
           for (const piece of parser.push(line)) {
             if (piece.kind === "reply") emitReply(piece.text);
             else if (piece.kind === "thinking") emitThinking(piece.text);
+            else if (piece.kind === "error") { parserFailed = true; emitErr(piece.text); kill(child); }
             else emitActivity(piece.text);
           }
         }
@@ -207,6 +218,7 @@ export function executeAgentRun(
       }
 
       child.on("close", async (code) => {
+        if (parserFailed) code = 1;
         clearTimeout(deadline);
 
         // Whatever it changed is committed here, keeping the session's "never

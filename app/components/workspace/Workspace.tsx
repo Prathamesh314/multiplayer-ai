@@ -132,7 +132,7 @@ export function Workspace({
   const [rightWidth, setRightWidth] = useState(400);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("files");
-  const [showTeam, setShowTeam] = useState(false);
+  const [showTeam, setShowTeam] = useState(true);
   const [terminalHeight, setTerminalHeight] = useState(260);
   // Live team-chat messages arriving over the session event stream.
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);

@@ -11,10 +11,12 @@
  * it does when the operator runs it by hand. This app never injects, reads, or
  * strips the token — the CLI owns it.
  */
-export function agentEnv(): NodeJS.ProcessEnv {
+export function agentEnv(agentId?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
     if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_")) delete env[key];
   }
+  if (agentId === "ollama" || agentId === "codex-ollama") env.OLLAMA_HOST = "http://127.0.0.1:11434";
+  if (agentId === "codex-ollama" || agentId === "codex-lmstudio") delete env.CODEX_OSS_BASE_URL;
   return env;
 }

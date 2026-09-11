@@ -38,7 +38,8 @@ export class RunnerApi {
 
   async heartbeat(): Promise<void> {
     const agents = await detectAgents();
-    await this.post("/api/runner/heartbeat", { version: "2", agentIds: agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false).map(agent => agent.id) });
+    const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
+    await this.post("/api/runner/heartbeat", { version: "2", agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) });
   }
 
   /** Long-poll for the next job addressed to this device's user. */

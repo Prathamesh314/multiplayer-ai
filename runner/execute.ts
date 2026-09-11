@@ -11,6 +11,7 @@
  * rate limits. Nothing is injected and nothing is read back.
  */
 
+import { assertAvailableModel } from "../app/lib/ai/model-discovery";
 import { spawn } from "node:child_process";
 import type { AgentSpec } from "../app/lib/ai/catalog";
 import { agentEnv } from "../app/lib/ai/env";
@@ -40,7 +41,7 @@ function kill(child: ReturnType<typeof spawn>): void {
   }
 }
 
-export function runAgentLocally(input: {
+export async function runAgentLocally(input: {
   spec: AgentSpec;
   prompt: string;
   model?: string;
@@ -48,6 +49,7 @@ export function runAgentLocally(input: {
   cwd: string;
   onEvent: (event: AiRunEvent) => void;
 }): Promise<LocalRunResult> {
+  await assertAvailableModel(input.spec, input.model, input.effort);
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const args = input.spec.promptArgs(input.prompt, {
@@ -61,7 +63,7 @@ export function runAgentLocally(input: {
       child = spawn(input.spec.bin, args, {
         cwd: input.cwd,
         detached: process.platform !== "win32",
-        env: { ...agentEnv(), CI: "1", NO_COLOR: "1" },
+        env: { ...agentEnv(input.spec.id), CI: "1", NO_COLOR: "1" },
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (cause) {
@@ -71,6 +73,7 @@ export function runAgentLocally(input: {
       return;
     }
 
+    let parserFailed = false;
     let bytes = 0;
     let thinkBytes = 0;
     let outBuf = "";
@@ -127,6 +130,7 @@ export function runAgentLocally(input: {
         for (const piece of parser.push(line)) {
           if (piece.kind === "reply") emitReply(piece.text);
           else if (piece.kind === "thinking") emitThinking(piece.text);
+          else if (piece.kind === "error") { parserFailed = true; emitErr(piece.text); kill(child); }
           else emitActivity(piece.text);
         }
       }
@@ -143,6 +147,7 @@ export function runAgentLocally(input: {
 
     child.on("error", (cause) => emitErr(`${cause.message}\n`));
     child.on("close", (code) => {
+      if (parserFailed) code = 1;
       clearTimeout(deadline);
       resolve({ code, output: outBuf, errOutput: errBuf, ms: Date.now() - startedAt });
     });
