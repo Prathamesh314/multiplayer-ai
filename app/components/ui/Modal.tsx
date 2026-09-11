@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId, useRef } from "react";
 import { CloseIcon } from "../icons";
 
 type ModalProps = {
@@ -21,31 +21,38 @@ export function Modal({
   footer,
   width = "max-w-lg",
 }: ModalProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const descriptionId = useId();
+
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/55 p-4 backdrop-blur-sm sm:items-center sm:p-6"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
+      <dialog
+        ref={dialogRef}
         aria-modal="true"
         aria-label={title}
-        onClick={(event) => event.stopPropagation()}
-        className={`w-full ${width} overflow-hidden rounded-2xl border border-vs-border bg-vs-panel text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)]`}
+        aria-describedby={description ? descriptionId : undefined}
+        onCancel={(event) => { event.preventDefault(); onClose(); }}
+        onClick={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
+        }}
+        className={`vs-scroll fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-y-auto rounded-2xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)] backdrop:bg-black/60 backdrop:backdrop-blur-sm`}
       >
         <header className="flex items-start gap-3 border-b border-vs-border px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-[16px] font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p className="mt-1 text-[14px] leading-5 text-vs-muted">{description}</p>
+              <p id={descriptionId} className="mt-1 text-[14px] leading-5 text-vs-muted">{description}</p>
             )}
           </div>
           <button
@@ -65,8 +72,7 @@ export function Modal({
             {footer}
           </footer>
         )}
-      </div>
-    </div>
+      </dialog>
   );
 }
 
@@ -101,7 +107,7 @@ export function PrimaryButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-full bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {children}
     </button>
@@ -116,7 +122,7 @@ export function GhostButton({
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-full border border-vs-border px-4 py-2 text-base transition hover:bg-vs-hover disabled:opacity-60"
+      className="flex items-center justify-center gap-2 rounded-lg border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-60"
     >
       {children}
     </button>
@@ -125,7 +131,7 @@ export function GhostButton({
 
 export function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
+    <p role="alert" className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
       <span aria-hidden>⚠</span>
       {children}
     </p>

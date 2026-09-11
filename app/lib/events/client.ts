@@ -12,6 +12,7 @@ import type {
 } from "./types";
 
 export type SessionStreamOptions = {
+  onRunControl?: () => void;
   /** Fires for changes made by any *other* tab. */
   onFileSaved?: (event: FileSavedEvent) => void;
   /** Fires while another person types, not when they save. */
@@ -80,6 +81,8 @@ export function openSessionStream(
     const event = parse(message);
     if (event?.type === "role.changed") options.onRoleChanged?.(event);
   });
+
+  source.addEventListener("run.control", () => options.onRunControl?.());
 
   source.addEventListener("run.started", (message) => {
     const event = parse(message);

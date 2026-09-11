@@ -1,3 +1,5 @@
+import { query } from "../../../lib/db/client";
+import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
 import type { AgentsResponse } from "../../../lib/ai/catalog";
 import { detectAgents, invalidateAgentCache } from "../../../lib/ai/detect";
@@ -14,7 +16,8 @@ export const dynamic = "force-dynamic";
  * even on a server that refuses to execute anything.
  */
 export async function GET(request: Request) {
-  if (!(await currentUser())) {
+  const user = await currentUser();
+  if (!user) {
     return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
 
@@ -23,11 +26,19 @@ export async function GET(request: Request) {
 
   const access = terminalAccess(request);
 
+  const devices = localRunnersEnabled() ? await query<{ agent_ids: string[] }>(
+    `SELECT agent_ids FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
+      AND last_seen_at > now() - interval '30 seconds'`, [user.id],
+  ) : [];
+  const localIds = new Set(devices.flatMap(device => device.agent_ids));
+  const agents = (await detectAgents(refresh)).map(agent => localIds.has(agent.id)
+    ? { ...agent, installed: true, auth: null, execution: "runner" as const }
+    : { ...agent, installed: access.allowed && agent.installed });
   return Response.json(
     {
-      agents: await detectAgents(refresh),
-      canRun: access.allowed,
-      reason: access.allowed ? null : access.reason,
+      agents,
+      canRun: access.allowed || localIds.size > 0,
+      reason: access.allowed || localIds.size > 0 ? null : "Connect your runner with an installed, signed-in agent.",
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },
   );

@@ -19,6 +19,7 @@ type TopBarProps = {
   /** False once this session owns a repo — a session is seeded exactly once. */
   canOpenFolder: boolean;
   members: SessionMember[];
+  importedRepo?: boolean;
 };
 
 export function TopBar({
@@ -33,9 +34,10 @@ export function TopBar({
   onOpenFolder,
   canOpenFolder,
   members,
+  importedRepo = false,
 }: TopBarProps) {
   return (
-    <header className="flex h-9 shrink-0 items-center gap-3 border-b border-vs-border bg-vs-chrome px-3">
+    <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 py-2 border-b border-vs-border bg-vs-chrome px-3">
       <button
         type="button"
         onClick={onLeave}
@@ -50,7 +52,7 @@ export function TopBar({
 
       <span
         title={`Session ${session.id}`}
-        className="max-w-48 shrink-0 truncate rounded bg-vs-hover px-2 py-0.5 text-sm text-vs-fg"
+        className="max-w-36 min-w-0 truncate rounded bg-vs-hover px-2 py-0.5 text-sm text-vs-fg"
       >
         {session.name}
       </span>
@@ -65,7 +67,7 @@ export function TopBar({
         </button>
       )}
 
-      <div className="mx-auto flex min-w-0 items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-sm text-vs-muted">
+      <div className="mx-auto hidden min-w-0 lg:flex items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-sm text-vs-muted">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -77,11 +79,11 @@ export function TopBar({
         </span>
       </div>
 
-      {session.projectId && canEdit(session.myRole) && (
+      {session.projectId && !importedRepo && canEdit(session.myRole) && (
         <PublishControls sessionId={session.id} />
       )}
 
-      <PeopleStack members={members} />
+      <div className="ml-auto hidden sm:block"><PeopleStack members={members} /></div>
 
       <button
         type="button"
@@ -92,7 +94,7 @@ export function TopBar({
         Invite
       </button>
 
-      <div className="flex items-center gap-0.5">
+      <div className="hidden items-center gap-0.5 sm:flex">
         <ToggleButton
           label="Toggle terminal (Ctrl+Shift+Z)"
           active={terminalOpen}

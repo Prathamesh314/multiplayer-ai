@@ -127,6 +127,7 @@ export function runAgent(
     agentId: string;
     prompt: string;
     runId?: string;
+    controlVersion?: number;
     title?: string;
     model?: string;
     effort?: string;
@@ -149,7 +150,7 @@ export function runAgent(
       const response = await fetch("/api/ai/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, turnId: crypto.randomUUID() }),
         signal: controller.signal,
       });
 

@@ -32,7 +32,8 @@ import {
   UserPlusIcon,
   UsersIcon,
 } from "../icons";
-import { GhostButton, PrimaryButton } from "../ui/Modal";
+import { ErrorNote, GhostButton, PrimaryButton } from "../ui/Modal";
+import { ProjectOverview } from "./ProjectOverview";
 import {
   CreateOrgDialog,
   CreateProjectDialog,
@@ -81,6 +82,9 @@ export function OrgWorkspace() {
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadVersion, setLoadVersion] = useState(0);
+  const [projectsRevision, setProjectsRevision] = useState(0);
 
   const reloadOrgs = useCallback(async () => {
     const list = await listMyOrgs();
@@ -98,9 +102,9 @@ export function OrgWorkspace() {
         const who = await fetchMe();
         setMe(who.user);
         setConnectCode(who.connectCode);
-        setInvitations(await listPendingInvitations());
+        setInvitations(await listPendingInvitations().catch(() => []));
 
-        const { agents } = await fetchAgents();
+        const { agents } = await fetchAgents().catch(() => ({ agents: [] }));
         if (
           !cancelled &&
           agents.length > 0 &&
@@ -113,13 +117,13 @@ export function OrgWorkspace() {
       } catch (cause) {
         if (cancelled) return;
         if (cause instanceof NotSignedIn) router.replace("/login");
-        else setOrgs([]);
+        else setLoadError(cause instanceof Error ? cause.message : "Could not load your workspace.");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [reloadOrgs, router]);
+  }, [reloadOrgs, router, loadVersion]);
 
   const activeOrg = orgs?.find((o) => o.slug === activeSlug) ?? null;
 
@@ -147,10 +151,19 @@ export function OrgWorkspace() {
         }}
       />
 
-      {activeOrg ? (
+      {loadError ? (
+        <main className="grid min-w-0 flex-1 place-items-center p-6">
+          <div className="max-w-md space-y-4">
+            <h1 className="font-display text-2xl font-semibold">Could not load your workspace</h1>
+            <ErrorNote>{loadError}</ErrorNote>
+            <GhostButton onClick={() => { setLoadError(null); setLoadVersion((current) => current + 1); }}>Try again</GhostButton>
+          </div>
+        </main>
+      ) : activeOrg ? (
         <OrgPanel
           key={activeOrg.slug}
           org={activeOrg}
+          refreshVersion={projectsRevision}
           me={me}
           invitations={invitations.filter((i) => i.orgSlug === activeOrg.slug)}
           onAcceptInvite={onAcceptInvite}
@@ -226,7 +239,10 @@ export function OrgWorkspace() {
         <CreateProjectDialog
           org={dialog.org}
           onClose={() => setDialog(null)}
-          onCreated={() => setDialog(null)}
+          onCreated={() => {
+            setDialog(null);
+            setProjectsRevision((current) => current + 1);
+          }}
         />
       )}
       {dialog?.kind === "projectMembers" && (
@@ -434,6 +450,7 @@ function OrgRail({
 
 function OrgPanel({
   org,
+  refreshVersion,
   me,
   invitations,
   onAcceptInvite,
@@ -446,6 +463,7 @@ function OrgPanel({
   onOpenRoom,
 }: {
   org: Org;
+  refreshVersion: number;
   me: CurrentUser | null;
   invitations: PendingInvitation[];
   onAcceptInvite: (id: string) => void;
@@ -458,6 +476,9 @@ function OrgPanel({
   onOpenRoom: (id: string) => void;
 }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectVersion, setProjectVersion] = useState(0);
+  const [showNavigation, setShowNavigation] = useState(false);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
   // The open team-chat conversation, rendered in <main> instead of the welcome
   // placeholder. `chatVersion` is bumped to refresh the sidebar's unread counts.
@@ -473,16 +494,24 @@ function OrgPanel({
   useEffect(() => {
     let cancelled = false;
     void listProjects(org.slug)
-      .then((list) => !cancelled && setProjects(list))
-      .catch(() => !cancelled && setProjects([]));
+      .then((list) => {
+        if (cancelled) return;
+        setProjects(list);
+        setProjectError(null);
+      })
+      .catch((cause) => !cancelled && setProjectError(cause instanceof Error ? cause.message : "Could not load projects."));
     return () => {
       cancelled = true;
     };
-  }, [org.slug]);
+  }, [org.slug, projectVersion, refreshVersion]);
 
   return (
-    <div className="flex min-w-0 flex-1">
-      <aside className="flex w-80 shrink-0 flex-col border-r border-vs-border bg-vs-panel">
+    <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+      <div className="flex shrink-0 items-center justify-between border-b border-vs-border px-4 py-3 lg:hidden">
+        <span className="truncate text-sm font-semibold">{org.name}</span>
+        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & chat"}</button>
+      </div>
+      <aside id="workspace-navigation" className={`${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r`}>
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
           <div className="flex min-w-0 items-center gap-2">
             {org.image && (
@@ -521,6 +550,9 @@ function OrgPanel({
         </header>
 
         <UsageBadge orgSlug={org.slug} />
+        <button type="button" onClick={() => { setActiveConversationId(null); setShowNavigation(false); }} aria-current={activeConversationId === null ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${activeConversationId === null ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
+          <GitBranchIcon className="h-4 w-4" /> Project overview
+        </button>
 
         {invitations.length > 0 && (
           <div className="border-b border-vs-border p-2">
@@ -562,7 +594,9 @@ function OrgPanel({
           </div>
 
           <div className="px-2">
-            {projects === null ? (
+            {projectError ? (
+              <p role="alert" className="px-2 py-2 text-sm text-vs-danger">Could not load projects. Retry from the project overview.</p>
+            ) : projects === null ? (
               <p className="flex items-center gap-2 px-2 py-2 text-sm text-vs-muted">
                 <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
               </p>
@@ -595,7 +629,7 @@ function OrgPanel({
               meId={me.id}
               activeConversationId={activeConversationId}
               version={chatVersion}
-              onOpen={setActiveConversationId}
+              onOpen={(id) => { setActiveConversationId(id); setShowNavigation(false); }}
               onChanged={bumpChat}
             />
           )}
@@ -610,23 +644,17 @@ function OrgPanel({
           onRead={bumpChat}
         />
       ) : (
-        <main className="grid min-w-0 flex-1 place-items-center p-8">
-          <div className="max-w-md text-center">
-            {org.image && (
-              <img
-                src={org.image}
-                alt={org.name}
-                className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-vs-border object-cover shadow-md"
-              />
-            )}
-            <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
-            <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
-              Everyone on a project has a room of their own — open yours to run AI sessions on the
-              project&apos;s repo, or drop into a teammate&apos;s to see what they are working on.
-              Use channels and direct messages to talk with your team.
-            </p>
-          </div>
-        </main>
+        <ProjectOverview
+          org={org}
+          me={me}
+          projects={projects}
+          error={projectError}
+          onRetry={() => { setProjectError(null); setProjectVersion((current) => current + 1); }}
+          onNewProject={onNewProject}
+          onInvite={onInvite}
+          onManageMembers={onManageMembers}
+          onOpenRoom={onOpenRoom}
+        />
       )}
     </div>
   );
@@ -665,6 +693,7 @@ function ProjectRow({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <ChevronIcon
@@ -720,7 +749,7 @@ function ProjectRow({
                   type="button"
                   onClick={() => onRoomSettings(room)}
                   title="Room privacy & members"
-                  className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-active hover:text-vs-fg group-hover/room:opacity-100"
+                  className="rounded p-0.5 text-vs-muted opacity-100 transition hover:bg-vs-active hover:text-vs-fg lg:opacity-0 lg:group-hover/room:opacity-100 lg:group-focus-within/room:opacity-100"
                 >
                   <UsersIcon className="h-3.5 w-3.5" />
                 </button>
@@ -745,17 +774,19 @@ function EmptyState({
   onJoin: () => void;
 }) {
   return (
-    <div className="grid flex-1 place-items-center p-8">
+    <main className="vs-scroll grid min-w-0 flex-1 place-items-center overflow-y-auto p-5 sm:p-8">
       {loading ? (
         <SpinnerIcon className="h-5 w-5 text-vs-muted" />
       ) : (
-        <div className="max-w-sm text-center">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Get started</h1>
+        <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-6 sm:p-12">
+          <SparkleIcon className="mb-6 h-8 w-8 text-vs-muted" />
+          <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Build together, from the first prompt.</h1>
           <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
-            An organisation is like a Discord server — invite your team, connect repos as projects,
-            and open rooms to work in. Create your own, or join one you were invited to.
+            Give your team a home for projects, shared AI conversations, and code review.
+            Create an organisation to get started, or join your teammates.
           </p>
-          <div className="mt-4 flex justify-center gap-2">
+          <div className="mt-6 flex flex-wrap gap-3">
             <PrimaryButton onClick={onCreate}>
               <PlusIcon className="h-4 w-4" /> New organisation
             </PrimaryButton>
@@ -770,7 +801,7 @@ function EmptyState({
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

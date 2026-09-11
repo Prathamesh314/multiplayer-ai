@@ -21,6 +21,9 @@ export type AgentRun = {
   repoId: string | null;
   startedBy: string;
   startedByName: string;
+  driverUserId: string;
+  driverName: string;
+  controlVersion: number;
   agentId: string;
   title: string | null;
   status: RunStatus;
@@ -59,6 +62,9 @@ type RunRow = {
   repo_id: string | null;
   started_by: string;
   started_by_name: string;
+  driver_user_id: string;
+  driver_name: string;
+  control_version: number;
   agent_id: string;
   title: string | null;
   status: RunStatus;
@@ -80,6 +86,9 @@ const toRun = (row: RunRow): AgentRun => ({
   repoId: row.repo_id,
   startedBy: row.started_by,
   startedByName: row.started_by_name,
+  driverUserId: row.driver_user_id,
+  driverName: row.driver_name,
+  controlVersion: row.control_version,
   agentId: row.agent_id,
   title: row.title,
   status: row.status,
@@ -96,7 +105,8 @@ const toRun = (row: RunRow): AgentRun => ({
 });
 
 const RUN_COLUMNS = `
-  r.id, r.session_id, r.repo_id, r.started_by, u.display_name AS started_by_name, r.agent_id,
+  r.id, r.session_id, r.repo_id, r.driver_user_id, r.control_version,
+  (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
   r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at
 `;
@@ -116,8 +126,8 @@ export async function createRun(input: {
 }): Promise<AgentRun> {
   return transaction(async (tx) => {
     const inserted = await tx.query<{ id: string }>(
-      `INSERT INTO agent_runs (session_id, repo_id, started_by, agent_id, base_sha, title, status, started_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'running', now())
+      `INSERT INTO agent_runs (session_id, repo_id, started_by, driver_user_id, agent_id, base_sha, title, status, started_at)
+       VALUES ($1, $2, $3, $3, $4, $5, $6, 'completed', NULL)
        RETURNING id`,
       [
         input.sessionId,
@@ -161,10 +171,11 @@ export async function appendMessage(input: {
     body: string;
     created_at: Date;
   }>(
-    `INSERT INTO agent_run_messages (run_id, seq, role, author_user_id, body)
-     SELECT $1,
-            COALESCE((SELECT MAX(seq) FROM agent_run_messages WHERE run_id = $1), 0) + 1,
-            $2, $3, $4
+    `WITH allocated AS (
+       UPDATE agent_runs SET message_seq = message_seq + 1 WHERE id = $1 RETURNING message_seq
+     )
+     INSERT INTO agent_run_messages (run_id, seq, role, author_user_id, body)
+     SELECT $1, message_seq, $2, $3, $4 FROM allocated
      RETURNING id, run_id, seq, role, author_user_id, body, created_at`,
     [input.runId, input.role, input.authorUserId ?? null, input.body],
   );

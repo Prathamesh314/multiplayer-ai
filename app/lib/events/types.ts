@@ -8,6 +8,7 @@
  */
 
 export type FileSavedEvent = {
+  repoId?: string | null;
   type: "file.saved";
   path: string;
   headSha: string;
@@ -26,6 +27,7 @@ export type FileSavedEvent = {
  * Deliberately carries no text: it says who and where, never what.
  */
 export type FileEditingEvent = {
+  repoId?: string | null;
   type: "file.editing";
   /** Repo-relative path; the file name is the last segment of it. */
   path: string;
@@ -132,6 +134,7 @@ export type RunFinishedEvent = {
 };
 
 export type SessionEvent =
+  | { type: "run.control"; runId: string; at: number }
   | FileSavedEvent
   | FileEditingEvent
   | MessageCreatedEvent

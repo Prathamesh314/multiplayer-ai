@@ -21,6 +21,7 @@ export type RoomRepo = {
   sessionId: string;
   rootName: string;
   headSha: string | null;
+  baseSha: string | null;
   upstreamUrl: string | null;
   createdBy: string;
   createdAt: number;
@@ -33,6 +34,7 @@ type RepoRow = {
   session_id: string;
   root_name: string;
   head_sha: string | null;
+  base_sha: string | null;
   upstream_url: string | null;
   created_by: string;
   created_at: Date;
@@ -44,13 +46,14 @@ const toRepo = (row: RepoRow): RoomRepo => ({
   sessionId: row.session_id,
   rootName: row.root_name,
   headSha: row.head_sha,
+  baseSha: row.base_sha,
   upstreamUrl: row.upstream_url,
   createdBy: row.created_by,
   createdAt: row.created_at.getTime(),
   seededAt: row.seeded_at ? row.seeded_at.getTime() : null,
 });
 
-const COLUMNS = "id, session_id, root_name, head_sha, upstream_url, created_by, created_at, seeded_at";
+const COLUMNS = "base_sha, id, session_id, root_name, head_sha, upstream_url, created_by, created_at, seeded_at";
 
 /** A room's imported repos, oldest first — stable order for pickers and lists. */
 export async function listRoomRepos(sessionId: string): Promise<RoomRepo[]> {
@@ -111,7 +114,7 @@ export async function finishRoomRepoSeed(
   input: { headSha: string; upstreamUrl: string | null },
 ): Promise<void> {
   await query(
-    `UPDATE room_repos SET head_sha = $2, upstream_url = $3, seeded_at = now() WHERE id = $1`,
+    `UPDATE room_repos SET head_sha = $2, base_sha = $2, upstream_url = $3, seeded_at = now() WHERE id = $1`,
     [repoId, input.headSha, input.upstreamUrl],
   );
 }

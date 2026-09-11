@@ -1,3 +1,4 @@
+import { failTurn } from "../app/lib/ai/turns";
 /**
  * The background worker process.
  *
@@ -31,15 +32,16 @@ if (queueEnabled()) {
     // everything durable is handled inside executeAgentRun, identically to
     // inline mode.
     executeAgentRun(job, (event) => {
-      void publishRunEvent(job.runId, event).catch(() => {});
+      void publishRunEvent(job.turnId, event).catch(() => {});
     }),
   );
   runWorker.on("ready", () => console.log("agent worker ready; waiting for jobs"));
   runWorker.on("active", (job) => console.log(`run ${job.data.runId}: started (${job.data.agentId})`));
   runWorker.on("completed", (job) => console.log(`run ${job.data.runId}: done`));
-  runWorker.on("failed", (job, err) =>
-    console.error(`run ${job?.data.runId ?? "?"}: failed — ${err?.message ?? err}`),
-  );
+  runWorker.on("failed", (job, err) => {
+    console.error(`run ${job?.data.runId ?? "?"}: failed — ${err?.message ?? err}`);
+    if (job) void failTurn(job.data.turnId, err?.message ?? "Worker failed").catch(() => {});
+  });
   runWorker.on("error", (err) => console.error("agent worker error:", err));
   closers.push(() => runWorker.close());
 }

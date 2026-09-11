@@ -220,14 +220,14 @@ export async function revokeShareLink(id: string, linkId: string): Promise<void>
 /** Long enough not to flood, short enough that the badge never lapses. */
 const ACTIVITY_THROTTLE_MS = 1500;
 
-type Pending = { path: string; line: number; column: number };
+type Pending = { repoId: string | null; path: string; line: number; column: number };
 
 const lastPing = new Map<string, number>();
 const trailing = new Map<string, { timer: ReturnType<typeof setTimeout>; pending: Pending }>();
 
 function send(sessionId: string, at: Pending): void {
   lastPing.set(sessionId, Date.now());
-  void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/activity`, {
+  void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/activity?repoId=${encodeURIComponent(at.repoId ?? "")}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...at, originId: currentTabId() }),
@@ -249,8 +249,9 @@ export function notifyEditing(
   path: string,
   line = 1,
   column = 1,
+  repoId: string | null = null,
 ): void {
-  const at: Pending = { path, line, column };
+  const at: Pending = { path, line, column, repoId };
   const since = Date.now() - (lastPing.get(sessionId) ?? 0);
 
   if (since >= ACTIVITY_THROTTLE_MS) {

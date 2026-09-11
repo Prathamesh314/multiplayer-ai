@@ -53,7 +53,7 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
       await bus
         .publish(job.sessionId, {
           type: "run.output",
-          runId,
+          runId: job.runId,
           stream: event.t,
           chunk: event.d,
           at: Date.now(),
@@ -63,10 +63,10 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     // Warnings survive the stream: persisted exactly like the server
     // executor's own notices, so later readers see why a run went how it did.
     if (event.t === "notice") {
-      await appendMessage({ runId, role: "system", body: event.message })
+      await appendMessage({ runId: job.runId, role: "system", body: event.message })
         .then((turn) =>
           bus.publish(job.sessionId, {
-            type: "run.turn", runId, seq: turn.seq, role: "system",
+            type: "run.turn", runId: job.runId, seq: turn.seq, role: "system",
             authorName: null, body: turn.body, at: Date.now(),
           }),
         )

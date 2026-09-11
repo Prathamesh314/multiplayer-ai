@@ -55,7 +55,7 @@ async function uploadScan<T extends { skipped: string[] }>(
   let batchBytes = 0;
 
   const flush = async (done: boolean): Promise<T> => {
-    const response = await fetch(url, {
+    const payload = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -64,8 +64,18 @@ async function uploadScan<T extends { skipped: string[] }>(
         rootName: done ? result.rootName : undefined,
         upstreamUrl: done ? (result.git.remotes[0]?.url ?? null) : undefined,
       }),
-    });
-    if (!response.ok) throw new Error(await readError(response, "Could not upload the folder."));
+    };
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch(url, payload);
+        if (response.status < 500) break;
+      } catch (cause) {
+        if (attempt === 2) throw cause;
+      }
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+    if (!response?.ok) throw new Error(response ? await readError(response, "Could not upload the folder.") : "Upload interrupted. Pick the same folder again to retry.");
 
     const body = (await response.json()) as T;
     skipped.push(...body.skipped);
@@ -121,7 +131,7 @@ export async function fetchRoomRepos(sessionId: string): Promise<RoomRepo[]> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos`, {
     cache: "no-store",
   });
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(await readError(response, "Could not load imported repositories."));
   const body = (await response.json()) as { repos: RoomRepo[] };
   return body.repos ?? [];
 }
@@ -189,18 +199,18 @@ function toBase64(bytes: Uint8Array): string {
  * closure over its source, which is what makes this a drop-in.
  */
 /** Files changed since the session was seeded, for the explorer's Changes tab. */
-export async function fetchChanges(sessionId: string): Promise<ChangedFile[]> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes`, {
+export async function fetchChanges(sessionId: string, repoId: string | null = null): Promise<ChangedFile[]> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes?repoId=${encodeURIComponent(repoId ?? "")}`, {
     cache: "no-store",
   });
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(await readError(response, "Could not load changes."));
   const body = (await response.json()) as ChangesResponse;
   return body.changes ?? [];
 }
 
-export async function scanSession(session: Session): Promise<ScanResult> {
+export async function scanSession(session: Session, repoId: string | null = null): Promise<ScanResult> {
   const id = session.id;
-  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/tree`, {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/tree?repoId=${encodeURIComponent(repoId ?? "")}`, {
     cache: "no-store",
   });
   if (!response.ok) throw new Error(await readError(response, "Could not load this session."));
@@ -210,13 +220,13 @@ export async function scanSession(session: Session): Promise<ScanResult> {
   return {
     rootName: tree.rootName,
     root: tree.root,
-    git: gitInfoOf(tree, session.repo),
+    git: gitInfoOf(tree, repoId ? null : session.repo),
     stats: collectStats(tree.root, false),
     source: "picker",
     hiddenFilesUnavailable: false,
     readFile: async (path) => {
       const file = await fetch(
-        `/api/sessions/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
+        `/api/sessions/${encodeURIComponent(id)}/file?repoId=${encodeURIComponent(repoId ?? "")}&path=${encodeURIComponent(path)}`,
         { cache: "no-store" },
       );
       if (!file.ok) return null;
@@ -230,7 +240,7 @@ export async function scanSession(session: Session): Promise<ScanResult> {
     },
     readBytes: async (path) => {
       const file = await fetch(
-        `/api/sessions/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}&raw=1`,
+        `/api/sessions/${encodeURIComponent(id)}/file?repoId=${encodeURIComponent(repoId ?? "")}&path=${encodeURIComponent(path)}&raw=1`,
         { cache: "no-store" },
       );
       if (!file.ok) return null;
@@ -265,8 +275,9 @@ export async function saveSessionFile(
   path: string,
   text: string,
   baseText?: string,
+  repoId: string | null = null,
 ): Promise<SaveFileResponse> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file`, {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file?repoId=${encodeURIComponent(repoId ?? "")}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, text, baseText, originId: currentTabId() }),
@@ -286,7 +297,7 @@ export type Saver = {
    */
   queue(path: string, text: string, baseText: string): void;
   /** Writes everything pending right now — for tab close or unload. */
-  flush(): Promise<void>;
+  flush(): Promise<boolean>;
 };
 
 const SAVE_DEBOUNCE_MS = 1200;
@@ -304,10 +315,12 @@ export function createSaver(
   onError?: (message: string) => void,
   /** Called when a save overlapped a teammate's edit and committed nothing. */
   onConflict?: (path: string) => void,
+  repoId: string | null = null,
 ): Saver {
   const pending = new Map<string, PendingSave>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlight: Promise<void> = Promise.resolve();
+  let failed = false;
 
   async function writePending(): Promise<void> {
     const batch = [...pending];
@@ -315,10 +328,11 @@ export function createSaver(
 
     for (const [path, save] of batch) {
       try {
-        const result = await saveSessionFile(sessionId, path, save.text, save.baseText);
+        const result = await saveSessionFile(sessionId, path, save.text, save.baseText, repoId);
         if (result.conflict) {
           // An overlapping edit — leave the user's text as-is and let them
           // reconcile; don't retry, which would just conflict again.
+          failed = true;
           onConflict?.(path);
           continue;
         }
@@ -327,6 +341,7 @@ export function createSaver(
         onSaved?.(path, save.text, result.headSha);
       } catch (cause) {
         // Put it back so the next flush retries rather than dropping the edit.
+        failed = true;
         if (!pending.has(path)) pending.set(path, save);
         onError?.(cause instanceof Error ? cause.message : "Could not save this file.");
       }
@@ -353,6 +368,9 @@ export function createSaver(
       }
       inFlight = inFlight.then(writePending);
       await inFlight;
+      const success = !failed && pending.size === 0;
+      failed = false;
+      return success;
     },
   };
 }

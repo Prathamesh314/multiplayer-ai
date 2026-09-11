@@ -33,9 +33,9 @@ export function StatusBar({
   const git = result?.git;
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-vs-border bg-vs-chrome px-3 text-[12px] text-vs-muted">
+    <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-3 text-[11px] text-vs-muted sm:text-[12px]">
       {git?.isGit ? (
-        <span className="flex items-center gap-1 text-vs-fg" title={git.commit ?? undefined}>
+        <span className="hidden max-w-64 items-center gap-1 truncate text-vs-fg sm:flex" title={git.commit ?? undefined}>
           <GitBranchIcon className="h-3.5 w-3.5" />
           {git.branch ?? (git.detached ? "detached HEAD" : "unknown")}
         </span>
@@ -91,7 +91,7 @@ export function StatusBar({
       )}
 
       {result && (
-        <span>
+        <span className="hidden lg:inline">
           {humanCount(result.stats.files)} files · {humanBytes(result.stats.bytes)}
         </span>
       )}
@@ -99,12 +99,12 @@ export function StatusBar({
       <span className="ml-auto flex items-center gap-3">
         {activeText !== null && (
           <>
-            <span>
+            <span className="hidden sm:inline">
               Ln {caret.line}, Col {caret.column}
             </span>
-            <span>{indentationOf(activeText)}</span>
-            <span>{activeText.includes("\r\n") ? "CRLF" : "LF"}</span>
-            <span>UTF-8</span>
+            <span className="hidden lg:inline">{indentationOf(activeText)}</span>
+            <span className="hidden lg:inline">{activeText.includes("\r\n") ? "CRLF" : "LF"}</span>
+            <span className="hidden lg:inline">UTF-8</span>
           </>
         )}
         {activePath && <span className="text-vs-fg">{languageLabel(activePath)}</span>}

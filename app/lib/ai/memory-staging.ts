@@ -53,8 +53,7 @@ async function build(): Promise<Client | null> {
   const url = process.env.REDIS_URL;
   if (!url) return null; // No Redis → staging is a no-op, like presence.
   try {
-    const specifier = "redis";
-    const { createClient } = (await import(specifier)) as {
+      const { createClient } = (await import("redis")) as {
       createClient: (options: { url: string }) => { connect(): Promise<unknown> } & Client;
     };
     const c = createClient({ url });

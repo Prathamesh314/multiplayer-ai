@@ -1,35 +1,17 @@
 import { access, denied } from "../../../../lib/session/auth";
-import { ensureWork, listChangedFiles, withRepoLock } from "../../../../lib/session/repo";
-import type { ChangesResponse } from "../../../../lib/session/types";
+import { repositoryContext } from "../../../../lib/session/repository-context";
+import { committedChanges } from "../../../../lib/session/repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * The files that differ between the session's seed commit and HEAD — the
- * "Changes" view of the explorer. The working copy is a cache, so it is rebuilt
- * to HEAD before the diff, exactly like the tree route.
- */
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-
-  const repo = result.session.repo;
-  if (!repo) {
-    return Response.json(
-      { error: "This session has no repository yet." },
-      { status: 404, headers: { "cache-control": "no-store" } },
-    );
-  }
-
-  const changes = await withRepoLock(id, async () => {
-    await ensureWork(id, repo.headSha);
-    return listChangedFiles(id, repo.baseShaAtFork);
-  });
-
-  return Response.json({ changes } satisfies ChangesResponse, {
-    headers: { "cache-control": "no-store" },
-  });
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
+  if (!repo.baseSha) return Response.json({ error: "This older import has no recorded baseline. Its files are available, but Changes cannot be calculated." }, { status: 409 });
+  return Response.json({ changes: await committedChanges(repo.ref, repo.baseSha, repo.headSha) }, { headers: { "cache-control": "no-store" } });
 }

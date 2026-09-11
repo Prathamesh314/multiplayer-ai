@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { continueWithEmail, register } from "../../lib/auth/client";
-import { AlertIcon, EyeIcon, SparkleIcon, SpinnerIcon } from "../icons";
+import { AlertIcon, EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -70,8 +70,23 @@ export function AuthForm() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-vs-editor px-6 py-12 text-vs-fg">
-      <div className="w-full max-w-sm">
+    <main className="vs-scroll h-dvh overflow-y-auto bg-vs-editor text-vs-fg">
+      <div className="mx-auto grid min-h-full max-w-6xl items-center gap-12 px-6 py-10 sm:px-10 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
+      <section className="hidden lg:block" aria-label="About multiplayer-ai">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-vs-muted">A workspace for humans and agents</p>
+        <h2 className="font-display mt-6 max-w-xl text-6xl font-semibold leading-[1.08] tracking-tight">Great software is a team effort.</h2>
+        <p className="mt-6 max-w-md text-lg leading-8 text-vs-muted">Give your team and AI a shared place to build, learn from each other, and move work forward.</p>
+        <div className="workspace-welcome mt-10 space-y-6 rounded-2xl border border-vs-border p-6">
+          {[
+            { icon: UsersIcon, title: "Bring everyone into the work", body: "Shared rooms, team channels, and conversations you can continue." },
+            { icon: SparkleIcon, title: "Keep useful context close", body: "Reference a teammate’s AI chat without explaining everything again." },
+            { icon: GitBranchIcon, title: "Build on your own branch", body: "Review your changes before publishing them to the project." },
+          ].map(({ icon: Icon, title, body }) => (
+            <div key={title} className="flex gap-4"><Icon className="mt-1 h-5 w-5 shrink-0 text-vs-muted" /><div><p className="text-sm font-medium">{title}</p><p className="mt-1 text-sm leading-6 text-vs-muted">{body}</p></div></div>
+          ))}
+        </div>
+      </section>
+      <div className="mx-auto w-full max-w-md rounded-2xl border border-vs-border bg-vs-panel p-6 shadow-xl sm:p-8">
         <span className="flex items-center gap-2 text-base font-semibold">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
@@ -82,7 +97,7 @@ export function AuthForm() {
         {step === "email" ? (
           <>
             <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
-              Sign in or sign up
+              Your team starts here
             </h1>
             <p className="mt-2 text-[14px] leading-6 text-vs-muted">
               Enter your email and password. We&apos;ll sign you in, or start a new account if this
@@ -168,7 +183,8 @@ export function AuthForm() {
           New accounts need a password of at least {MIN_PASSWORD_LENGTH} characters.
         </p>
       </div>
-    </div>
+      </div>
+    </main>
   );
 }
 
@@ -203,7 +219,7 @@ function SubmitButton({ busy, children }: { busy: boolean; children: React.React
 
 function ErrorNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
+    <p role="alert" className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
       <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       {children}
     </p>

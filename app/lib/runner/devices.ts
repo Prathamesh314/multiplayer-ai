@@ -160,13 +160,14 @@ export async function revokeDevice(deviceId: string, userId: string): Promise<bo
 }
 
 /** Does this user have any device eligible to take a job right now? */
-export async function hasOnlineDevice(userId: string): Promise<boolean> {
+export async function hasOnlineDevice(userId: string, agentId: string): Promise<boolean> {
   const row = await queryOne<{ id: string }>(
     `SELECT id FROM runner_devices
       WHERE user_id = $1 AND revoked_at IS NULL
         AND last_seen_at > now() - make_interval(secs => $2)
+        AND version = '2' AND $3 = ANY(agent_ids)
       LIMIT 1`,
-    [userId, DEVICE_ONLINE_MS / 1000],
+    [userId, DEVICE_ONLINE_MS / 1000, agentId],
   );
   return row !== null;
 }

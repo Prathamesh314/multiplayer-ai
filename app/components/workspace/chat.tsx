@@ -113,6 +113,7 @@ type MentionState =
 
 export function Composer({
   placeholder,
+  disabled = false,
   onSend,
   /** A larger, multi-line input — used for the AI chat where prompts are longer. */
   tall,
@@ -124,6 +125,7 @@ export function Composer({
   mentions,
 }: {
   placeholder: string;
+  disabled?: boolean;
   onSend: (text: string, refs: string[]) => void;
   tall?: boolean;
   narrow?: boolean;
@@ -237,6 +239,7 @@ export function Composer({
   }
 
   function send() {
+    if (disabled) return;
     const text = draft.trim();
     if (!text) return;
     onSend(text, refsFromText(text));
@@ -335,7 +338,7 @@ export function Composer({
     <button
       type="button"
       onClick={send}
-      disabled={draft.trim().length === 0}
+      disabled={disabled || draft.trim().length === 0}
       aria-label="Send message"
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30"
     >

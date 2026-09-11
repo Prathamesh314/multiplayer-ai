@@ -1,3 +1,4 @@
+import { reconcileCompletions } from "../../../../../lib/ai/finalize";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
 import { getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
 import type { RunResponse } from "../../../../../lib/ai/runs";
@@ -26,10 +27,12 @@ export async function GET(
     return Response.json({ error: "No such run." }, { status: 404 });
   }
 
+  await reconcileCompletions(runId);
+  const refreshed = await getRun(runId);
   const after = Number(new URL(request.url).searchParams.get("after") ?? 0);
   const messages = await listRunMessages(runId, Number.isFinite(after) ? after : 0);
 
-  return Response.json({ run, messages } satisfies RunResponse, {
+  return Response.json({ run: refreshed ?? run, messages } satisfies RunResponse, {
     headers: { "cache-control": "no-store" },
   });
 }
@@ -52,8 +55,8 @@ export async function PATCH(
   if (!run || run.sessionId !== id) {
     return Response.json({ error: "No such run." }, { status: 404 });
   }
-  if (run.startedBy !== result.user.id) {
-    return forbidden("You can only manage chats you started, not other members'.");
+  if (run.driverUserId !== result.user.id || !["owner", "editor"].includes(result.role)) {
+    return forbidden("Only the current driver with edit access can manage this chat.");
   }
 
   const body = (await request.json().catch(() => ({}))) as { title?: unknown; archived?: unknown };

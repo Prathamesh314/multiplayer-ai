@@ -26,6 +26,7 @@ type ExplorerPanelProps = {
   editing: Map<string, import("./usePeople").FilePresence[]>;
   /** When set, an "All files / Changes" switcher backed by this session's diff. */
   sessionId?: string;
+  repoId?: string | null;
 };
 
 export function ExplorerPanel({
@@ -39,11 +40,13 @@ export function ExplorerPanel({
   onClose,
   editing,
   sessionId,
+  repoId = null,
 }: ExplorerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
   const [view, setView] = useState<"files" | "changes">("files");
   const [changes, setChanges] = useState<ChangedFile[] | null>(null);
+  const [changesError, setChangesError] = useState<string | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
 
   function toggle(path: string) {
@@ -59,11 +62,14 @@ export function ExplorerPanel({
     if (!sessionId) return;
     setLoadingChanges(true);
     try {
-      setChanges(await fetchChanges(sessionId));
+      setChangesError(null);
+      setChanges(await fetchChanges(sessionId, repoId));
+    } catch (cause) {
+      setChangesError(cause instanceof Error ? cause.message : "Could not load changes.");
     } finally {
       setLoadingChanges(false);
     }
-  }, [sessionId]);
+  }, [sessionId, repoId]);
 
   // The diff is fetched when the Changes tab is opened and on Refresh, rather
   // than in an effect — the tree can change underneath it, so Refresh is there.
@@ -111,6 +117,7 @@ export function ExplorerPanel({
         </div>
       )}
 
+      {changesError && view === "changes" && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{changesError}</p>}
       {view === "files" ? (
         <>
           <div className="shrink-0 px-2 py-2">
@@ -131,6 +138,10 @@ export function ExplorerPanel({
           </div>
 
           <div className="vs-scroll min-h-0 flex-1 overflow-auto">
+            {result.stats.files === 0 && <div className="m-3 rounded-xl border border-dashed border-vs-border p-4 text-sm leading-6 text-vs-muted">
+              <p className="font-medium text-vs-fg">No files in this repository yet</p>
+              <p className="mt-1">Use Import folder above to add a local checkout. A GitHub project link currently stores repository details; it does not download the code.</p>
+            </div>}
             <ExplorerTree
               root={result.root}
               activePath={activePath}

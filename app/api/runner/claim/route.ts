@@ -5,7 +5,7 @@ import type { AgentRunJob } from "../../../lib/ai/run-events";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export type ClaimRequest = { waitMs?: number };
+export type ClaimRequest = { waitMs?: number; version?: string };
 export type ClaimResponse = { job: AgentRunJob | null; leaseMs: number | null };
 
 /**
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => ({}))) as ClaimRequest;
+  if (body.version !== "2") return Response.json({ error: "Update your runner to protocol 2." }, { status: 426 });
   const waitMs = Math.max(0, Math.min(Number(body.waitMs ?? 20_000) || 0, MAX_WAIT_MS));
   const deadline = Date.now() + waitMs;
 

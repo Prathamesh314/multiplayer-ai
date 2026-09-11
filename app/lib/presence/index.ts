@@ -35,13 +35,9 @@ async function build(): Promise<Presence> {
 
   type ClientFactory = (options: { url: string }) => RedisLike & { connect(): Promise<unknown> };
 
-  // The specifier is held in a variable on purpose: `redis` is an optional
-  // peer, installed only where Redis actually runs, and a literal import would
-  // make it a hard build-time dependency everywhere.
-  const specifier = "redis";
   let createClient: ClientFactory;
   try {
-    ({ createClient } = (await import(specifier)) as { createClient: ClientFactory });
+    ({ createClient } = (await import("redis")) as { createClient: ClientFactory });
   } catch {
     throw new Error(
       "REDIS_URL is set but the `redis` package is not installed. Run `npm install redis`, or unset REDIS_URL to use in-process presence.",

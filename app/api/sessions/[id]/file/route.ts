@@ -1,153 +1,68 @@
 import { events } from "../../../../lib/events";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
-import {
-  commitWork,
-  ensureWork,
-  mergeSave,
-  readRepoBytes,
-  readRepoFile,
-  withRepoLock,
-  writeRepoFile,
-} from "../../../../lib/session/repo";
-import { setHeadSha, touchSession } from "../../../../lib/session/store";
-import type {
-  FileResponse,
-  SaveFileRequest,
-  SaveFileResponse,
-} from "../../../../lib/session/types";
+import { repositoryContext } from "../../../../lib/session/repository-context";
+import { mergeSave, readCommittedBytes } from "../../../../lib/session/repo";
+import { setRoomRepoHeadSha } from "../../../../lib/session/roomRepos";
+import { setHeadSha } from "../../../../lib/session/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+type Context = { params: Promise<{ id: string }> };
 
-const NO_REPO = { error: "This session has no repository yet." };
-const BAD_PATH = { error: "That file path is not valid for this session." };
-
-export async function GET(request: Request, context: RouteContext<"/api/sessions/[id]/file">) {
+export async function GET(request: Request, context: Context) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-
-  const repo = result.session.repo;
-  if (!repo) return Response.json(NO_REPO, { status: 404 });
-
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
   const url = new URL(request.url);
   const path = safeRelativePath(url.searchParams.get("path"));
-  if (!path) return Response.json(BAD_PATH, { status: 400 });
-
-  await withRepoLock(id, () => ensureWork(id, repo.headSha));
-
-  // `raw=1` streams the bytes back, which is what reading a binary needs;
-  // everything else wants the decoded, size-capped text.
-  if (url.searchParams.get("raw") === "1") {
-    const bytes = await readRepoBytes(id, path);
-    if (!bytes) return Response.json({ error: "No such file." }, { status: 404 });
-    return new Response(new Uint8Array(bytes), {
+  if (!path) return Response.json({ error: "Invalid file path." }, { status: 400 });
+  try {
+    const bytes = await readCommittedBytes(repo.ref, repo.headSha, path);
+    if (!bytes) return Response.json({ error: "File not found, or symbolic links cannot be opened." }, { status: 404 });
+    if (url.searchParams.get("raw") === "1") return new Response(new Uint8Array(bytes), {
       headers: { "content-type": "application/octet-stream", "cache-control": "no-store" },
     });
+    const binary = bytes.subarray(0, 4096).includes(0);
+    const limit = 2 * 1024 * 1024;
+    return Response.json({ path, text: binary ? "" : bytes.subarray(0, limit).toString("utf8"),
+      binary, size: bytes.length, truncated: bytes.length > limit }, { headers: { "cache-control": "no-store" } });
+  } catch (cause) {
+    return Response.json({ error: cause instanceof Error ? cause.message : "Could not read this file." }, { status: 422 });
   }
-
-  const file = await readRepoFile(id, path);
-  if (!file) return Response.json({ error: "No such file." }, { status: 404 });
-
-  return Response.json({ path, ...file } satisfies FileResponse, {
-    headers: { "cache-control": "no-store" },
-  });
 }
 
-/**
- * Writes a file and commits it in the same request. The invariant the whole
- * design rests on is that a session never holds uncommitted state, so there is
- * deliberately no way to save without committing.
- */
-export async function PUT(request: Request, context: RouteContext<"/api/sessions/[id]/file">) {
+export async function PUT(request: Request, context: Context) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-
-  if (!canWrite(result.role)) {
-    return forbidden(
-      "You have read access to this session. Ask the owner for edit access to make changes.",
-    );
+  if (!canWrite(result.role)) return forbidden("Edit access is required.");
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
+  const body = await request.json().catch(() => null);
+  const path = safeRelativePath(body?.path);
+  if (!path || typeof body?.text !== "string" || (body.baseText != null && typeof body.baseText !== "string")) {
+    return Response.json({ error: "A valid path, text, and original text are required." }, { status: 400 });
   }
-
-  const repo = result.session.repo;
-  if (!repo) return Response.json(NO_REPO, { status: 404 });
-
-  let body: SaveFileRequest;
+  if (body.text.length > 2 * 1024 * 1024 || (body.baseText?.length ?? 0) > 2 * 1024 * 1024) {
+    return Response.json({ error: "This edit exceeds the 2 MB limit." }, { status: 413 });
+  }
   try {
-    body = (await request.json()) as SaveFileRequest;
-  } catch {
-    return Response.json({ error: "Expected a JSON body." }, { status: 400 });
+    const outcome = await mergeSave(repo.ref, path, body.baseText ?? "", body.text, repo.headSha,
+      { name: result.user.displayName, email: result.user.email },
+      sha => repo.repoId ? setRoomRepoHeadSha(repo.repoId, sha) : setHeadSha(id, sha));
+    if (outcome.status === "conflict") return Response.json({ headSha: outcome.headSha, committed: false, conflict: true }, { status: 409 });
+    if (outcome.status === "clean") await events().then(bus => bus.publish(id, {
+      type: "file.saved", repoId: repo.repoId, path, headSha: outcome.headSha,
+      authorId: result.user.id, authorName: result.user.displayName,
+      originId: typeof body.originId === "string" ? body.originId : null, at: Date.now(),
+    })).catch(() => {});
+    return Response.json({ headSha: outcome.headSha, committed: outcome.status === "clean" });
+  } catch (cause) {
+    return Response.json({ error: cause instanceof Error ? cause.message : "Could not save this file." }, { status: 422 });
   }
-
-  const path = safeRelativePath(body.path);
-  if (!path) return Response.json(BAD_PATH, { status: 400 });
-  if (typeof body.text !== "string") {
-    return Response.json({ error: "A file body is required." }, { status: 400 });
-  }
-
-  const previous = repo.headSha;
-  await touchSession(id, result.user.id);
-
-  const author = { name: result.user.displayName, email: result.user.email };
-
-  // When the client tells us what version it edited from, save through a 3-way
-  // merge so a teammate's concurrent change to the same file is merged rather
-  // than clobbered. Without a base (a brand-new file), fall back to a plain write.
-  if (typeof body.baseText === "string") {
-    const outcome = await mergeSave(id, path, body.baseText, body.text, previous, author);
-
-    if (outcome.status === "conflict") {
-      // Nothing was committed; the client keeps the user's text to reconcile.
-      return Response.json(
-        { headSha: outcome.headSha, committed: false, conflict: true } satisfies SaveFileResponse,
-        { status: 409 },
-      );
-    }
-    if (outcome.status === "nochange") {
-      return Response.json({ headSha: outcome.headSha, committed: false } satisfies SaveFileResponse);
-    }
-
-    await setHeadSha(id, outcome.headSha);
-    await (await events()).publish(id, {
-      type: "file.saved",
-      path,
-      headSha: outcome.headSha,
-      authorId: result.user.id,
-      authorName: result.user.displayName,
-      originId: typeof body.originId === "string" ? body.originId : null,
-      at: Date.now(),
-    });
-    return Response.json({ headSha: outcome.headSha, committed: true } satisfies SaveFileResponse);
-  }
-
-  const sha = await withRepoLock(id, async () => {
-    await ensureWork(id, previous);
-    if (!(await writeRepoFile(id, path, body.text))) return null;
-    return commitWork(id, `WIP: ${path}`, result.user.displayName, result.user.email);
-  });
-
-  if (sha === null) {
-    // Either the write was rejected or the contents were already identical.
-    return Response.json({ headSha: previous, committed: false } satisfies SaveFileResponse);
-  }
-
-  await setHeadSha(id, sha);
-
-  // Announced after the commit lands, so anyone who reacts by re-reading the
-  // file is guaranteed to get the version the event is about.
-  await (await events()).publish(id, {
-    type: "file.saved",
-    path,
-    headSha: sha,
-    authorId: result.user.id,
-    authorName: result.user.displayName,
-    originId: typeof body.originId === "string" ? body.originId : null,
-    at: Date.now(),
-  });
-
-  return Response.json({ headSha: sha, committed: true } satisfies SaveFileResponse);
 }

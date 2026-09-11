@@ -265,6 +265,7 @@ export type AgentStatus = {
   vendor: string;
   blurb: string;
   installed: boolean;
+  execution?: "runner";
   /** Reported by the tool itself, when it is there. */
   version: string | null;
   /**

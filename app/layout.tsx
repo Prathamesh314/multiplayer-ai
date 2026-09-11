@@ -20,8 +20,8 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "multiplayer-ai",
-  description: "Collaborative code workspace with per-teammate AI chat.",
+  title: "multiplayer-ai · Build together",
+  description: "A shared workspace for your team and AI coding agents. Open a project, build in your own room, and review changes together.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

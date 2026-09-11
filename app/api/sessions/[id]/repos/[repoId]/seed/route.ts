@@ -1,5 +1,5 @@
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
-import { finishSeed, writeSeedBatch } from "../../../../../../lib/session/repo";
+import { finishSeed, writeSeedBatch, withRepoLock } from "../../../../../../lib/session/repo";
 import { finishRoomRepoSeed, getRoomRepo } from "../../../../../../lib/session/roomRepos";
 import type { SeedRequest } from "../../../../../../lib/session/types";
 
@@ -39,9 +39,7 @@ export async function POST(
   if (!repo || repo.sessionId !== id) {
     return Response.json({ error: "That repo isn't in this room." }, { status: 404 });
   }
-  if (repo.seededAt) {
-    return Response.json({ error: "This repo already holds its import." }, { status: 409 });
-  }
+  if (repo.createdBy !== result.user.id) return forbidden("Only the importing member can upload this repository.");
 
   let body: SeedRequest;
   try {
@@ -50,7 +48,10 @@ export async function POST(
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const files = Array.isArray(body.files) ? body.files : [];
+  if (!body || !Array.isArray(body.files) || body.files.some(file => !file || typeof file.path !== "string" || typeof file.data !== "string")) {
+    return Response.json({ error: "Expected a files array." }, { status: 400 });
+  }
+  const files = body.files;
   if (files.length > MAX_FILES_PER_BATCH) {
     return Response.json(
       { error: `Send at most ${MAX_FILES_PER_BATCH} files per batch.` },
@@ -58,6 +59,9 @@ export async function POST(
     );
   }
 
+  return withRepoLock(repoId, async () => {
+  const current = await getRoomRepo(repoId);
+  if (current?.seededAt) return Response.json({ written: 0, skipped: [], headSha: current.headSha } satisfies RoomRepoSeedResponse);
   const { written, skipped } = await writeSeedBatch(repoId, files);
 
   if (!body.done) {
@@ -69,4 +73,5 @@ export async function POST(
   await finishRoomRepoSeed(repoId, { headSha: seeded.headSha, upstreamUrl: upstream });
 
   return Response.json({ written, skipped, headSha: seeded.headSha } satisfies RoomRepoSeedResponse);
+  });
 }

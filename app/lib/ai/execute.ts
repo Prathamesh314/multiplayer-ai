@@ -1,11 +1,11 @@
+import { startTurn, failTurn } from "./turns";
 import { spawn } from "node:child_process";
 import { events } from "../events";
-import { commitWork, ensureWork, withRepoLock } from "../session/repo";
-import { workPath } from "../session/paths";
+import { commitTurnWork, prepareTurnWork } from "../session/repo";
 import { agentById } from "./catalog";
 import { agentEnv } from "./env";
 import { finalizeAgentRun } from "./finalize";
-import { appendMessage, finishRun } from "./runs";
+import { appendMessage } from "./runs";
 import type { AgentRunJob, AiRunEvent } from "./run-events";
 
 /**
@@ -50,12 +50,17 @@ export function executeAgentRun(
   const failFast = async (message: string): Promise<void> => {
     onEvent({ t: "err", d: message });
     onEvent({ t: "exit", code: null, ms: 0, headSha: null, committed: false });
-    await finishRun(runId, { status: "failed", error: message }).catch(() => {});
+    await failTurn(job.turnId, message).catch(() => {});
     broadcast({ type: "run.finished", runId, status: "failed", headSha: null, at: Date.now() });
   };
 
   return new Promise<void>((resolve) => {
     void (async () => {
+      if (!await startTurn(job)) {
+        onEvent({ t: "notice", message: "This turn was already claimed or is no longer eligible to execute." });
+        resolve();
+        return;
+      }
       const agent = agentById(job.agentId);
       if (!agent) {
         await failFast("Unknown agent.");
@@ -70,8 +75,9 @@ export function executeAgentRun(
       // Materialize the working copy at the run's base before spawning. A cold
       // clone would otherwise stall the first event, so it happens here rather
       // than upstream, and a failure fails the run cleanly.
+      let cwd: string;
       try {
-        await withRepoLock(repoRef, () => ensureWork(repoRef, baseSha));
+        cwd = await prepareTurnWork(repoRef, job.turnId, baseSha);
       } catch (cause) {
         await failFast(
           `Could not prepare the workspace: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -80,7 +86,6 @@ export function executeAgentRun(
         return;
       }
 
-      const cwd = workPath(repoRef);
       const startedAt = Date.now();
       let closed = false;
       let bytes = 0;
@@ -208,17 +213,18 @@ export function executeAgentRun(
         // uncommitted" invariant and letting everyone else see the result.
         let sha: string | null = null;
         try {
-          sha = await withRepoLock(repoRef, () =>
-            commitWork(repoRef, `${bin}: agent run`, author.name, author.email),
-          );
+          sha = await commitTurnWork(repoRef, job.turnId, baseSha, author);
         } catch (cause) {
-          send({ t: "err", d: `Could not commit the changes: ${String(cause)}\n` });
+          code = 1;
+          errBuf += `Could not commit the changes: ${String(cause)}\n`;
+          send({ t: "err", d: errBuf });
         }
 
         // Everything from here — head advance, transcript, diff stats, room
         // events, memory ingest — is the shared close-out the runner protocol's
         // /complete route also runs, so cloud and local runs end identically.
         const finalized = await finalizeAgentRun({
+          turnId: job.turnId,
           sessionId,
           runId,
           repoId: job.repoId,
@@ -231,15 +237,20 @@ export function executeAgentRun(
           output: outBuf,
           errOutput: errBuf,
           onError: (message) => send({ t: "err", d: message }),
-        }).catch(() => null);
+        }).catch((cause) => {
+          code = 1;
+          send({ t: "err", d: `Finalization needs recovery: ${String(cause)}` });
+          return null;
+        });
+        if (finalized?.status === "failed") code = 1;
         // The run record is best-effort; the live stream already succeeded.
 
         send({
           t: "exit",
           code,
           ms: Date.now() - startedAt,
-          headSha: sha,
-          committed: sha !== null,
+          headSha: finalized?.headSha ?? null,
+          committed: finalized?.headSha != null,
           // The driver's stream builds its "changed files" line from this;
           // watchers and later readers get the durable system turn instead.
           changes: finalized && finalized.changes.length > 0 ? finalized.changes : undefined,

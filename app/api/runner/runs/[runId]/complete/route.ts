@@ -38,7 +38,7 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   }
 
   const { runId } = await context.params;
-  const job = await claimedJob(runId, device.id);
+  const job = await claimedJob(runId, device.id, true);
   if (!job) return Response.json({ error: "Not your claimed run." }, { status: 404 });
 
   let body: RunnerCompleteRequest;
@@ -48,6 +48,9 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
+  if (!body || (body.code !== null && (!Number.isInteger(body.code) || Math.abs(body.code) > 255))) {
+    return Response.json({ error: "Expected a valid exit code." }, { status: 400 });
+  }
   const code = typeof body.code === "number" ? body.code : null;
   const output = typeof body.output === "string" ? body.output.slice(0, MAX_OUTPUT_BYTES) : "";
   const errOutput = typeof body.errOutput === "string" ? body.errOutput.slice(0, MAX_ERR_BYTES) : "";
@@ -71,7 +74,8 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
 
   const finalized = await finalizeAgentRun({
     sessionId: job.sessionId,
-    runId,
+    turnId: runId,
+    runId: job.runId,
     repoId: job.repoId,
     baseSha: job.baseSha,
     userPrompt: job.userPrompt,
@@ -88,10 +92,10 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   // send, and only after the report checked out.
   await publishRunEvent(runId, {
     t: "exit",
-    code,
+    code: finalized.status === "failed" ? 1 : code,
     ms,
-    headSha: sha,
-    committed: sha !== null,
+    headSha: finalized.headSha,
+    committed: finalized.headSha !== null,
     changes: finalized.changes.length > 0 ? finalized.changes : undefined,
   }).catch(() => {});
 

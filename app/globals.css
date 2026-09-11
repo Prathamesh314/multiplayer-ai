@@ -4,6 +4,7 @@
    not a document that should flip to a white page on a light OS. Light mode
    is an explicit opt-in via the OS preference (see the media query below). */
 :root {
+  color-scheme: dark;
   --background: #08080a;
   --foreground: #eceef1;
 
@@ -50,6 +51,7 @@
 
 @media (prefers-color-scheme: light) {
   :root {
+    color-scheme: light;
     --background: #ffffff;
     --foreground: #171717;
 
@@ -59,7 +61,7 @@
     --vs-chrome: #f0f0f0;
     --vs-border: #e2e2e2;
     --vs-fg: #3b3b3b;
-    --vs-muted: #767676;
+    --vs-muted: #656565;
     --vs-hover: rgb(0 0 0 / 0.045);
     --vs-active: #e9e9ea;
     --vs-accent: #171717;
@@ -141,6 +143,24 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--vs-accent);
+  outline-offset: 3px;
+}
+
+.workspace-welcome {
+  background: radial-gradient(ellipse at top right, var(--vs-active), transparent 70%), var(--vs-panel);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Headings and titles: the display grotesque, set tight with a touch of optical
    weight. Applied via the `font-display` utility on the elements themselves. */
 .font-display {
@@ -170,4 +190,11 @@ body {
 .vs-scroll::-webkit-scrollbar-corner,
 .vs-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.room-code { max-width: 50%; }
+.room-ai { min-width: 300px; }
+@media (max-width: 1023px) {
+  .room-sidebar, .room-code { width: 100% !important; max-width: none; flex: 1; }
+  .room-ai { min-width: 0; }
 }

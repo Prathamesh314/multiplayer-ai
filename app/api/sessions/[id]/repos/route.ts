@@ -1,5 +1,5 @@
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
-import { createRepo } from "../../../../lib/session/repo";
+import { createRepo, withRepoLock } from "../../../../lib/session/repo";
 import { createRoomRepo, listRoomRepos } from "../../../../lib/session/roomRepos";
 import type { RoomRepo } from "../../../../lib/session/roomRepos";
 
@@ -50,6 +50,11 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     return Response.json({ error: "Give the repo a name (at most 100 characters)." }, { status: 400 });
   }
 
+  const unfinished = (await listRoomRepos(id)).find(repo => repo.rootName === name && !repo.seededAt && repo.createdBy === result.user.id);
+  if (unfinished) {
+    await withRepoLock(unfinished.id, () => createRepo(unfinished.id));
+    return Response.json({ repo: unfinished } satisfies CreateRoomRepoResponse);
+  }
   let repo: RoomRepo;
   try {
     repo = await createRoomRepo({ sessionId: id, rootName: name, createdBy: result.user.id });
@@ -63,6 +68,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     throw cause;
   }
 
-  await createRepo(repo.id);
+  await withRepoLock(repo.id, () => createRepo(repo.id));
   return Response.json({ repo } satisfies CreateRoomRepoResponse);
 }

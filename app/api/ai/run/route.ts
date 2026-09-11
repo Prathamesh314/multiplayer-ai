@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto";
+import { continuationContext } from "../../../lib/ai/handoff";
+import { ControlError, isUuid, reserveTurn, prepareTurn, failTurn } from "../../../lib/ai/turns";
+import { queryOne } from "../../../lib/db/client";
 import { agentById, resolveChoice } from "../../../lib/ai/catalog";
 import { executeAgentRun } from "../../../lib/ai/execute";
 import {
   appendMessage,
   createRun,
-  finishRun,
   getRun,
   joinRun,
-  reopenRun,
   runHasOtherAuthors,
 } from "../../../lib/ai/runs";
 import { checkRunAllowed } from "../../../lib/ai/usage";
@@ -16,7 +18,7 @@ import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
 import { buildKnowledgeContext } from "../../../lib/knowledge";
 import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
 import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
-import { publishRunEvent, subscribeRunEvents } from "../../../lib/ai/run-stream";
+import { subscribeRunEvents } from "../../../lib/ai/run-stream";
 import { enqueueRun, queueEnabled } from "../../../lib/queue";
 import { hasOnlineDevice } from "../../../lib/runner/devices";
 import {
@@ -50,6 +52,8 @@ export type AiRunRequest = {
   title?: string;
   /** Continue an existing run (join-as-editor follow-up) instead of opening one. */
   runId?: string;
+  turnId?: string;
+  controlVersion?: number;
   /** Composer choices; validated against the agent's own allow-lists below. */
   model?: string;
   effort?: string;
@@ -88,6 +92,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || (body.runId && !isUuid(body.runId)) || (body.turnId && !isUuid(body.turnId))) {
+    return Response.json({ error: "Invalid chat or turn ID." }, { status: 400 });
+  }
+  const turnId = body.turnId ?? randomUUID();
+  if (await queryOne(`SELECT id FROM agent_turns WHERE id = $1`, [turnId])) {
+    return Response.json({ error: "This prompt has already been submitted. Reload the chat." }, { status: 409 });
+  }
   const result = await access(String(body.sessionId ?? ""));
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
@@ -100,16 +111,19 @@ export async function POST(request: Request) {
   }
 
   const gate = terminalAccess(request);
-  if (!gate.allowed) return Response.json({ error: gate.reason }, { status: 403 });
+
 
   const agent = agentById(String(body.agentId ?? ""));
   if (!agent) return Response.json({ error: "Unknown agent." }, { status: 400 });
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return Response.json({ error: "Write a prompt first." }, { status: 400 });
-  if (prompt.length > MAX_PROMPT) {
-    return Response.json({ error: "That prompt is too long." }, { status: 413 });
+  if (prompt.length > MAX_PROMPT - 8000) {
+    return Response.json({ error: "Use at most 12,000 characters, leaving room for conversation context." }, { status: 413 });
   }
+
+  const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id);
+  if (!useLocal && !gate.allowed) return Response.json({ error: "Connect your runner with this agent installed and signed in. Server execution is disabled." }, { status: 409 });
 
   const sessionId = result.session.id;
 
@@ -117,7 +131,11 @@ export async function POST(request: Request) {
   // next turn) continues an existing run; otherwise a fresh one is opened. The
   // prompt is stored as the first turn either way, attributed to whoever sent it.
   let run = body.runId ? await getRun(body.runId) : null;
-  if (run && run.sessionId !== sessionId) run = null;
+  if (body.runId && (!run || run.sessionId !== sessionId)) return Response.json({ error: "Chat not found." }, { status: 404 });
+  if (run && (run.driverUserId !== result.user.id || body.controlVersion !== run.controlVersion)) {
+    return Response.json({ error: "Only the current driver can continue. Refresh or accept a handoff." }, { status: 409 });
+  }
+  if (run && run.controlVersion > 0 && !useLocal) return Response.json({ error: "Connect your own runner with this agent before continuing a handed-off chat." }, { status: 409 });
 
   // Which repo the chat works on. A continued run keeps the repo it started
   // on; a new one takes the picker's choice — an imported room repo, or the
@@ -179,7 +197,7 @@ export async function POST(request: Request) {
       startedBy: result.user.id,
       agentId: agent.id,
       baseSha: headSha,
-      title: body.title?.trim() || prompt.slice(0, 80),
+      title: typeof body.title === "string" ? body.title.trim().slice(0, 200) || prompt.slice(0, 80) : prompt.slice(0, 80),
     });
     await (await events()).publish(sessionId, {
       type: "run.started",
@@ -215,8 +233,16 @@ export async function POST(request: Request) {
     // A second driver on someone else's run is recorded as an editor, and the
     // run is marked running again so it holds a concurrency slot while it works.
     await joinRun(run.id, result.user.id, "editor");
-    await reopenRun(run.id);
+
   }
+
+  try {
+    await reserveTurn(run.id, result.user.id, turnId, run.controlVersion);
+  } catch (cause) {
+    if (cause instanceof ControlError) return Response.json({ error: cause.message }, { status: cause.status });
+    throw cause;
+  }
+  try {
 
   // Materializing the working copy used to happen here; it now happens inside
   // executeAgentRun (see below), so it is identical whether the turn runs inline
@@ -306,10 +332,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // On a co-driven run (someone else has also sent prompts into it), tell the
-  // agent who is speaking so two people's intents in one run don't blur into
-  // one contradictory instruction. Solo runs — the common case — stay untagged,
-  // and separate members always have separate runs, so their contexts never mix.
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
 
   // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT.
@@ -320,6 +342,7 @@ export async function POST(request: Request) {
     prompt,
     handle: coDriven ? result.user.handle : null,
     referencedContext,
+    conversationContext: await continuationContext(run.id),
     importedContext,
     repoContext,
     sharedMemory,
@@ -354,6 +377,9 @@ export async function POST(request: Request) {
   // rebuilt from agentId inside executeAgentRun, because they are functions and
   // cannot cross a queue (see AgentRunJob).
   const job: AgentRunJob = {
+    turnId,
+    userId: result.user.id,
+    controlVersion: run.controlVersion,
     sessionId,
     runId: run.id,
     repoId,
@@ -365,6 +391,8 @@ export async function POST(request: Request) {
     author,
     userPrompt: prompt,
   };
+
+  await prepareTurn(job);
 
   const headers = {
     "content-type": "application/x-ndjson; charset=utf-8",
@@ -378,10 +406,15 @@ export async function POST(request: Request) {
   // runner's events off the same per-run channel a worker would use. No
   // runner online: with Redis the turn goes to a server worker; without, it
   // runs inline. The browser reads the same NDJSON stream in every case.
-  if (localRunnersEnabled() && (await hasOnlineDevice(result.user.id))) {
+  if (useLocal) {
     return new Response(localStream(job, result.user.id), { headers });
   }
   return new Response(queueEnabled() ? queuedStream(job) : inlineStream(job), { headers });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Could not prepare this turn.";
+    await failTurn(turnId, message);
+    return Response.json({ error: message }, { status: 500 });
+  }
 }
 
 const encoder = new TextEncoder();
@@ -445,7 +478,7 @@ function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
         }
       };
 
-      unsubscribe = await subscribeRunEvents(job.runId, (event) => {
+      unsubscribe = await subscribeRunEvents(job.turnId, (event) => {
         if (closed) return;
         try {
           controller.enqueue(frame(event));
@@ -462,7 +495,7 @@ function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
         const message = cause instanceof Error ? cause.message : String(cause);
         controller.enqueue(frame({ t: "err", d: `Could not queue the run: ${message}` }));
         controller.enqueue(frame({ t: "exit", code: null, ms: 0, headSha: null, committed: false }));
-        await finishRun(job.runId, { status: "failed", error: message }).catch(() => {});
+        await failTurn(job.turnId, message).catch(() => {});
         const bus = await events();
         await bus
           .publish(job.sessionId, {
@@ -495,15 +528,6 @@ function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
   });
 }
 
-/**
- * Local runner: the job waits in runner_jobs for one of the user's devices to
- * claim it; the runner's events arrive back over the same per-run channel a
- * server worker would use, so this forwards them identically to queuedStream.
- * The one extra duty is the fallback: if no device collects the job within
- * CLAIM_FALLBACK_MS, it is atomically reclaimed (impossible once a runner has
- * it) and dispatched to the cloud path instead — a closed laptop must cost
- * twenty seconds, not the run.
- */
 function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Array> {
   let closed = false;
   let unsubscribe: (() => Promise<void>) | null = null;
@@ -528,7 +552,7 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
       const fail = async (message: string) => {
         controller.enqueue(frame({ t: "err", d: message }));
         controller.enqueue(frame({ t: "exit", code: null, ms: 0, headSha: null, committed: false }));
-        await finishRun(job.runId, { status: "failed", error: message }).catch(() => {});
+        await failTurn(job.turnId, message).catch(() => {});
         const bus = await events();
         await bus
           .publish(job.sessionId, {
@@ -543,7 +567,7 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
       };
 
       // Subscribe before enqueueing so no early event slips through the gap.
-      unsubscribe = await subscribeRunEvents(job.runId, (event) => {
+      unsubscribe = await subscribeRunEvents(job.turnId, (event) => {
         if (closed) return;
         try {
           controller.enqueue(frame(event));
@@ -555,42 +579,18 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
 
       try {
         await enqueueLocalJob(job, userId);
+        controller.enqueue(frame({ t: "notice", message: "Queued for your runner. No agent has started yet." }));
       } catch (cause) {
         await fail(`Could not queue the run: ${cause instanceof Error ? cause.message : String(cause)}`);
         return;
       }
 
-      // The fallback: reclaim is atomic on 'queued', so it either takes the
-      // whole job back (no device ever saw it) or leaves the runner entirely
-      // alone — never both executing.
       fallback = setTimeout(() => {
         void (async () => {
           if (closed) return;
-          const reclaimed = await reclaimForServer(job.runId).catch(() => null);
+          const reclaimed = await reclaimForServer(job.turnId).catch(() => null);
           if (!reclaimed) return; // a runner has it; its events keep flowing
-          const fallbackNotice = "No runner picked this up — running in the cloud instead.";
-          controller.enqueue(frame({ t: "notice", message: fallbackNotice }));
-          // Durable, like every other run notice: the chat should always tell
-          // where a run actually executed and why.
-          void appendMessage({ runId: job.runId, role: "system", body: fallbackNotice })
-            .then(async (notice) => {
-              const bus = await events();
-              await bus.publish(job.sessionId, {
-                type: "run.turn", runId: job.runId, seq: notice.seq, role: "system",
-                authorName: null, body: notice.body, at: Date.now(),
-              });
-            })
-            .catch(() => {});
-          if (queueEnabled()) {
-            await enqueueRun(reclaimed).catch((cause) => fail(`Could not queue the run: ${String(cause)}`));
-          } else {
-            // Inline fallback still publishes through the per-run channel this
-            // stream already forwards (Redis is present whenever local routing
-            // is on), so the browser contract holds.
-            void executeAgentRun(reclaimed, (event) => {
-              void publishRunEvent(job.runId, event).catch(() => {});
-            });
-          }
+          await fail("Your runner did not collect this turn. Reconnect it and submit again; nothing ran on the server.");
         })();
       }, CLAIM_FALLBACK_MS);
       fallback.unref?.();

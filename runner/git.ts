@@ -34,8 +34,10 @@ export class RunnerGit {
     private readonly dataDir: string,
   ) {}
 
+  private turnId: string | null = null;
+
   private get authArgs(): string[] {
-    return ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`];
+    return ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, ...(this.turnId ? ["-c", `http.extraHeader=X-Turn-Id: ${this.turnId}`] : [])];
   }
 
   private async git(cwd: string, args: string[], withAuth = false): Promise<string> {
@@ -48,7 +50,7 @@ export class RunnerGit {
   }
 
   workPath(repoRef: string): string {
-    return join(this.dataDir, "work", repoRef);
+    return join(this.dataDir, "work", this.turnId ?? repoRef);
   }
 
   private remoteUrl(repoRef: string): string {
@@ -56,7 +58,8 @@ export class RunnerGit {
   }
 
   /** Materialize the repo at the run's base: clone once, then fetch + reset. */
-  async ensureWork(repoRef: string, baseSha: string): Promise<string> {
+  async ensureWork(repoRef: string, baseSha: string, turnId: string): Promise<string> {
+    this.turnId = turnId;
     const work = this.workPath(repoRef);
     const branch = `session/${repoRef}`;
 
@@ -85,19 +88,20 @@ export class RunnerGit {
     repoRef: string,
     message: string,
     author: { name: string; email: string },
+    turnId: string,
+    baseSha: string,
   ): Promise<string | null> {
     const work = this.workPath(repoRef);
     await this.git(work, ["add", "-A"]);
     const status = (await this.git(work, ["status", "--porcelain"])).trim();
-    if (status.length === 0) return null;
-
-    await this.git(work, [
+    if (status.length > 0) await this.git(work, [
       "-c", `user.name=${author.name}`,
       "-c", `user.email=${author.email}`,
       "commit", "-m", message,
     ]);
     const sha = (await this.git(work, ["rev-parse", "HEAD"])).trim();
-    await this.git(work, ["push", "origin", `HEAD:session/${repoRef}`], true);
+    if (sha === baseSha) return null;
+    await this.git(work, ["push", "origin", `HEAD:refs/turns/${turnId}`], true);
     return sha;
   }
 }

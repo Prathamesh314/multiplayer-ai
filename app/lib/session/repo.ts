@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile, lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
@@ -53,6 +53,7 @@ const CONFIG = [
 ];
 
 const GIT_ENV = {
+  GIT_NO_REPLACE_OBJECTS: "1",
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_TERMINAL_PROMPT: "0",
@@ -107,7 +108,7 @@ export async function createRepo(id: string): Promise<void> {
 
   await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
   await git(work, ["init", "-b", BASE_BRANCH]);
-  await git(work, ["remote", "add", "origin", bare]);
+  if (!await gitOk(work, ["remote", "get-url", "origin"])) await git(work, ["remote", "add", "origin", bare]);
 }
 
 // ---------------------------------------------------------------------------
@@ -439,12 +440,15 @@ export async function finishSeed(id: string, rootName: string): Promise<SessionR
 
   await git(work, ["add", "-A"]);
   // --allow-empty: an empty folder still needs a base commit to fork from.
-  await git(work, ["commit", "--allow-empty", "-m", "Seed session"]);
+  if (!await gitOk(work, ["rev-parse", "HEAD"]) || (await git(work, ["status", "--porcelain"])).trim()) {
+    await git(work, ["commit", "--allow-empty", "-m", "Seed session"]);
+  }
 
   const baseSha = (await git(work, ["rev-parse", "HEAD"])).trim();
   await git(work, ["push", "origin", BASE_BRANCH]);
 
-  await git(work, ["checkout", "-b", branch]);
+  if (await gitOk(work, ["show-ref", "--verify", `refs/heads/${branch}`])) await git(work, ["checkout", branch]);
+  else await git(work, ["checkout", "-b", branch]);
   await git(work, ["push", "-u", "origin", branch]);
 
   return {
@@ -654,7 +658,7 @@ export type RepoFile = {
  * invariant makes them equal, and this way a read costs no process spawn.
  */
 export async function readRepoFile(id: string, relative: string): Promise<RepoFile | null> {
-  const absolute = resolveInside(workPath(id), relative);
+  const absolute = await safeWorkFile(id, relative);
   if (!absolute) return null;
 
   let bytes: Buffer;
@@ -679,7 +683,7 @@ export async function readRepoFile(id: string, relative: string): Promise<RepoFi
 }
 
 export async function readRepoBytes(id: string, relative: string): Promise<Buffer | null> {
-  const absolute = resolveInside(workPath(id), relative);
+  const absolute = await safeWorkFile(id, relative);
   if (!absolute) return null;
   try {
     return await readFile(absolute);
@@ -697,7 +701,7 @@ export async function headSha(id: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 export async function writeRepoFile(id: string, relative: string, text: string): Promise<boolean> {
-  const absolute = resolveInside(workPath(id), relative);
+  const absolute = await safeWorkFile(id, relative);
   if (!absolute) return false;
 
   await mkdir(dirname(absolute), { recursive: true });
@@ -742,13 +746,22 @@ export async function mergeSave(
   incomingText: string,
   headAtRequest: string,
   author: { name: string; email: string },
+  onCommitted?: (sha: string) => Promise<void>,
 ): Promise<SaveResult> {
   const work = workPath(id);
   return withRepoLock(id, async () => {
-    await ensureWork(id, headAtRequest);
+    const canonical = (await git(barePath(id), ["rev-parse", `refs/heads/${sessionBranchOf(id)}`])).trim();
+    await ensureWork(id, canonical || headAtRequest);
+    await git(work, ["fetch", "origin", sessionBranchOf(id)]);
+    if ((await git(work, ["status", "--porcelain"])).trim()) throw new Error("The server checkout contains unsaved changes. They were preserved; ask the room owner to recover them.");
+    const localHead = await headSha(id);
+    if (localHead !== canonical && !await gitOk(work, ["merge-base", "--is-ancestor", localHead, canonical])) {
+      throw new Error("The server checkout has undelivered commits. They were preserved for recovery.");
+    }
+    await checkoutHead(id, canonical);
 
-    const absolute = resolveInside(work, relative);
-    if (!absolute) throw new Error("Unsafe path.");
+    const absolute = await safeWorkFile(id, relative);
+    if (!absolute) throw new Error("Unsafe path or symbolic link.");
 
     let ours = "";
     try {
@@ -763,7 +776,9 @@ export async function mergeSave(
     if (ours === baseText) {
       await writeRepoFile(id, relative, incomingText);
       const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
-      return { status: "clean", headSha: sha ?? (await headSha(id)) };
+      const savedSha = sha ?? (await headSha(id));
+      await onCommitted?.(savedSha);
+      return { status: "clean", headSha: savedSha };
     }
 
     // The file changed under the editor — merge the two sets of edits.
@@ -786,7 +801,9 @@ export async function mergeSave(
       const merged = await readFile(oursTmp, "utf8");
       await writeRepoFile(id, relative, merged);
       const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
-      return { status: "clean", headSha: sha ?? (await headSha(id)) };
+      const savedSha = sha ?? (await headSha(id));
+      await onCommitted?.(savedSha);
+      return { status: "clean", headSha: savedSha };
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
@@ -821,7 +838,7 @@ export async function commitWork(
 
   // A failed push must not lose the commit: it is safe locally, and the next
   // save will carry it. Surfacing it as an error would be worse.
-  await gitOk(work, ["push", "origin", sessionBranchOf(id)]);
+  await git(work, ["push", "origin", sessionBranchOf(id)]);
   return sha;
 }
 
@@ -843,7 +860,16 @@ export async function ensureWork(id: string, sha: string): Promise<void> {
   const work = workPath(id);
   const branch = sessionBranchOf(id);
 
-  if (await isWorkTree(work)) return;
+  if (await isWorkTree(work)) {
+    await git(work, ["fetch", "origin", branch]);
+    const current = await headSha(id);
+    if (current === sha) return;
+    if ((await git(work, ["status", "--porcelain"])).trim() || !await gitOk(work, ["merge-base", "--is-ancestor", current, sha])) {
+      throw new Error("This checkout has unsaved changes or undelivered commits. They were preserved for recovery.");
+    }
+    await checkoutHead(id, sha);
+    return;
+  }
 
   await rm(work, { recursive: true, force: true });
   await mkdir(dirname(work), { recursive: true });
@@ -857,4 +883,86 @@ async function isWorkTree(work: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function prepareTurnWork(repoRef: string, turnId: string, baseSha: string): Promise<string> {
+  const work = workPath(`turn-${turnId}`);
+  await mkdir(dirname(work), { recursive: true });
+  await git(dirname(work), ["clone", "--no-checkout", barePath(repoRef), work]);
+  await git(work, ["checkout", "--detach", baseSha]);
+  return work;
+}
+
+export async function commitTurnWork(repoRef: string, turnId: string, baseSha: string, author: { name: string; email: string }): Promise<string | null> {
+  const work = workPath(`turn-${turnId}`);
+  await git(work, ["add", "-A"]);
+  if ((await git(work, ["status", "--porcelain"])).trim()) {
+    await git(work, ["-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`, "commit", "-m", "Agent turn"]);
+  }
+  const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
+  if (sha === baseSha) return null;
+  await git(work, ["push", "origin", `HEAD:refs/turns/${turnId}`]);
+  return sha;
+}
+
+export async function promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string): Promise<void> {
+  const bare = barePath(repoRef);
+  const candidate = (await git(bare, ["rev-parse", `refs/turns/${turnId}`])).trim();
+  if (candidate !== sha || !await verifyPushedCommit(repoRef, baseSha, sha)) throw new Error("The turn's candidate commit could not be verified.");
+  const ref = `refs/heads/${sessionBranchOf(repoRef)}`;
+  const current = (await git(bare, ["rev-parse", ref])).trim();
+  if (current === sha) return;
+  if (current !== baseSha) throw new Error("Repository changed during execution. Your result is preserved on its turn ref; review it before merging.");
+  await git(bare, ["update-ref", ref, sha, baseSha]);
+}
+
+async function safeWorkFile(id: string, relative: string): Promise<string | null> {
+  const clean = safeRelativePath(relative);
+  if (!clean) return null;
+  let current = workPath(id);
+  for (const segment of clean.split("/")) {
+    current = join(current, segment);
+    const entry = await lstat(current).catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "ENOENT") return null;
+      throw cause;
+    });
+    if (entry?.isSymbolicLink()) return null;
+  }
+  return current;
+}
+
+export async function listCommittedTree(id: string, rootName: string, sha: string): Promise<TreeNode> {
+  const output = await git(barePath(id), ["ls-tree", "-rzl", "--full-tree", sha]);
+  const entries: TreeEntry[] = [];
+  for (const record of output.split("\0")) {
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    const fields = record.slice(0, tab).trim().split(/\s+/);
+    if (fields[1] === "blob") entries.push({ path: record.slice(tab + 1), size: Number(fields[3]) || 0 });
+  }
+  return buildTree(rootName, entries);
+}
+
+export async function readCommittedBytes(id: string, sha: string, relative: string): Promise<Buffer | null> {
+  if (!safeRelativePath(relative)) return null;
+  const bare = barePath(id);
+  const entry = await git(bare, ["ls-tree", "-z", sha, "--", relative]);
+  if (!entry.startsWith("100") || entry.split("\t")[1]?.replace(/\0$/, "") !== relative) return null;
+  const object = `${sha}:${relative}`;
+  const size = Number((await git(bare, ["cat-file", "-s", object])).trim());
+  if (size > MAX_SEED_FILE_BYTES) throw new Error("This file exceeds the 8 MB read limit.");
+  const { stdout } = await run("git", [...CONFIG, "cat-file", "blob", object], {
+    cwd: bare, env: { ...process.env, ...GIT_ENV }, encoding: "buffer", maxBuffer: MAX_SEED_FILE_BYTES + 1024,
+  });
+  return stdout;
+}
+
+export async function committedChanges(id: string, base: string, head: string): Promise<ChangedFile[]> {
+  const output = await git(barePath(id), ["diff", "--name-status", "--no-renames", "-z", base, head]);
+  const fields = output.split("\0");
+  const changes: ChangedFile[] = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    changes.push({ status: fields[index] as ChangedFile["status"], path: fields[index + 1] });
+  }
+  return changes;
 }

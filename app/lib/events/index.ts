@@ -40,9 +40,8 @@ async function build(): Promise<EventBus> {
   const url = process.env.REDIS_URL;
   if (!url) return createMemoryBus();
 
-  const specifier = "redis";
   try {
-    const { createClient } = (await import(specifier)) as {
+    const { createClient } = (await import("redis")) as {
       createClient: (options: { url: string }) => {
         connect(): Promise<unknown>;
         duplicate(): {

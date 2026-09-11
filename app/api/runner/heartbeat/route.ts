@@ -1,3 +1,5 @@
+import { query } from "../../../lib/db/client";
+import { agentById } from "../../../lib/ai/catalog";
 import { bearerToken, deviceFromToken } from "../../../lib/runner/devices";
 
 export const runtime = "nodejs";
@@ -16,6 +18,10 @@ export async function POST(request: Request) {
   if (!device) {
     return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
   }
+  const body = await request.json().catch(() => null);
+  if (body?.version !== "2" || !Array.isArray(body.agentIds)) return Response.json({ error: "Update your runner to protocol 2 and restart it." }, { status: 426 });
+  const agentIds = body.agentIds.filter((id: unknown): id is string => typeof id === "string" && !!agentById(id));
+  await query(`UPDATE runner_devices SET version = $2, agent_ids = $3 WHERE id = $1`, [device.id, "2", agentIds]);
   return Response.json(
     { ok: true, deviceId: device.id, serverTime: Date.now() } satisfies HeartbeatResponse,
     { headers: { "cache-control": "no-store" } },

@@ -25,6 +25,9 @@ export function useRoomRuns(sessionId: string): { runs: AgentRun[]; refresh: () 
     const stream = openSessionStream(sessionId, {
       onRunStarted: refresh,
       onRunFinished: refresh,
+      onRunControl: refresh,
+      onRunTurn: refresh,
+      onStatus: connected => { if (connected) refresh(); },
     });
     return () => stream.close();
   }, [sessionId, refresh]);

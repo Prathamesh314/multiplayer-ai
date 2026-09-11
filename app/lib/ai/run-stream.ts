@@ -49,8 +49,7 @@ async function build(): Promise<Bridge> {
     throw new Error("REDIS_URL is required for the run-stream bridge.");
   }
 
-  const specifier = "redis";
-  const { createClient } = (await import(specifier)) as {
+  const { createClient } = (await import("redis")) as {
     createClient: (options: { url: string }) => {
       connect(): Promise<unknown>;
       duplicate(): { connect(): Promise<unknown> } & Subscriber;

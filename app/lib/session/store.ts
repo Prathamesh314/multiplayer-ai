@@ -1,6 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
-import { roomRoleFromProject } from "../project/store";
 import type {
   ChatMessage,
   Session,
@@ -303,8 +302,9 @@ export async function getSession(id: string, viewerId?: string): Promise<Session
   // the project roster; a personal room falls back to session_members.
   let role: SessionRole | null = null;
   if (viewerId) {
-    role = row.project_id ? await roomRoleFromProject(id, viewerId) : null;
-    if (!role) role = await roleOf(id, viewerId);
+    role = (await queryOne<{ role: SessionRole | null }>(
+      `SELECT room_access_role($1, $2) AS role`, [id, viewerId],
+    ))?.role ?? null;
   }
   return toSession(row, role);
 }

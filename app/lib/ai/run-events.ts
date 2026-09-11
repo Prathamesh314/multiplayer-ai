@@ -44,6 +44,9 @@ export type AiRunEvent =
  * raw text the person typed, kept only for the shared-memory ingest at the end.
  */
 export type AgentRunJob = {
+  turnId: string;
+  userId: string;
+  controlVersion: number;
   sessionId: string;
   runId: string;
   /**

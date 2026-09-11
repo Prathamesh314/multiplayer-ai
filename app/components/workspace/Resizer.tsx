@@ -37,6 +37,17 @@ export function Resizer({ width, onResize, min = 180, max = 560, invert }: Resiz
     <div
       role="separator"
       aria-orientation="vertical"
+      aria-label="Resize workspace panel"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={width}
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const direction = (event.key === "ArrowRight" ? 1 : -1) * (invert ? -1 : 1);
+        onResize(Math.min(max, Math.max(min, width + direction * 24)));
+      }}
       onPointerDown={onPointerDown}
       className="relative w-px shrink-0 cursor-col-resize bg-vs-border transition-colors hover:bg-vs-accent"
     >

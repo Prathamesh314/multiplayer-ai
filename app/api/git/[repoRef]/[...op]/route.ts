@@ -1,3 +1,6 @@
+import { candidatePush } from "../../../../lib/runner/push";
+import { claimedJob } from "../../../../lib/runner/jobs";
+import { isUuid } from "../../../../lib/ai/turns";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -33,6 +36,7 @@ const SERVICES = new Set(["git-upload-pack", "git-receive-pack"]);
 
 /** Pinned config, mirroring app/lib/session/repo.ts — behave the same everywhere. */
 const GIT_ENV = {
+  GIT_NO_REPLACE_OBJECTS: "1",
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_TERMINAL_PROMPT: "0",
@@ -55,6 +59,11 @@ async function gate(request: Request, repoRef: string, write: boolean) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) return { error: refuse(401, "Unknown or revoked device token.") };
 
+  if (write) {
+    const turnId = request.headers.get("x-turn-id");
+    const job = isUuid(turnId) ? await claimedJob(turnId, device.id) : null;
+    if (!job || (job.repoId ?? job.sessionId) !== repoRef) return { error: refuse(403, "An active protocol-2 turn is required to push.") };
+  }
   const access = await resolveGitAccess(repoRef, device.userId, write);
   if (!access) return { error: refuse(404, "Not found.") };
 
@@ -73,7 +82,10 @@ function streamGit(
     env: { ...process.env, ...GIT_ENV, ...(options.gitProtocol ? { GIT_PROTOCOL: options.gitProtocol } : {}) },
     windowsHide: true,
   });
-  if (options.stdin) options.stdin.pipe(child.stdin);
+  if (options.stdin) {
+    options.stdin.on("error", () => child.kill("SIGKILL"));
+    options.stdin.pipe(child.stdin);
+  }
   else child.stdin.end();
   // Protocol errors surface to the client through the stream; the server log
   // is the place operators will actually debug a broken clone from.
@@ -159,8 +171,13 @@ export async function POST(request: Request, context: RouteContext<"/api/git/[re
       ]
     : ["upload-pack", "--stateless-rpc", gated.bare];
 
+  let stdin = bodyStream(request);
+  if (write) {
+    try { stdin = await candidatePush(stdin, request.headers.get("x-turn-id")!); }
+    catch (cause) { return refuse(403, cause instanceof Error ? cause.message : "Push refused."); }
+  }
   const body = streamGit(args, {
-    stdin: bodyStream(request),
+    stdin,
     gitProtocol: request.headers.get("git-protocol"),
   });
   return new Response(body, {

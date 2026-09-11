@@ -247,17 +247,17 @@ function AgentRunsBrowser({
         isSelf: member.userId === myId,
       });
     for (const run of runs)
-      if (!map.has(run.startedBy))
+      if (!map.has(run.driverUserId))
         // A run-starter with no roster row is still you if the id matches — a
         // public-room viewer has no session_members row but can start runs.
-        map.set(run.startedBy, {
-          id: run.startedBy,
-          name: run.startedByName,
-          isSelf: run.startedBy === myId,
+        map.set(run.driverUserId, {
+          id: run.driverUserId,
+          name: run.driverName,
+          isSelf: run.driverUserId === myId,
         });
 
     const lastRun = new Map<string, number>();
-    for (const run of runs) lastRun.set(run.startedBy, Math.max(lastRun.get(run.startedBy) ?? 0, run.createdAt));
+    for (const run of runs) lastRun.set(run.driverUserId, Math.max(lastRun.get(run.driverUserId) ?? 0, run.createdAt));
 
     return [...map.values()].sort(
       (a, b) =>
@@ -272,7 +272,7 @@ function AgentRunsBrowser({
     const map = new Map<string, { active: AgentRun[]; archived: AgentRun[] }>();
     for (const person of people) map.set(person.id, { active: [], archived: [] });
     for (const run of runs) {
-      const bucket = map.get(run.startedBy);
+      const bucket = map.get(run.driverUserId);
       if (!bucket) continue;
       (run.archivedAt ? bucket.archived : bucket.active).push(run);
     }

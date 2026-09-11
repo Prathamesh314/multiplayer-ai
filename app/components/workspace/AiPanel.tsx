@@ -27,6 +27,7 @@ import {
   SpinnerIcon,
 } from "../icons";
 import { Composer, type MentionRoom } from "./chat";
+import { HandoffPanel } from "./HandoffPanel";
 import { Markdown } from "./Markdown";
 import { PanelHeader } from "./TeamChatPanel";
 
@@ -34,6 +35,7 @@ type AiPanelProps = {
   sessionId: string;
   /** False for viewers: running an agent edits files. */
   canRun: boolean;
+  isOwner?: boolean;
   /** Room roster, for the "watching" cluster in the header. */
   members: SessionMember[];
   /** The signed-in user's id — reliable even in a public room with no roster row. */
@@ -103,6 +105,7 @@ type Turn = {
 export function AiPanel({
   sessionId,
   canRun,
+  isOwner = false,
   members,
   myUserId,
   entered,
@@ -149,13 +152,14 @@ export function AiPanel({
   const run = useRef<RunHandle | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
+  const historyGeneration = useRef(0);
   const uid = () => `t${(turnSeq.current += 1)}`;
 
   // Reliable even in a public room (no roster row to carry isSelf); falls back
   // to the roster only until the id resolves. Drives continue-vs-fork and "you".
   const myId = myUserId ?? members.find((member) => member.isSelf)?.userId ?? null;
   // Whether the run in view is the current user's (or a fresh compose).
-  const enteredIsMine = !entered || entered.startedBy === myId;
+  const enteredIsMine = !entered || entered.driverUserId === myId;
 
   // Refs the live event handlers read, so the one-time subscription below never
   // closes over stale state.
@@ -185,12 +189,14 @@ export function AiPanel({
 
   /** Load a run's stored conversation into the panel. */
   async function loadRun(target: AgentRun) {
+    const generation = ++historyGeneration.current;
     setError(null);
     liveTurnIdRef.current = null;
     const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
     setTurns([]);
     try {
       const { messages } = await fetchRun(sessionId, target.id);
+      if (generation !== historyGeneration.current || enteredRef.current?.id !== target.id) return;
       setTurns(
         messages
           // Every stored turn shows — replies, notices, warnings, errors, the
@@ -212,6 +218,7 @@ export function AiPanel({
           }),
       );
     } catch {
+      if (generation !== historyGeneration.current) return;
       setError("Could not load that run.");
     }
   }
@@ -250,7 +257,7 @@ export function AiPanel({
     queueMicrotask(() => {
       if (cancelled) return;
       if (entered && entered.id !== localRunIdRef.current) void loadRun(entered);
-      else if (!entered) setTurns([]);
+      else if (!entered) { historyGeneration.current += 1; setTurns([]); }
     });
     return () => {
       cancelled = true;
@@ -393,7 +400,7 @@ export function AiPanel({
   }
 
   function ask(prompt: string, contextRefs?: string[]) {
-    if (!connected || running) return;
+    if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
     setRunning(true);
     setError(null);
 
@@ -401,8 +408,8 @@ export function AiPanel({
     // follow-up keeps the same chat instead of opening a new one every time.
     // A message on someone else's run forks into a fresh run of your own
     // rather than editing theirs.
-    const continuing = entered && entered.startedBy === myId ? entered.id : undefined;
-    const agentId = continuing ? entered!.agentId : connected;
+    const continuing = entered && entered.driverUserId === myId ? entered.id : undefined;
+    const agentId = connected;
     const agentName = agents?.find((a) => a.id === agentId)?.name ?? agentId;
 
     // Claim the run as ours *before* the request. When continuing, the room
@@ -449,6 +456,7 @@ export function AiPanel({
         agentId,
         prompt,
         runId: continuing,
+        controlVersion: entered?.controlVersion,
         model,
         effort,
         forkFromRunId: forkFromRun,
@@ -725,6 +733,7 @@ export function AiPanel({
           ))}
         <WatchingCluster members={members} />
       </PanelHeader>
+      {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} />}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
@@ -788,11 +797,17 @@ export function AiPanel({
             onClick={() => run.current?.cancel()}
             className="ml-auto rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover hover:text-vs-fg"
           >
-            Stop
+            Detach
           </button>
         </div>
+      ) : entered && !enteredIsMine ? (
+        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">You’re watching {entered.driverName}’s chat. Accept a handoff to continue here, or <button className="text-vs-accent underline" onClick={() => onForkEntered(entered)}>fork a new chat</button>.</div>
+      ) : entered && ["running", "queued"].includes(entered.status) ? (
+        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">A turn is already in progress. You can continue when it finishes.</div>
       ) : (
         <Composer
+          key={`${entered?.id ?? "new"}:${repoId ?? "default"}`}
+          disabled={!ready}
           tall
           narrow
           footer={composerFooter}
@@ -1352,7 +1367,7 @@ function EmptyState({
         </p>
         <p className="mt-1 max-w-[15rem] text-sm leading-5 text-vs-muted">
           {ready
-            ? "Ask it to read, explain, or change the code. Everything it edits is committed to the session."
+            ? "Ask it to read, explain, or change this repository. Confirmed changes are shared with your room."
             : "Pick an installed agent above to start a conversation."}
         </p>
       </div>

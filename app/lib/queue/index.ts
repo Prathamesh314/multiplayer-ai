@@ -68,7 +68,7 @@ function getQueue(): Queue<AgentRunJob> {
  */
 export async function enqueueRun(job: AgentRunJob): Promise<void> {
   await getQueue().add("run", job, {
-    jobId: job.runId,
+    jobId: job.turnId,
     attempts: 1,
     removeOnComplete: true,
     // Keep a bounded tail of failures for debugging; they are not replayed.

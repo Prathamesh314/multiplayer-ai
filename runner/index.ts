@@ -14,6 +14,7 @@
  * `--once` processes a single job and exits — CI and smoke tests use it.
  */
 
+import { storeCompletion, deliverCompletions } from "./outbox";
 import { hostname } from "node:os";
 import { agentById } from "../app/lib/ai/catalog";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
@@ -55,6 +56,7 @@ async function pair(): Promise<void> {
  */
 async function processJob(
   api: RunnerApi,
+  dataDir: string,
   git: RunnerGit,
   job: NonNullable<Awaited<ReturnType<RunnerApi["claim"]>>>,
 ): Promise<void> {
@@ -70,9 +72,10 @@ async function processJob(
     if (queue.length === 0) return;
     const batch = queue;
     queue = [];
-    sending = sending.then(() => api.postEvents(job.runId, batch).catch(() => {}));
+    sending = sending.then(() => api.postEvents(job.turnId, batch).catch(() => {}));
   };
   const timer = setInterval(flush, FLUSH_MS);
+  const lease = setInterval(() => { sending = sending.then(() => api.postEvents(job.turnId, []).catch(() => {})); }, 15_000);
   const emit = (event: AiRunEvent) => {
     queue.push(event);
   };
@@ -86,7 +89,7 @@ async function processJob(
   try {
     if (!spec) throw new Error(`This machine doesn't know the agent "${job.agentId}".`);
 
-    const cwd = await git.ensureWork(repoRef, job.baseSha);
+    const cwd = await git.ensureWork(repoRef, job.baseSha, job.turnId);
     emit({ t: "start", agent: spec.bin, cwd, runId: job.runId });
 
     const result = await runAgentLocally({
@@ -102,19 +105,21 @@ async function processJob(
     errOutput = result.errOutput;
     ms = result.ms;
 
-    sha = await git.commitAndPush(repoRef, `${spec.bin}: agent run`, job.author);
+    sha = await git.commitAndPush(repoRef, `${spec.bin}: agent run`, job.author, job.turnId, job.baseSha);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     emit({ t: "err", d: `${message}\n` });
     errOutput = errOutput ? `${errOutput}\n${message}` : message;
-    code = code ?? 1;
+    code = 1;
   } finally {
     clearInterval(timer);
+    clearInterval(lease);
     flush();
     await sending;
   }
 
-  await api.complete(job.runId, { code, resultSha: sha, output, errOutput, ms });
+  await storeCompletion(dataDir, job.turnId, { code, resultSha: sha, output, errOutput, ms });
+  await deliverCompletions(dataDir, api);
   log(`run ${job.runId}: ${code === 0 ? "completed" : "failed"}${sha ? ` → ${sha.slice(0, 8)}` : ""}`);
 }
 
@@ -145,6 +150,7 @@ async function start(): Promise<void> {
   heartbeat.unref?.();
 
   for (;;) {
+    await deliverCompletions(config.dataDir, api);
     let job: Awaited<ReturnType<RunnerApi["claim"]>> = null;
     try {
       job = await api.claim(CLAIM_WAIT_MS);
@@ -160,7 +166,7 @@ async function start(): Promise<void> {
     }
     if (!job) continue;
 
-    await processJob(api, git, job).catch((cause) =>
+    await processJob(api, config.dataDir, git, job).catch((cause) =>
       console.error(`[runner] run ${job!.runId} failed to report: ${String(cause)}`),
     );
     if (once) break;

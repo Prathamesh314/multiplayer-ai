@@ -31,6 +31,7 @@ import { canEdit, type Session, type SessionRepo } from "../../lib/session/types
 import type { ScanResult } from "../../lib/types";
 import { FilesIcon, TerminalIcon } from "../icons";
 import type { AgentRun } from "../../lib/ai/runs";
+import { fetchRun } from "../../lib/ai/runs-client";
 import { AiPanel } from "./AiPanel";
 import type { Caret } from "./CodeEditor";
 import type { Buffer } from "./EditorArea";
@@ -129,14 +130,30 @@ export function Workspace({
   // terminal. `showTree` picks the right-top view — the Files tree, or a file.
   const [teamChatWidth, setTeamChatWidth] = useState(260);
   const [showTree, setShowTree] = useState(true);
-  const [rightWidth, setRightWidth] = useState(520);
-  const [terminalOpen, setTerminalOpen] = useState(true);
+  const [rightWidth, setRightWidth] = useState(480);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("chat");
+  const [showTeam, setShowTeam] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(260);
   // Live team-chat messages arriving over the session event stream.
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);
   // The room's agent runs, and which one is open in the chat (null = new run).
   const { runs, refresh: refreshRuns } = useRoomRuns(session.id);
   const [enteredRun, setEnteredRun] = useState<AgentRun | null>(null);
+  const [handoffInbox, setHandoffInbox] = useState<{ id: string; runId: string; title: string | null; sender: string }[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => void fetch(`/api/sessions/${session.id}/handoffs`, { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return;
+        const body = await response.json();
+        if (!controller.signal.aborted) setHandoffInbox(body.offers);
+      }).catch(() => {});
+    refresh();
+    const stream = openSessionStream(session.id, { onRunControl: refresh, onStatus: connected => { if (connected) refresh(); } });
+    const timer = setInterval(refresh, 15_000);
+    return () => { controller.abort(); clearInterval(timer); stream.close(); };
+  }, [session.id]);
   // The chat whose context the next new run will import into its memory, if any.
   // Shared so the sidebar/header "Fork" actions and the composer picker agree.
   const [forkFromRunId, setForkFromRunId] = useState<string | null>(null);
@@ -146,13 +163,25 @@ export function Workspace({
   // project's codebase: any folder can be imported and chatted about here.
   const [roomRepos, setRoomRepos] = useState<RoomRepo[]>([]);
   const [chatRepoId, setChatRepoId] = useState<string | null>(null);
+  const selectedRepoRef = useRef<string | null>(null);
+  const loadGeneration = useRef(0);
+  const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
+  const [importProgress, setImportProgress] = useState<SeedProgress | null>(null);
   const [importingRepo, setImportingRepo] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let cancelled = false;
     void fetchRoomRepos(session.id).then((repos) => {
-      if (!cancelled) setRoomRepos(repos);
-    });
+      if (cancelled) return;
+      setRoomRepos(repos);
+      const remembered = sessionStorage.getItem(`room-repository:${session.id}`);
+      if (remembered && repos.some(repo => repo.id === remembered && repo.seededAt) && buffersRef.current.size === 0) {
+        selectedRepoRef.current = remembered;
+        loadGeneration.current += 1;
+        setChatRepoId(remembered);
+        setResult(null);
+      }
+    }).catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load imported repositories."); });
     return () => {
       cancelled = true;
     };
@@ -164,8 +193,7 @@ export function Workspace({
    * scanned folder, which must not happen for an import — the editor stays on
    * the room's own repo; the imported one exists for its chats.
    */
-  const importRepoFromSource = useCallback(
-    async (source: PickedSource) => {
+  async function importRepoFromSource(source: PickedSource) {
       setImportingRepo(true);
       setError(null);
       try {
@@ -173,10 +201,13 @@ export function Workspace({
           source.kind === "handle"
             ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
             : await scanFileList(source.files, "input", { includeIgnored: false });
-        const { repo: imported, skipped } = await importRoomRepo(session.id, scanned);
+        const { repo: imported, skipped } = await importRoomRepo(session.id, scanned, setImportProgress);
         setRoomRepos((previous) => [...previous, imported]);
         // The next new chat targets what was just imported — that's why it was.
-        setChatRepoId(imported.id);
+        const selected = await selectRepository(imported.id);
+        if (!selected) return;
+        setMobilePane("files");
+        setShowTree(true);
         setEnteredRun(null);
         if (skipped.length > 0) {
           setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
@@ -185,10 +216,9 @@ export function Workspace({
         setError(cause instanceof Error ? cause.message : "Could not import that folder.");
       } finally {
         setImportingRepo(false);
+        setImportProgress(null);
       }
-    },
-    [session.id],
-  );
+  }
 
   async function openImportPicker() {
     if (!window.showDirectoryPicker) {
@@ -239,8 +269,12 @@ export function Workspace({
   }, [session.projectId, session.name, repo, roomRepos]);
   // Fork a chat: a fresh chat that imports the source run's context on send.
   const startFork = (run: AgentRun) => {
-    setEnteredRun(null);
-    setForkFromRunId(run.id);
+    void selectRepository(run.repoId).then(selected => {
+      if (!selected) return;
+      setEnteredRun(null);
+      setForkFromRunId(run.id);
+      setMobilePane("chat");
+    });
   };
 
   /**
@@ -248,12 +282,12 @@ export function Workspace({
    * is what keeps "a session never holds uncommitted state" true for people as
    * well as for agents.
    */
-  const saver = useMemo(
-    () =>
-      createSaver(
-        session.id,
-        (path, saved, headSha) => {
-          setRepo((previous) => (previous ? { ...previous, headSha } : previous));
+  const savedFile = useCallback((path: string, saved: string, headSha: string) => {
+          if (selectedRepoRef.current !== chatRepoId) return;
+          if (chatRepoId) setRoomRepos(previous => previous.map(imported => imported.id === chatRepoId ? { ...imported, headSha } : imported));
+          else setRepo((previous) => (previous ? { ...previous, headSha } : previous));
+          const savedBuffer = buffersRef.current.get(path);
+          if (savedBuffer?.text === saved) buffersRef.current = new Map(buffersRef.current).set(path, { ...savedBuffer, original: saved });
           setSaveState("saved");
           setBuffers((previous) => {
             const buffer = previous.get(path);
@@ -263,27 +297,61 @@ export function Workspace({
             if (buffer.text !== saved) return previous;
             return new Map(previous).set(path, { ...buffer, original: saved });
           });
-        },
-        (message) => {
-          setSaveState("error");
-          setError(message);
-        },
-        (path) => {
-          // The save overlapped a teammate's edit and committed nothing. Flag
-          // it so the user reconciles instead of silently losing either change.
-          setSaveState("error");
-          setConflicts((previous) => new Map(previous).set(path, "a teammate"));
-        },
-      ),
-    [session.id],
+        }, [chatRepoId]);
+  const saver = useMemo(
+    () => createSaver(session.id, savedFile,
+      message => { setSaveState("error"); setError(message); },
+      path => { setSaveState("error"); setConflicts(previous => new Map(previous).set(path, "a teammate")); },
+      chatRepoId),
+    [session.id, chatRepoId, savedFile],
   );
+
+  async function selectRepository(next: string | null): Promise<boolean> {
+    if (next === selectedRepoRef.current) return true;
+    const generation = loadGeneration.current;
+    if (!await saver.flush() || [...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) {
+      setError("Save or resolve your edits before switching repositories. Your text is still here.");
+      return false;
+    }
+    if (generation !== loadGeneration.current) return false;
+    snapshots.current.set(chatRepoId ?? "", { tabs, activePath, buffers: buffersRef.current });
+    loadGeneration.current += 1;
+    selectedRepoRef.current = next;
+    const cached = snapshots.current.get(next ?? "");
+    const restored = new Map([...(cached?.buffers ?? [])].filter(([, buffer]) => !buffer.loading));
+    setBuffers(restored);
+    buffersRef.current = restored;
+    setTabs(cached?.tabs.filter(path => restored.has(path)) ?? []);
+    setActivePath(cached?.activePath && restored.has(cached.activePath) ? cached.activePath : null);
+    setConflicts(new Map());
+    setResult(null);
+    resultRef.current = null;
+    setChatRepoId(next);
+    setShowTree(true);
+    setSaveState("idle");
+    setError(null);
+    sessionStorage.setItem(`room-repository:${session.id}`, next ?? "");
+    return true;
+  }
+
+  async function enterRun(target: AgentRun) {
+    if (await selectRepository(target.repoId)) {
+      setEnteredRun(target);
+      setMobilePane("chat");
+    }
+  }
 
   // Nothing in flight may be dropped on the way out.
   useEffect(() => {
     const onHide = () => void saver.flush();
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if ([...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
     window.addEventListener("pagehide", onHide);
     return () => {
       window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", beforeUnload);
       void saver.flush();
     };
   }, [saver]);
@@ -309,10 +377,10 @@ export function Workspace({
     (next: Caret) => {
       setCaret(next);
       if (repo && !readOnly && activePath) {
-        notifyEditing(session.id, activePath, next.line, next.column);
+        notifyEditing(session.id, activePath, next.line, next.column, chatRepoId);
       }
     },
-    [repo, readOnly, activePath, session.id],
+    [repo, readOnly, activePath, session.id, chatRepoId],
   );
 
   // One heartbeat per open tab, for as long as this session is open. The tab
@@ -432,6 +500,25 @@ export function Workspace({
 
   // Resume: a session that already owns a repo is read from the repo, not from
   // whatever happens to be on this machine.
+  const refreshOpenBuffers = useCallback(async (scanned: ScanResult, generation: number) => {
+    for (const path of buffersRef.current.keys()) {
+      const content = await scanned.readFile(path);
+      if (generation !== loadGeneration.current) return;
+      const existing = buffersRef.current.get(path);
+      if (existing && existing.text !== existing.original) {
+        if (content?.text !== existing.original) setConflicts(previous => new Map(previous).set(path, "a repository update"));
+        continue;
+      }
+      setBuffers(previous => {
+        const buffer = previous.get(path);
+        if (!buffer || buffer.loading || buffer.text !== buffer.original) return previous;
+        return new Map(previous).set(path, content ? {
+          ...buffer, ...content, original: content.text, error: undefined,
+        } : { ...buffer, error: "This file is no longer available in the repository." });
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!session.repo) return;
 
@@ -441,8 +528,12 @@ export function Workspace({
     queueMicrotask(() => {
       if (cancelled) return;
       setScanning(true);
-      scanSession(session)
-        .then((scanned) => !cancelled && setResult(scanned))
+      scanSession(session, chatRepoId)
+        .then((scanned) => {
+          if (cancelled) return;
+          setResult(scanned);
+          void refreshOpenBuffers(scanned, loadGeneration.current);
+        })
         .catch((cause: unknown) => {
           if (cancelled) return;
           setError(cause instanceof Error ? cause.message : "Could not open this session.");
@@ -453,7 +544,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, chatRepoId, refreshOpenBuffers]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
@@ -497,6 +588,8 @@ export function Workspace({
   }
 
   async function openFile(path: string) {
+    const generation = loadGeneration.current;
+    setMobilePane("files");
     setActivePath(path);
     setShowTree(false); // Clicking a file swaps the right-top from the tree to the file.
     setCaret({ line: 1, column: 1 });
@@ -517,6 +610,7 @@ export function Workspace({
     );
 
     const content = await result?.readFile(path);
+    if (generation !== loadGeneration.current) return;
     setBuffers((previous) =>
       new Map(previous).set(path, {
         original: content?.text ?? "",
@@ -530,10 +624,13 @@ export function Workspace({
     );
   }
 
-  function closeTab(path: string) {
+  async function closeTab(path: string) {
+    const generation = loadGeneration.current;
     // Closing a tab discards its buffer, so anything still queued has to land
     // first or the edit is gone.
-    void saver.flush();
+    if (!await saver.flush() || generation !== loadGeneration.current) return;
+    const latest = buffersRef.current.get(path);
+    if (latest && latest.text !== latest.original) { setError("This file still has unsaved changes. Resolve them before closing."); return; }
 
     setTabs((previous) => {
       const next = previous.filter((candidate) => candidate !== path);
@@ -560,8 +657,16 @@ export function Workspace({
    * resolve by reopening the file.
    */
   const applyRemoteSave = useCallback(
-    async (event: FileSavedEvent) => {
-      setRepo((previous) => (previous ? { ...previous, headSha: event.headSha } : previous));
+    async function applyRemoteSave(event: FileSavedEvent) {
+      if ((event.repoId ?? null) !== selectedRepoRef.current) return;
+      const generation = loadGeneration.current;
+      if (event.repoId) setRoomRepos(previous => previous.map(imported => imported.id === event.repoId ? { ...imported, headSha: event.headSha } : imported));
+      else setRepo((previous) => (previous ? { ...previous, headSha: event.headSha } : previous));
+      if (!event.path) {
+        setTreeStale(true);
+        for (const path of buffersRef.current.keys()) await applyRemoteSave({ ...event, path });
+        return;
+      }
 
       const open = buffersRef.current.get(event.path);
       if (!open || open.loading) {
@@ -576,7 +681,7 @@ export function Workspace({
       }
 
       const content = await resultRef.current?.readFile(event.path);
-      if (!content) return;
+      if (!content || generation !== loadGeneration.current) return;
 
       setBuffers((previous) => {
         const buffer = previous.get(event.path);
@@ -611,7 +716,7 @@ export function Workspace({
     if (repo && !readOnly) {
       // Sent on the keystroke, not on the save: a save is over a second away,
       // which is far too late to show that someone is in the file.
-      notifyEditing(session.id, path, caretRef.current.line, caretRef.current.column);
+      notifyEditing(session.id, path, caretRef.current.line, caretRef.current.column, chatRepoId);
       setSaveState("saving");
       // The buffer's `original` is the committed version this edit is based on;
       // the server merges against it so a concurrent change is never clobbered.
@@ -623,10 +728,11 @@ export function Workspace({
   useEffect(() => {
     const stream = openSessionStream(session.id, {
       onFileSaved: (event) => {
+        if ((event.repoId ?? null) !== selectedRepoRef.current) return;
         people.onSaved(event);
         void applyRemoteSave(event);
       },
-      onFileEditing: people.onEditing,
+      onFileEditing: event => { if ((event.repoId ?? null) === selectedRepoRef.current) people.onEditing(event); },
       onMessage: (event) => setIncoming((previous) => [...previous, event.message]),
       onMembersChanged: people.refresh,
       onRoleChanged: (event) => {
@@ -642,7 +748,13 @@ export function Workspace({
             // A transient failure shouldn't nuke the room; keep the current role.
           });
       },
-      onStatus: setLive,
+      onStatus: connected => {
+        setLive(connected);
+        if (connected) {
+          setTreeStale(true);
+          void fetchRoomRepos(session.id).then(setRoomRepos).catch(() => {});
+        }
+      },
     });
     return () => stream.close();
   }, [session.id, repo, applyRemoteSave, people, reconnectNonce, myUserId, onAccessLost]);
@@ -653,23 +765,25 @@ export function Workspace({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      scanSession({ ...session, repo })
+      scanSession({ ...session, repo }, chatRepoId)
         .then((scanned) => {
           if (cancelled) return;
           setResult(scanned);
           setTreeStale(false);
+          void refreshOpenBuffers(scanned, loadGeneration.current);
         })
         .catch(() => !cancelled && setTreeStale(false));
     });
     return () => {
       cancelled = true;
     };
-  }, [treeStale, repo, session]);
+  }, [treeStale, repo, session, chatRepoId, refreshOpenBuffers]);
 
   /** Throws away local edits in favour of the committed version, on request. */
   async function reloadFile(path: string) {
+    const generation = loadGeneration.current;
     const content = await result?.readFile(path);
-    if (!content) return;
+    if (!content || generation !== loadGeneration.current) return;
 
     setBuffers((previous) => {
       const buffer = previous.get(path);
@@ -713,7 +827,7 @@ export function Workspace({
       <TopBar
         session={session}
         onInvite={() => setInviteOpen(true)}
-        onLeave={() => router.push("/")}
+        onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
@@ -722,7 +836,25 @@ export function Workspace({
         onOpenFolder={openPicker}
         canOpenFolder={!repo}
         members={people.members}
+        importedRepo={!!chatRepoId}
       />
+      {repo && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-panel px-3 py-2.5">
+        <button type="button" aria-expanded={showTeam} className="hidden rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover lg:block" onClick={() => setShowTeam(previous => !previous)}>Chats & team</button>
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium sm:flex-none">
+          <span className="text-vs-muted">Repository</span>
+          <select aria-label="Active repository" value={chatRepoId ?? ""} disabled={importingRepo} onChange={event => { const next = event.target.value || null; void selectRepository(next).then(changed => { if (changed) startNewRun(); }); }} className="min-w-0 max-w-64 flex-1 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 text-vs-fg">
+            {repoOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </select>
+        </label>
+        {!readOnly && <button type="button" disabled={importingRepo} onClick={() => void openImportPicker()} className="rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50">{importingRepo ? importProgress ? `Uploading ${importProgress.uploaded}/${importProgress.total}` : "Scanning folder…" : "Import folder"}</button>}
+        <span className="ml-auto hidden items-center gap-1.5 text-xs text-vs-muted sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-accent" : "bg-vs-danger"}`} />{live ? "Live room" : "Reconnecting"}</span>
+        <nav aria-label="Room panels" className="flex w-full gap-1 rounded-lg bg-vs-editor p-1 lg:hidden">{(["chat", "files", "team"] as const).map(pane => <button key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)} className={`flex-1 rounded-md px-3 py-1.5 text-xs capitalize ${mobilePane === pane ? "bg-vs-hover font-semibold text-vs-fg" : "text-vs-muted"}`}>{pane === "team" ? "Chats & team" : pane === "chat" ? "AI chat" : "Files & changes"}</button>)}</nav>
+      </div>}
+      {error && repo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => { setError(null); setTreeStale(true); }}>Retry</button></div>}
+      {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
+        <span className="min-w-0 flex-1 truncate"><strong>{offer.sender}</strong> offered you a handoff · {offer.title ?? "AI chat"}</span>
+        <button className="shrink-0 rounded-lg border border-vs-accent/40 px-3 py-1 font-medium text-vs-accent" onClick={() => { void fetchRun(session.id, offer.runId).then(({ run }) => enterRun(run)).catch(() => setError("Could not open this handoff. Refresh the room and try again.")); }}>Open handoff</button>
+      </div>)}
 
       <input
         ref={inputRef}
@@ -772,7 +904,7 @@ export function Workspace({
             {/* LEFT sidebar: team chat and the agent runs, browsed by person. */}
             <div
               style={{ width: teamChatWidth }}
-              className="flex min-h-0 shrink-0 flex-col border-r border-vs-border"
+              className={`room-sidebar min-h-0 shrink-0 flex-col border-r border-vs-border ${mobilePane === "team" ? "flex" : "hidden"} ${showTeam ? "lg:flex" : "lg:hidden"}`}
             >
               <RoomSidebar
                 sessionId={session.id}
@@ -783,42 +915,43 @@ export function Workspace({
                 runs={runs}
                 repos={repoOptions}
                 enteredRunId={enteredRun?.id ?? null}
-                onEnter={setEnteredRun}
+                onEnter={target => void enterRun(target)}
                 onNewRun={startNewRun}
                 onFork={startFork}
                 onRenamed={refreshRuns}
               />
             </div>
-            <Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={460} />
+            {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}
 
             {/* MIDDLE: the room's AI chat — the big space. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className={`room-ai min-h-0 min-w-0 flex-1 flex-col ${mobilePane === "chat" ? "flex" : "hidden"} lg:flex`}>
               <AiPanel
                 sessionId={session.id}
                 canRun={!readOnly}
                 members={people.members}
                 myUserId={myUserId}
                 entered={enteredRun}
+                isOwner={session.myRole === "owner"}
                 onRunsChanged={refreshRuns}
-                onEntered={setEnteredRun}
+                onEntered={target => { if (target.repoId === selectedRepoRef.current) setEnteredRun(target); }}
                 forkFromRunId={forkFromRunId}
                 onForkFromChange={setForkFromRunId}
                 onForkEntered={startFork}
                 onNewRun={startNewRun}
                 repoOptions={repoOptions}
                 repoId={chatRepoId}
-                onRepoChange={setChatRepoId}
+                onRepoChange={next => void selectRepository(next)}
                 onImportRepo={() => void openImportPicker()}
                 importingRepo={importingRepo}
               />
             </div>
 
-            <Resizer width={rightWidth} onResize={setRightWidth} min={360} max={900} invert />
+            <div className="hidden lg:flex"><Resizer width={rightWidth} onResize={setRightWidth} min={320} max={800} invert /></div>
 
             {/* RIGHT: the Files tree (and opened files) over the terminal. */}
             <div
               style={{ width: rightWidth }}
-              className="flex min-h-0 shrink-0 flex-col border-l border-vs-border"
+              className={`room-code min-h-0 shrink-0 flex-col border-l border-vs-border ${mobilePane === "files" ? "flex" : "hidden"} lg:flex`}
             >
               <div className="flex min-h-0 flex-1 flex-col">
                 <EditorArea
@@ -844,7 +977,7 @@ export function Workspace({
                           icon: <FilesIcon className="h-3.5 w-3.5" />,
                           node: (
                             <ExplorerPanel
-                              key={`${result.rootName}:${includeIgnored}`}
+                              key={`${chatRepoId ?? "default"}:${result.git.commit}:${includeIgnored}`}
                               result={result}
                               activePath={activePath}
                               scanning={scanning}
@@ -854,6 +987,7 @@ export function Workspace({
                               onOpenFile={openFile}
                               editing={people.editing}
                               sessionId={repo ? session.id : undefined}
+                              repoId={chatRepoId}
                             />
                           ),
                         }
@@ -863,7 +997,7 @@ export function Workspace({
                   onSelectPinned={() => setShowTree(true)}
                   emptyState={
                     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
-                      Pick a file from the Files tab to open it here.
+                      {scanning ? "Loading repository files…" : "Pick a file from the Files tab to open it here."}
                     </div>
                   }
                 />
@@ -873,7 +1007,7 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} />
                   <div style={{ height: terminalHeight }} className="flex min-h-0 shrink-0">
-                    <TerminalPanel onClose={() => setTerminalOpen(false)} />
+                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[11px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
                   </div>
                 </>
               ) : (
@@ -896,7 +1030,7 @@ export function Workspace({
         activePath={activePath}
         activeText={activeBuffer && !activeBuffer.loading && !activeBuffer.binary ? activeBuffer.text : null}
         caret={caret}
-        headSha={repo?.headSha ?? null}
+        headSha={chatRepoId ? roomRepos.find(imported => imported.id === chatRepoId)?.headSha ?? null : repo?.headSha ?? null}
         saveState={saveState}
         live={live}
         onReconnect={() => {

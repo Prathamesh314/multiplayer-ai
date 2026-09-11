@@ -1,3 +1,4 @@
+import { repositoryContext } from "../../../../lib/session/repository-context";
 import { events } from "../../../../lib/events";
 import { access, canWrite, denied } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
@@ -34,7 +35,9 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const path = safeRelativePath(body.path);
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
+  const path = safeRelativePath(body?.path);
   if (!path) return Response.json({ error: "That file path is not valid." }, { status: 400 });
 
   // Clamped rather than rejected: a caret slightly out of step with the file is
@@ -44,6 +47,7 @@ export async function POST(request: Request, context: RouteContext<"/api/session
 
   await (await events()).publish(id, {
     type: "file.editing",
+    repoId: repo.repoId,
     path,
     line: position(body.line),
     column: position(body.column),

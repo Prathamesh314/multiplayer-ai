@@ -34,6 +34,16 @@ export function RowResizer({ height, onResize, min = 120, max = 720 }: RowResize
     <div
       role="separator"
       aria-orientation="horizontal"
+      aria-label="Resize terminal"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={height}
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        onResize(Math.min(max, Math.max(min, height + (event.key === "ArrowUp" ? 24 : -24))));
+      }}
       onPointerDown={onPointerDown}
       className="relative h-px shrink-0 cursor-row-resize bg-vs-border transition-colors hover:bg-vs-accent"
     >

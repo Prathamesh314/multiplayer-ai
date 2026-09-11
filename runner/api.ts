@@ -1,3 +1,4 @@
+import { detectAgents } from "../app/lib/ai/detect";
 /*
  * The runner's half of the protocol (docs/local-execution.md §3.3): five
  * plain HTTP calls against the control plane, authenticated by the device
@@ -36,12 +37,13 @@ export class RunnerApi {
   }
 
   async heartbeat(): Promise<void> {
-    await this.post("/api/runner/heartbeat", {});
+    const agents = await detectAgents();
+    await this.post("/api/runner/heartbeat", { version: "2", agentIds: agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false).map(agent => agent.id) });
   }
 
   /** Long-poll for the next job addressed to this device's user. */
   async claim(waitMs: number): Promise<AgentRunJob | null> {
-    const body = await this.post<ClaimResponse>("/api/runner/claim", { waitMs });
+    const body = await this.post<ClaimResponse>("/api/runner/claim", { waitMs, version: "2" });
     return body.job;
   }
 

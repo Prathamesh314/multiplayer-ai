@@ -29,6 +29,7 @@ export type PromptContext = {
   handle?: string | null;
   /** Query-ranked slice of a referenced `@room/chat` (context.ts). */
   referencedContext?: string | null;
+  conversationContext?: string | null;
   /** Whole transcript imported once when a chat was forked (memory.ts). */
   importedContext?: string | null;
   /** Indexed repo-context recall, when the router chose it (knowledge/). */
@@ -56,6 +57,14 @@ export function assembleAgentPrompt(ctx: PromptContext): string {
   // On a co-driven run, tag who is speaking so two people's intents don't blur
   // into one contradictory instruction. Solo runs stay untagged.
   let agentPrompt = ctx.handle ? `[@${ctx.handle}] ${ctx.prompt}` : ctx.prompt;
+
+  if (ctx.conversationContext) {
+    const budget = remaining(agentPrompt, maxPrompt);
+    if (budget > 0) {
+      const recent = ctx.conversationContext.slice(-budget);
+      agentPrompt = `<conversation-history>\n${recent}\n</conversation-history>\n\n${agentPrompt}`;
+    }
+  }
 
   // Referenced context is the curated, query-ranked slice the asker explicitly
   // pointed at, so it is woven first and keeps its head on truncation.
