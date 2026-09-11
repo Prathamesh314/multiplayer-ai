@@ -864,6 +864,102 @@ await test("primary keys are time-ordered (uuidv7 where available)", async () =>
   assert.deepEqual(ids, sorted, "ids should already be in ascending order");
 });
 
+// --- team chat (channels + DMs) --------------------------------------------
+
+await test("a channel must carry a name", async () => {
+  await rejects(
+    db,
+    `INSERT INTO conversations (org_id, kind) VALUES ($1, 'channel')`,
+    [acme],
+    /conversations_channel_named/,
+  );
+});
+
+await test("a DM must be private and carry a dm_key", async () => {
+  await rejects(
+    db,
+    `INSERT INTO conversations (org_id, kind, visibility) VALUES ($1, 'dm', 'public')`,
+    [acme],
+    /conversations_dm_shape/,
+  );
+});
+
+await test("the same pair cannot open two DMs in one org", async () => {
+  // bob joins acme so he can share a conversation there.
+  await db.query(`INSERT INTO org_members (org_id, user_id, role) VALUES ($1, $2, 'member')`, [
+    acme,
+    bob,
+  ]);
+  const key = [alice, bob].sort().join(":");
+  await db.query(
+    `INSERT INTO conversations (org_id, kind, visibility, dm_key) VALUES ($1, 'dm', 'private', $2)`,
+    [acme, key],
+  );
+  await rejects(
+    db,
+    `INSERT INTO conversations (org_id, kind, visibility, dm_key) VALUES ($1, 'dm', 'private', $2)`,
+    [acme, key],
+    /conversations_dm_key_idx|duplicate key/,
+  );
+});
+
+await test("a member of another org cannot be smuggled into a conversation", async () => {
+  const channel = (
+    await db.query(
+      `INSERT INTO conversations (org_id, kind, name) VALUES ($1, 'channel', 'general') RETURNING id`,
+      [acme],
+    )
+  ).rows[0].id;
+  // mallory is in rival, not acme — the composite FK to org_members must reject.
+  await rejects(
+    db,
+    `INSERT INTO conversation_members (conversation_id, org_id, user_id) VALUES ($1, $2, $3)`,
+    [channel, acme, mallory],
+    /foreign key/,
+  );
+});
+
+await test("a blank chat message is rejected", async () => {
+  const channel = (
+    await db.query(
+      `INSERT INTO conversations (org_id, kind, name) VALUES ($1, 'channel', 'blanktest') RETURNING id`,
+      [acme],
+    )
+  ).rows[0].id;
+  await rejects(
+    db,
+    `INSERT INTO chat_messages (conversation_id, user_id, body) VALUES ($1, $2, '   ')`,
+    [channel, alice],
+    /chat_messages_body_present/,
+  );
+});
+
+await test("deleting an org takes its conversations and messages with it", async () => {
+  const owner = await user("chatowner");
+  const o = await org("chatco", owner);
+  const channel = (
+    await db.query(
+      `INSERT INTO conversations (org_id, kind, name) VALUES ($1, 'channel', 'general') RETURNING id`,
+      [o],
+    )
+  ).rows[0].id;
+  await db.query(
+    `INSERT INTO conversation_members (conversation_id, org_id, user_id, role) VALUES ($1, $2, $3, 'owner')`,
+    [channel, o, owner],
+  );
+  await db.query(`INSERT INTO chat_messages (conversation_id, user_id, body) VALUES ($1, $2, 'hi')`, [
+    channel,
+    owner,
+  ]);
+  await db.query(`DELETE FROM orgs WHERE id = $1`, [o]);
+  const convs = await db.query(`SELECT count(*)::int AS n FROM conversations WHERE org_id = $1`, [o]);
+  const msgs = await db.query(`SELECT count(*)::int AS n FROM chat_messages WHERE conversation_id = $1`, [
+    channel,
+  ]);
+  assert.equal(convs.rows[0].n, 0);
+  assert.equal(msgs.rows[0].n, 0, "messages should cascade with their conversation");
+});
+
 await db.close();
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

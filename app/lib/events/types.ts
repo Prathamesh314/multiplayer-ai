@@ -58,6 +58,25 @@ export type MembersChangedEvent = {
 };
 
 /**
+ * A team-chat message in a conversation (channel or DM), delivered the moment
+ * it is stored. Unlike a session message this is keyed by conversation id, not
+ * room id, but it rides the same bus — the bus channel is an opaque string.
+ */
+export type ChatMessageEvent = {
+  type: "chat.message";
+  conversationId: string;
+  message: {
+    id: string;
+    userId: string;
+    userName: string;
+    handle: string;
+    body: string;
+    createdAt: number;
+  };
+  at: number;
+};
+
+/**
  * One person's role in this room may have changed — promoted, demoted, or their
  * access revoked entirely. Carries only the affected user's id: others ignore
  * it, and the named user re-reads their own role through the authorised route
@@ -116,6 +135,7 @@ export type SessionEvent =
   | FileSavedEvent
   | FileEditingEvent
   | MessageCreatedEvent
+  | ChatMessageEvent
   | MembersChangedEvent
   | RoleChangedEvent
   | RunStartedEvent
