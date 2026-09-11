@@ -102,11 +102,16 @@ absent:
 ## The knowledge layer
 
 Cross-chat context is organized as a **knowledge graph** over the project
-(`app/lib/knowledge/`): project → rooms → runs, plus one repo node. Each room
-node maps to a vector bank in the sidecar (`session:<roomId>` — ingest writes
-there, `app/lib/ai/shared-memory.ts`); the repo node maps to a per-SHA bank
-(`repo:<projectId>:<sha12>`) distilled from the project's canonical `main`
-(file map, manifests, docs, export signatures — `repo-context.ts`).
+(`app/lib/knowledge/`): project → rooms → runs, plus repo context. Each room
+node maps to a vector bank in the sidecar (`session-<roomId>` — ingest writes
+there, `app/lib/ai/shared-memory.ts`); repo context is **per repo** — before
+the AI changes code it recalls from the bank of the repo it is about to edit
+(the room's fork or an imported repo) alongside the project's canonical
+`main`, each a per-SHA bank (`repo-<ref>-<sha12>`) distilled from that repo's
+own head (file map, manifests, docs, export signatures — `repo-context.ts`).
+Updates follow approval: publish refreshes the fork's and main's context;
+imported repos and personal rooms refresh at run completion, the only
+approval they have. Reads never index unapproved work.
 
 - The graph is **derived, never stored** — Postgres already owns the
   hierarchy, so deletion propagates for free: a deleted room never enters the

@@ -17,7 +17,7 @@
  *   ingests immediately, as it always did.
  *
  * Access framing is unchanged: each room's memories live in their own bank
- * (`session:<id>`), so recall — however it is orchestrated — can only fan out
+ * (`session-<id>`), so recall — however it is orchestrated — can only fan out
  * over banks whose rooms the caller can see.
  */
 

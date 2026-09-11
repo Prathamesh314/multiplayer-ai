@@ -76,11 +76,14 @@ export type KnowledgeContext = {
  * it directly.
  */
 export async function loadKnowledgeGraph(input: {
-  projectId: string;
+  /** Null for a personal room: the graph is just that room, no project fan-out. */
+  projectId: string | null;
   userId: string;
   currentSessionId: string;
 }): Promise<KnowledgeNode> {
-  const visible = await visibleRoomIds(input.projectId, input.userId);
+  const visible = input.projectId
+    ? await visibleRoomIds(input.projectId, input.userId)
+    : new Set<string>();
   // The caller's own room is always part of the graph, mirroring the flat
   // layer's contract: a chat can always recall its own memory.
   const ids = [...new Set([input.currentSessionId, ...visible])];
@@ -101,7 +104,7 @@ export async function loadKnowledgeGraph(input: {
         ORDER BY created_at DESC LIMIT $2`,
       [ids, RUN_NODE_CAP],
     ),
-    indexedRepoSha(input.projectId),
+    input.projectId ? indexedRepoSha(input.projectId) : Promise.resolve(null),
   ]);
 
   const activityByRoom = new Map(
@@ -115,7 +118,7 @@ export async function loadKnowledgeGraph(input: {
   }
 
   return assembleKnowledgeGraph({
-    projectId: input.projectId,
+    projectId: input.projectId ?? `personal:${input.currentSessionId}`,
     rooms: rooms.map((room) => ({
       id: room.id,
       name: room.name,
@@ -134,9 +137,12 @@ export async function loadKnowledgeGraph(input: {
  * are non-fatal for the run.
  */
 export async function buildKnowledgeContext(input: {
-  projectId: string;
+  /** Null for a personal room — knowledge then spans just that room + its repo. */
+  projectId: string | null;
   userId: string;
   currentSessionId: string;
+  /** The room repo the chat targets; null/omitted = the room's own fork. */
+  repoId?: string | null;
   prompt: string;
 }): Promise<KnowledgeContext> {
   const route = routeQuery(input.prompt);
@@ -150,9 +156,17 @@ export async function buildKnowledgeContext(input: {
     maxBanks: MAX_BANKS,
   });
 
-  // Keep the repo bank warm even on turns that don't recall from it, so the
-  // first code-shaped prompt after a publish isn't the one paying for indexing.
-  if (repoNode(graph) === null || route.repo) void ensureRepoIndexed(input.projectId);
+  // Keep the canonical-main bank warm even on turns that don't recall from
+  // it — main is approved by definition, so the read path may index it. The
+  // chat's own repo (fork or import) is deliberately NOT kicked here: its
+  // context updates only at approval points (publish / completion).
+  if (input.projectId && (repoNode(graph) === null || route.repo)) {
+    void ensureRepoIndexed(input.projectId);
+  }
+
+  // The repo the AI is about to change comes first; the project's canonical
+  // main rides along as the shared frame of reference.
+  const targetRepoRef = input.repoId ?? input.currentSessionId;
 
   // One parallel wave: every recall shares the same wall-clock budget instead
   // of queueing behind each other on the run's start path.
@@ -161,7 +175,12 @@ export async function buildKnowledgeContext(input: {
       rooms.map((room) => recall({ bank: room.bank!, query: input.prompt, topK: PER_BANK })),
     ),
     recallCanonical({ bank: roomBank(input.currentSessionId) }),
-    route.repo ? recallRepoContext(input.projectId, input.prompt) : Promise.resolve([]),
+    route.repo
+      ? recallRepoContext(
+          input.projectId ? [targetRepoRef, input.projectId] : [targetRepoRef],
+          input.prompt,
+        )
+      : Promise.resolve([]),
   ]);
 
   const top = mergeRecalled(perBank.flat(), TOTAL);

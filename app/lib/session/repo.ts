@@ -310,6 +310,55 @@ export async function listProjectFiles(projectId: string): Promise<string[]> {
   }
 }
 
+/*
+ * The same three reads for a *room's* repo — its fork, or an imported one —
+ * whose bare lives at `repos/<id>.git` and whose work happens on
+ * `session/<id>`. These exist so the context indexer can understand the repo
+ * a chat actually edits, not just the project's canonical main.
+ */
+
+/** The head of a room repo's working branch, straight from its bare repo. */
+export async function repoRefHeadSha(id: string): Promise<string | null> {
+  const bare = barePath(id);
+  if (!(await exists(bare))) return null;
+  try {
+    return (await git(bare, ["rev-parse", sessionBranchOf(id)])).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Every tracked path at a room repo's working-branch head. */
+export async function listRepoRefFiles(id: string): Promise<string[]> {
+  const bare = barePath(id);
+  if (!(await exists(bare))) return [];
+  try {
+    const out = await git(bare, ["ls-tree", "-r", "--name-only", sessionBranchOf(id)]);
+    return out.split("\n").map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** One file's text at a room repo's working-branch head; caps like the project variant. */
+export async function readRepoRefFileText(
+  id: string,
+  relative: string,
+  maxBytes = 64 * 1024,
+): Promise<string | null> {
+  const path = safeRelativePath(relative);
+  if (!path) return null;
+  const bare = barePath(id);
+  if (!(await exists(bare))) return null;
+  try {
+    const out = await git(bare, ["show", `${sessionBranchOf(id)}:${path}`]);
+    if (out.includes("\0")) return null;
+    return out.length > maxBytes ? out.slice(0, maxBytes) : out;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * One file's text at the project's `main` HEAD, or null when it is missing,
  * binary, or the path is unsafe. Truncated to `maxBytes` — the callers distill

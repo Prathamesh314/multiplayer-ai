@@ -5,10 +5,10 @@
  * fanning out to its runs (the individual chats), plus one repo node carrying
  * the indexed code context of the project's canonical `main`:
  *
- *   project ─┬─ repo                 bank: repo:<projectId>:<sha12>
- *            ├─ room ─┬─ run         bank: session:<roomId>
+ *   project ─┬─ repo                 bank: repo-<projectId>-<sha12>
+ *            ├─ room ─┬─ run         bank: session-<roomId>
  *            │        └─ run
- *            └─ room ─── run         bank: session:<roomId>
+ *            └─ room ─── run         bank: session-<roomId>
  *
  * A *bank* is a vector collection in the mnemosyne sidecar. The graph is the
  * app-side structure that decides which banks a retrieval touches, and in what
@@ -47,19 +47,26 @@ export type KnowledgeNode = {
   children: KnowledgeNode[];
 };
 
+/*
+ * Bank naming: the sidecar accepts only alphanumerics, hyphens, and
+ * underscores — a colon-separated name is silently rejected (remember() is
+ * fail-open), which is exactly the bug the original colon scheme shipped
+ * with. Hyphens throughout, verified against the live sidecar.
+ */
+
 /** A room's memory bank. One bank per room keeps recall access-scoped per room. */
 export function roomBank(sessionId: string): string {
-  return `session:${sessionId}`;
+  return `session-${sessionId}`;
 }
 
 /**
  * The repo-context bank for one indexed HEAD. Keyed by SHA so an advance of
- * `main` *replaces* the bank retrieval points at instead of mixing stale facts
- * into a current one — superseded banks are orphaned, never queried, which is
- * the delete story for code context.
+ * the head *replaces* the bank retrieval points at instead of mixing stale
+ * facts into a current one — superseded banks are orphaned, never queried,
+ * which is the delete story for code context.
  */
-export function repoBank(projectId: string, headSha: string): string {
-  return `repo:${projectId}:${headSha.slice(0, 12)}`;
+export function repoBank(ref: string, headSha: string): string {
+  return `repo-${ref}-${headSha.slice(0, 12)}`;
 }
 
 export type RoomInput = {
