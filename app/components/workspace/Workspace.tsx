@@ -29,7 +29,7 @@ import {
 } from "../../lib/session/remote";
 import { canEdit, type Session, type SessionRepo } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
-import { FilesIcon, TerminalIcon } from "../icons";
+import { FilesIcon, SparkleIcon, TerminalIcon } from "../icons";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
 import { AiPanel } from "./AiPanel";
@@ -106,11 +106,13 @@ export function Workspace({
   const [reconnectNonce, setReconnectNonce] = useState(0);
   /** Files a teammate changed under an edit of ours, which we refuse to discard. */
   const [conflicts, setConflicts] = useState<Map<string, string>>(() => new Map());
-  /** Set when a broadcast names a path we have never seen. */
-  const [treeStale, setTreeStale] = useState(false);
+  const [treeRevision, setTreeRevision] = useState(0);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const refreshTree = useCallback(() => setTreeRevision(previous => previous + 1), []);
 
   // Enabled unconditionally: the roster and chat matter before a folder is up.
   const people = usePeople(session.id, true);
+  const { onSaved: onPersonSaved, onEditing: onPersonEditing, refresh: refreshPeople } = people;
   /** Messages arriving over the stream, handed to the chat panel to merge. */
 
   const [tabs, setTabs] = useState<string[]>([]);
@@ -125,14 +127,11 @@ export function Workspace({
   const resultRef = useRef(result);
   const caretRef = useRef(caret);
 
-  // Three-column room: a team-chat sidebar (people talking to each other), the
-  // AI chat as the big middle, and the right stacks the file tree over the
-  // terminal. `showTree` picks the right-top view — the Files tree, or a file.
   const [teamChatWidth, setTeamChatWidth] = useState(260);
-  const [showTree, setShowTree] = useState(true);
-  const [rightWidth, setRightWidth] = useState(480);
+  const [showChat, setShowChat] = useState(true);
+  const [rightWidth, setRightWidth] = useState(400);
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("chat");
+  const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("files");
   const [showTeam, setShowTeam] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(260);
   // Live team-chat messages arriving over the session event stream.
@@ -174,7 +173,8 @@ export function Workspace({
     void fetchRoomRepos(session.id).then((repos) => {
       if (cancelled) return;
       setRoomRepos(repos);
-      const remembered = sessionStorage.getItem(`room-repository:${session.id}`);
+      let remembered: string | null = null;
+      try { remembered = sessionStorage.getItem(`room-repository:${session.id}`); } catch {}
       if (remembered && repos.some(repo => repo.id === remembered && repo.seededAt) && buffersRef.current.size === 0) {
         selectedRepoRef.current = remembered;
         loadGeneration.current += 1;
@@ -187,12 +187,6 @@ export function Workspace({
     };
   }, [session.id]);
 
-  /**
-   * Import a picked folder as a new repo in the room. Deliberately separate
-   * from the seeding `scan()` below: that one swaps the editor's tree to the
-   * scanned folder, which must not happen for an import — the editor stays on
-   * the room's own repo; the imported one exists for its chats.
-   */
   async function importRepoFromSource(source: PickedSource) {
       setImportingRepo(true);
       setError(null);
@@ -202,12 +196,12 @@ export function Workspace({
             ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
             : await scanFileList(source.files, "input", { includeIgnored: false });
         const { repo: imported, skipped } = await importRoomRepo(session.id, scanned, setImportProgress);
-        setRoomRepos((previous) => [...previous, imported]);
+        setRoomRepos((previous) => [...previous.filter(repo => repo.id !== imported.id), imported]);
         // The next new chat targets what was just imported — that's why it was.
         const selected = await selectRepository(imported.id);
         if (!selected) return;
         setMobilePane("files");
-        setShowTree(true);
+        setShowChat(true);
         setEnteredRun(null);
         if (skipped.length > 0) {
           setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
@@ -251,6 +245,8 @@ export function Workspace({
   // Open a fresh chat with nothing carried over. The repo selection is kept —
   // staying in the codebase you were just working in is the common case.
   const startNewRun = () => {
+    setShowChat(true);
+    setMobilePane("chat");
     setEnteredRun(null);
     setForkFromRunId(null);
   };
@@ -259,20 +255,21 @@ export function Workspace({
   // the room's own repo first (the project fork, or the seeded folder for a
   // personal room), then every finished import.
   const repoOptions = useMemo(() => {
-    const defaultLabel = session.projectId ? "Project" : (repo?.rootName ?? session.name);
+    const defaultLabel = repo?.rootName ?? session.name;
     return [
       { id: "", label: defaultLabel },
       ...roomRepos
         .filter((imported) => imported.seededAt)
         .map((imported) => ({ id: imported.id, label: imported.rootName })),
     ];
-  }, [session.projectId, session.name, repo, roomRepos]);
+  }, [session.name, repo, roomRepos]);
   // Fork a chat: a fresh chat that imports the source run's context on send.
   const startFork = (run: AgentRun) => {
     void selectRepository(run.repoId).then(selected => {
       if (!selected) return;
       setEnteredRun(null);
       setForkFromRunId(run.id);
+      setShowChat(true);
       setMobilePane("chat");
     });
   };
@@ -325,18 +322,20 @@ export function Workspace({
     setActivePath(cached?.activePath && restored.has(cached.activePath) ? cached.activePath : null);
     setConflicts(new Map());
     setResult(null);
+    setTreeError(null);
     resultRef.current = null;
     setChatRepoId(next);
-    setShowTree(true);
+    setShowChat(true);
     setSaveState("idle");
     setError(null);
-    sessionStorage.setItem(`room-repository:${session.id}`, next ?? "");
+    try { sessionStorage.setItem(`room-repository:${session.id}`, next ?? ""); } catch {}
     return true;
   }
 
   async function enterRun(target: AgentRun) {
     if (await selectRepository(target.repoId)) {
       setEnteredRun(target);
+      setShowChat(true);
       setMobilePane("chat");
     }
   }
@@ -502,7 +501,7 @@ export function Workspace({
   // whatever happens to be on this machine.
   const refreshOpenBuffers = useCallback(async (scanned: ScanResult, generation: number) => {
     for (const path of buffersRef.current.keys()) {
-      const content = await scanned.readFile(path);
+      const content = await scanned.readFile(path).catch(() => null);
       if (generation !== loadGeneration.current) return;
       const existing = buffersRef.current.get(path);
       if (existing && existing.text !== existing.original) {
@@ -520,23 +519,25 @@ export function Workspace({
   }, []);
 
   useEffect(() => {
-    if (!session.repo) return;
+    if (!repo) return;
 
     let cancelled = false;
+    const generation = loadGeneration.current;
     // Deferred a microtask so no state is set inside the effect body, matching
     // how the handed-off folder above is picked up.
     queueMicrotask(() => {
       if (cancelled) return;
       setScanning(true);
-      scanSession(session, chatRepoId)
+      setTreeError(null);
+      scanSession({ ...session, repo }, chatRepoId)
         .then((scanned) => {
-          if (cancelled) return;
+          if (cancelled || generation !== loadGeneration.current) return;
           setResult(scanned);
-          void refreshOpenBuffers(scanned, loadGeneration.current);
+          void refreshOpenBuffers(scanned, generation);
         })
         .catch((cause: unknown) => {
           if (cancelled) return;
-          setError(cause instanceof Error ? cause.message : "Could not open this session.");
+          setTreeError(cause instanceof Error ? cause.message : "Could not load repository files.");
         })
         .finally(() => !cancelled && setScanning(false));
     });
@@ -544,7 +545,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session, chatRepoId, refreshOpenBuffers]);
+  }, [session, repo, chatRepoId, treeRevision, refreshOpenBuffers]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
@@ -589,9 +590,9 @@ export function Workspace({
 
   async function openFile(path: string) {
     const generation = loadGeneration.current;
-    setMobilePane("files");
+    setMobilePane("chat");
     setActivePath(path);
-    setShowTree(false); // Clicking a file swaps the right-top from the tree to the file.
+    setShowChat(false);
     setCaret({ line: 1, column: 1 });
     setTabs((previous) => (previous.includes(path) ? previous : [...previous, path]));
 
@@ -609,7 +610,11 @@ export function Workspace({
       }),
     );
 
-    const content = await result?.readFile(path);
+    let fileError: string | undefined;
+    const content = await result?.readFile(path).catch(cause => {
+      fileError = cause instanceof Error ? cause.message : "Could not open this file. Try again.";
+      return null;
+    });
     if (generation !== loadGeneration.current) return;
     setBuffers((previous) =>
       new Map(previous).set(path, {
@@ -619,7 +624,7 @@ export function Workspace({
         binary: content?.binary ?? false,
         truncated: content?.truncated ?? false,
         loading: false,
-        error: content ? undefined : "The file could not be read from disk.",
+        error: content ? undefined : fileError ?? "This file is no longer available. Refresh the explorer.",
       }),
     );
   }
@@ -637,7 +642,7 @@ export function Workspace({
       if (path === activePath) {
         setActivePath(next.at(-1) ?? null);
         // Closing the last file returns the right-top to the Files tree.
-        if (next.length === 0) setShowTree(true);
+        if (next.length === 0) setShowChat(true);
       }
       return next;
     });
@@ -663,7 +668,7 @@ export function Workspace({
       if (event.repoId) setRoomRepos(previous => previous.map(imported => imported.id === event.repoId ? { ...imported, headSha: event.headSha } : imported));
       else setRepo((previous) => (previous ? { ...previous, headSha: event.headSha } : previous));
       if (!event.path) {
-        setTreeStale(true);
+        refreshTree();
         for (const path of buffersRef.current.keys()) await applyRemoteSave({ ...event, path });
         return;
       }
@@ -671,7 +676,7 @@ export function Workspace({
       const open = buffersRef.current.get(event.path);
       if (!open || open.loading) {
         // Not on screen. A new path means the tree is stale, so refresh it.
-        if (!open) setTreeStale(true);
+        if (!open) refreshTree();
         return;
       }
 
@@ -680,7 +685,7 @@ export function Workspace({
         return;
       }
 
-      const content = await resultRef.current?.readFile(event.path);
+      const content = await resultRef.current?.readFile(event.path).catch(() => null);
       if (!content || generation !== loadGeneration.current) return;
 
       setBuffers((previous) => {
@@ -696,7 +701,7 @@ export function Workspace({
         });
       });
     },
-    [],
+    [refreshTree],
   );
 
   function editBuffer(path: string, text: string) {
@@ -729,12 +734,12 @@ export function Workspace({
     const stream = openSessionStream(session.id, {
       onFileSaved: (event) => {
         if ((event.repoId ?? null) !== selectedRepoRef.current) return;
-        people.onSaved(event);
+        onPersonSaved(event);
         void applyRemoteSave(event);
       },
-      onFileEditing: event => { if ((event.repoId ?? null) === selectedRepoRef.current) people.onEditing(event); },
+      onFileEditing: event => { if ((event.repoId ?? null) === selectedRepoRef.current) onPersonEditing(event); },
       onMessage: (event) => setIncoming((previous) => [...previous, event.message]),
-      onMembersChanged: people.refresh,
+      onMembersChanged: refreshPeople,
       onRoleChanged: (event) => {
         // Only the named user reacts, and they re-read their own role through the
         // authorised route rather than trusting anything pushed over the wire.
@@ -751,48 +756,37 @@ export function Workspace({
       onStatus: connected => {
         setLive(connected);
         if (connected) {
-          setTreeStale(true);
+          refreshTree();
           void fetchRoomRepos(session.id).then(setRoomRepos).catch(() => {});
         }
       },
     });
     return () => stream.close();
-  }, [session.id, repo, applyRemoteSave, people, reconnectNonce, myUserId, onAccessLost]);
-
-  // A broadcast named a file we have never seen, so the tree is out of date.
-  useEffect(() => {
-    if (!treeStale || !repo) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      scanSession({ ...session, repo }, chatRepoId)
-        .then((scanned) => {
-          if (cancelled) return;
-          setResult(scanned);
-          setTreeStale(false);
-          void refreshOpenBuffers(scanned, loadGeneration.current);
-        })
-        .catch(() => !cancelled && setTreeStale(false));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [treeStale, repo, session, chatRepoId, refreshOpenBuffers]);
+  }, [session.id, applyRemoteSave, onPersonSaved, onPersonEditing, refreshPeople, refreshTree, reconnectNonce, myUserId, onAccessLost]);
 
   /** Throws away local edits in favour of the committed version, on request. */
   async function reloadFile(path: string) {
     const generation = loadGeneration.current;
-    const content = await result?.readFile(path);
-    if (!content || generation !== loadGeneration.current) return;
+    let fileError: string | undefined;
+    const content = await result?.readFile(path).catch(cause => {
+      fileError = cause instanceof Error ? cause.message : "Could not reload this file.";
+      return null;
+    });
+    if (generation !== loadGeneration.current) return;
+    if (!content) {
+      setError(fileError ?? "The file is unavailable. Your buffer was preserved.");
+      return;
+    }
 
     setBuffers((previous) => {
       const buffer = previous.get(path);
       if (!buffer) return previous;
       return new Map(previous).set(path, {
         ...buffer,
+        ...content,
         original: content.text,
-        text: content.text,
-        size: content.size,
+        loading: false,
+        error: undefined,
       });
     });
     setConflicts((previous) => {
@@ -842,15 +836,15 @@ export function Workspace({
         <button type="button" aria-expanded={showTeam} className="hidden rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover lg:block" onClick={() => setShowTeam(previous => !previous)}>Chats & team</button>
         <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium sm:flex-none">
           <span className="text-vs-muted">Repository</span>
-          <select aria-label="Active repository" value={chatRepoId ?? ""} disabled={importingRepo} onChange={event => { const next = event.target.value || null; void selectRepository(next).then(changed => { if (changed) startNewRun(); }); }} className="min-w-0 max-w-64 flex-1 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 text-vs-fg">
+          <select aria-label="Active repository" value={chatRepoId ?? ""} disabled={importingRepo} onChange={event => { const next = event.target.value || null; void selectRepository(next).then(changed => { if (changed) { startNewRun(); setMobilePane("files"); } }); }} className="min-w-0 max-w-64 flex-1 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 text-vs-fg">
             {repoOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
         {!readOnly && <button type="button" disabled={importingRepo} onClick={() => void openImportPicker()} className="rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50">{importingRepo ? importProgress ? `Uploading ${importProgress.uploaded}/${importProgress.total}` : "Scanning folder…" : "Import folder"}</button>}
         <span className="ml-auto hidden items-center gap-1.5 text-xs text-vs-muted sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-accent" : "bg-vs-danger"}`} />{live ? "Live room" : "Reconnecting"}</span>
-        <nav aria-label="Room panels" className="flex w-full gap-1 rounded-lg bg-vs-editor p-1 lg:hidden">{(["chat", "files", "team"] as const).map(pane => <button key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)} className={`flex-1 rounded-md px-3 py-1.5 text-xs capitalize ${mobilePane === pane ? "bg-vs-hover font-semibold text-vs-fg" : "text-vs-muted"}`}>{pane === "team" ? "Chats & team" : pane === "chat" ? "AI chat" : "Files & changes"}</button>)}</nav>
+        <nav aria-label="Room panels" className="flex w-full gap-1 rounded-lg bg-vs-editor p-1 lg:hidden">{(["chat", "files", "team"] as const).map(pane => <button key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)} className={`flex-1 rounded-md px-3 py-1.5 text-xs capitalize ${mobilePane === pane ? "bg-vs-hover font-semibold text-vs-fg" : "text-vs-muted"}`}>{pane === "team" ? "Chats & team" : pane === "chat" ? "Workspace" : "Files & changes"}</button>)}</nav>
       </div>}
-      {error && repo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => { setError(null); setTreeStale(true); }}>Retry</button></div>}
+      {error && repo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
       {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
         <span className="min-w-0 flex-1 truncate"><strong>{offer.sender}</strong> offered you a handoff · {offer.title ?? "AI chat"}</span>
         <button className="shrink-0 rounded-lg border border-vs-accent/40 px-3 py-1 font-medium text-vs-accent" onClick={() => { void fetchRun(session.id, offer.runId).then(({ run }) => enterRun(run)).catch(() => setError("Could not open this handoff. Refresh the room and try again.")); }}>Open handoff</button>
@@ -923,84 +917,99 @@ export function Workspace({
             </div>
             {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}
 
-            {/* MIDDLE: the room's AI chat — the big space. */}
-            <div className={`room-ai min-h-0 min-w-0 flex-1 flex-col ${mobilePane === "chat" ? "flex" : "hidden"} lg:flex`}>
-              <AiPanel
-                sessionId={session.id}
-                canRun={!readOnly}
-                members={people.members}
-                myUserId={myUserId}
-                entered={enteredRun}
-                isOwner={session.myRole === "owner"}
-                onRunsChanged={refreshRuns}
-                onEntered={target => { if (target.repoId === selectedRepoRef.current) setEnteredRun(target); }}
-                forkFromRunId={forkFromRunId}
-                onForkFromChange={setForkFromRunId}
-                onForkEntered={startFork}
-                onNewRun={startNewRun}
-                repoOptions={repoOptions}
-                repoId={chatRepoId}
-                onRepoChange={next => void selectRepository(next)}
-                onImportRepo={() => void openImportPicker()}
-                importingRepo={importingRepo}
+            <div className={`room-main min-h-0 min-w-0 flex-1 flex-col ${mobilePane === "chat" ? "flex" : "hidden"} lg:flex`}>
+              <EditorArea
+                tabs={tabs}
+                activePath={activePath}
+                buffers={buffers}
+                onSelectTab={(path) => {
+                  setActivePath(path);
+                  setShowChat(false);
+                  setCaret({ line: 1, column: 1 });
+                }}
+                onCloseTab={closeTab}
+                onChange={editBuffer}
+                onCaretChange={trackCaret}
+                readOnly={readOnly}
+                conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
+                onReload={reloadFile}
+                editing={people.editing}
+                pinned={{
+                  label: "AI chat",
+                  icon: <SparkleIcon className="h-3.5 w-3.5" />,
+                  node: (
+                      <AiPanel
+                        sessionId={session.id}
+                        canRun={!readOnly}
+                        members={people.members}
+                        myUserId={myUserId}
+                        entered={enteredRun}
+                        isOwner={session.myRole === "owner"}
+                        onRunsChanged={refreshRuns}
+                        onEntered={target => { if (target.repoId === selectedRepoRef.current) setEnteredRun(target); }}
+                        forkFromRunId={forkFromRunId}
+                        onForkFromChange={setForkFromRunId}
+                        onForkEntered={startFork}
+                        onNewRun={startNewRun}
+                        repoOptions={repoOptions}
+                        repoId={chatRepoId}
+                        onRepoChange={next => void selectRepository(next)}
+                        onImportRepo={() => void openImportPicker()}
+                        importingRepo={importingRepo}
+                      />
+                  ),
+                }}
+                pinnedActive={showChat}
+                onSelectPinned={() => setShowChat(true)}
+                emptyState={
+                  <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
+                    <div className="max-w-xs space-y-3">
+                      <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
+                      <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                      <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
+                      {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
+                    </div>
+                  </div>
+                }
               />
             </div>
 
-            <div className="hidden lg:flex"><Resizer width={rightWidth} onResize={setRightWidth} min={320} max={800} invert /></div>
+            <div className="hidden lg:flex"><Resizer width={rightWidth} onResize={setRightWidth} min={280} max={600} invert /></div>
 
-            {/* RIGHT: the Files tree (and opened files) over the terminal. */}
             <div
               style={{ width: rightWidth }}
-              className={`room-code min-h-0 shrink-0 flex-col border-l border-vs-border ${mobilePane === "files" ? "flex" : "hidden"} lg:flex`}
+              className={`room-explorer-panel min-h-0 min-w-0 shrink flex-col border-l border-vs-border ${mobilePane === "files" ? "flex" : "hidden"} lg:flex`}
             >
               <div className="flex min-h-0 flex-1 flex-col">
-                <EditorArea
-                  tabs={tabs}
-                  activePath={activePath}
-                  buffers={buffers}
-                  onSelectTab={(path) => {
-                    setActivePath(path);
-                    setShowTree(false);
-                    setCaret({ line: 1, column: 1 });
-                  }}
-                  onCloseTab={closeTab}
-                  onChange={editBuffer}
-                  onCaretChange={trackCaret}
-                  readOnly={readOnly}
-                  conflictAuthor={activePath ? conflicts.get(activePath) : undefined}
-                  onReload={reloadFile}
-                  editing={people.editing}
-                  pinned={
-                    result
-                      ? {
-                          label: "Files",
-                          icon: <FilesIcon className="h-3.5 w-3.5" />,
-                          node: (
-                            <ExplorerPanel
-                              key={`${chatRepoId ?? "default"}:${result.git.commit}:${includeIgnored}`}
-                              result={result}
-                              activePath={activePath}
-                              scanning={scanning}
-                              includeIgnored={includeIgnored}
-                              canRescan={!repo}
-                              onToggleIgnored={toggleIgnored}
-                              onOpenFile={openFile}
-                              editing={people.editing}
-                              sessionId={repo ? session.id : undefined}
-                              repoId={chatRepoId}
-                            />
-                          ),
-                        }
-                      : undefined
-                  }
-                  pinnedActive={showTree}
-                  onSelectPinned={() => setShowTree(true)}
-                  emptyState={
+                {result ? (
+                  <ExplorerPanel
+                    key={`${chatRepoId ?? "default"}:${includeIgnored}`}
+                    result={result}
+                    activePath={activePath}
+                    scanning={scanning}
+                    error={treeError}
+                    onRefresh={refreshTree}
+                    onImport={!readOnly ? () => void openImportPicker() : undefined}
+                    repositories={repoOptions.filter(option => option.id !== (chatRepoId ?? ""))}
+                    onSelectRepository={next => { void selectRepository(next || null).then(changed => { if (changed) { startNewRun(); setMobilePane("files"); } }); }}
+                    includeIgnored={includeIgnored}
+                    canRescan={!repo}
+                    onToggleIgnored={toggleIgnored}
+                    onOpenFile={openFile}
+                    editing={people.editing}
+                    sessionId={repo ? session.id : undefined}
+                    repoId={chatRepoId}
+                  />
+                ) : (
                     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
-                      {scanning ? "Loading repository files…" : "Pick a file from the Files tab to open it here."}
+                      <div className="max-w-xs space-y-3">
+                        <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
+                        <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                        <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
+                        {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
+                      </div>
                     </div>
-                  }
-                />
+                )}
               </div>
 
               {terminalOpen ? (

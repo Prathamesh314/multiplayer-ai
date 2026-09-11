@@ -74,8 +74,12 @@ function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
       type="button"
       onClick={onActivate}
       title={node.path || node.name}
+      aria-label={`${isDir ? "Folder" : "File"}: ${node.path || node.name}`}
+      aria-expanded={isDir ? open : undefined}
+      aria-current={active ? "true" : undefined}
+      disabled={!!node.skipped}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      className={`group flex w-full items-center gap-1.5 pr-2 text-left ${
+      className={`group flex min-h-8 w-full items-center gap-1.5 pr-2 text-left ${
         active ? "bg-vs-active text-vs-fg" : "hover:bg-vs-hover"
       } ${node.skipped ? "opacity-55" : ""}`}
     >
@@ -158,9 +162,10 @@ export function allDirPaths(root: TreeNode): Set<string> {
 /** Keeps a node when it matches, or when any descendant does. */
 function filterTree(node: TreeNode, query: string): TreeNode | null {
   if (node.type === "file") {
-    return node.name.toLowerCase().includes(query) ? node : null;
+    return node.path.toLowerCase().includes(query) ? node : null;
   }
 
+  if (node.path.toLowerCase().includes(query)) return node;
   const children = (node.children ?? [])
     .map((child) => filterTree(child, query))
     .filter((child): child is TreeNode => child !== null);

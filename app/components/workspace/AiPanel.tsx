@@ -622,7 +622,7 @@ export function AiPanel({
 
   const composerFooter =
     ready && activeSpec ? (
-      <div className="flex min-w-0 items-center gap-0.5">
+      <div className="room-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {!entered && (
           <>
             <SelectChip
@@ -682,7 +682,7 @@ export function AiPanel({
               title={`Signed in as ${activeAuth.email ?? "your account"}${
                 activeAuth.plan ? ` · ${planLabel(activeAuth.plan)}` : ""
               } — click to manage`}
-              className="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex min-w-0 shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
             >
               <StatusDot ok />
               <span className="max-w-[6rem] truncate">

@@ -229,7 +229,7 @@ export async function scanSession(session: Session, repoId: string | null = null
         `/api/sessions/${encodeURIComponent(id)}/file?repoId=${encodeURIComponent(repoId ?? "")}&path=${encodeURIComponent(path)}`,
         { cache: "no-store" },
       );
-      if (!file.ok) return null;
+      if (!file.ok) throw new Error(await readError(file, "Could not open this file. Try again."));
       const body = (await file.json()) as FileResponse;
       return {
         text: body.text,

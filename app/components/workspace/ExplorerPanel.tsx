@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { treeToText } from "../../lib/ascii";
 import { humanBytes, humanCount, relativeTime } from "../../lib/format";
 import { shortRemote } from "../../lib/git";
@@ -17,12 +17,16 @@ type ExplorerPanelProps = {
   result: ScanResult;
   activePath: string | null;
   scanning: boolean;
+  error?: string | null;
+  onRefresh?: () => void;
+  onImport?: () => void;
+  repositories?: { id: string; label: string }[];
+  onSelectRepository?: (id: string) => void;
   includeIgnored: boolean;
   /** False once the tree comes from the session repo rather than local disk. */
   canRescan: boolean;
   onToggleIgnored: (value: boolean) => void;
   onOpenFile: (path: string) => void;
-  onClose?: () => void;
   editing: Map<string, import("./usePeople").FilePresence[]>;
   /** When set, an "All files / Changes" switcher backed by this session's diff. */
   sessionId?: string;
@@ -33,11 +37,15 @@ export function ExplorerPanel({
   result,
   activePath,
   scanning,
+  error,
+  onRefresh,
+  onImport,
+  repositories = [],
+  onSelectRepository,
   includeIgnored,
   canRescan,
   onToggleIgnored,
   onOpenFile,
-  onClose,
   editing,
   sessionId,
   repoId = null,
@@ -48,6 +56,7 @@ export function ExplorerPanel({
   const [changes, setChanges] = useState<ChangedFile[] | null>(null);
   const [changesError, setChangesError] = useState<string | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
+  const changesRequest = useRef(0);
 
   function toggle(path: string) {
     setExpanded((previous) => {
@@ -60,27 +69,31 @@ export function ExplorerPanel({
 
   const loadChanges = useCallback(async () => {
     if (!sessionId) return;
+    const request = ++changesRequest.current;
     setLoadingChanges(true);
     try {
       setChangesError(null);
-      setChanges(await fetchChanges(sessionId, repoId));
+      const next = await fetchChanges(sessionId, repoId);
+      if (request === changesRequest.current) setChanges(next);
     } catch (cause) {
-      setChangesError(cause instanceof Error ? cause.message : "Could not load changes.");
+      if (request === changesRequest.current) {
+        setChanges(null);
+        setChangesError(cause instanceof Error ? cause.message : "Could not load changes.");
+      }
     } finally {
-      setLoadingChanges(false);
+      if (request === changesRequest.current) setLoadingChanges(false);
     }
   }, [sessionId, repoId]);
 
-  // The diff is fetched when the Changes tab is opened and on Refresh, rather
-  // than in an effect — the tree can change underneath it, so Refresh is there.
-  function showChanges() {
-    setView("changes");
-    void loadChanges();
-  }
+  useEffect(() => {
+    if (view !== "changes") return;
+    void Promise.resolve().then(loadChanges);
+  }, [view, result.git.commit, loadChanges]);
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader title="Explorer" onClose={onClose}>
+    <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
+      <PanelHeader title="Explorer">
+        {view === "files" && onRefresh && <button type="button" aria-label="Refresh files" disabled={scanning} onClick={onRefresh} className="rounded px-1.5 py-0.5 text-[11px] text-vs-muted hover:bg-vs-hover disabled:opacity-50">Refresh</button>}
         {view === "files" && (
           <button
             type="button"
@@ -106,7 +119,7 @@ export function ExplorerPanel({
           <TabButton active={view === "files"} onClick={() => setView("files")}>
             All files
           </TabButton>
-          <TabButton active={view === "changes"} onClick={showChanges}>
+          <TabButton active={view === "changes"} onClick={() => setView("changes")}>
             Changes
             {changes && changes.length > 0 && (
               <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[11px] text-vs-accent">
@@ -117,6 +130,7 @@ export function ExplorerPanel({
         </div>
       )}
 
+      {error && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{error}</p>}
       {changesError && view === "changes" && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{changesError}</p>}
       {view === "files" ? (
         <>
@@ -126,21 +140,29 @@ export function ExplorerPanel({
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filter files"
-                className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
+                aria-label="Filter files"
+                placeholder="Find a file or folder…"
+                className="w-full rounded border border-vs-border bg-vs-editor py-1.5 pl-7 pr-7 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
               />
+              {query && <button type="button" aria-label="Clear file filter" onClick={() => setQuery("")} className="absolute right-2 text-vs-muted hover:text-vs-fg">×</button>}
             </label>
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[12px] font-semibold uppercase tracking-wide text-vs-fg">
-            <span className="truncate">{result.rootName}</span>
+            <span className="truncate" title={result.rootName}>{result.rootName}</span>
+            <span className="ml-auto shrink-0 text-[11px] font-normal normal-case text-vs-muted">{humanCount(result.stats.files)} {result.stats.files === 1 ? "file" : "files"}</span>
             {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
           </div>
 
           <div className="vs-scroll min-h-0 flex-1 overflow-auto">
-            {result.stats.files === 0 && <div className="m-3 rounded-xl border border-dashed border-vs-border p-4 text-sm leading-6 text-vs-muted">
+            {result.stats.files === 0 && !error && !scanning && <div className="m-3 rounded-xl border border-dashed border-vs-border p-4 text-sm leading-6 text-vs-muted">
               <p className="font-medium text-vs-fg">No files in this repository yet</p>
-              <p className="mt-1">Use Import folder above to add a local checkout. A GitHub project link currently stores repository details; it does not download the code.</p>
+              {repositories.length > 0 && onSelectRepository && <div className="my-3 space-y-1">
+                <p className="text-xs">Other repositories in this room:</p>
+                {repositories.map(repository => <button type="button" key={repository.id} onClick={() => onSelectRepository(repository.id)} className="block w-full truncate rounded-lg border border-vs-border px-2 py-1 text-left text-xs text-vs-fg hover:bg-vs-hover">Open {repository.label}</button>)}
+              </div>}
+              <p className="mt-1">{onImport ? "Import a local folder to start browsing and editing." : "Ask a room editor to import the project files."} A GitHub link alone does not download code.</p>
+              {onImport && <button type="button" onClick={onImport} className="mt-3 rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-medium text-vs-accent-fg">Import project files</button>}
             </div>}
             <ExplorerTree
               root={result.root}
@@ -153,7 +175,7 @@ export function ExplorerPanel({
             />
           </div>
         </>
-      ) : (
+      ) : changesError ? <div className="min-h-0 flex-1" /> : (
         <ChangesList
           changes={changes}
           loading={loadingChanges}

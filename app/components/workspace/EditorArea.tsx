@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { humanBytes } from "../../lib/format";
 import { languageOf } from "../../lib/language";
 import { CloseIcon, FileIcon, SpinnerIcon } from "../icons";
@@ -35,10 +36,6 @@ type EditorAreaProps = {
   onReload: (path: string) => void;
   /** Repo path → who is typing in it right now. */
   editing: Map<string, FilePresence[]>;
-  /**
-   * A pinned first tab (the file tree) shown before the file tabs, so the tree
-   * and any opened files share one tabbed pane. Undefined when there is no tree.
-   */
   pinned?: { label: string; icon: React.ReactNode; node: React.ReactNode };
   pinnedActive: boolean;
   onSelectPinned: () => void;
@@ -61,9 +58,10 @@ export function EditorArea({
   pinnedActive,
   onSelectPinned,
 }: EditorAreaProps) {
+  const tabId = useId();
   const active = activePath ? buffers.get(activePath) : undefined;
   const showPinned = !!pinned && pinnedActive;
-  const showFile = !showPinned && !!activePath;
+  const showFile = !!activePath;
 
   // Without a pinned tab and with no files open, the whole area is the empty state.
   if (!pinned && tabs.length === 0) {
@@ -71,8 +69,16 @@ export function EditorArea({
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-vs-editor">
-      <div className="vs-scroll flex shrink-0 overflow-x-auto border-b border-vs-border bg-vs-chrome">
+    <div className="room-editor-layout flex min-h-0 min-w-0 flex-1 flex-col bg-vs-editor">
+      <div role="tablist" aria-label="Workspace tabs" onKeyDown={event => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !(event.target instanceof HTMLElement) || event.target.getAttribute("role") !== "tab") return;
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+        const current = buttons.indexOf(event.target as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+        event.preventDefault();
+        buttons[next]?.click();
+        buttons[next]?.focus();
+      }} className="vs-scroll flex min-h-10 shrink-0 overflow-x-auto border-b border-vs-border bg-vs-chrome">
         {pinned && (
           <div
             className={`flex shrink-0 items-center border-r border-vs-border ${
@@ -84,6 +90,11 @@ export function EditorArea({
             <button
               type="button"
               onClick={onSelectPinned}
+              role="tab"
+              id={`${tabId}-chat`}
+              aria-controls={`${tabId}-chat-panel`}
+              aria-selected={showPinned}
+              tabIndex={showPinned ? 0 : -1}
               className="flex items-center gap-2 px-3 py-1.5 text-[14px]"
             >
               {pinned.icon}
@@ -109,6 +120,11 @@ export function EditorArea({
                 type="button"
                 onClick={() => onSelectTab(path)}
                 title={path}
+                role="tab"
+                id={`${tabId}-${path}`}
+                aria-controls={`${tabId}-file-panel`}
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
                 className="flex items-center gap-2 py-1.5"
               >
                 <FileIcon className="h-3.5 w-3.5" />
@@ -120,7 +136,7 @@ export function EditorArea({
                 type="button"
                 onClick={() => onCloseTab(path)}
                 aria-label={`Close ${baseName(path)}`}
-                className="rounded p-0.5 text-vs-muted opacity-0 transition hover:bg-vs-hover hover:text-vs-fg group-hover:opacity-100"
+                className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
                 <CloseIcon className="h-3.5 w-3.5" />
               </button>
@@ -129,89 +145,91 @@ export function EditorArea({
         })}
       </div>
 
-      {showPinned && <div className="flex min-h-0 flex-1 flex-col">{pinned!.node}</div>}
+      {pinned && <div role="tabpanel" id={`${tabId}-chat-panel`} aria-labelledby={`${tabId}-chat`} className={`min-h-0 min-w-0 flex-1 flex-col ${showPinned ? "flex" : "hidden"}`}>{pinned.node}</div>}
+      <div role="tabpanel" id={`${tabId}-file-panel`} aria-labelledby={activePath ? `${tabId}-${activePath}` : undefined} className={`room-file-document min-h-0 min-w-0 flex-1 flex-col ${showPinned ? "hidden" : "flex"}`}>
+        {!showFile && (
+          <div className="flex min-h-0 flex-1 flex-col">{emptyState}</div>
+        )}
 
-      {!showPinned && !showFile && (
-        <div className="flex min-h-0 flex-1 flex-col">{emptyState}</div>
-      )}
-
-      {showFile && activePath && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
-          {activePath.split("/").map((segment, index, all) => (
-            <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
-              {segment}
-              {index < all.length - 1 && <span className="px-1.5 opacity-60">›</span>}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {showFile && activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
-        <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[12px] text-vs-muted">
-          <EditingBadge people={editing.get(activePath) ?? []} />
-          <span>
-            {(editing.get(activePath) ?? []).map((p) => p.name).join(", ")}
-            {(editing.get(activePath) ?? []).length === 1 ? " is" : " are"} editing this file
-          </span>
-        </p>
-      )}
-
-      {showFile &&
-        (!active || active.loading ? (
-        <div className="flex flex-1 items-center justify-center gap-2 text-base text-vs-muted">
-          <SpinnerIcon className="h-4 w-4" />
-          Opening file…
-        </div>
-      ) : active.error ? (
-        <Notice title="Could not open this file" detail={active.error} />
-      ) : active.binary ? (
-        <Notice
-          title="Binary file not shown"
-          detail={`${humanBytes(active.size)} — the editor only renders text files.`}
-        />
-      ) : (
-        <>
-          {conflictAuthor && activePath && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
-              <span>
-                {conflictAuthor} changed this file while you were editing it. Your version is
-                still here and was not overwritten.
+        {showFile && activePath && (
+          <div className="vs-scroll flex shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
+            {activePath.split("/").map((segment, index, all) => (
+              <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
+                {segment}
+                {index < all.length - 1 && <span className="px-1.5 opacity-60">›</span>}
               </span>
-              <button
-                type="button"
-                onClick={() => onReload(activePath)}
-                className="rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover"
-              >
-                Discard mine and reload
-              </button>
-            </div>
-          )}
+            ))}
+          </div>
+        )}
 
-          {active.truncated && (
-            <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
-              Showing the first 2 MB of a {humanBytes(active.size)} file.
-            </p>
-          )}
-          <CodeEditor
-            key={activePath}
-            fileName={baseName(activePath!)}
-            text={active.text}
-            readOnly={readOnly || active.truncated}
-            remote={editing.get(activePath!) ?? []}
-            onChange={(text) => onChange(activePath!, text)}
-            onCaretChange={onCaretChange}
+        {showFile && activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
+          <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[12px] text-vs-muted">
+            <EditingBadge people={editing.get(activePath) ?? []} />
+            <span>
+              {(editing.get(activePath) ?? []).map((p) => p.name).join(", ")}
+              {(editing.get(activePath) ?? []).length === 1 ? " is" : " are"} editing this file
+            </span>
+          </p>
+        )}
+
+        {showFile &&
+          (!active || active.loading ? (
+          <div className="flex flex-1 items-center justify-center gap-2 text-base text-vs-muted">
+            <SpinnerIcon className="h-4 w-4" />
+            Opening file…
+          </div>
+        ) : active.error ? (
+          <Notice title="Could not open this file" detail={active.error} action={<button type="button" onClick={() => onReload(activePath)} className="mt-3 rounded-lg border border-vs-border px-3 py-2 text-sm hover:bg-vs-hover">Retry file</button>} />
+        ) : active.binary ? (
+          <Notice
+            title="Binary file not shown"
+            detail={`${humanBytes(active.size)} — the editor only renders text files.`}
           />
-        </>
-      ))}
+        ) : (
+          <>
+            {conflictAuthor && activePath && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
+                <span>
+                  {conflictAuthor} changed this file while you were editing it. Your version is
+                  still here and was not overwritten.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onReload(activePath)}
+                  className="rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover"
+                >
+                  Discard mine and reload
+                </button>
+              </div>
+            )}
+
+            {active.truncated && (
+              <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
+                Showing the first 2 MB of a {humanBytes(active.size)} file.
+              </p>
+            )}
+            <CodeEditor
+              key={activePath}
+              fileName={baseName(activePath!)}
+              text={active.text}
+              readOnly={readOnly || active.truncated}
+              remote={editing.get(activePath!) ?? []}
+              onChange={(text) => onChange(activePath!, text)}
+              onCaretChange={onCaretChange}
+            />
+          </>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Notice({ title, detail }: { title: string; detail: string }) {
+function Notice({ title, detail, action }: { title: string; detail: string; action?: React.ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
       <p className="text-base text-vs-fg">{title}</p>
       <p className="text-sm text-vs-muted">{detail}</p>
+      {action}
     </div>
   );
 }

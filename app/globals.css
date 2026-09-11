@@ -192,9 +192,9 @@ body {
   background: transparent;
 }
 
-.room-code { max-width: 50%; }
-.room-ai { min-width: 300px; }
+.room-main { min-width: 320px; }
+.room-explorer-panel { max-width: 45%; }
 @media (max-width: 1023px) {
-  .room-sidebar, .room-code { width: 100% !important; max-width: none; flex: 1; }
-  .room-ai { min-width: 0; }
+  .room-sidebar, .room-explorer-panel { width: 100% !important; max-width: none; flex: 1; }
+  .room-main { min-width: 0; }
 }

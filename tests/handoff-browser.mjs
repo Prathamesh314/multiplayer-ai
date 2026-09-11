@@ -69,7 +69,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal(created.status, 200);
     const imported = (await created.json()).repo;
     const seedUrl = `/api/sessions/${roomId}/repos/${imported.id}/seed`;
-    const seedBody = { files: [{ path: "src/checkout.ts", data: Buffer.from("export const checkout = 'ready';\n").toString("base64") }], done: true };
+    const seedBody = { files: [
+      { path: "src/checkout.ts", data: Buffer.from("export const checkout = 'ready';\n").toString("base64") },
+      { path: "src/components/Button.tsx", data: Buffer.from("export const Button = () => 'Continue';\n").toString("base64") },
+      { path: ".env.example", data: Buffer.from("PUBLIC_NAME=Demo\n").toString("base64") },
+    ], done: true };
     assert.equal((await request(tokens[0], seedUrl, "POST", seedBody)).status, 200);
     assert.equal((await request(tokens[0], seedUrl, "POST", seedBody)).status, 200);
     const importedFile = await request(tokens[1], `/api/sessions/${roomId}/file?repoId=${imported.id}&path=src/checkout.ts`);
@@ -94,7 +98,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
-    async function tab(token) {
+    async function tab(token, targetRoom = roomId, readySelector = 'select[aria-label="Active repository"]') {
       const { browserContextId } = await send("Target.createBrowserContext");
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -108,9 +112,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         return result.result.value;
       };
       const click = text => evaluate(`Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)})?.click()`);
-      await command("Page.navigate", { url: `${server}/s/${roomId}` });
+      await command("Page.navigate", { url: `${server}/s/${targetRoom}` });
       try {
-        await eventually(() => evaluate("!!document.querySelector('select[aria-label=\"Active repository\"]')"), "room workspace");
+        await eventually(() => evaluate(`!!document.querySelector(${JSON.stringify(readySelector)})`), "room workspace");
       } catch (cause) {
         console.error(await evaluate("document.body.innerText.slice(0, 5000)"), runtimeErrors);
         throw cause;
@@ -119,6 +123,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: welcome.txt"]\')?.checkVisibility()'), "files visible on initial room open");
     for (const view of [sender]) {
       await view.click("Chats & team");
       await eventually(() => view.evaluate("Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Browser handoff'))"), "chat listing");
@@ -139,16 +144,44 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
 
     await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Active repository"]'); select.value = ${JSON.stringify(imported.id)}; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await eventually(() => recipient.evaluate("document.body.textContent.includes('checkout.ts')"), "imported file explorer");
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: .env.example"]\')?.checkVisibility()'), "imported dotfiles visible");
+    await recipient.evaluate('document.querySelector(\'button[aria-label="Folder: src/components"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/components/Button.tsx"]\')?.checkVisibility()'), "nested folder expansion");
+    await recipient.evaluate(`(() => { const input = document.querySelector('.room-main textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'Keep this draft while browsing files'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await recipient.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('checkout.ts'))?.click()");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('ready') || Array.from(document.querySelectorAll('textarea')).some(input => input.value.includes('ready'))"), "imported file editor");
-    for (const [width, height, name] of [[1440, 960, "desktop"], [390, 844, "mobile"]]) {
+    assert.equal(await recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), true, "Explorer stays visible beside an opened file");
+    assert.equal(await recipient.evaluate('document.querySelector(\'.room-main [role="tabpanel"]\').checkVisibility()'), false, "Chat is not displayed alongside file contents");
+    assert.equal(await recipient.evaluate('document.querySelector(".room-file-document").checkVisibility()'), true, "File contents use the shared main panel");
+    assert.equal(await recipient.evaluate('document.querySelector(".room-explorer-panel .room-file-document") === null'), true, "Right sidebar contains no second editor");
+    await recipient.evaluate('document.querySelector(\'[role="tablist"] [role="tab"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector(\'.room-main [role="tabpanel"]\').checkVisibility() && !document.querySelector(".room-file-document").checkVisibility()'), "chat tab replaces file view");
+    assert.equal(await recipient.evaluate('document.querySelector(".room-main textarea").value'), "Keep this draft while browsing files");
+    await recipient.evaluate('document.querySelectorAll(\'[role="tablist"] [role="tab"]\')[1].click()');
+    await recipient.evaluate('document.querySelectorAll(\'[role="tablist"] [role="tab"]\')[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))');
+    assert.equal(await recipient.evaluate('document.querySelector(\'[role="tablist"] [role="tab"]\').getAttribute("aria-selected")'), "true", "Keyboard navigation returns to chat");
+    await recipient.evaluate('document.querySelectorAll(\'[role="tablist"] [role="tab"]\')[1].click()');
+    console.log("  ok shared chat/file tabs show one panel at a time and preserve chat drafts");
+    await recipient.evaluate(`(() => { const input = document.querySelector('input[aria-label="Filter files"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'src/'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), "path filter includes files within matching folder");
+    await recipient.evaluate('document.querySelector(\'button[aria-label="Refresh files"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector(\'aside[aria-label="Repository explorer"]\').getAttribute("aria-busy") === "false"'), "explorer refresh");
+    assert.equal(await recipient.evaluate('document.querySelector(\'input[aria-label="Filter files"]\').value'), "src/", "Refresh preserves filter");
+    await recipient.evaluate('document.querySelector(\'button[aria-label="Clear file filter"]\').click()');
+    for (const [width, height, name] of [[1440, 960, "desktop"], [1024, 768, "tablet"], [390, 844, "mobile"]]) {
       await recipient.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
       await delay(300);
       assert.equal(await recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), true, `No ${name} overflow`);
       const screenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
       await writeFile(join("/tmp", `handoff-room-${name}.png`), Buffer.from(screenshot.data, "base64"));
     }
-    console.log("  ok imported repository selection, file opening, desktop and mobile layout");
+    await recipient.click("Files & changes");
+    await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), "mobile return to explorer");
+    await recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\').click()');
+    await eventually(() => recipient.evaluate('document.querySelector(".room-file-document")?.checkVisibility()'), "mobile file editor");
+    await recipient.command("Page.reload", {});
+    await eventually(() => recipient.evaluate(`document.querySelector('select[aria-label="Active repository"]')?.value === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
+    console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
     await recipient.evaluate(`(() => {
       const input = document.querySelectorAll('input[type="file"]')[1];
       const file = new File(["export const uploaded = true;\\n"], "uploaded.ts", { type: "text/plain" });
@@ -158,6 +191,41 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     })()`);
     await eventually(() => recipient.evaluate("document.querySelector('select[aria-label=\"Active repository\"]').selectedOptions[0].textContent === 'Browser upload' && document.body.textContent.includes('uploaded.ts')"), "automatic file selection after folder upload");
     console.log("  ok browser folder-upload flow automatically selects its imported repository and reveals its files");
+
+    const freshRoom = "freshbrowser";
+    await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Fresh folder room','ABCD-RSTU',$2)`, [freshRoom, alice]);
+    await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner')`, [freshRoom, alice]);
+    await createRepo(freshRoom);
+    const fresh = await tab(tokens[0], freshRoom, 'input[type="file"]');
+    async function upload(view, inputIndex, root, path, contents) {
+      await view.evaluate(`(() => {
+        const input = document.querySelectorAll('input[type="file"]')[${inputIndex}];
+        const file = new File([${JSON.stringify(contents)}], ${JSON.stringify(path.split("/").at(-1))}, { type: "text/plain" });
+        Object.defineProperty(file, 'webkitRelativePath', { value: ${JSON.stringify(root + "/" + path)} });
+        const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+    }
+    await upload(fresh, 0, "First project", "src/first.ts", "export const first = true;");
+    await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "initial project upload appears without reload");
+    await upload(fresh, 1, "Second project", "lib/second.ts", "export const second = true;");
+    await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: lib/second.ts"]\')?.checkVisibility()'), "additional import in freshly seeded room");
+    await fresh.evaluate(`(() => { const select = document.querySelector('select[aria-label="Active repository"]'); select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
+    await fresh.command("Network.enable", {});
+    await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/file?*`] });
+    await fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\').click()');
+    await eventually(() => fresh.evaluate('document.body.textContent.includes("Retry file")'), "failed file read exits loading with retry");
+    await fresh.command("Network.setBlockedURLs", { urls: [] });
+    await fresh.click("Retry file");
+    await eventually(() => fresh.evaluate('Array.from(document.querySelectorAll("textarea")).some(input => input.value.includes("export const first"))'), "retry opens file successfully");
+    await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/tree?*`] });
+    await fresh.evaluate('document.querySelector(\'button[aria-label="Refresh files"]\').click()');
+    await eventually(() => fresh.evaluate('!!document.querySelector(\'aside[aria-label="Repository explorer"] [role="alert"]\')'), "tree refresh failure is visible rather than silently empty");
+    await fresh.command("Network.setBlockedURLs", { urls: [] });
+    await fresh.evaluate('document.querySelector(\'button[aria-label="Refresh files"]\').click()');
+    await eventually(() => fresh.evaluate('!document.querySelector(\'aside[aria-label="Repository explorer"] [role="alert"]\') && document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "tree retry preserves visible project files");
+    console.log("  ok fresh-room uploads, second import, switching back, and recovery from real blocked file/tree requests");
 
     const deviceToken = randomBytes(32).toString("base64url");
     await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,last_seen_at) VALUES ($1,'Simulated Bob runner',$2,'2',ARRAY['codex'],now())`, [bob, createHash("sha256").update(deviceToken).digest()]);

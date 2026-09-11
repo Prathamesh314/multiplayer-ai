@@ -355,7 +355,7 @@ export function Composer({
             <div className="flex">{textarea}</div>
             <div className="mt-1.5 flex items-center gap-1">
               {footer}
-              <div className="ml-auto">{sendButton}</div>
+              <div className="ml-auto shrink-0 self-end">{sendButton}</div>
             </div>
           </div>
         ) : (
