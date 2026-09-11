@@ -14,7 +14,9 @@
  * verifies it) — this module never touches a working copy.
  */
 
+import { queryOne } from "../db/client";
 import { events } from "../events";
+import { ensureRepoContext } from "../knowledge/repo-context";
 import { diffFilesBare, diffStatBare } from "../session/repo";
 import type { FileChange } from "../session/repo";
 import { setRoomRepoHeadSha } from "../session/roomRepos";
@@ -72,6 +74,15 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   const { sessionId, runId, repoId, sha } = input;
   const repoRef = repoId ?? sessionId;
   const status = input.code === 0 ? "completed" : "failed";
+
+  // Whether this room's fork has a publish flow at all. Personal rooms don't,
+  // so for them — exactly like imported repos — run completion is the only
+  // approval there is, for both memory ingest and repo-context refresh.
+  const sessionRow = await queryOne<{ project_id: string | null }>(
+    `SELECT project_id FROM sessions WHERE id = $1`,
+    [sessionId],
+  ).catch(() => null);
+  const publishFlowExists = repoId === null && sessionRow?.project_id != null;
 
   const broadcast = (event: Parameters<Awaited<ReturnType<typeof events>>["publish"]>[1]) => {
     void events().then((bus) => bus.publish(sessionId, event)).catch(() => {});
@@ -166,13 +177,21 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
         prompt: input.userPrompt,
         reply: trimmedOut,
         changed: sha !== null,
-        // Only the project fork has a publish step to approve its work;
-        // an imported repo's exchanges ingest immediately.
-        publishGated: repoId === null,
+        // Only work with a publish step waits for that approval; imported
+        // repos and personal rooms ingest at completion, their only approval.
+        publishGated: publishFlowExists,
       });
     }
   } catch {
     // The run record is best-effort; the live stream already succeeded.
+  }
+
+  // Refresh the AI's understanding of the repo it just changed — but only
+  // where completion *is* the approval: imported repos, and personal rooms
+  // outside any project. A project room's fork waits for publish, exactly
+  // like its staged memories (see repo-context.ts for the full contract).
+  if (sha && !publishFlowExists) {
+    void ensureRepoContext(repoRef);
   }
 
   return { status, changes };

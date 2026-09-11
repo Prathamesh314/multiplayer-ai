@@ -269,11 +269,14 @@ export async function POST(request: Request) {
   // access. Off entirely when no sidecar is configured.
   let sharedMemory: string | null = null;
   let repoContext: string | null = null;
-  if (result.session.projectId) {
+  {
+    // Personal rooms included: the graph shrinks to the room itself, but the
+    // AI still reads its own memory and the context of the repo it will edit.
     const knowledge = await buildKnowledgeContext({
       projectId: result.session.projectId,
       userId: result.user.id,
       currentSessionId: sessionId,
+      repoId,
       prompt,
     });
     sharedMemory = knowledge.memoryText;

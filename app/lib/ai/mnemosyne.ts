@@ -24,8 +24,15 @@ export type Memory = {
 };
 
 const PROTOCOL_VERSION = "2025-06-18";
-/** Recall sits on the run's critical path, so it is kept snappy. */
-const RECALL_TIMEOUT_MS = 4000;
+/**
+ * Recall sits on the run's critical path, but the budget must cover the
+ * sidecar embedding a *never-seen* query text — measured at several seconds
+ * on CPU, after which the embedding is cached and recalls return in ~250ms.
+ * A tighter budget silently returns nothing for exactly the fresh prompts
+ * that most need context (verified live: 4s timed out every first-time
+ * prompt while warmed repeats succeeded).
+ */
+const RECALL_TIMEOUT_MS = 12_000;
 /** Writes happen after a run finishes; a little more slack is fine. */
 const REMEMBER_TIMEOUT_MS = 6000;
 /**
@@ -124,8 +131,31 @@ function session(url: string): Promise<Session> {
   return sessionPromise;
 }
 
+/**
+ * All tool calls serialize through one chain. The MCP streamable-HTTP server
+ * is stateful — one session id, one request at a time — and concurrent calls
+ * over that session (the knowledge layer fires its recalls in a parallel
+ * wave) stall or fail while sequential ones succeed, verified live. A short
+ * per-call queue costs ~¼s per warmed call and removes the whole class.
+ */
+let chain: Promise<unknown> = Promise.resolve();
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const next = chain.then(task, task);
+  chain = next.catch(() => {});
+  return next;
+}
+
 /** Call one mnemosyne tool, retrying once through a fresh session on a stale id. */
-async function callTool(
+function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown> {
+  return enqueue(() => callToolNow(name, args, timeoutMs));
+}
+
+async function callToolNow(
   name: string,
   args: Record<string, unknown>,
   timeoutMs: number,
@@ -217,6 +247,12 @@ export async function remember(input: {
   /** Tagged so a memory carries which room it was learned in. */
   channelId: string;
   source?: string;
+  /**
+   * Override for callers off the critical path. The sidecar's first embed
+   * after idling loads a model and can take well over the default budget —
+   * a background indexer should wait for it, not drop the write.
+   */
+  timeoutMs?: number;
 }): Promise<boolean> {
   if (!endpoint() || !input.content.trim()) return false;
   try {
@@ -230,7 +266,7 @@ export async function remember(input: {
         source: input.source ?? "multiplayer-ai",
         scope: "global",
       },
-      REMEMBER_TIMEOUT_MS,
+      input.timeoutMs ?? REMEMBER_TIMEOUT_MS,
     )) as { status?: string } | null;
     return payload?.status === "stored";
   } catch {

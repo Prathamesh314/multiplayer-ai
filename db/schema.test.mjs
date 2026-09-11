@@ -820,37 +820,39 @@ await test("deleting the run takes its queue entry with it", async () => {
 /**
  * The indexer's claim upsert (app/lib/knowledge/repo-context.ts): it must
  * return a row only when the stored SHA actually changes, so two servers
- * racing to index the same HEAD distill it exactly once.
+ * racing to index the same head distill it exactly once. Keyed by repo_ref —
+ * a project id, a session id, or a room_repos id all point at their own bank.
  */
 const claimSql = `
-  INSERT INTO repo_context_index (project_id, head_sha)
+  INSERT INTO repo_context_index (repo_ref, head_sha)
   VALUES ($1, $2)
-  ON CONFLICT (project_id) DO UPDATE
+  ON CONFLICT (repo_ref) DO UPDATE
      SET head_sha = EXCLUDED.head_sha, indexed_at = now()
    WHERE repo_context_index.head_sha IS DISTINCT FROM EXCLUDED.head_sha
   RETURNING head_sha`;
 
-await test("the repo-index claim wins on first insert and on a new SHA", async () => {
+await test("the repo-context claim wins on first insert and on a new head", async () => {
   const first = await db.query(claimSql, [acmeProject, "sha-one"]);
   assert.equal(first.rows.length, 1, "first index claims");
   const advanced = await db.query(claimSql, [acmeProject, "sha-two"]);
-  assert.equal(advanced.rows.length, 1, "a new HEAD claims again");
+  assert.equal(advanced.rows.length, 1, "a new head claims again");
 });
 
-await test("the repo-index claim is a no-op when the SHA is unchanged", async () => {
+await test("the repo-context claim is a no-op when the head is unchanged", async () => {
   const repeat = await db.query(claimSql, [acmeProject, "sha-two"]);
-  assert.equal(repeat.rows.length, 0, "same HEAD → no claim, no re-index");
+  assert.equal(repeat.rows.length, 0, "same head → no claim, no re-index");
 });
 
-await test("one repo index per project; deleting the project clears it", async () => {
-  const { rows } = await db.query(
-    `SELECT count(*)::int AS n FROM repo_context_index WHERE project_id = $1`,
-    [acmeProject],
-  );
-  assert.equal(rows[0].n, 1);
+await test("heterogeneous refs coexist and outlive their repos", async () => {
+  // A room-fork ref alongside the project ref: both are just pointers.
+  await db.query(claimSql, [runSession, "sha-fork"]);
+  const both = await db.query(`SELECT count(*)::int AS n FROM repo_context_index`);
+  assert.equal(both.rows[0].n, 2);
+  // No FK on purpose: deleting the project leaves an inert pointer at a bank
+  // nothing will query, exactly like a superseded per-SHA bank.
   await db.query(`DELETE FROM projects WHERE id = $1`, [acmeProject]);
   const after = await db.query(`SELECT count(*)::int AS n FROM repo_context_index`);
-  assert.equal(after.rows[0].n, 0, "cascade removed the pointer");
+  assert.equal(after.rows[0].n, 2, "pointers survive their ref's deletion");
 });
 
 // --- time-ordered keys ------------------------------------------------------

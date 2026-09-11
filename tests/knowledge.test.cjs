@@ -76,11 +76,14 @@ function fixtureGraph() {
 
 console.log("knowledge graph");
 
-test("banks keep their historical names — existing vectors stay addressable", () => {
-  // `session:<id>` predates the graph; renaming it would orphan every memory
-  // already ingested. This is the backward-compatibility contract.
-  assert.equal(roomBank("abc"), "session:abc");
-  assert.equal(repoBank("p1", "abcdef1234567890"), "repo:p1:abcdef123456");
+test("bank names use only characters the sidecar accepts", () => {
+  // The sidecar rejects anything beyond alphanumerics/hyphens/underscores —
+  // silently, since remember() is fail-open. The original colon scheme never
+  // stored a single vector; hyphens are the verified-working contract.
+  assert.equal(roomBank("abc"), "session-abc");
+  assert.equal(repoBank("p1", "abcdef1234567890"), "repo-p1-abcdef123456");
+  assert.match(roomBank("abc"), /^[A-Za-z0-9_-]+$/);
+  assert.match(repoBank("11111111-2222-3333-4444-555555555555", "abcdef1234567890"), /^[A-Za-z0-9_-]+$/);
 });
 
 test("the graph materializes project → rooms → runs with a repo node", () => {
@@ -89,7 +92,7 @@ test("the graph materializes project → rooms → runs with a repo node", () =>
   assert.equal(root.children.length, 4); // repo + 3 rooms
   const active = findNode(root, (n) => n.id === "room-active");
   assert.equal(active.kind, "room");
-  assert.equal(active.bank, "session:room-active");
+  assert.equal(active.bank, "session-room-active");
   assert.equal(active.children.length, 2);
   assert.equal(active.children[0].kind, "run");
   assert.equal(active.children[0].bank, null, "runs are structural, not banked");
@@ -98,7 +101,7 @@ test("the graph materializes project → rooms → runs with a repo node", () =>
 test("the repo node carries the per-SHA bank", () => {
   const repo = repoNode(fixtureGraph());
   assert.ok(repo);
-  assert.equal(repo.bank, "repo:proj-1:abcdef123456");
+  assert.equal(repo.bank, "repo-proj-1-abcdef123456");
   assert.equal(repoNode(assembleKnowledgeGraph({ projectId: "p", rooms: [], repoSha: null })), null);
 });
 
