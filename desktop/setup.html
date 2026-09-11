@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Multiplayer AI — Desktop settings</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main>
+    <header><img src="icon.png" alt="" width="48" height="48"><span>Multiplayer AI <small>DESKTOP</small></span></header>
+    <h1>Your team’s AI workspace.<br>Connected to your computer.</h1>
+    <p>Open your team’s workspace, then connect this computer to run AI tasks using your own tools.</p>
+    <section aria-labelledby="workspace-heading">
+      <h2 id="workspace-heading">1. Open your workspace</h2>
+      <form id="connect-form">
+        <label for="workspace">Workspace address</label>
+        <div class="row"><input id="workspace" type="url" placeholder="https://your-workspace.example" required autocomplete="url"><button id="connect" type="submit">Connect</button></div>
+        <p class="hint">Use the HTTPS address supplied by your workspace administrator. This desktop app connects to a server; it does not host one.</p>
+      </form>
+      <button id="retry" class="secondary" type="button">Reopen workspace</button>
+    </section>
+    <section aria-labelledby="runner-heading">
+      <h2 id="runner-heading">2. Connect your AI tools</h2>
+      <p>In your workspace, open <strong>Your computers → Connect a computer → Pair this desktop</strong>. Install Git and your preferred AI CLI first, and sign in to that CLI.</p>
+      <p class="hint">Only enable execution for a server you trust. Agents can run commands and access files with your user permissions. Provider requests may leave your computer.</p>
+      <div class="row"><span id="runner" role="status">Runner: not connected</span><button id="toggle" class="secondary" type="button">Resume runner</button></div>
+    </section>
+    <p id="status" role="status" aria-live="polite"></p>
+    <footer><span id="version"></span><button id="updates" class="secondary" type="button">Check for updates</button></footer>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     ".next-handoff-test/**",
     "out/**",
     "build/**",
+    ".desktop-build/**",
+    "desktop-dist/**",
     "next-env.d.ts",
     // Compiled output for the presence tests.
     ".test-build/**",
@@ -21,7 +23,7 @@ const eslintConfig = defineConfig([
   {
     // Node test harnesses, run directly rather than bundled. CommonJS is what
     // lets them require the compiled TypeScript without an extension dance.
-    files: ["tests/**/*.cjs"],
+    files: ["tests/**/*.cjs", "desktop/**/*.js", "desktop/**/*.cjs"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ]);

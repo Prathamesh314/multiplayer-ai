@@ -44,7 +44,7 @@ export class RunnerGit {
     const { stdout } = await run(
       "git",
       [...CONFIG, ...(withAuth ? this.authArgs : []), ...args],
-      { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
+      { cwd, env: { ...process.env, ...GIT_ENV }, timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
     );
     return stdout;
   }

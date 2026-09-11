@@ -18,6 +18,7 @@ import type { RunnerDevice } from "../../lib/runner/client";
 import { relativeTime } from "../../lib/format";
 import { SpinnerIcon } from "../icons";
 import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
+import { desktopBridge } from "../../lib/desktop";
 
 /** Refresh cadence while the dialog is open; pairing completion shows itself. */
 const POLL_MS = 5_000;
@@ -75,6 +76,21 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
       setDevices((current) => (current ?? []).filter((entry) => entry.id !== device.id));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not revoke that device.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pairDesktop() {
+    if (!pairing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await desktopBridge()?.pairComputer(pairing.code);
+      if (!result?.ok) throw new Error(result?.error || "Desktop pairing is unavailable.");
+      setDevices(await fetchDevices());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not pair this desktop.");
     } finally {
       setBusy(false);
     }
@@ -145,6 +161,14 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <div className="space-y-2 rounded-lg border border-vs-border bg-vs-editor p-3">
+            {desktopBridge()?.pairComputer && (
+              <div className="space-y-2 border-b border-vs-border pb-3">
+                <PrimaryButton disabled={busy} onClick={() => void pairDesktop()}>
+                  {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Pair this desktop
+                </PrimaryButton>
+                <p className="text-sm text-vs-muted">Confirm in the native dialog to enable the bundled runner. No project checkout or npm command is needed. Git and your AI CLI must already be installed.</p>
+              </div>
+            )}
             <p className="text-[12px] uppercase tracking-wider text-vs-muted">
               Run this in the multiplayer-ai project folder on your computer
             </p>

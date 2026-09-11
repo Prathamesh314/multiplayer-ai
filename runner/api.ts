@@ -25,6 +25,8 @@ export class RunnerApi {
         authorization: `Bearer ${this.token}`,
       },
       body: JSON.stringify(body ?? {}),
+      signal: AbortSignal.timeout(45_000),
+      redirect: "error",
     });
     if (response.status === 401) {
       throw new Error("This device was revoked or the token is stale — re-pair with `runner pair`.");
@@ -72,6 +74,8 @@ export async function pairDevice(input: {
       platform: process.platform,
       version: "0.1.0",
     }),
+    signal: AbortSignal.timeout(15_000),
+    redirect: "error",
   });
   const parsed = (await response.json().catch(() => null)) as
     | (PairResponse & { error?: string })

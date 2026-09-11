@@ -20,6 +20,8 @@
 
 # production
 /build
+/.desktop-build/
+/desktop-dist/
 
 # session repos and records (override with MULTIPLAYER_AI_DATA)
 /.multiplayer-ai/

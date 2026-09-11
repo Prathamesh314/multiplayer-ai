@@ -1,0 +1,52 @@
+name: Desktop checks and preview installers
+
+on:
+  pull_request:
+    paths:
+      - desktop/**
+      - runner/**
+      - app/lib/ai/**
+      - app/lib/desktop.ts
+      - app/components/ai/DevicesDialog.tsx
+      - tests/desktop*
+      - tests/fixtures/desktop-runner.cjs
+      - package*.json
+      - .github/workflows/desktop.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run test:desktop
+      - run: npm run test:desktop:smoke
+      - run: npm run desktop:dist
+      - run: node tests/desktop-smoke.mjs --packaged
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-preview-${{ matrix.os }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop-dist/*.dmg
+            desktop-dist/*.zip
+            desktop-dist/*.exe
+            desktop-dist/*.blockmap
+            desktop-dist/SHA256SUMS-*.txt

@@ -1,0 +1,47 @@
+name: Signed desktop release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    environment: desktop-release
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run test:desktop
+      - run: npm run test:desktop:smoke
+      - name: Build signed and notarized macOS candidate
+        run: npm run desktop:release
+        env:
+          DESKTOP_WORKSPACE_URL: ${{ vars.DESKTOP_WORKSPACE_URL }}
+          DESKTOP_UPDATE_URL: ${{ vars.DESKTOP_UPDATE_URL }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed-macos-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop-dist/*.dmg
+            desktop-dist/*.zip
+            desktop-dist/*.blockmap
+            desktop-dist/latest*.yml
+            desktop-dist/SHA256SUMS-*.txt

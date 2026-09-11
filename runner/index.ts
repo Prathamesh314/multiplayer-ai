@@ -29,6 +29,13 @@ const CLAIM_WAIT_MS = 20_000;
 const FLUSH_MS = 250;
 
 const log = (message: string) => console.log(`[runner] ${message}`);
+let stopping = false;
+const desktopPort = (process as NodeJS.Process & {
+  parentPort?: { on: (event: string, listener: (event: { data?: { type?: string } }) => void) => void };
+}).parentPort;
+desktopPort?.on("message", event => {
+  if (event.data?.type === "shutdown") stopping = true;
+});
 
 function flag(name: string): string | null {
   const index = process.argv.indexOf(`--${name}`);
@@ -149,7 +156,7 @@ async function start(): Promise<void> {
   const heartbeat = setInterval(() => void api.heartbeat().catch(() => {}), HEARTBEAT_MS);
   heartbeat.unref?.();
 
-  for (;;) {
+  while (!stopping) {
     await deliverCompletions(config.dataDir, api);
     let job: Awaited<ReturnType<RunnerApi["claim"]>> = null;
     try {
@@ -172,6 +179,7 @@ async function start(): Promise<void> {
     if (once) break;
   }
   clearInterval(heartbeat);
+  if (desktopPort) process.exit(0);
 }
 
 const command = process.argv[2];

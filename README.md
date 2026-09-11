@@ -146,3 +146,15 @@ npm test                  # the test suite
 Configuration is read from `.env` — see `.env.example` for every setting,
 including `REDIS_URL`, `AGENT_WORKER`, the memory sidecar, and memory
 consolidation. Anything optional is off by default and degrades gracefully.
+
+### Desktop distribution
+
+`npm start` builds the desktop assets and starts a local development server.
+`npm run desktop:attach` opens desktop connection settings without starting a
+server. Packaged apps connect to an HTTPS workspace and include their own runner;
+they do not require npm, this repository, or a local database. Git and the chosen
+AI CLI are still required to execute tasks locally.
+
+Use `npm run desktop:dist` for preview installers in `desktop-dist/` and
+`npm run desktop:release` for credential-gated signed releases. See
+[desktop release instructions and shipment gates](docs/desktop-release.md).
