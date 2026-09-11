@@ -70,7 +70,7 @@ export function RoomSidebar({
       )}
 
       <SectionHeader
-        title="Agent runs"
+        title="AI chats"
         count={runs.filter((run) => !run.archivedAt).length}
         open={runsOpen}
         onToggle={() => setRunsOpen((v) => !v)}
@@ -114,6 +114,7 @@ function SectionHeader({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         className="flex flex-1 items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
       >
         <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />

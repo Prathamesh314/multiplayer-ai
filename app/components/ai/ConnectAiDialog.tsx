@@ -1,19 +1,6 @@
 "use client";
 
-/*
- * The "connect your AI" step: one place that shows every provider this app can
- * drive — Claude Code, Codex, Gemini, and local models via Ollama — with its
- * install and sign-in state, and lets the user connect each before they start
- * working. Opened automatically on first run when nothing is connected, and
- * any time afterwards from the profile menu.
- *
- * Nothing here owns a credential: install state is read by probing the CLI,
- * and sign-in drives the vendor CLI's own OAuth flow (the same machinery the
- * chat panel uses). Local providers have no sign-in at all — installed means
- * connected, and nothing leaves the machine.
- */
-
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchAgents,
   loginAgent,
@@ -26,26 +13,34 @@ import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
 
 /** An agent that can take a run right now: installed, and signed in if it needs to be. */
 export function agentReady(agent: AgentStatus): boolean {
-  return agent.installed && (!agent.auth || agent.auth.loggedIn);
+  return agent.installed && (!agent.auth || agent.auth.loggedIn)
+    && (!["opencode", "ollama", "codex-ollama", "codex-lmstudio"].includes(agent.id) || !!agent.models?.choices.length);
 }
 
-export function ConnectAiDialog({ onClose }: { onClose: () => void }) {
+export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => void; onOpenDevices?: () => void }) {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loginLog, setLoginLog] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(true);
+  const [canRun, setCanRun] = useState(false);
   const login = useRef<RunHandle | null>(null);
 
-  const reload = (refresh = true) =>
-    fetchAgents(refresh).then((response) => setAgents(response.agents));
+  const reload = useCallback((refresh = false) =>
+    fetchAgents(refresh).then(response => {
+      setAgents(response.agents);
+      setCanRun(response.canRun);
+    }).catch(cause => {
+      setError(cause instanceof Error ? cause.message : "Could not check your AI connections. Try again.");
+    }).finally(() => {
+      setRefreshing(false);
+    }), []);
 
   useEffect(() => {
-    // First read from the cache (instant), then force a re-probe so a CLI
-    // installed while this dialog was closed shows up without a manual refresh.
-    void reload(false).then(() => reload(true));
+    void reload();
     return () => login.current?.cancel();
-  }, []);
+  }, [reload]);
 
   function connect(agentId: string) {
     setBusyId(agentId);
@@ -91,13 +86,13 @@ export function ConnectAiDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="Connect your AI"
-      description="Sign in to the coding agents you use — or run models locally. You need at least one to start a chat."
+      description="Connect an AI you already use. Install and sign in on the computer that will run your tasks; then choose its model in a room."
       width="max-w-xl"
       onClose={onClose}
       footer={
         <>
           <span className="mr-auto text-[12px] text-vs-muted">
-            {agents === null ? "" : `${readyCount} of ${agents.length} connected`}
+            {agents === null ? "" : `${readyCount} execution option${readyCount === 1 ? "" : "s"} detected`}
           </span>
           <PrimaryButton onClick={onClose} disabled={busyId !== null}>
             {readyCount > 0 ? "Done" : "Skip for now"}
@@ -105,19 +100,29 @@ export function ConnectAiDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
+      <div className="rounded-xl border border-vs-border bg-vs-editor p-3 text-sm leading-6 text-vs-muted">
+        <p><strong className="text-vs-fg">1. Connect a computer.</strong> Pair your computer for a hosted workspace, or use the app’s machine when hosting locally.</p>
+        <p><strong className="text-vs-fg">2. Set up a provider.</strong> Use an installed coding CLI and your own login, or install a compatible local model.</p>
+        <p><strong className="text-vs-fg">3. Check and choose.</strong> Refresh below after setup. Models appear in the room’s message box.</p>
+        {onOpenDevices && <button type="button" onClick={onOpenDevices} className="mt-2 rounded-lg border border-vs-border px-3 py-1.5 font-medium text-vs-fg hover:bg-vs-hover">Connect your computer</button>}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-vs-muted">{canRun ? "An execution connection is available." : "You can explore files without AI. Connect an execution machine before sending a task."}</p>
+        <GhostButton onClick={() => { setError(null); setRefreshing(true); void reload(true); }} disabled={refreshing || busyId !== null}>{refreshing ? "Checking…" : "Check connections"}</GhostButton>
+      </div>
       {error && (
-        <p className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
+        <p role="alert" className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
           {error}
         </p>
       )}
 
-      {agents === null ? (
+      {agents === null && !error ? (
         <div className="flex justify-center py-8">
           <SpinnerIcon className="h-5 w-5 text-vs-muted" />
         </div>
       ) : (
         <ul className="space-y-2">
-          {agents.map((agent) => {
+          {(agents ?? []).map((agent) => {
             const ready = agentReady(agent);
             const needsLogin = agent.installed && agent.auth && !agent.auth.loggedIn;
             return (
@@ -137,8 +142,9 @@ export function ConnectAiDialog({ onClose }: { onClose: () => void }) {
                           ? agent.auth.loggedIn
                             ? `Connected${agent.auth.email ? ` · ${agent.auth.email}` : ""}${agent.auth.plan ? ` · ${agent.auth.plan}` : ""}`
                             : "Installed · not signed in"
-                          : "Ready · runs entirely on this machine"}
+                          : agent.execution === "runner" ? "Detected on your paired computer · uses its provider configuration" : "Installed on the app’s machine · provider setup may still be needed"}
                     </p>
+                    {agent.installed && !ready && !needsLogin && <p className="mt-1 text-xs text-vs-warn">No models available yet. Connect a provider or install a compatible local model, then check again.</p>}
                   </div>
 
                   {needsLogin && (
@@ -163,7 +169,7 @@ export function ConnectAiDialog({ onClose }: { onClose: () => void }) {
                         void navigator.clipboard.writeText(agent.install.command).then(() => {
                           setCopiedId(agent.id);
                           setTimeout(() => setCopiedId(null), 1500);
-                        });
+                        }).catch(() => setError("Could not copy. Select and copy the installation command manually."));
                       }}
                     >
                       {copiedId === agent.id ? "Copied" : "Copy"}

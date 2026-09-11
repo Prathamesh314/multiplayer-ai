@@ -28,6 +28,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadVersion, setReloadVersion] = useState(0);
   // Devices present when the pairing code was minted — anything beyond these
   // appearing in a refresh is the new machine coming online.
   const [knownIds, setKnownIds] = useState<Set<string>>(() => new Set());
@@ -38,6 +39,8 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
       fetchDevices().then((list) => {
         if (!cancelled) setDevices(list);
         return list;
+      }).catch(() => {
+        if (!cancelled) setError("Could not load your computers. Check your connection and try again.");
       });
     void load();
     const timer = setInterval(() => void load(), POLL_MS);
@@ -45,7 +48,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [reloadVersion]);
 
   const paired =
     pairing !== null && (devices ?? []).some((device) => !knownIds.has(device.id));
@@ -84,25 +87,25 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="Your computers"
-      description="Paired machines run your agent chats locally — your CPU, your AI logins. A machine only ever executes runs you started."
+      description="A runner connects your computer to this workspace. It executes tasks you submit, including chats handed to you, using your configured AI provider."
       width="max-w-xl"
       onClose={onClose}
       footer={<PrimaryButton onClick={onClose}>Done</PrimaryButton>}
     >
       {error && (
-        <p className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
+        <p role="alert" className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
           {error}
+          <button type="button" onClick={() => { setError(null); setReloadVersion(version => version + 1); }} className="ml-2 underline">Try again</button>
         </p>
       )}
 
       {devices === null ? (
         <div className="flex justify-center py-8">
-          <SpinnerIcon className="h-5 w-5 text-vs-muted" />
+          {!error && <SpinnerIcon className="h-5 w-5 text-vs-muted" />}
         </div>
       ) : devices.length === 0 && !pairing ? (
         <p className="py-2 text-[13px] text-vs-muted">
-          No computers paired yet — your runs execute in the cloud. Pair one to run agents on
-          your own machine.
+          No computers paired yet. Connect one to run tasks with your own AI setup. Cloud execution is not automatically provided.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -143,7 +146,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="space-y-2 rounded-lg border border-vs-border bg-vs-editor p-3">
             <p className="text-[12px] uppercase tracking-wider text-vs-muted">
-              Run this on the computer being paired
+              Run this in the multiplayer-ai project folder on your computer
             </p>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-vs-fg">
@@ -154,7 +157,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
                   void navigator.clipboard.writeText(pairCommand).then(() => {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
-                  });
+                  }).catch(() => setError("Could not copy. Select and copy the pairing command manually."));
                 }}
               >
                 {copied ? "Copied" : "Copy"}
@@ -164,12 +167,13 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
               The code is single-use and expires in ten minutes. This list updates the moment
               the machine connects.
             </p>
+            <p className="text-sm leading-6 text-vs-muted">After pairing, run <code className="font-mono text-vs-fg">npm run runner</code> and keep it running while you work. Your AI provider may still send requests to its cloud service.</p>
           </div>
         )
       ) : (
         <div>
           <PrimaryButton onClick={() => void startPairing()} disabled={busy || devices === null}>
-            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Pair this computer
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Connect a computer
           </PrimaryButton>
         </div>
       )}

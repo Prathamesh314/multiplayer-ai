@@ -37,10 +37,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     tokens.push(token);
   }
   let output = "";
-  const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--webpack", "--port", String(port)], {
+  const production = process.env.HANDOFF_TEST_PRODUCTION === "1";
+  const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", ...(production ? ["start"] : ["dev", "--webpack"]), "--port", String(port)], {
     env: { ...process.env, DATABASE_URL: databaseUrl, REDIS_URL: redisUrl ?? "redis://localhost:6380",
       MULTIPLAYER_AI_DATA: directory, MNEMOSYNE_URL: "", LOCAL_RUNNERS: "1", AGENT_WORKER: "0",
-      NEXT_TEST_DIST_DIR: ".next-handoff-test", NEXT_TELEMETRY_DISABLED: "1" },
+      NODE_ENV: production ? "production" : "development", NEXT_TEST_DIST_DIR: production ? ".next" : ".next-handoff-test", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   next.stdout.on("data", chunk => { output += chunk; });
@@ -50,6 +51,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   const pending = new Map();
   let sequence = 0;
   const runtimeErrors = [];
+  let lastSessionId;
   const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
     const id = ++sequence;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 30_000);
@@ -107,11 +109,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await command("Network.setCookie", { name: "ma_auth", value: token, url: server, httpOnly: true, sameSite: "Lax" });
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
       const evaluate = async expression => {
+        lastSessionId = sessionId;
         const result = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
         return result.result.value;
       };
-      const click = text => evaluate(`Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)})?.click()`);
+      const click = text => eventually(() => evaluate(`(() => { const scope = document.querySelector('dialog[open]') ?? document; const button = Array.from(scope.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)} && button.checkVisibility() && !button.disabled); if (!button) return false; button.click(); return true; })()`), `click ${text}`);
       await command("Page.navigate", { url: `${server}/s/${targetRoom}` });
       try {
         await eventually(() => evaluate(`!!document.querySelector(${JSON.stringify(readySelector)})`), "room workspace");
@@ -158,6 +161,21 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Provider"]'); select.value = "codex"; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
     await sql(`UPDATE runner_devices SET revoked_at = now() WHERE id = $1`, [catalogDevice]);
     console.log("  ok live model-picker updates, new and retired models, per-user catalog isolation, and unavailable-model refusal");
+    const beforeStarter = (await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count;
+    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === "Understand this project")'), "starter prompts ready");
+    await recipient.click("Understand this project");
+    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value === "Explain what this project does"'), "starter fills composer without sending");
+    assert.equal(await recipient.evaluate('document.activeElement === document.querySelector(".room-main textarea")'), true, "Starter focuses editable draft");
+    await recipient.click("Review potential bugs");
+    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value.includes("Explain what this project does\\n\\nReview this project")'), "starter preserves existing draft");
+    assert.equal((await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count, beforeStarter, "Starter prompts never submit a model turn");
+    const chatScreenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
+    await writeFile("/tmp/ux-room-chat.png", Buffer.from(chatScreenshot.data, "base64"));
+    await recipient.click("Room guide");
+    await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("Review before sharing changes")'), "room guide explains workflow");
+    await recipient.click("Open AI chat");
+    await eventually(() => recipient.evaluate('!document.querySelector("dialog") && document.querySelector(".room-main textarea")?.value.includes("Explain what this project does")'), "guide navigation preserves chat draft");
+    console.log("  ok guided navigation and editable, non-submitting starter prompts preserve drafts");
     for (const view of [sender]) {
       await eventually(() => view.evaluate("Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Browser handoff'))"), "chat listing");
       await view.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Browser handoff')).click()");
@@ -205,6 +223,14 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await recipient.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
       await delay(300);
       assert.equal(await recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), true, `No ${name} overflow`);
+      await recipient.click("Room guide");
+      await eventually(() => recipient.evaluate('document.querySelector("dialog")?.open'), `${name} guide opens`);
+      assert.equal(await recipient.evaluate('document.querySelector("dialog").getBoundingClientRect().width <= innerWidth'), true, `${name} guide fits viewport`);
+      if (name === "desktop") {
+        const guideScreenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
+        await writeFile("/tmp/ux-room-guide.png", Buffer.from(guideScreenshot.data, "base64"));
+      }
+      await recipient.evaluate('document.querySelector(\'button[aria-label="Close Room guide"]\').click()');
       const screenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
       await writeFile(join("/tmp", `handoff-room-${name}.png`), Buffer.from(screenshot.data, "base64"));
     }
@@ -285,6 +311,54 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok real run/claim/smart-HTTP/completion APIs: two successive turns on recipient device, duplicate completion, old-driver refusal");
+    assert.equal((await request(tokens[0], "/api/orgs", "POST", { name: "UX workshop", slug: "ux-workshop" })).status, 201);
+    await Promise.all([
+      fetch(server),
+      ...["/api/orgs/ux-workshop/projects", "/api/orgs/ux-workshop/usage", "/api/chat/conversations?org=ux-workshop", "/api/invitations", "/api/runner/devices"].map(path => request(tokens[0], path)),
+    ]);
+    await sender.command("Page.navigate", { url: server });
+    await eventually(() => sender.evaluate('!!document.querySelector(\'button[title="UX workshop"]\')'), "organization navigation");
+    await sender.evaluate('document.querySelector(\'button[title="UX workshop"]\').click()');
+    await eventually(() => sender.evaluate('document.querySelector("main h1")?.textContent === "UX workshop"'), "guided project overview");
+    assert.equal(await sender.evaluate('document.querySelector("dialog") === null'), true, "First visit does not interrupt onboarding with provider setup");
+    await sender.click("New project");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Start a project")'), "project setup");
+    assert.equal(await sender.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent === "Start a project").getAttribute("aria-pressed")'), "true", "Local project is the honest default");
+    await sender.click("GitHub reference");
+    assert.equal(await sender.evaluate('document.querySelector("dialog").textContent.includes("does not connect your GitHub account")'), true);
+    await sender.click("Cancel");
+    await sender.command("Network.enable", {});
+    await sender.command("Network.setBlockedURLs", { urls: ["*/api/ai/agents*"] });
+    await sender.click("Set up AI");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer.")'), "AI setup provides next steps");
+    await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "AI setup failures surface with a retry");
+    await sender.command("Network.setBlockedURLs", { urls: [] });
+    await sender.click("Check connections");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
+    await sender.command("Network.setBlockedURLs", { urls: ["*/api/runner/devices*"] });
+    await sender.click("Connect your computer");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("A runner connects your computer")'), "AI setup links to device pairing");
+    await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
+    await sender.command("Network.setBlockedURLs", { urls: [] });
+    await sender.click("Try again");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a computer" && !button.disabled)'), "device loading retry recovers");
+    await sender.click("Done");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog") && document.querySelector("main h1")?.textContent === "UX workshop"'), "return to project overview");
+    for (const [width, height, name] of [[1440, 960, "desktop"], [390, 844, "mobile"]]) {
+      await sender.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+      await delay(300);
+      assert.equal(await sender.evaluate("document.documentElement.scrollWidth <= innerWidth"), true, `${name} onboarding has no horizontal overflow`);
+      const screenshot = await sender.command("Page.captureScreenshot", { format: "png" });
+      await writeFile(`/tmp/ux-projects-${name}.png`, Buffer.from(screenshot.data, "base64"));
+    }
+    assert.deepEqual(runtimeErrors, []);
+    console.log("  ok non-interrupting onboarding, honest GitHub setup, AI-to-device setup, and responsive project overview");
+  } catch (cause) {
+    if (lastSessionId) {
+      const diagnostic = await send("Runtime.evaluate", { expression: "document.body?.innerText.slice(0, 5000)", returnByValue: true }, lastSessionId).catch(() => null);
+      console.error("Last browser state:", diagnostic?.result?.value);
+    }
+    throw cause;
   } finally {
     await writeFile("/tmp/handoff-browser-server.log", output);
     socket?.close();

@@ -47,6 +47,9 @@ import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
+import { RoomGuide, type RoomGuideAction } from "./RoomGuide";
+import { ConnectAiDialog } from "../ai/ConnectAiDialog";
+import { DevicesDialog } from "../ai/DevicesDialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -133,6 +136,7 @@ export function Workspace({
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("files");
   const [showTeam, setShowTeam] = useState(true);
+  const [helpDialog, setHelpDialog] = useState<"guide" | "providers" | "devices" | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(260);
   // Live team-chat messages arriving over the session event stream.
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);
@@ -805,6 +809,23 @@ export function Workspace({
 
   const activeBuffer = activePath ? buffers.get(activePath) : undefined;
 
+  function navigateGuide(action: RoomGuideAction) {
+    setHelpDialog(null);
+    if (action === "providers" || action === "devices") setHelpDialog(action);
+    else if (action === "invite") setInviteOpen(true);
+    else if (action === "files") {
+      if (!repo && !readOnly) void openPicker();
+      else setMobilePane("files");
+    } else if (action === "team") {
+      setShowTeam(true);
+      setMobilePane("team");
+    } else {
+      setShowChat(true);
+      setActivePath(null);
+      setMobilePane("chat");
+    }
+  }
+
   return (
     <div
       className="flex h-dvh flex-col overflow-hidden bg-vs-editor text-vs-fg"
@@ -819,6 +840,7 @@ export function Workspace({
       onDrop={onDrop}
     >
       <TopBar
+        onOpenGuide={() => setHelpDialog("guide")}
         session={session}
         onInvite={() => setInviteOpen(true)}
         onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
@@ -828,10 +850,13 @@ export function Workspace({
         terminalOpen={terminalOpen}
         onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
-        canOpenFolder={!repo}
+        canOpenFolder={!repo && !readOnly}
         members={people.members}
         importedRepo={!!chatRepoId}
       />
+      {helpDialog === "guide" && <RoomGuide hasRepo={!!repo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
+      {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
+      {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} />}
       {repo && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-panel px-3 py-2.5">
         <button type="button" aria-expanded={showTeam} className="hidden rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover lg:block" onClick={() => setShowTeam(previous => !previous)}>Chats & team</button>
         <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium sm:flex-none">
@@ -881,6 +906,7 @@ export function Workspace({
           // Before a repo exists: the folder upload / open flow fills the room.
           <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
             <WelcomeView
+              readOnly={readOnly}
               dragging={dragging}
               scanning={scanning}
               seeding={seeding}

@@ -9,6 +9,8 @@ import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIc
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
 
 type Props = {
+  onConnectAi: () => void;
+  onConnectComputer: () => void;
   org: Org;
   me: CurrentUser | null;
   projects: Project[] | null;
@@ -20,7 +22,7 @@ type Props = {
   onOpenRoom: (id: string) => void;
 };
 
-export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onOpenRoom }: Props) {
+export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
   const [search, setSearch] = useState("");
   const visible = projects?.filter((project) =>
     `${project.name} ${project.githubRepo ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()),
@@ -34,7 +36,7 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Team workspace</p>
             <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{org.name}</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-vs-muted">
-              Pick up a project. Bring your team and AI into the same conversation.
+              Open a project to continue your work, or start something new with your team.
             </p>
           </div>
           {canManageOrg(org.myRole) && (
@@ -47,21 +49,30 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
 
         <section className="workspace-welcome mt-8 rounded-2xl border border-vs-border p-6 sm:p-8" aria-labelledby="workflow-heading">
           <div className="flex items-center gap-2 text-sm font-medium text-vs-muted">
-            <SparkleIcon className="h-4 w-4" /> Humans + agents, working together
+            <SparkleIcon className="h-4 w-4 text-vs-accent" /> From your first prompt to a team result
           </div>
-          <h2 id="workflow-heading" className="font-display mt-3 text-2xl font-semibold tracking-tight">Your own room. A shared direction.</h2>
-          <ol className="mt-6 hidden gap-5 text-sm sm:grid sm:grid-cols-3">
+          <h2 id="workflow-heading" className="font-display mt-3 text-2xl font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-vs-muted">A project organizes your code. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
+          <details open={projects?.length === 0} className="mt-4">
+            <summary className="cursor-pointer rounded-lg py-2 text-sm font-medium text-vs-fg">How this workspace works</summary>
+          <ol className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
             {[
-              ["Open your room", "Work on your own branch of the project."],
-              ["Build with context", "Run an agent and reference your team’s chats."],
-              ["Review and publish", "Bring your changes back into the project."],
+              ["Bring your code", "Open a project’s room and import a folder. Files and chats share one tabbed workspace."],
+              ["Give AI a task", "Connect your AI, describe what you need, and review its changes before publishing."],
+              ["Continue together", "Invite a teammate. Hand off a chat so they can continue with its conversation context."],
             ].map(([title, body], index) => (
-              <li key={title} className="flex gap-3">
+              <li key={title} className="flex gap-3 rounded-xl border border-vs-border bg-vs-editor/60 p-4">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-vs-border bg-vs-editor text-xs text-vs-muted">{index + 1}</span>
                 <div><p className="font-medium">{title}</p><p className="mt-1 leading-6 text-vs-muted">{body}</p></div>
               </li>
             ))}
           </ol>
+          </details>
+          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-vs-border pt-5">
+            <span className="mr-auto text-sm text-vs-muted">New here? Set up once, then choose a project below.</span>
+            <GhostButton onClick={onConnectComputer}>Connect your computer</GhostButton>
+            <GhostButton onClick={onConnectAi}><SparkleIcon className="h-4 w-4" /> Set up AI</GhostButton>
+          </div>
         </section>
 
         <section className="mt-10" aria-labelledby="projects-heading" aria-busy={projects === null && !error}>
@@ -128,7 +139,7 @@ function ProjectCard({ project, org, me, onManageMembers, onOpenRoom }: Pick<Pro
     <article className="flex min-w-0 flex-col rounded-xl border border-vs-border bg-vs-panel p-5 transition-colors hover:border-vs-muted/50">
       <div className="flex items-start gap-3">
         <span className="rounded-xl border border-vs-border bg-vs-editor p-3"><GitBranchIcon className="h-5 w-5 text-vs-muted" /></span>
-        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 truncate text-xs text-vs-muted" title={project.githubRepo ?? undefined}>{project.githubRepo ?? "Imported from a local folder"}</p></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 truncate text-xs text-vs-muted" title={project.githubRepo ?? undefined}>{project.githubRepo ? `${project.githubRepo} · reference only` : "Add or browse code in your room"}</p></div>
         <span className="rounded-md border border-vs-border px-2 py-1 text-xs capitalize text-vs-muted">{project.myRole}</span>
       </div>
       <div className="mt-5 flex items-center gap-2 text-xs text-vs-muted"><GitBranchIcon className="h-3.5 w-3.5" /><span className="truncate">{project.defaultBranch ?? "main"}</span><span aria-hidden>·</span><span>Separate rooms, shared project</span></div>

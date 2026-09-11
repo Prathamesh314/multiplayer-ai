@@ -247,7 +247,7 @@ export function CreateProjectDialog({
   onClose: () => void;
   onCreated: (project: Project) => void;
 }) {
-  const [source, setSource] = useState<"github" | "local">("github");
+  const [source, setSource] = useState<"github" | "local">("local");
   const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("main");
@@ -277,7 +277,7 @@ export function CreateProjectDialog({
   return (
     <Modal
       title="New project"
-      description="A project is a repo. Everyone you add to it can open all of its rooms."
+      description="Give your work a name. After creating the project, open your room to add code and start an AI chat. Room visibility controls who can see your work."
       onClose={onClose}
       footer={
         <>
@@ -290,24 +290,26 @@ export function CreateProjectDialog({
     >
       {error && <ErrorNote>{error}</ErrorNote>}
       <div className="flex gap-2">
-        {(["github", "local"] as const).map((option) => (
+        {(["local", "github"] as const).map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => setSource(option)}
+            aria-pressed={source === option}
             className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${
               source === option
                 ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
                 : "border-vs-border text-vs-muted hover:bg-vs-hover"
             }`}
           >
-            {option === "github" ? "Connect GitHub" : "Empty / local"}
+            {option === "github" ? "GitHub reference" : "Start a project"}
           </button>
         ))}
       </div>
 
       {source === "github" ? (
         <>
+          <p className="rounded-lg border border-vs-warn/30 bg-vs-warn/5 p-3 text-sm leading-6 text-vs-muted">This saves a GitHub repository reference only. It does not connect your GitHub account, download files, or create pull requests. Import the code from a folder after opening your room.</p>
           <Field label="Repository" hint="owner/name, as it appears on GitHub.">
             <input
               autoFocus
@@ -1187,4 +1189,3 @@ export function RoomSettingsDialog({
     </Modal>
   );
 }
-

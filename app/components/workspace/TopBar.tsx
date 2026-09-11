@@ -7,6 +7,7 @@ import { GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons
 import { PeopleStack } from "./People";
 
 type TopBarProps = {
+  onOpenGuide: () => void;
   session: Session;
   onInvite: () => void;
   onLeave: () => void;
@@ -23,6 +24,7 @@ type TopBarProps = {
 };
 
 export function TopBar({
+  onOpenGuide,
   session,
   onInvite,
   onLeave,
@@ -41,7 +43,7 @@ export function TopBar({
       <button
         type="button"
         onClick={onLeave}
-        title="Back to all sessions"
+        title="Back to projects"
         className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[14px] font-semibold text-vs-fg transition hover:bg-vs-hover"
       >
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
@@ -84,6 +86,8 @@ export function TopBar({
       )}
 
       <div className="ml-auto hidden sm:block"><PeopleStack members={members} /></div>
+
+      <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Room guide</button>
 
       <button
         type="button"
@@ -145,13 +149,13 @@ function PublishControls({ sessionId }: { sessionId: string }) {
         title="Pull the project's latest main into this room"
         className="rounded px-2 py-1 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
       >
-        {busy === "sync" ? "Syncing…" : "Sync"}
+        {busy === "sync" ? "Syncing…" : "Get latest"}
       </button>
       <button
         type="button"
         onClick={() => run("publish")}
         disabled={busy !== null}
-        title="Merge this room's work back into the project's main"
+        title="Merge saved room changes into the shared project, not GitHub. Review Changes first."
         className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-sm text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
       >
         <GitBranchIcon className="h-3 w-3" />

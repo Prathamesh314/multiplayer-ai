@@ -104,7 +104,7 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated }: {
             <textarea className="mt-1 min-h-28 w-full rounded-lg border border-vs-border bg-vs-editor p-2" value={note} maxLength={1000} onChange={event => setNote(event.target.value)} placeholder="What is done, what remains, and anything to watch out for…" />
           </label>
           <p className="text-xs text-vs-muted">The offer expires in one hour. Access is not granted by a handoff. Only confirmed repository state is transferred.</p>
-          <button className={`${button} bg-vs-accent text-white`} disabled={busy || !state} type="submit">{busy ? "Creating offer…" : "Offer handoff"}</button>
+          <button className="rounded-lg bg-vs-accent px-3 py-2 text-sm font-medium text-vs-accent-fg hover:opacity-90 disabled:opacity-50" disabled={busy || !state} type="submit">{busy ? "Creating offer…" : "Offer handoff"}</button>
         </form>}
         {pending && <p className="text-sm text-vs-muted">An offer is waiting for {pending.toName ?? "an eligible editor"}. Close this dialog to accept, decline, or cancel it.</p>}
         <div className="space-y-3 border-t border-vs-border pt-3">

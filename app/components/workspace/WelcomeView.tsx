@@ -4,6 +4,7 @@ import { humanCount } from "../../lib/format";
 import { AlertIcon, FolderUpIcon, SpinnerIcon } from "../icons";
 
 type WelcomeViewProps = {
+  readOnly?: boolean;
   dragging: boolean;
   scanning: boolean;
   progress: number;
@@ -22,6 +23,7 @@ type WelcomeViewProps = {
 };
 
 export function WelcomeView({
+  readOnly = false,
   dragging,
   scanning,
   progress,
@@ -34,9 +36,9 @@ export function WelcomeView({
   onOpenInput,
 }: WelcomeViewProps) {
   return (
-    <div className="flex flex-1 items-center justify-center p-6">
+    <div className="vs-scroll flex min-h-0 flex-1 overflow-y-auto p-5 sm:p-8">
       <div
-        className={`flex w-full max-w-lg flex-col items-center gap-4 rounded-xl border-2 border-dashed px-6 py-12 text-center transition ${
+        className={`m-auto flex w-full max-w-2xl flex-col items-center gap-5 rounded-2xl border border-dashed px-6 py-10 text-center transition sm:px-10 ${
           dragging ? "border-vs-accent bg-vs-accent/10" : "border-vs-border"
         }`}
       >
@@ -50,8 +52,7 @@ export function WelcomeView({
                 : `${humanCount(seeding.uploaded)} files`}
             </p>
             <p className="max-w-sm text-sm leading-5 text-vs-muted">
-              The folder is being committed to this session so it survives the tab closing and
-              opens for anyone you invite.
+              Uploading your files and saving the room’s first version. Keep this page open until it finishes. You can browse the files as soon as they appear.
             </p>
           </>
         ) : scanning ? (
@@ -61,49 +62,41 @@ export function WelcomeView({
           </>
         ) : (
           <>
-            <FolderUpIcon className="h-10 w-10 text-vs-muted" />
+            <span className="rounded-2xl border border-vs-border bg-vs-panel p-4"><FolderUpIcon className="h-8 w-8 text-vs-accent" /></span>
             <div>
-              <p className="font-display text-xl font-semibold tracking-tight text-vs-fg">
-                {hasFolder ? "Select a file to start editing" : "Drop a folder anywhere"}
-              </p>
+              <p className="mb-3 text-xs font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
+              <h1 className="font-display text-2xl font-semibold tracking-tight text-vs-fg sm:text-3xl">
+                {readOnly ? "Waiting for the project’s files" : hasFolder ? "Select a file to start editing" : "Bring your code. Start something together."}
+              </h1>
               <p className="mt-1.5 text-base leading-6 text-vs-muted">
-                {hasRepo
-                  ? "Pick a file from the Explorer on the left to open it here."
-                  : "A Git repository or any plain folder. It is uploaded to this session and committed, so it is still here when you come back."}
+                {readOnly ? "You have view-only access. Ask a room editor to add a folder; its files and chats will appear here." : hasRepo
+                  ? "Choose a file in Files & changes. It opens beside your AI chat as another tab."
+                  : "Choose a project folder, or drop one here. We’ll add its files to this room so you and your teammates can explore and work on them."}
               </p>
             </div>
-            {!hasRepo && (
+            {!hasRepo && !readOnly && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={onOpenPicker}
                   className="rounded bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90"
                 >
-                  {supportsPicker ? "Open folder…" : "Select folder…"}
+                  Add a project folder
                 </button>
-                {supportsPicker && (
-                  <button
-                    type="button"
-                    onClick={onOpenInput}
-                    className="rounded border border-vs-border px-4 py-2 text-base text-vs-fg transition hover:bg-vs-hover"
-                  >
-                    Upload folder instead
-                  </button>
-                )}
               </div>
             )}
-            {!hasRepo && !supportsPicker && (
-              <p className="max-w-md text-sm text-vs-muted">
-                This browser has no folder picker, so uploads are used instead. Some browsers hide
-                dot-folders like <code className="font-mono">.git</code> from uploads, which can
-                make Git detection fail.
-              </p>
-            )}
+            {!hasRepo && !readOnly && <>
+              <ol className="grid w-full gap-3 text-left text-sm sm:grid-cols-3">
+                {[["Add files", "A plain folder works too. Git setup isn’t required."], ["Ask your AI", "Connect a provider and give it a small first task."], ["Review together", "Inspect Changes, then invite a teammate or hand off."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-3"><span className="text-xs text-vs-muted">0{index + 1}</span><p className="mt-2 font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-vs-muted">{body}</p></li>)}
+              </ol>
+              <p className="max-w-lg text-xs leading-5 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
+              {supportsPicker && <details className="text-sm text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="mt-2 rounded border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Use browser upload instead</button></details>}
+            </>}
           </>
         )}
 
         {error && (
-          <p className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-base text-vs-danger">
+          <p role="alert" className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-base text-vs-danger">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
           </p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
 import { SendIcon } from "../icons";
@@ -111,7 +111,10 @@ type MentionState =
   | { stage: "room"; at: number; query: string }
   | { stage: "chat"; at: number; roomId: string; query: string };
 
+export type ComposerHandle = { insertPrompt: (text: string) => void };
+
 export function Composer({
+  inputRef,
   placeholder,
   disabled = false,
   onSend,
@@ -124,6 +127,7 @@ export function Composer({
   /** Rooms whose chats can be referenced by typing "@"; omit to disable mentions. */
   mentions,
 }: {
+  inputRef?: Ref<ComposerHandle>;
   placeholder: string;
   disabled?: boolean;
   onSend: (text: string, refs: string[]) => void;
@@ -138,6 +142,15 @@ export function Composer({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
+
+  useImperativeHandle(inputRef, () => ({
+    insertPrompt(text) {
+      const next = draft.trim() ? `${draft}\n\n${text}` : text;
+      setDraft(next);
+      setMention(null);
+      setPendingCaret(next.length);
+    },
+  }), [draft]);
 
   const rooms = mentions ?? [];
   const mentionsOn = rooms.length > 0;

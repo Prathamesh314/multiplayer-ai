@@ -47,9 +47,8 @@ import { OrgSettingsDialog } from "./OrgSettingsDialog";
 import { initials } from "./parts";
 import { ChatSection } from "../chat/ChatSection";
 import { ConversationView } from "../chat/ConversationView";
-import { agentReady, ConnectAiDialog } from "../ai/ConnectAiDialog";
+import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
-import { fetchAgents } from "../../lib/ai/client";
 
 // Minimal settings gear icon
 function SettingsIcon({ className }: { className?: string }) {
@@ -104,16 +103,6 @@ export function OrgWorkspace() {
         setConnectCode(who.connectCode);
         setInvitations(await listPendingInvitations().catch(() => []));
 
-        const { agents } = await fetchAgents().catch(() => ({ agents: [] }));
-        if (
-          !cancelled &&
-          agents.length > 0 &&
-          !agents.some(agentReady) &&
-          !localStorage.getItem("ma-ai-connect-seen")
-        ) {
-          localStorage.setItem("ma-ai-connect-seen", "1");
-          setDialog((current) => current ?? { kind: "connectAi" });
-        }
       } catch (cause) {
         if (cancelled) return;
         if (cause instanceof NotSignedIn) router.replace("/login");
@@ -161,6 +150,8 @@ export function OrgWorkspace() {
         </main>
       ) : activeOrg ? (
         <OrgPanel
+          onConnectAi={() => setDialog({ kind: "connectAi" })}
+          onConnectComputer={() => setDialog({ kind: "devices" })}
           key={activeOrg.slug}
           org={activeOrg}
           refreshVersion={projectsRevision}
@@ -198,7 +189,7 @@ export function OrgWorkspace() {
           }}
         />
       )}
-      {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} />}
+      {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} onOpenDevices={() => setDialog({ kind: "devices" })} />}
       {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === "joinOrg" && (
         <JoinOrgDialog
@@ -449,6 +440,8 @@ function OrgRail({
 // ---------------------------------------------------------------------------
 
 function OrgPanel({
+  onConnectAi,
+  onConnectComputer,
   org,
   refreshVersion,
   me,
@@ -462,6 +455,8 @@ function OrgPanel({
   onRoomSettings,
   onOpenRoom,
 }: {
+  onConnectAi: () => void;
+  onConnectComputer: () => void;
   org: Org;
   refreshVersion: number;
   me: CurrentUser | null;
@@ -604,7 +599,7 @@ function OrgPanel({
               <p className="px-2 py-2 text-sm leading-5 text-vs-muted">
                 No projects yet.{" "}
                 {canManageOrg(org.myRole)
-                  ? "Connect a GitHub repo to get started."
+                  ? "Create a project, then add your code in a room."
                   : "Ask an admin to add you to one."}
               </p>
             ) : (
@@ -645,6 +640,8 @@ function OrgPanel({
         />
       ) : (
         <ProjectOverview
+          onConnectAi={onConnectAi}
+          onConnectComputer={onConnectComputer}
           org={org}
           me={me}
           projects={projects}
@@ -783,9 +780,12 @@ function EmptyState({
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
           <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Build together, from the first prompt.</h1>
           <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
-            Give your team a home for projects, shared AI conversations, and code review.
-            Create an organisation to get started, or join your teammates.
+            Start a task with AI, share the conversation, and let a teammate pick up where you left off.
+            First, create an organisation—a home for your team’s projects—or join an existing one.
           </p>
+          <ol className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
+            {["Create your team’s home", "Add a project and its code", "Build, review, and hand off"].map((step, index) => <li key={step} className="rounded-xl border border-vs-border bg-vs-editor/60 p-3"><span className="mb-2 block text-xs font-semibold text-vs-accent">0{index + 1}</span>{step}</li>)}
+          </ol>
           <div className="mt-6 flex flex-wrap gap-3">
             <PrimaryButton onClick={onCreate}>
               <PlusIcon className="h-4 w-4" /> New organisation

@@ -28,7 +28,7 @@ import {
   SparkleIcon,
   SpinnerIcon,
 } from "../icons";
-import { Composer, type MentionRoom } from "./chat";
+import { Composer, type ComposerHandle, type MentionRoom } from "./chat";
 import { HandoffPanel } from "./HandoffPanel";
 import { Markdown } from "./Markdown";
 import { PanelHeader } from "./TeamChatPanel";
@@ -124,6 +124,7 @@ export function AiPanel({
   importingRepo,
   onClose,
 }: AiPanelProps) {
+  const composer = useRef<ComposerHandle>(null);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [serverCanRun, setServerCanRun] = useState(true);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -672,7 +673,7 @@ export function AiPanel({
               value={effort}
               onChange={setEffort}
               options={[{ id: "", label: "Auto" }, ...efforts.filter(choice => choice.id)]}
-              title="Capacity"
+              title="Reasoning effort"
             />
           </>
         )}
@@ -742,13 +743,14 @@ export function AiPanel({
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
-              Fork
+              Copy chat
             </button>
           ))}
         <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover">Providers</button>
         <WatchingCluster members={members} />
       </PanelHeader>
       {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} />}
+      {active?.installed && <p className="border-b border-vs-border px-3 py-2 text-xs text-vs-muted">{active.execution === "runner" ? "Execution: your paired computer" : "Execution: the app’s machine"} · {active.name}{!canRun ? " · View-only access" : ""}</p>}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
@@ -792,7 +794,7 @@ export function AiPanel({
           <EmptyState
             ready={ready}
             agentName={active?.name ?? null}
-            onExample={ask}
+            onExample={prompt => composer.current?.insertPrompt(prompt)}
           />
         )}
         {error && (
@@ -822,6 +824,7 @@ export function AiPanel({
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">A turn is already in progress. You can continue when it finishes.</div>
       ) : (
         <Composer
+          inputRef={composer}
           key={`${entered?.id ?? "new"}:${repoId ?? "default"}`}
           disabled={!ready || !modelAvailable || !effortAvailable}
           tall
@@ -1359,8 +1362,8 @@ function SystemLine({ text }: { text: string }) {
 
 const EXAMPLES = [
   "Explain what this project does",
-  "Find and fix any bugs you can see",
-  "Add tests for the current file",
+  "Review this project for bugs. Explain your findings before changing files.",
+  "Suggest a small improvement and a step-by-step plan. Wait for my approval before editing.",
 ];
 
 function EmptyState({
@@ -1379,16 +1382,16 @@ function EmptyState({
       </span>
       <div>
         <p className="text-base font-medium text-vs-fg">
-          {ready ? `Chat with ${agentName}` : "Connect a coding agent"}
+          {ready ? "What would you like to build?" : "Choose an AI to get started"}
         </p>
-        <p className="mt-1 max-w-[15rem] text-sm leading-5 text-vs-muted">
+        <p className="mt-2 max-w-sm text-sm leading-6 text-vs-muted">
           {ready
-            ? "Ask it to read, explain, or change this repository. Confirmed changes are shared with your room."
-            : "Pick an installed agent above to start a conversation."}
+            ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.`
+            : "Choose a provider above, or open Room guide for setup help. You can browse the files without connecting AI."}
         </p>
       </div>
       {ready && (
-        <div className="flex w-full max-w-[16rem] flex-col gap-1.5">
+        <div className="flex w-full max-w-sm flex-col gap-2">
           {EXAMPLES.map((example) => (
             <button
               key={example}
@@ -1396,9 +1399,10 @@ function EmptyState({
               onClick={() => onExample(example)}
               className="rounded-lg border border-vs-border px-3 py-2 text-left text-sm text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
             >
-              {example}
+              {example === EXAMPLES[0] ? "Understand this project" : example === EXAMPLES[1] ? "Review potential bugs" : "Plan an improvement"}
             </button>
           ))}
+          <p className="mt-1 text-xs leading-5 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
         </div>
       )}
     </div>
