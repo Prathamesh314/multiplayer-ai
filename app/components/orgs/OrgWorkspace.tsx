@@ -44,6 +44,8 @@ import {
 } from "./dialogs";
 import { OrgSettingsDialog } from "./OrgSettingsDialog";
 import { initials } from "./parts";
+import { ChatSection } from "../chat/ChatSection";
+import { ConversationView } from "../chat/ConversationView";
 import { agentReady, ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
 import { fetchAgents } from "../../lib/ai/client";
@@ -149,6 +151,7 @@ export function OrgWorkspace() {
         <OrgPanel
           key={activeOrg.slug}
           org={activeOrg}
+          me={me}
           invitations={invitations.filter((i) => i.orgSlug === activeOrg.slug)}
           onAcceptInvite={onAcceptInvite}
           onInvite={() => setDialog({ kind: "invite", org: activeOrg })}
@@ -275,8 +278,6 @@ function OrgRail({
   const [menuOpen, setMenuOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  console.log("org: ", orgs);
-  
   useEffect(() => {
     if (!menuOpen) return;
     function onPointerDown(event: PointerEvent) {
@@ -433,6 +434,7 @@ function OrgRail({
 
 function OrgPanel({
   org,
+  me,
   invitations,
   onAcceptInvite,
   onInvite,
@@ -444,6 +446,7 @@ function OrgPanel({
   onOpenRoom,
 }: {
   org: Org;
+  me: CurrentUser | null;
   invitations: PendingInvitation[];
   onAcceptInvite: (id: string) => void;
   onInvite: () => void;
@@ -456,6 +459,11 @@ function OrgPanel({
 }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
+  // The open team-chat conversation, rendered in <main> instead of the welcome
+  // placeholder. `chatVersion` is bumped to refresh the sidebar's unread counts.
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [chatVersion, setChatVersion] = useState(0);
+  const bumpChat = useCallback(() => setChatVersion((v) => v + 1), []);
 
   if (loadedSlug !== org.slug) {
     setLoadedSlug(org.slug);
@@ -536,67 +544,90 @@ function OrgPanel({
           </div>
         )}
 
-        <div className="flex items-center justify-between px-4 pb-1 pt-3">
-          <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
-            Projects
-          </h2>
-          {canManageOrg(org.myRole) && (
-            <button
-              type="button"
-              onClick={onNewProject}
-              title="New project"
-              className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <div className="vs-scroll min-h-0 flex-1 overflow-y-auto pb-3">
+          <div className="flex items-center justify-between px-4 pb-1 pt-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+              Projects
+            </h2>
+            {canManageOrg(org.myRole) && (
+              <button
+                type="button"
+                onClick={onNewProject}
+                title="New project"
+                className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
 
-        <div className="vs-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {projects === null ? (
-            <p className="flex items-center gap-2 px-2 py-2 text-sm text-vs-muted">
-              <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
-            </p>
-          ) : projects.length === 0 ? (
-            <p className="px-2 py-2 text-sm leading-5 text-vs-muted">
-              No projects yet.{" "}
-              {canManageOrg(org.myRole)
-                ? "Connect a GitHub repo to get started."
-                : "Ask an admin to add you to one."}
-            </p>
-          ) : (
-            <ul className="space-y-0.5">
-              {projects.map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  org={org}
-                  project={project}
-                  onManageMembers={() => onManageMembers(project)}
-                  onRoomSettings={(room) => onRoomSettings(project, room)}
-                  onOpenRoom={onOpenRoom}
-                />
-              ))}
-            </ul>
+          <div className="px-2">
+            {projects === null ? (
+              <p className="flex items-center gap-2 px-2 py-2 text-sm text-vs-muted">
+                <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+              </p>
+            ) : projects.length === 0 ? (
+              <p className="px-2 py-2 text-sm leading-5 text-vs-muted">
+                No projects yet.{" "}
+                {canManageOrg(org.myRole)
+                  ? "Connect a GitHub repo to get started."
+                  : "Ask an admin to add you to one."}
+              </p>
+            ) : (
+              <ul className="space-y-0.5">
+                {projects.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    org={org}
+                    project={project}
+                    onManageMembers={() => onManageMembers(project)}
+                    onRoomSettings={(room) => onRoomSettings(project, room)}
+                    onOpenRoom={onOpenRoom}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {me && (
+            <ChatSection
+              org={org}
+              meId={me.id}
+              activeConversationId={activeConversationId}
+              version={chatVersion}
+              onOpen={setActiveConversationId}
+              onChanged={bumpChat}
+            />
           )}
         </div>
       </aside>
 
-      <main className="grid min-w-0 flex-1 place-items-center p-8">
-        <div className="max-w-md text-center">
-          {org.image && (
-            <img
-              src={org.image}
-              alt={org.name}
-              className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-vs-border object-cover shadow-md"
-            />
-          )}
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
-          <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
-            Everyone on a project has a room of their own — open yours to run AI sessions on the
-            project&apos;s repo, or drop into a teammate&apos;s to see what they are working on.
-          </p>
-        </div>
-      </main>
+      {activeConversationId && me ? (
+        <ConversationView
+          key={activeConversationId}
+          conversationId={activeConversationId}
+          me={me}
+          onRead={bumpChat}
+        />
+      ) : (
+        <main className="grid min-w-0 flex-1 place-items-center p-8">
+          <div className="max-w-md text-center">
+            {org.image && (
+              <img
+                src={org.image}
+                alt={org.name}
+                className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-vs-border object-cover shadow-md"
+              />
+            )}
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{org.name}</h1>
+            <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
+              Everyone on a project has a room of their own — open yours to run AI sessions on the
+              project&apos;s repo, or drop into a teammate&apos;s to see what they are working on.
+              Use channels and direct messages to talk with your team.
+            </p>
+          </div>
+        </main>
+      )}
     </div>
   );
 }
