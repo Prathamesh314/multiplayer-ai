@@ -304,9 +304,10 @@ export async function POST(request: Request) {
   // facts, and repo context when the prompt is code-shaped. Unlike the FTS
   // reference above (a specific chat, keyword-matched), this is ambient and
   // meaning-ranked, and it fans out only over visible rooms so it can't widen
-  // access. Off entirely when no sidecar is configured.
+  // access. Human project-room chat uses Postgres even without the sidecar.
   let sharedMemory: string | null = null;
   let repoContext: string | null = null;
+  let roomChatContext: string | null = null;
   {
     // Personal rooms included: the graph shrinks to the room itself, but the
     // AI still reads its own memory and the context of the repo it will edit.
@@ -319,10 +320,16 @@ export async function POST(request: Request) {
     });
     sharedMemory = knowledge.memoryText;
     repoContext = knowledge.repoText;
-    if (knowledge.recalled > 0 || knowledge.repoRecalled > 0) {
+    roomChatContext = knowledge.chatText;
+    if (knowledge.recalled > 0 || knowledge.repoRecalled > 0 || knowledge.chatRecalled > 0) {
       const parts: string[] = [];
       if (knowledge.recalled > 0) parts.push(`${knowledge.recalled} memories from shared context`);
       if (knowledge.repoRecalled > 0) parts.push(`${knowledge.repoRecalled} repo facts`);
+      if (knowledge.chatRecalled > 0) {
+        const rooms = [...new Set(knowledge.chatSources.map((source) => source.roomName))];
+        const people = [...new Set(knowledge.chatSources.map((source) => `@${source.handle}`))];
+        parts.push(`${knowledge.chatRecalled} room chat messages from ${rooms.join(", ")} (${people.join(", ")})`);
+      }
       const suffix =
         knowledge.truncatedRooms > 0
           ? ` (${knowledge.truncatedRooms} more rooms not searched)`
@@ -347,7 +354,7 @@ export async function POST(request: Request) {
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
 
   // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT.
-  // The four context layers are woven and budgeted in assembleAgentPrompt (see
+  // The context layers are woven and budgeted in assembleAgentPrompt (see
   // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
   // keeps the full import regardless.
   const agentPrompt = assembleAgentPrompt({
@@ -358,6 +365,7 @@ export async function POST(request: Request) {
     importedContext,
     repoContext,
     sharedMemory,
+    roomChatContext,
   });
 
   const promptTurn = await appendMessage({

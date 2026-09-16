@@ -1,14 +1,15 @@
 /*
  * Assembling the one argv string sent to the agent CLI.
  *
- * A run weaves up to four context layers around the user's prompt, all sharing
+ * A run weaves context layers around the user's prompt, all sharing
  * a single character budget (everything travels as one argv element). This is
  * pure string work with fiddly truncation rules, so it lives here — apart from
  * the run route's I/O and process management — where it can be reasoned about
  * and tested directly.
  *
  * Ordering (outermost → innermost, i.e. furthest from the prompt → nearest):
- *   <memory> · <repo-context> · <imported-context> · <referenced-context> · [prompt]
+ *   <memory> · <repo-context> · <room-chat-context> · <imported-context> ·
+ *   <referenced-context> · <conversation-history> · [prompt]
  * Budget priority is the reverse: the explicit, caller-chosen sources
  * (referenced, then imported) are woven first and take budget first; the
  * ambient, machine-recalled layers (repo context, then memory) take only what
@@ -36,6 +37,8 @@ export type PromptContext = {
   repoContext?: string | null;
   /** Semantically recalled cross-chat memory (knowledge/). */
   sharedMemory?: string | null;
+  /** Ranked human discussion excerpts with room/author/message provenance. */
+  roomChatContext?: string | null;
   /** Overridable only for tests; defaults to MAX_PROMPT. */
   maxPrompt?: number;
 };
@@ -86,6 +89,26 @@ export function assembleAgentPrompt(ctx: PromptContext): string {
         ? `[…earlier context truncated for length…]\n${ctx.importedContext.slice(ctx.importedContext.length - budget)}`
         : ctx.importedContext;
     agentPrompt = `<imported-context>\n${injected}\n</imported-context>\n\n${agentPrompt}`;
+  }
+
+  // Human discussions are selected only for a discussion-shaped ask. Keep
+  // them ahead of ambient repo/fact recall, after explicit conversation sources.
+  if (ctx.roomChatContext) {
+    const budget = remaining(agentPrompt, maxPrompt);
+    if (budget > 0) {
+      // Keep complete JSON message records, never a cut-off author/body pair.
+      const lines = ctx.roomChatContext.split("\n");
+      const kept: string[] = [];
+      let length = 0;
+      for (const line of lines) {
+        if (length + line.length + 1 > budget) break;
+        kept.push(line);
+        length += line.length + 1;
+      }
+      if (kept.length > 1) {
+        agentPrompt = `<room-chat-context>\n${kept.join("\n")}\n</room-chat-context>\n\n${agentPrompt}`;
+      }
+    }
   }
 
   // Repo context is machine-recalled like memory, but more directly actionable

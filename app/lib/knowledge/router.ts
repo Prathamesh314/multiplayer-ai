@@ -1,7 +1,8 @@
 /*
  * The context router: given a prompt, decide which knowledge sources a run
  * should recall from — the conversation knowledge graph, the indexed repo
- * context, or both — and how widely the graph fan-out should reach.
+ * context, or both — and how widely the graph fan-out should reach. A separate
+ * chat flag adds indexed human project-room discussion when those signals match.
  *
  * Deterministic on purpose. An LLM classifier here would put a model call on
  * every run's critical path and make retrieval behaviour irreproducible; a
@@ -22,6 +23,8 @@
 import type { GraphScope } from "./graph";
 
 export type ContextRoute = {
+  /** Search human messages in project rooms independently of the sidecar? */
+  chat: boolean;
   /** Recall from the indexed repo-context bank? */
   repo: boolean;
   /** How widely episodic memory fans out over the graph's rooms. */
@@ -56,6 +59,7 @@ const REPO_SIGNALS: Array<[name: string, pattern: RegExp]> = [
 
 /** Signals a prompt is about what people discussed, decided, or planned. */
 const CONVERSATION_SIGNALS: Array<[name: string, pattern: RegExp]> = [
+  ["channel", /(?:^|\s)#[\w"-]+|\b(?:channel|group|room)\s+(?:chat|discussion)|\b(?:requirements|specification|agreed|agreement|decide|discussion|feedback|proposed|suggested)\b/i],
   ["mention", /(?:^|\s)@\w[\w-]*/],
   [
     "discussion-term",
@@ -71,12 +75,13 @@ function matches(prompt: string, signals: Array<[string, RegExp]>): string[] {
 export function routeQuery(prompt: string): ContextRoute {
   const repo = matches(prompt, REPO_SIGNALS);
   const conversation = matches(prompt, CONVERSATION_SIGNALS);
+  const chat = conversation.length > 0;
 
   if (repo.length > 0 && conversation.length === 0) {
-    return { repo: true, graphScope: "room", signals: { repo, conversation } };
+    return { chat, repo: true, graphScope: "room", signals: { repo, conversation } };
   }
   if (conversation.length > 0 && repo.length === 0) {
-    return { repo: false, graphScope: "project", signals: { repo, conversation } };
+    return { chat, repo: false, graphScope: "project", signals: { repo, conversation } };
   }
-  return { repo: true, graphScope: "project", signals: { repo, conversation } };
+  return { chat, repo: true, graphScope: "project", signals: { repo, conversation } };
 }

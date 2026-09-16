@@ -30,12 +30,14 @@
     "test:lock": "tsc app/lib/session/lock.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/lock.test.cjs",
     "test:prompt": "tsc app/lib/ai/prompt.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/prompt.test.cjs",
     "test:knowledge": "tsc app/lib/knowledge/graph.ts app/lib/knowledge/router.ts app/lib/knowledge/repo-summary.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/knowledge.test.cjs",
+    "test:room-chat": "node --import tsx tests/room-chat.test.mjs",
     "test:stream": "tsc app/lib/ai/stream.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/stream.test.cjs",
     "test:models": "node --import tsx tests/models.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:stream && npm run test:handoff && npm run test:models"
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:room-chat && npm run test:stream && npm run test:handoff && npm run test:models"
   },
   "dependencies": {
+    "@next/env": "16.3.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "bullmq": "^5.34.0",

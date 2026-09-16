@@ -57,9 +57,16 @@ export async function migrate(db, { log = () => {} } = {}) {
 
 // Run directly against DATABASE_URL: `node db/migrate.mjs`
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // This CLI runs outside Next.js, so it must load the app's .env files itself.
+  // Resolve from the script so direct invocation also works from another cwd.
+  // Keep this inside the CLI guard: importing migrate() in tests must not load
+  // local credentials or override the caller's isolated test configuration.
+  const { default: nextEnv } = await import("@next/env");
+  nextEnv.loadEnvConfig(dirname(dirname(fileURLToPath(import.meta.url))), process.env.NODE_ENV !== "production");
+
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.error("DATABASE_URL is not set.");
+    console.error("DATABASE_URL is not set. Add it to .env or .env.local, or export it in your shell.");
     process.exit(1);
   }
 

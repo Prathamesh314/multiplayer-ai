@@ -63,7 +63,32 @@ has a memory "bank"; a completed run's exchange is remembered there, and at the
 start of a run the most relevant memories across the rooms a user can see are
 recalled and woven into the prompt. A consolidation ("sleep") pass distills raw
 exchanges into durable canonical facts. When the sidecar is not configured, the
-app skips recall and ingest and falls back to plain fork / `@room/chat` context.
+app skips semantic recall and ingest; project room chat, fork, and `@room/chat`
+context still work.
+
+### Project room chat memory
+The context router also recognizes requests about team discussions, decisions,
+requirements, and feedback. It searches human messages in accessible rooms of
+the current project, selecting rooms by topic or `#room` / `#"Room name"`, and
+authors by `@handle` or their display name. For example: “Implement the retry
+policy Alice discussed in #backend.” Unknown or ambiguous explicit selectors
+produce no chat context instead of widening the search. A scoped recap without
+a topic uses recent messages; a topic search with no matches returns nothing.
+
+Migration `028_room_chat_context.sql` adds stored full-text vectors and indexes
+to `session_messages`, including existing history. English stemming and a simple
+token index support prose and technical terms; room, author, and timestamp fields
+retain provenance and allow filtering. Edits update the index automatically and
+deleted messages are excluded. No sidecar or background reindex job is required.
+Recall selects up to eight matches and two nearby messages on either side,
+deduplicates them, and injects at most 6,000 characters into the AI's working
+memory within the overall prompt budget. Each excerpt includes its room, author,
+timestamp, and message ID; the run notice lists the rooms and people recalled.
+Explicit “today” and “yesterday” filters use UTC; “last week” means the past seven
+days. The planner uses deterministic signals and text ranking, not embeddings.
+Only project room chats are included; organization channels and DMs are outside
+this scope. Source messages remain the durable memory, rechecked on each lookup
+instead of being copied into an unscoped shared memory bank.
 
 ### Graceful degradation
 Optional infrastructure fails open. Redis powers presence, the live event bus,

@@ -36,6 +36,7 @@ import type { KnowledgeNode, RoomInput } from "./graph";
 import { routeQuery } from "./router";
 import type { ContextRoute } from "./router";
 import { ensureRepoIndexed, indexedRepoSha, recallRepoContext } from "./repo-context";
+import { buildRoomChatContext, emptyRoomChat, type RoomChatContext } from "./room-chat";
 
 /**
  * Cap on how many room banks one retrieval fans out over. Recall issues one
@@ -59,6 +60,10 @@ const clip = (text: string): string =>
   text.length > MAX_MEMORY_CHARS ? `${text.slice(0, MAX_MEMORY_CHARS)}…` : text;
 
 export type KnowledgeContext = {
+  /** Human project-room discussions, kept distinct from distilled AI facts. */
+  chatText: string | null;
+  chatRecalled: number;
+  chatSources: RoomChatContext["sources"];
   /** The <memory> block: canonical facts + merged episodic recall, or null. */
   memoryText: string | null;
   /** The <repo-context> block: indexed code-context hits, or null. */
@@ -129,14 +134,7 @@ export async function loadKnowledgeGraph(input: {
   });
 }
 
-/**
- * Build the injectable context for one prompt: route it, then recall over the
- * knowledge graph — episodic room banks, the current room's canonical facts,
- * and the repo bank when routed — in a single parallel wave. Null texts when
- * memory is off, nothing matched, or the sidecar is unreachable; all of which
- * are non-fatal for the run.
- */
-export async function buildKnowledgeContext(input: {
+type KnowledgeInput = {
   /** Null for a personal room — knowledge then spans just that room + its repo. */
   projectId: string | null;
   userId: string;
@@ -144,7 +142,30 @@ export async function buildKnowledgeContext(input: {
   /** The room repo the chat targets; null/omitted = the room's own fork. */
   repoId?: string | null;
   prompt: string;
-}): Promise<KnowledgeContext> {
+};
+
+/** Route once per turn and recall human chat alongside the optional AI/repo
+ * banks. Source failures are isolated and do not prevent the run from starting. */
+export async function buildKnowledgeContext(input: KnowledgeInput): Promise<KnowledgeContext> {
+  const route = routeQuery(input.prompt);
+  // The SQL branch is independent of the optional vector sidecar. A failed
+  // source must not discard useful context returned by the other branches.
+  const [banks, chat] = await Promise.all([
+    buildBankContext(input).catch((cause) => {
+      console.warn("Knowledge bank recall failed", cause);
+      return { memoryText: null, repoText: null, recalled: 0, repoRecalled: 0, truncatedRooms: 0, route };
+    }),
+    route.chat
+      ? buildRoomChatContext(input).catch((cause) => {
+          console.warn("Project room chat recall failed", cause);
+          return emptyRoomChat();
+        })
+      : Promise.resolve(emptyRoomChat()),
+  ]);
+  return { ...banks, chatText: chat.text, chatRecalled: chat.recalled, chatSources: chat.sources };
+}
+
+async function buildBankContext(input: KnowledgeInput): Promise<Omit<KnowledgeContext, "chatText" | "chatRecalled" | "chatSources">> {
   const route = routeQuery(input.prompt);
   if (!memoryEnabled() || !input.prompt.trim()) {
     return { memoryText: null, repoText: null, recalled: 0, repoRecalled: 0, truncatedRooms: 0, route };
