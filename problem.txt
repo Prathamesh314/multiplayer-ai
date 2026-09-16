@@ -1,0 +1,148 @@
+Problem: Local workspaces, storage growth, and reliable multiplayer handoffs
+Status: Deferred for later implementation
+Recorded: 2026-09-16
+
+PROBLEM STATEMENT
+
+Users already have their project repositories on their own machines. Our app
+currently also maintains server-side project/room repositories and working
+copies under .multiplayer-ai. The local runner clones code from the server
+instead of using the user's existing repository as its starting point.
+
+This duplicates working files, consumes disk space, and stores readable source
+code on the server host. Separate workspaces are useful for parallel agents,
+but they do not need to live permanently on the server. Agents running on the
+same machine should be able to use temporary, isolated local Git worktrees.
+
+The complication is multiplayer handoff: another user's machine needs the
+exact code and conversation state where the previous user stopped. A server
+cannot directly read a laptop's filesystem. If the latest changes exist only
+on that laptop, nobody else can retrieve them while it is offline.
+
+Closing a session also does not necessarily mean its work can be deleted:
+there may be unreviewed changes, untracked task files, failed uploads, or an
+unfinished task that the user expects to resume.
+
+CURRENT IMPLEMENTATION OBSERVATIONS
+
+- .multiplayer-ai/projects and repos hold durable Git repositories; work holds
+  checked-out files. During inspection, the directory used about 26 MB, with
+  about 19 MB in working copies. These figures are a snapshot, not a limit.
+- Project member rooms are pinned, so the existing retention sweep skips them.
+- Server and local runner execution create per-turn working copies; completed
+  turn cleanup is missing from the paths inspected.
+- The runner processes one job at a time. Parallel local execution will need
+  explicit concurrency management and independent task branches/workspaces.
+- Existing handoffs already record checkpoint references and conversation
+  positions, and use ownership versions to control who can drive a run.
+
+PROPOSED SOLUTION
+
+Use local workspaces with automatic, durable checkpoints in private shared
+storage. Keep execution files temporary and preserve code history and session
+records separately.
+
+1. Register the user's local repository with the desktop runner.
+   Store the local path on that device. The runner accesses files locally;
+   the server coordinates through authenticated runner connections.
+
+2. Create one local Git worktree and task branch per independent task.
+   Place workspaces in an app-managed directory on the user's machine, using
+   an appropriate per-user application data location. Worktrees share Git
+   history with the source repository while isolating working files. They
+   still consume space for checked-out files, dependencies, and build output.
+   Handle existing uncommitted user changes explicitly; do not silently reset
+   the source repository or assume worktree creation copies those changes.
+
+3. Preserve a checkpoint after each completed agent turn and before handoff.
+   Record the repository identity, base and result commits, task branch,
+   conversation position, handoff notes, and execution status. Include intended
+   task changes; exclude local secrets, dependencies, and generated caches.
+
+4. Upload checkpoints and acknowledge them durably.
+   Display Pending upload / Syncing / Synced accurately. Retry interrupted
+   uploads using a persistent local outbox. Never delete the only copy of work
+   because the agent process exited or the user closed the window.
+
+5. Prepare the recipient before transferring control.
+   Check room access, download the saved checkpoint, verify the exact commit
+   and required base history, and create a local worktree on the recipient's
+   machine. Transfer ownership atomically using the recorded control version.
+   Reject stale updates from the previous driver. If preparation fails, leave
+   the handoff retryable without losing the checkpoint or granting two drivers.
+
+6. Clean up workspaces after their contents are safely preserved.
+   Stop associated processes and use Git-aware worktree removal. Keep branches,
+   checkpoints, conversation history, and recovery records as needed. Apply
+   inactivity and disk-budget policies to workspaces independently of room
+   pinning or destructive history retention. Protect active and unsynced work.
+
+7. Distinguish a new task from resuming an existing task.
+   A new task can start from the latest selected repository version. A resumed
+   task must start from its saved branch/checkpoint and conversation state,
+   rather than silently replacing its unfinished work with the latest main.
+   Dependencies, terminals, and development servers are recreated as needed;
+   handoff does not transfer a running operating-system process.
+
+STORAGE AND ROLLOUT
+
+First version:
+- Reuse the existing authenticated Git transport, compact server-side Git
+  repositories, completion retry mechanism, and ownership/version controls.
+- Execute local tasks from local worktrees and remove the dependency on
+  permanent server working copies for those tasks.
+- Keep conversations, permissions, task status, and checkpoint references in
+  the shared database. Adapt code browsing, context indexing, publish/sync,
+  and completion verification to the revised repository ownership model.
+- Keep cloud execution a separate mode with its own temporary workspace.
+
+Later optimization:
+- Archive inactive checkpoints as Git bundles in private object storage.
+- Use incremental bundles only when the required base commits remain available
+  to recipients. Verify prerequisites; provide a self-contained bundle or the
+  missing history when necessary. Do not treat an object bucket as a live Git
+  working filesystem.
+- Keep private room checkpoints under app-controlled access rules. Do not
+  automatically expose private drafts as branches in a broadly shared remote.
+- Tie checkpoint deletion to task/history retention and bundle dependencies,
+  not merely to the sender deleting a local workspace.
+
+EXAMPLE
+
+Prathamesh's agent finishes chat-context changes in a local worktree and uploads
+checkpoint abc123. The app confirms Synced. Prathamesh closes his laptop. A
+teammate later accepts the handoff, downloads abc123, restores the conversation
+context, and continues testing in a worktree on their own machine.
+
+BOUNDARIES
+
+The sender only needs to stay online until the checkpoint is uploaded, not
+until the recipient starts. Changes that were never uploaded remain unavailable
+while the sender is offline. Reliable offline handoffs require a durable code
+copy somewhere accessible to both users.
+
+This design reduces duplicate working files and server workspace storage. It
+does not eliminate shared source-code storage or make locally executed code
+invisible to the owner of the machine. Shared chat/context may also contain
+code excerpts. Access controls must cover those records as well as checkpoints.
+
+IMPLEMENTATION REFERENCES
+
+- runner/git.ts: current clone/fetch and commit/push behavior.
+- runner/index.ts: runner job loop and execution lifecycle.
+- runner/outbox.ts: persistent completion retries.
+- app/lib/session/repo.ts: Git repositories, workspaces, and candidate commits.
+- app/lib/session/retention.ts: current archive/delete policy.
+- app/lib/ai/handoff.ts: handoff, ownership versions, and continuation context.
+- app/api/git/[repoRef]/[...op]/route.ts: authenticated Git transport.
+
+BACKGROUND REFERENCES
+
+Git worktrees: https://git-scm.com/docs/git-worktree
+Git bundles: https://git-scm.com/docs/git-bundle
+Conductor local workspaces:
+https://www.conductor.build/docs/concepts/git-worktrees
+Conductor checkpoints:
+https://www.conductor.build/docs/reference/checkpoints
+
+This document records the proposed direction only. Implementation is deferred.

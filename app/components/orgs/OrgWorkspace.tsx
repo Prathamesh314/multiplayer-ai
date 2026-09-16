@@ -609,6 +609,7 @@ function OrgPanel({
                     key={project.id}
                     org={org}
                     project={project}
+                    currentUserId={me?.id ?? null}
                     onManageMembers={() => onManageMembers(project)}
                     onRoomSettings={(room) => onRoomSettings(project, room)}
                     onOpenRoom={onOpenRoom}
@@ -660,12 +661,14 @@ function OrgPanel({
 function ProjectRow({
   org,
   project,
+  currentUserId,
   onManageMembers,
   onRoomSettings,
   onOpenRoom,
 }: {
   org: Org;
   project: Project;
+  currentUserId: string | null;
   onManageMembers: () => void;
   onRoomSettings: (room: Session) => void;
   onOpenRoom: (id: string) => void;
@@ -740,7 +743,9 @@ function ProjectRow({
                   ) : (
                     <span className="w-3.5 shrink-0 text-center text-vs-muted">#</span>
                   )}
-                  <span className="min-w-0 flex-1 truncate">{room.name}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {room.ownerId === currentUserId ? "[Me] " : ""}{room.name}
+                  </span>
                 </button>
                 <button
                   type="button"
