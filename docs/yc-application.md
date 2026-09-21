@@ -60,6 +60,13 @@ Missing facts should remain blank until supplied. Test pass counts, repository
 commits, and AI-generated conversations are not customer traction. If there are
 no users or revenue yet, say that directly and explain the next validation step.
 
+Keep founder-specific answers in `docs/yc-application.local.md`, which is
+ignored by Git. The checked-in guide contains general preparation instructions.
+
+YC accepts solo founders and early-stage applications. You may apply while
+employed, but YC expects full-time commitment during and after the batch if
+accepted. See the official [FAQ](https://www.ycombinator.com/faq).
+
 ## Record the product demo
 
 Suggested 90–120 second sequence; this duration is our recommendation, not a

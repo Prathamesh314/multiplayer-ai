@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -114,14 +114,22 @@ try {
   console.log("Desktop smoke checks passed.");
 } finally {
   for (const socket of clients) socket.close();
-  if (child && child.exitCode === null) {
-    child.kill("SIGTERM");
-    await Promise.race([once(child, "exit"), delay(5000)]);
-    if (child.exitCode === null) child.kill("SIGKILL");
+  if (child && child.exitCode === null && child.signalCode === null) {
+    const stopped = once(child, "exit");
+    if (process.platform === "win32") {
+      // Terminating only Electron's main process leaves Chromium children
+      // holding profile files open on Windows. Kill this test's process tree.
+      await new Promise(resolve => execFile("taskkill", ["/pid", String(child.pid), "/t", "/f"], () => resolve()));
+    } else child.kill("SIGTERM");
+    await Promise.race([stopped, delay(5000)]);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await Promise.race([stopped, delay(5000)]);
+    }
   }
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
-  await rm(directory, { recursive: true, force: true });
+  await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 if (!packaged) {

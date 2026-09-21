@@ -125,8 +125,12 @@ Do not expose this local demo's terminal/server execution to the public internet
 
 Application CI now runs the default tests, lint, and production webpack build
 on PRs. Browser/live-provider checks remain explicit local commands because they
-need local services, Chrome, and the founder's provider login. This report records
-local results, not a completed remote CI run.
+need local services, Chrome, and the founder's provider login. The application
+checks also [passed on GitHub for commit 64e2bff](https://github.com/Prathamesh314/multiplayer-ai/actions/runs/35598287799).
+Initial Windows desktop CI passed its UI checks but failed deleting a still-locked
+Chromium profile. The smoke harness now terminates its entire Windows process
+tree and retries temporary-file cleanup. See [PR #38](https://github.com/Prathamesh314/multiplayer-ai/pull/38)
+for the latest platform check results.
 
 For application positioning, founder facts, video, and batch selection, use
 [YC application preparation](yc-application.md). A recorded local demo is ready
