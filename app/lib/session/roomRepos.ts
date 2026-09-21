@@ -13,7 +13,8 @@
  * runs bind to one via agent_runs.repo_id (null = the room's project fork).
  */
 
-import { query, queryOne } from "../db/client";
+import { query, queryOne, transaction } from "../db/client";
+import { authoritativeHead } from "../git-storage/service";
 import { mintPathId } from "./store";
 
 export type RoomRepo = {
@@ -121,5 +122,8 @@ export async function finishRoomRepoSeed(
 
 /** Advance an imported repo's head after an agent commit — its setHeadSha. */
 export async function setRoomRepoHeadSha(repoId: string, headSha: string): Promise<void> {
-  await query(`UPDATE room_repos SET head_sha = $2 WHERE id = $1`, [repoId, headSha]);
+  await transaction(async tx=>{
+    const current=await authoritativeHead(tx,repoId,headSha);
+    await tx.query(`UPDATE room_repos SET head_sha = $2 WHERE id = $1`,[repoId,current]);
+  });
 }

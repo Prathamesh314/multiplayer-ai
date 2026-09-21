@@ -135,6 +135,16 @@ services:
       MNEMOSYNE_URL: http://mnemosyne:8787/mcp
       MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
       MULTIPLAYER_AI_DATA: /app/workspaces
+      APP_ENV: ${APP_ENV:-development}
+      GIT_STORAGE_PHASE: ${GIT_STORAGE_PHASE:-cloud}
+      GIT_S3_BUCKET: ${GIT_S3_BUCKET:-}
+      GIT_S3_PREFIX: ${GIT_S3_PREFIX:-multiplayer-git}
+      GIT_S3_ENDPOINT: ${GIT_S3_ENDPOINT:-}
+      GIT_S3_FORCE_PATH_STYLE: ${GIT_S3_FORCE_PATH_STYLE:-false}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       - "${WEB_PORT:-3000}:3000"
     volumes:
@@ -168,12 +178,22 @@ services:
       MNEMOSYNE_URL: http://mnemosyne:8787/mcp
       MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:-localdev-memory-token}
       MULTIPLAYER_AI_DATA: /app/workspaces
+      APP_ENV: ${APP_ENV:-development}
+      GIT_STORAGE_PHASE: ${GIT_STORAGE_PHASE:-cloud}
+      GIT_S3_BUCKET: ${GIT_S3_BUCKET:-}
+      GIT_S3_PREFIX: ${GIT_S3_PREFIX:-multiplayer-git}
+      GIT_S3_ENDPOINT: ${GIT_S3_ENDPOINT:-}
+      GIT_S3_FORCE_PATH_STYLE: ${GIT_S3_FORCE_PATH_STYLE:-false}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       # Optional extraction into reviewable proposals. Postgres owns the jobs.
       MEMORY_EXTRACTION_URL: ${MEMORY_EXTRACTION_URL:-}
       MEMORY_EXTRACTION_MODEL: ${MEMORY_EXTRACTION_MODEL:-}
       MEMORY_EXTRACTION_API_KEY: ${MEMORY_EXTRACTION_API_KEY:-}
     volumes:
-      # The same named volume at the same path as `web` — the whole point.
+      # Legacy/testing storage only. Cloud nodes use independent disposable caches.
       - workspace_data:/app/workspaces
       # Reuse the machine's Claude login instead of an API key.
       - ${HOME}/.claude:/root/.claude:ro

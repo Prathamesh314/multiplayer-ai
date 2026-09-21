@@ -2,7 +2,7 @@ import { assertAvailableModel } from "./model-discovery";
 import { startTurn, failTurn } from "./turns";
 import { spawn } from "node:child_process";
 import { events } from "../events";
-import { commitTurnWork, prepareTurnWork } from "../session/repo";
+import { commitTurnWork, prepareTurnWork, discardTurnWork } from "../session/repo";
 import { agentById } from "./catalog";
 import { agentEnv } from "./env";
 import { finalizeAgentRun } from "./finalize";
@@ -255,6 +255,7 @@ export function executeAgentRun(
           return null;
         });
         if (finalized?.status === "failed") code = 1;
+        if (finalized && (sha || code === 0)) await discardTurnWork(job.turnId).catch(() => {});
         // The run record is best-effort; the live stream already succeeded.
 
         send({

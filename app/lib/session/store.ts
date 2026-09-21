@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
+import { authoritativeHead } from "../git-storage/service";
 import type {
   ChatMessage,
   Session,
@@ -366,7 +367,10 @@ export async function attachRepo(
 }
 
 export async function setHeadSha(id: string, headSha: string): Promise<void> {
-  await query(`UPDATE session_repos SET head_sha = $2 WHERE session_id = $1`, [id, headSha]);
+  await transaction(async tx=>{
+    const current=await authoritativeHead(tx,id,headSha);
+    await tx.query(`UPDATE session_repos SET head_sha = $2 WHERE session_id = $1`,[id,current]);
+  });
 }
 
 /**
@@ -384,10 +388,6 @@ export async function touchSession(id: string, userId?: string): Promise<void> {
       [id, userId],
     );
   }
-}
-
-export async function deleteSession(id: string): Promise<void> {
-  await query(`DELETE FROM sessions WHERE id = $1`, [id]);
 }
 
 export async function markArchived(id: string): Promise<void> {

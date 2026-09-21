@@ -18,9 +18,10 @@ source of truth; the working copy is a disposable cache.
 - **Resume = `clone + checkout <sha>`.** `<root>/work/<id>` is rebuildable from
   the bare repo on demand (`ensureWork`), so deleting all of `work/` must never
   lose a session.
-- Session *metadata* lives in Postgres (`sessions` table, migration 005). The
-  data root (`MULTIPLAYER_AI_DATA`) holds only git state — see
-  `app/lib/session/paths.ts`.
+- Session metadata lives in Postgres. Testing stores bare repos under
+  `MULTIPLAYER_AI_DATA`; development/production use immutable S3 bundles plus
+  Postgres refs, generations, and writer leases (migration 031). Node-local bare
+  repos and working trees are disposable caches. See [Git storage](docs/git-storage.md).
 
 ## Project = canonical repo, room = branch
 
@@ -83,10 +84,12 @@ Local and cloud runs end through one shared finalization
 events, memory ingest — indistinguishable from the transcript out. The runner
 itself stays dumb: it states facts and never writes the database.
 
-Server-side execution still ties a run to the machine that starts it (the
-data root is a local path), so the *cloud* path scales only with the
-worker/queue model — an acceptable ceiling now that it is the fallback, not
-the product.
+An in-flight server-side process remains on its worker, but confirmed commits
+are durable in cloud storage and any node can restore them. Git operations use
+fenced Postgres leases rather than relying on shared filesystem locks in cloud
+mode. The hosts still need Git and temporary disk; this is not an edge-runtime
+execution service. Retention archives before cache removal and never deletes
+code for inactivity.
 
 ## Graceful degradation
 

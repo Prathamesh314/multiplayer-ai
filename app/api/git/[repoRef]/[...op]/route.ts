@@ -1,8 +1,7 @@
 import { candidatePush } from "../../../../lib/runner/push";
 import { claimedJob } from "../../../../lib/runner/jobs";
 import { isUuid } from "../../../../lib/ai/turns";
-import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { gitHttpRpc } from "../../../../lib/git-storage/http";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createGunzip } from "node:zlib";
@@ -35,15 +34,6 @@ export const dynamic = "force-dynamic";
 const SERVICES = new Set(["git-upload-pack", "git-receive-pack"]);
 
 /** Pinned config, mirroring app/lib/session/repo.ts — behave the same everywhere. */
-const GIT_ENV = {
-  GIT_NO_REPLACE_OBJECTS: "1",
-  GIT_CONFIG_NOSYSTEM: "1",
-  GIT_CONFIG_GLOBAL: "/dev/null",
-  GIT_TERMINAL_PROMPT: "0",
-};
-
-const encoder = new TextEncoder();
-
 /** One pkt-line: 4-hex length prefix that includes itself. */
 const pkt = (line: string): string => (line.length + 4).toString(16).padStart(4, "0") + line;
 
@@ -67,53 +57,7 @@ async function gate(request: Request, repoRef: string, write: boolean) {
   const access = await resolveGitAccess(repoRef, device.userId, write);
   if (!access) return { error: refuse(404, "Not found.") };
 
-  const bareExists = await stat(access.bare).then((s) => s.isDirectory()).catch(() => false);
-  if (!bareExists) return { error: refuse(404, "Not found.") };
   return { bare: access.bare };
-}
-
-/** Spawn the git service and hand its stdout back as a streaming response body. */
-function streamGit(
-  args: string[],
-  options: { stdin?: Readable; gitProtocol?: string | null },
-  prefix?: string,
-): ReadableStream<Uint8Array> {
-  const child = spawn("git", args, {
-    env: { ...process.env, ...GIT_ENV, ...(options.gitProtocol ? { GIT_PROTOCOL: options.gitProtocol } : {}) },
-    windowsHide: true,
-  });
-  if (options.stdin) {
-    options.stdin.on("error", () => child.kill("SIGKILL"));
-    options.stdin.pipe(child.stdin);
-  }
-  else child.stdin.end();
-  // Protocol errors surface to the client through the stream; the server log
-  // is the place operators will actually debug a broken clone from.
-  child.stderr.on("data", (chunk: Buffer) => console.error(`git ${args[0]}: ${chunk}`));
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      if (prefix) controller.enqueue(encoder.encode(prefix));
-      child.stdout.on("data", (chunk: Buffer) => {
-        try {
-          controller.enqueue(new Uint8Array(chunk));
-        } catch {
-          child.kill("SIGKILL"); // reader gone
-        }
-      });
-      child.stdout.on("end", () => {
-        try {
-          controller.close();
-        } catch {
-          // Already closed.
-        }
-      });
-      child.on("error", (cause) => controller.error(cause));
-    },
-    cancel() {
-      child.kill("SIGKILL");
-    },
-  });
 }
 
 /** The request body as a Node stream, transparently gunzipped (git gzips pushes). */
@@ -139,10 +83,9 @@ export async function GET(request: Request, context: RouteContext<"/api/git/[rep
   const gated = await gate(request, repoRef, write);
   if ("error" in gated) return gated.error;
 
-  const body = streamGit(
+  const body = await gitHttpRpc(repoRef, gated.bare,
     [service.slice(4), "--stateless-rpc", "--advertise-refs", gated.bare],
-    { gitProtocol: request.headers.get("git-protocol") },
-    pkt(`# service=${service}\n`) + "0000",
+    { gitProtocol: request.headers.get("git-protocol"), prefix: pkt(`# service=${service}\n`) + "0000" },
   );
   return new Response(body, {
     headers: {
@@ -176,8 +119,9 @@ export async function POST(request: Request, context: RouteContext<"/api/git/[re
     try { stdin = await candidatePush(stdin, request.headers.get("x-turn-id")!); }
     catch (cause) { return refuse(403, cause instanceof Error ? cause.message : "Push refused."); }
   }
-  const body = streamGit(args, {
+  const body = await gitHttpRpc(repoRef, gated.bare, args, {
     stdin,
+    write,
     gitProtocol: request.headers.get("git-protocol"),
   });
   return new Response(body, {

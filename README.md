@@ -36,6 +36,14 @@ Working copies under the data root are a rebuildable cache — deleting them nev
 loses a session. See `ARCHITECTURE.md` for why rooms are separate per-room repos
 rather than one shared checkout.
 
+Git storage is selected at runtime: `APP_ENV=testing` keeps local repositories;
+development and production store immutable Git bundles in S3-compatible storage,
+with refs and fenced writer leases in Postgres. Server disks become disposable
+caches. Configure `GIT_S3_BUCKET` and apply migration 031; existing installations
+must backfill and verify before switching reads. See the
+[Git storage and recovery guide](docs/git-storage.md). Inactivity only archives;
+deletion requires admin confirmation and has a seven-day grace period.
+
 ### Agents are local CLIs, driven one prompt at a time
 An agent run spawns the vendor CLI (`claude`, `codex`, or `gemini`) in one-shot
 mode against the room's working copy. The app reuses the machine's existing CLI
@@ -210,7 +218,7 @@ Prerequisites: Node.js, Docker (for the local services), and at least one agent
 CLI installed and signed in (for example `claude`).
 
 ```bash
-cp .env.example .env      # optional; sensible dev defaults are built in
+cp .env.example .env      # configure GIT_S3_BUCKET and credentials; APP_ENV=testing uses local disk
 ./start.sh                # services -> migrations -> dev server
 ```
 

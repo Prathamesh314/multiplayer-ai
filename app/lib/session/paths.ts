@@ -1,10 +1,12 @@
 import { resolve, sep } from "node:path";
+import { gitStorageConfig } from "../git-storage/config";
 
 /**
  * Session *metadata* lives in Postgres (the `sessions` table, migration 005);
- * this root holds only the git state each record points at:
+ * this root holds the Git cache each record points at. In cloud mode, S3 bundles
+ * and Postgres refs are durable; testing/shadow retain the legacy disk layout:
  *
- *   <root>/repos/<id>.git    bare repo — the durable record for a session
+ *   <root>/repos/<id>.git    bare repo — cached confirmed session history
  *   <root>/projects/<id>.git bare repo — a project's canonical `main`
  *   <root>/work/<id>         checked-out copy — a cache, safe to delete
  *
@@ -12,8 +14,7 @@ import { resolve, sep } from "node:path";
  * migration; it is read once by `db/import-sessions.mjs` and is not a store.
  */
 export function dataRoot(): string {
-  const configured = process.env.MULTIPLAYER_AI_DATA;
-  return configured ? resolve(configured) : resolve(process.cwd(), ".multiplayer-ai");
+  return gitStorageConfig().cacheRoot;
 }
 
 export function barePath(id: string): string {

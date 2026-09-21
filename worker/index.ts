@@ -1,6 +1,8 @@
 import { failTurn } from "../app/lib/ai/turns";
 import { indexNextRepoJob, embedPendingRepoChunks } from "../app/lib/knowledge/repo-context";
 import { processMemoryJob } from "../app/lib/knowledge/memory-jobs";
+import { processGitBackfill } from "../app/lib/git-storage/backfill";
+import { sweepInBackground } from "../app/lib/session/retention";
 /**
  * The background worker process.
  *
@@ -15,7 +17,8 @@ import { processMemoryJob } from "../app/lib/knowledge/memory-jobs";
  *    missing pgvector embeddings, independent of the conversation sidecar.
  *
  * Run it with `npm run worker` (or `worker:dev`). It needs the same
- * MULTIPLAYER_AI_DATA / DATABASE_URL as web; Redis is only needed for agent runs.
+ * cloud bucket / DATABASE_URL as web; caches are independent. Testing/shadow
+ * mode still uses MULTIPLAYER_AI_DATA. Redis is only needed for agent runs.
  */
 import { executeAgentRun } from "../app/lib/ai/execute";
 import { publishRunEvent } from "../app/lib/ai/run-stream";
@@ -85,6 +88,20 @@ if (process.env.DATABASE_URL) {
   };
   tick();
   closers.push(async () => { stopped = true; clearTimeout(timer); await running; });
+}
+
+if (process.env.DATABASE_URL) {
+  let stopped=false;
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  let running:Promise<void>=Promise.resolve();
+  const tick=()=>{
+    running=(async()=>{
+      try {await processGitBackfill();sweepInBackground();}
+      catch(cause){console.warn('Git storage maintenance will retry',cause instanceof Error?cause.message:cause);}
+      if(!stopped) timer=setTimeout(tick,2000);
+    })();
+  };
+  tick();closers.push(async()=>{stopped=true;clearTimeout(timer);await running;});
 }
 
 if (closers.length === 0) {
