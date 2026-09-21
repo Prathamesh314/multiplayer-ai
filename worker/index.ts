@@ -23,9 +23,9 @@ import { sweepInBackground } from "../app/lib/session/retention";
 import { executeAgentRun } from "../app/lib/ai/execute";
 import { publishRunEvent } from "../app/lib/ai/run-stream";
 import { createRunWorker, queueEnabled } from "../app/lib/queue";
-import nextEnv from "@next/env";
+import { loadEnvConfig } from "@next/env";
 
-nextEnv.loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
+loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const closers: Array<() => Promise<void>> = [];
 

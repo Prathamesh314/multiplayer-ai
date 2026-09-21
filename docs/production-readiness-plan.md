@@ -2,6 +2,14 @@
 
 Reviewed: 11 September 2026. Baseline: `2475af3`, with a clean working tree before this report. Scope: current application, runner, worker, database migrations, deployment files, and existing test coverage. This is a code/configuration audit and implementation plan, not a penetration test, production capacity measurement, or certification. No application or infrastructure changes were made for this report.
 
+**21 September update:** This is a historical audit. Subsequent work added cloud
+Git manifests and fenced leases, recoverable retention, durable memory records,
+and broader tests. The local readiness pass also fixes the worker startup import
+and excludes environment/credential files from Docker context. See
+[current local verification evidence](demo-readiness.md). Those changes address
+parts of F3/F5/F7/F10; this report is not a claim those implementations were absent
+at the later review, nor that all public-hosting gaps are resolved.
+
 ## 1. Verdict
 
 This is a functional early product, not just a mock-up. It has real Git storage, database-backed collaboration, authorization, isolated execution checkouts, handoff ownership, runner leases, durable completion retry, and automatic model discovery. Keep these foundations.

@@ -4,6 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "demo:local": "APP_ENV=testing next dev --webpack --hostname 127.0.0.1",
+    "demo:worker": "APP_ENV=testing tsx worker/index.ts",
+    "doctor": "tsx scripts/check-setup.mjs",
+    "test:demo": "tsx scripts/check-demo.mjs",
+    "test:demo:live": "tsx scripts/check-demo.mjs --live",
+    "test:memory:live": "tsx tests/memory-live.test.mjs",
     "up": "./start.sh",
     "up:services": "./start.sh services",
     "down": "./start.sh down",

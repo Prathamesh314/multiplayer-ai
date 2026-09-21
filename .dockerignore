@@ -9,3 +9,14 @@ node_modules
 .context
 desktop/dist
 *.log
+.env
+.env.*
+!.env.example
+.codex
+.agents
+.claude
+.aws
+.next-*
+.desktop-build
+*.dump
+*.sql.gz
