@@ -53,3 +53,6 @@ next-env.d.ts
 
 *.pdf
 PROJECT_GUIDE.md
+
+# Founder-specific application answers stay local unless explicitly shared.
+/docs/yc-application.local.md

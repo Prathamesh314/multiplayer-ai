@@ -353,6 +353,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok non-interrupting onboarding, honest GitHub setup, AI-to-device setup, and responsive project overview");
+    if (process.env.HANDOFF_TEST_LIVE_AGENT) {
+      const { liveAgentChecks } = await import("./live-agent-checks.mjs");
+      await liveAgentChecks({ server, token: tokens[0], roomId, sql, view: sender,
+        agentId: process.env.HANDOFF_TEST_LIVE_AGENT });
+      assert.deepEqual(runtimeErrors, []);
+    }
   } catch (cause) {
     if (lastSessionId) {
       const diagnostic = await send("Runtime.evaluate", { expression: "document.body?.innerText.slice(0, 5000)", returnByValue: true }, lastSessionId).catch(() => null);

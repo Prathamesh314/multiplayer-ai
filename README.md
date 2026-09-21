@@ -214,6 +214,10 @@ docker/README.md  host vs. containerized run topologies
 
 ## Getting started
 
+For the local YC demo, follow [demo setup and verified checks](docs/demo-readiness.md).
+The [application preparation guide](docs/yc-application.md) separates product
+evidence from founder/customer facts that still need to be supplied.
+
 Prerequisites: Node.js, Docker (for the local services), and at least one agent
 CLI installed and signed in (for example `claude`).
 

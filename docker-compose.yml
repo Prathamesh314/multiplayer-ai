@@ -95,11 +95,9 @@ services:
   # then open http://localhost:3000. Reaching it on localhost matters: runs are
   # remote code execution and the guard only accepts loopback Hosts.
   #
-  # The heart of this setup is ONE named volume (workspace_data) mounted at the
-  # SAME absolute path (/app/workspaces) in BOTH containers. That is what makes
-  # the worker's commits visible to the web server — and, because neither
-  # container touches a host path, it eliminates the git absolute-gitdir
-  # path-identity problem that a host bind mount would have imposed.
+  # Cloud mode shares the Git bucket and Postgres refs across web and worker.
+  # The named workspace volume remains for testing and legacy shadow migration;
+  # those modes require the same absolute workspace path in both containers.
   #
   # Both images install the agent CLIs and mount the machine's Claude login
   # read-only: the worker to *run* them, the web tier to *detect* them so the
