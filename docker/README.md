@@ -9,7 +9,7 @@ sidecar — is the same backing stack either way.
 | Web server              | host (`npm run dev`, HMR)             | `web` container (`next start`)              |
 | Agent runs              | inline **or** host worker            | `worker` container, off the queue           |
 | Command                 | `./start.sh`                          | `docker compose --profile app up --build`   |
-| Git state lives on      | host filesystem (`./.multiplayer-ai`) | named volume `workspace_data`               |
+| Durable Git state       | S3-compatible bucket + Postgres       | S3-compatible bucket + Postgres             |
 | What starts by default  | services only (`docker compose up`)   | services **+** `web` **+** `worker`         |
 
 The two coexist: `docker compose up` (no profile) brings up only the backing
@@ -37,8 +37,11 @@ the `repo-embedding-models` volume. No paid API key is needed.
 to a host worker instead. `start.sh` always starts `npm run worker` for durable
 repo indexing when `DATABASE_URL` is set, and tears it down with the dev server
 (SIGTERM drains in-flight work). Agent runs only use it when `AGENT_WORKER=1`.
-On one host, web and worker share the same `MULTIPLAYER_AI_DATA` directory
-for free — there is no volume to arrange.
+Development uses cloud Git storage. Configure `GIT_S3_BUCKET`, credentials,
+and an optional S3-compatible endpoint before starting. Web and worker use the
+same bucket, prefix, and database; their temporary Git caches are independent.
+For local-disk testing, set `APP_ENV=testing`; both processes then need the same
+`MULTIPLAYER_AI_DATA` directory. See [Git storage](../docs/git-storage.md).
 
 > Why `AGENT_WORKER` is its own switch and not just "is Redis set": `REDIS_URL` is
 > on by default for presence. Keying run execution off Redis alone would silently
@@ -60,7 +63,7 @@ docker compose --profile app up --build
 Open it on **`localhost`** specifically — see the terminal-guard note below.
 
 A turn now flows: **`web` enqueues → `worker` pulls, spawns the CLI, commits to
-the shared volume → live output streams back `worker → Redis → web → browser`.**
+S3 and publishes refs in Postgres → live output streams back `worker → Redis → web → browser`.**
 Watch it with `docker compose logs -f web worker`.
 
 ### The environment matrix
@@ -72,7 +75,9 @@ the ones that make or break the architecture.
 | -------------------------- | ------------------- | ------------------- | -------------------------------------------------------------- |
 | **`AGENT_WORKER`**         | `1`                 | `1`                 | web **enqueues** instead of running inline; worker **consumes** |
 | **`MULTIPLAYER_AI_TERMINAL`** | `1`              | —                   | run guard refuses all runs in a prod build without it          |
-| `MULTIPLAYER_AI_DATA`      | `/app/workspaces`   | `/app/workspaces`   | the shared git state; identical path on both (see §3)          |
+| `APP_ENV`                 | `development` or `production` | same | cloud storage; `testing` explicitly selects local disk |
+| `GIT_S3_BUCKET` / `GIT_S3_PREFIX` | same bucket/prefix | same bucket/prefix | durable Git bundles; credentials must permit reads and writes |
+| `MULTIPLAYER_AI_DATA`      | `/app/workspaces`   | `/app/workspaces`   | legacy storage in testing/shadow only (see §3)                |
 | `REDIS_URL`                | `redis://redis:6379`| `redis://redis:6379`| queue + live-output bridge; compose network name, not host port|
 | `DATABASE_URL`             | `…@postgres:5432/…` | `…@postgres:5432/…` | compose network name, not host port                            |
 | `AGENT_WORKER_CONCURRENCY` | —                   | `2`                 | runs one worker executes at once                               |
@@ -91,28 +96,22 @@ boundary, not an oversight.
 
 ---
 
-## 3. The shared-volume contract
+## 3. Durable cloud storage and legacy volumes
 
-`web` and `worker` mount **one named volume, `workspace_data`, at the same
-absolute path, `/app/workspaces`, in both.** This is the load-bearing detail of
-the containerized topology.
+In development and production, immutable Git bundles live in object storage;
+Postgres stores refs, revisions, history, and writer leases. Each process uses
+its own temporary Git cache. Web and worker do not need a shared filesystem.
+They still need Git installed and enough temporary disk for repository operations.
 
-**Why it exists.** The whole session state is git — bare repos and working copies
-under the data root (see `ARCHITECTURE.md`). The worker commits there; the web
-server reads from there. They must see the *same bytes*.
+Compose retains `workspace_data` at `/app/workspaces` for local testing and
+the `GIT_STORAGE_PHASE=shadow` migration stage. Those modes still require web
+and worker to see the same legacy repository directory at the same path.
+Follow the [backfill and verification procedure](../docs/git-storage.md)
+before switching existing installations to cloud reads.
 
-**Why a named volume and not a host bind mount.** A git working copy's `.git`
-file records an **absolute** gitdir path. If the worker cloned at
-`/data/work/<id>` but the web server saw it at `/some/host/path/work/<id>`, the
-web server would read a `.git` pointing at a directory it has no copy of, and git
-would break. A host bind mount makes those paths differ between host and
-container; a **named volume mounted at one identical path in both containers**
-makes them the same by construction. Neither container touches a host path, so
-the whole path-identity problem disappears.
-
-**Do not wipe it casually.** `docker compose down -v` deletes `workspace_data` —
-that is every session's durable git state, not disposable cache like the presence
-Redis. Back it up like a database.
+Back up Postgres together with the Git bucket. Retain the legacy volume until
+the migration has been verified. `docker compose down -v` also deletes the
+database volume, so it is not a cache-cleanup command.
 
 ---
 

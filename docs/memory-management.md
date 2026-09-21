@@ -108,7 +108,9 @@ npm run worker
 
 The worker loads `.env`/`.env.local`. `start.sh` also starts it automatically when
 `DATABASE_URL` is configured. Web and worker must use the same database and Git
-data directory. Keep their code versions aligned when rolling out migration 030.
+bucket/prefix in cloud mode; testing and migration shadow mode still share the
+Git data directory. See [Git storage](git-storage.md). Keep their code versions
+aligned when rolling out migrations 030 and 031.
 
 Keyword memory needs no extra service. Set `MNEMOSYNE_URL` and
 `MNEMOSYNE_MCP_TOKEN` for semantic search. Keep sidecar autonomous sleep disabled

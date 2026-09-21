@@ -3,6 +3,7 @@ import { events } from "../events";
 import { ensureRepoContext } from "../knowledge/repo-context";
 import { diffFilesBare, promoteTurn, withRepoLock, type FileChange } from "../session/repo";
 import { ingestExchange } from "./shared-memory";
+import { lockGitMetadata } from "../git-storage/service";
 import { ControlError } from "./turns";
 
 export type FinalizeInput = {
@@ -79,6 +80,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
       }
     }
     if (sha) {
+      await lockGitMetadata(tx);
       await tx.query(saved.repoId
         ? `UPDATE room_repos SET head_sha = $2 WHERE id = $1`
         : `UPDATE session_repos SET head_sha = $2 WHERE session_id = $1`, [repoRef, sha]);
