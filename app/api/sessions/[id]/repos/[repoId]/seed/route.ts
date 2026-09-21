@@ -1,4 +1,5 @@
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
+import { ensureRepoContext } from "../../../../../../lib/knowledge/repo-context";
 import { finishSeed, writeSeedBatch, withRepoLock } from "../../../../../../lib/session/repo";
 import { finishRoomRepoSeed, getRoomRepo } from "../../../../../../lib/session/roomRepos";
 import type { SeedRequest } from "../../../../../../lib/session/types";
@@ -71,6 +72,7 @@ export async function POST(
   const seeded = await finishSeed(repoId, repo.rootName);
   const upstream = typeof body.upstreamUrl === "string" ? body.upstreamUrl : null;
   await finishRoomRepoSeed(repoId, { headSha: seeded.headSha, upstreamUrl: upstream });
+  await ensureRepoContext(repoId, seeded.headSha);
 
   return Response.json({ written, skipped, headSha: seeded.headSha } satisfies RoomRepoSeedResponse);
   });

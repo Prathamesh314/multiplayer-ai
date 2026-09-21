@@ -37,6 +37,8 @@ export type PromptContext = {
   repoContext?: string | null;
   /** Semantically recalled cross-chat memory (knowledge/). */
   sharedMemory?: string | null;
+  /** Keep source-attributed JSON records whole when the prompt budget shrinks. */
+  structuredMemory?: boolean;
   /** Ranked human discussion excerpts with room/author/message provenance. */
   roomChatContext?: string | null;
   /** Overridable only for tests; defaults to MAX_PROMPT. */
@@ -129,6 +131,17 @@ export function assembleAgentPrompt(ctx: PromptContext): string {
   if (ctx.sharedMemory) {
     const budget = remaining(agentPrompt, maxPrompt);
     if (budget > 0) {
+      if (ctx.structuredMemory) {
+        const kept: string[] = [];
+        let length = 0;
+        for (const line of ctx.sharedMemory.trimEnd().split("\n")) {
+          if (length + line.length + 1 > budget) break;
+          kept.push(line);
+          length += line.length + 1;
+        }
+        if (kept.length > 1) agentPrompt = `<memory>\n${kept.join("\n")}\n</memory>\n\n${agentPrompt}`;
+        return agentPrompt;
+      }
       const injected =
         ctx.sharedMemory.length > budget
           ? `${ctx.sharedMemory.slice(0, budget)}\n[…memory truncated for length…]`

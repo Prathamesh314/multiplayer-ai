@@ -89,11 +89,13 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
       ...(status === "failed" ? [{ role: "system", body: failure || "Execution failed before producing a confirmed result." }] : []),
       ...(changes.length ? [{ role: "system", body: formatChanges(changes) }] : []),
     ];
+    let agentMessageId: string | null = null;
     for (const message of messages) {
-      await tx.query(`WITH allocated AS (
+      const { rows: [storedMessage] } = await tx.query(`WITH allocated AS (
         UPDATE agent_runs SET message_seq = message_seq + 1 WHERE id = $1 RETURNING message_seq
       ) INSERT INTO agent_run_messages(run_id, seq, role, body)
-        SELECT $1, message_seq, $2, $3 FROM allocated`, [saved.runId, message.role, message.body]);
+        SELECT $1, message_seq, $2, $3 FROM allocated RETURNING id`, [saved.runId, message.role, message.body]);
+      if (message.role === "agent") agentMessageId = storedMessage.id;
     }
     const result: FinalizeResult = { status, changes, headSha: sha };
     await tx.query(`UPDATE agent_turns SET status = $2, result = $3, ended_at = now() WHERE id = $1`, [saved.turnId, status, JSON.stringify(result)]);
@@ -102,6 +104,10 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     [saved.runId, status, sha, status === "failed" ? (saved.code || 1) : 0, status === "failed" ? failure : null,
       changes.reduce((sum, file) => sum + file.added, 0), changes.reduce((sum, file) => sum + file.removed, 0)]);
     await tx.query(`UPDATE runner_jobs SET status = 'done' WHERE turn_id = $1`, [saved.turnId]);
+    if (status === "completed") {
+      await ingestExchange(tx, { sessionId: saved.sessionId, runId: saved.runId, turnId: saved.turnId,
+        prompt: saved.userPrompt, reply: saved.output, agentMessageId, commitSha: sha, repoRef });
+    }
     return { result, fresh: true };
   }));
   const result = committed.result;
@@ -114,9 +120,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   if (committed.fresh && result.status === "completed") {
     const session = await queryOne<{ project_id: string | null }>(`SELECT project_id FROM sessions WHERE id = $1`, [saved.sessionId]);
     const publishGated = saved.repoId === null && !!session?.project_id;
-    void ingestExchange({ sessionId: saved.sessionId, runId: saved.runId, prompt: saved.userPrompt,
-      reply: saved.output.trim(), changed: result.headSha !== null, publishGated });
-    if (result.headSha && !publishGated) void ensureRepoContext(repoRef);
+    if (result.headSha && !publishGated) await ensureRepoContext(repoRef, result.headSha);
   }
   return result;
 }

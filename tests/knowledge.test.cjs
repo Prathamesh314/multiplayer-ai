@@ -1,7 +1,7 @@
 /**
  * Unit tests for the knowledge layer's pure core: the graph (assembly,
  * traversal, ranking, pruning, merging), the context router, and the repo
- * summarizer. These are the pieces that decide *which* vector banks a run
+ * indexer (covered by test:repo-context). These are the pieces that decide *which* vector banks a run
  * recalls from and what gets indexed — the access- and correctness-critical
  * logic — so they are exercised without a database or sidecar.
  *
@@ -20,15 +20,6 @@ const {
   walk,
 } = require("../.test-build/graph.js");
 const { routeQuery } = require("../.test-build/router.js");
-const {
-  MAX_CHUNK_CHARS,
-  MAX_CHUNKS,
-  chooseSampleFiles,
-  isIndexablePath,
-  signatureLines,
-  summarizeRepo,
-} = require("../.test-build/repo-summary.js");
-
 let passed = 0;
 let failed = 0;
 
@@ -80,7 +71,7 @@ test("bank names use only characters the sidecar accepts", () => {
   // The sidecar rejects anything beyond alphanumerics/hyphens/underscores —
   // silently, since remember() is fail-open. The original colon scheme never
   // stored a single vector; hyphens are the verified-working contract.
-  assert.equal(roomBank("abc"), "session-abc");
+  assert.equal(roomBank("abc"), "records-abc");
   assert.equal(repoBank("p1", "abcdef1234567890"), "repo-p1-abcdef123456");
   assert.match(roomBank("abc"), /^[A-Za-z0-9_-]+$/);
   assert.match(repoBank("11111111-2222-3333-4444-555555555555", "abcdef1234567890"), /^[A-Za-z0-9_-]+$/);
@@ -92,7 +83,7 @@ test("the graph materializes project → rooms → runs with a repo node", () =>
   assert.equal(root.children.length, 4); // repo + 3 rooms
   const active = findNode(root, (n) => n.id === "room-active");
   assert.equal(active.kind, "room");
-  assert.equal(active.bank, "session-room-active");
+  assert.equal(active.bank, "records-room-active");
   assert.equal(active.children.length, 2);
   assert.equal(active.children[0].kind, "run");
   assert.equal(active.children[0].bank, null, "runs are structural, not banked");
@@ -266,105 +257,6 @@ test("the empty prompt routes somewhere sane", () => {
 test("identifiers and inline code count as repo signals", () => {
   assert.ok(routeQuery("why does buildSharedMemory return null").signals.repo.includes("identifier"));
   assert.ok(routeQuery("what is `foo` here").signals.repo.includes("code-span"));
-});
-
-// ---------------------------------------------------------------------------
-// Repo summarizer
-// ---------------------------------------------------------------------------
-
-console.log("\nrepo summarizer");
-
-const PATHS = [
-  "README.md",
-  "package.json",
-  "package-lock.json",
-  "app/lib/graph.ts",
-  "app/lib/deep/nested/leaf.ts",
-  "node_modules/x/index.js",
-  "public/logo.png",
-  "worker/index.ts",
-];
-
-test("vendored dirs and lockfiles are never indexable", () => {
-  assert.equal(isIndexablePath("node_modules/x/index.js"), false);
-  assert.equal(isIndexablePath("package-lock.json"), false);
-  assert.equal(isIndexablePath(".next/build/x.js"), false);
-  assert.equal(isIndexablePath("app/lib/graph.ts"), true);
-});
-
-test("sampling picks docs and manifests first, then source shallowest-first", () => {
-  const sampled = chooseSampleFiles(PATHS);
-  assert.deepEqual(sampled.slice(0, 2), ["README.md", "package.json"]);
-  assert.ok(sampled.indexOf("app/lib/graph.ts") < sampled.indexOf("app/lib/deep/nested/leaf.ts"));
-  assert.ok(!sampled.includes("node_modules/x/index.js"));
-  assert.ok(!sampled.includes("public/logo.png"), "binaries are not source");
-});
-
-test("the sampling cap holds", () => {
-  const many = Array.from({ length: 300 }, (_, i) => `src/f${i}.ts`);
-  assert.equal(chooseSampleFiles(many, 10).length, 10);
-});
-
-test("signatureLines extracts the API surface per language", () => {
-  const ts = signatureLines("a.ts", "import x from 'y'\nexport function foo() {}\nconst hidden = 1\nexport const BAR = 2");
-  assert.deepEqual(ts, ["export function foo() {}", "export const BAR = 2"]);
-  const py = signatureLines("b.py", "import os\ndef main():\n    pass\nclass App:\n    pass");
-  assert.deepEqual(py, ["def main():", "class App:"]);
-  assert.deepEqual(signatureLines("c.css", "a { color: red }"), []);
-});
-
-test("summarizeRepo leads with the map, then manifests/docs, then signatures", () => {
-  const files = new Map([
-    ["README.md", "# My project\nIt does things."],
-    ["package.json", JSON.stringify({ name: "demo", scripts: { dev: "next dev" }, dependencies: { react: "1" } })],
-    ["app/lib/graph.ts", "export function walk() {}\nexport const X = 1"],
-  ]);
-  const chunks = summarizeRepo({ paths: PATHS, files });
-  assert.equal(chunks[0].label, "map");
-  assert.ok(chunks[0].content.includes("app/: 2 files"), chunks[0].content);
-  assert.ok(chunks[0].content.includes("README.md"), "root files are listed");
-
-  const pkg = chunks.find((c) => c.label === "package.json");
-  assert.ok(pkg.content.includes('package "demo"'));
-  assert.ok(pkg.content.includes("dev: next dev"));
-  assert.ok(pkg.content.includes("react"));
-
-  const readme = chunks.find((c) => c.label === "README.md");
-  assert.ok(readme.content.includes("# My project"));
-
-  const sig = chunks.find((c) => c.label === "signatures");
-  assert.ok(sig.content.includes("app/lib/graph.ts:"));
-  assert.ok(sig.content.includes("export function walk() {}"));
-});
-
-test("ignored paths never leak into the map", () => {
-  const chunks = summarizeRepo({ paths: PATHS, files: new Map() });
-  assert.ok(!chunks[0].content.includes("node_modules"));
-});
-
-test("every chunk respects the size cap and the count cap", () => {
-  const paths = Array.from({ length: 200 }, (_, i) => `src/mod${i}.ts`);
-  const files = new Map(
-    paths.map((p) => [p, Array.from({ length: 12 }, (_, i) => `export function fn${i}_${p.length}() {}`).join("\n")]),
-  );
-  const chunks = summarizeRepo({ paths, files });
-  assert.ok(chunks.length <= MAX_CHUNKS, `${chunks.length} chunks`);
-  for (const chunk of chunks) {
-    assert.ok(chunk.content.length <= MAX_CHUNK_CHARS, `${chunk.label}: ${chunk.content.length}`);
-  }
-});
-
-test("malformed package.json falls back to a raw excerpt", () => {
-  const chunks = summarizeRepo({
-    paths: ["package.json"],
-    files: new Map([["package.json", "{not json"]]),
-  });
-  const pkg = chunks.find((c) => c.label === "package.json");
-  assert.ok(pkg.content.includes("{not json"));
-});
-
-test("an empty repo summarizes to nothing", () => {
-  assert.deepEqual(summarizeRepo({ paths: [], files: new Map() }), []);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

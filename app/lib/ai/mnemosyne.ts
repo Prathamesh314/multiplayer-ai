@@ -197,6 +197,7 @@ async function callToolNow(
     if (body?.error) throw new Error(`mnemosyne ${name} error: ${JSON.stringify(body.error)}`);
 
     const result = body?.result;
+    if (result?.isError) throw new Error(`mnemosyne ${name} returned a tool error`);
     if (!result) return null;
     // Prefer the structured payload; fall back to the JSON carried as text.
     if (result.structuredContent !== undefined) return result.structuredContent;
@@ -237,8 +238,8 @@ export async function recall(input: {
 }
 
 /**
- * Store one memory into a room's bank. Fire-and-forget: resolves to whether it
- * was accepted, but callers treat a false the same as a slow write — ignore it.
+ * Store one memory into a room's bank. Resolves to whether it was accepted;
+ * the durable memory worker retains and retries a job when this returns false.
  */
 export async function remember(input: {
   bank: string;

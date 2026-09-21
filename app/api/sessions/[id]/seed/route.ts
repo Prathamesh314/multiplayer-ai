@@ -1,4 +1,5 @@
 import { access, denied, forbidden } from "../../../../lib/session/auth";
+import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { finishSeed, writeSeedBatch } from "../../../../lib/session/repo";
 import { attachRepo } from "../../../../lib/session/store";
 import type { SeedRequest, SeedResponse } from "../../../../lib/session/types";
@@ -51,6 +52,7 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   const repo = await finishSeed(id, rootName || result.session.name);
   const upstream = typeof body.upstreamUrl === "string" ? body.upstreamUrl : null;
   const updated = await attachRepo(id, repo, upstream);
+  if (!result.session.projectId) await ensureRepoContext(id, repo.headSha);
 
   return Response.json({
     written,

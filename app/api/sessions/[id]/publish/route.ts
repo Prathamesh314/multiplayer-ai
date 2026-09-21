@@ -46,14 +46,20 @@ export async function POST(_request: Request, context: RouteContext<"/api/sessio
   await setHeadSha(id, outcome.sha);
 
   // Publishing is the approval event for the knowledge layer: the room's
-  // staged agent exchanges become shared memory now, and the approved code is
+  // matching source episodes become approved, and the published code is
   // re-indexed for repo context — both the freshly advanced canonical `main`
   // and the room's own fork, so the AI's understanding of the repo it edits
-  // tracks exactly what the human accepted. All best-effort background work —
-  // none of it delays or fails the publish response.
-  void ingestApprovedExchanges(id);
-  void ensureRepoContext(result.session.projectId);
-  void ensureRepoContext(id);
+  // tracks exactly what the human accepted. Persist indexing requests before
+  // returning; parsing/embedding happen in the background and fail open.
+  // Each episode already has a durable publication job. A transient failure
+  // here must not report a successful Git publish as failed; the worker retries.
+  await ingestApprovedExchanges(id, outcome.sha, result.user.id).catch(cause => {
+    console.warn("Published memory approval deferred to its durable job", cause instanceof Error ? cause.message : cause);
+  });
+  await Promise.all([
+    ensureRepoContext(result.session.projectId, outcome.sha),
+    ensureRepoContext(id, outcome.sha),
+  ]);
 
   await (await events()).publish(id, {
     type: "file.saved",

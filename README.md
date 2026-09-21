@@ -57,14 +57,70 @@ and multiplayer cursors ride the same event layer. Concurrent edits to the same
 file are reconciled with a three-way git merge rather than an OT/CRDT layer; a
 true conflict surfaces to the editor instead of being silently overwritten.
 
-### Semantic shared memory (optional)
-An optional sidecar (`mnemosyne`) gives the agents cross-room memory. Each room
-has a memory "bank"; a completed run's exchange is remembered there, and at the
-start of a run the most relevant memories across the rooms a user can see are
-recalled and woven into the prompt. A consolidation ("sleep") pass distills raw
-exchanges into durable canonical facts. When the sidecar is not configured, the
-app skips semantic recall and ingest; project room chat, fork, and `@room/chat`
-context still work.
+### Shared memory with review and source evidence
+Postgres stores episodes, facts, and procedures with their source IDs, approval
+status, history, and typed links to decisions, messages, and code. Completed
+exchanges and retryable memory jobs commit together. Project-fork code episodes
+wait for Publish; extracted facts remain proposals until an editor approves them
+in the room's **Memory** dialog. Replacing a decision records what it supersedes.
+
+Keyword recall works without a sidecar. Optional Mnemosyne search returns record
+candidates; the app checks current permissions, source freshness, and status in
+Postgres before including anything in a prompt. Run `npm run worker` for indexing,
+publication recovery, and optional model extraction. See the
+[memory implementation guide](docs/memory-management.md) for setup and the flow.
+
+### Repository context
+Repository code is indexed in Postgres independently of conversation memory.
+Migration `029_repo_hybrid_context.sql` requires pgvector; Compose now uses a
+pgvector-enabled Postgres 18 image. Existing Postgres installations must install
+the extension before running `npm run db:migrate`. Recreate the Compose Postgres
+container with the new image while retaining its existing data volume.
+
+The index covers all eligible tracked source, documentation, and configuration
+files, without a repository-wide file/chunk cap. Tree-sitter extracts symbols
+for TypeScript/JavaScript, Python, Go, and Rust; other text uses line chunks.
+Generated/vendor paths and lockfiles are excluded. Binary files and files over
+2 MiB are skipped and recorded in `repo_context_skipped_files`. Each retrieved
+excerpt includes the repo ref, indexed commit, path, symbol, and line range.
+The agent still reads its isolated checkout as ground truth.
+
+Publish enqueues the approved project/room SHA; successful run completion,
+editor saves, and completed uploads do the same for personal rooms and imports.
+Project-room changes remain gated on publish. The worker consumes durable SQL jobs,
+diffs commits, replaces changed files, removes deleted files, and atomically
+publishes each complete snapshot. Unchanged chunks retain their embeddings.
+Inline mode performs the same work in the web process; run `npm run worker`
+with `DATABASE_URL` set for automatic recovery of interrupted jobs. Existing
+approved index pointers are queued for rebuilding by the migration.
+
+The default embedding model is free, local
+[`nomic-embed-text:v1.5`](https://ollama.com/library/nomic-embed-text), served by
+Ollama with 768-dimensional vectors. Compose starts `repo-embeddings` and a
+one-time model download (`repo-embedding-model`, approximately 274 MB); downloaded
+weights persist in `repo-embedding-models`. No API key is needed. The host endpoint
+is `http://localhost:11435/v1/embeddings`; containers use
+`http://repo-embeddings:11434/v1/embeddings`. `./start.sh` also starts the indexing
+worker so failed jobs and missing vectors recover automatically.
+
+To switch providers, set `REPO_EMBEDDING_URL` (full embeddings endpoint),
+`REPO_EMBEDDING_MODEL`, `REPO_EMBEDDING_DIMENSIONS`, and optionally
+`REPO_EMBEDDING_API_KEY`. For containerized web/worker, set
+`REPO_EMBEDDING_CONTAINER_URL` too. Any embedding model exposed through an
+OpenAI-compatible endpoint or compatibility proxy can be used. Optional query
+and document prefixes are configurable; Nomic's task prefixes are automatic.
+Set the URL/model explicitly empty to disable semantic search (container URL
+empty for Compose). Vectors are stored in pgvector; conversation memory stays
+in Mnemosyne. Missing/failed embeddings fall back to Postgres keyword search.
+Model and prefix changes trigger vector refreshes without
+re-parsing source. Exact symbol/path hits lead, then reciprocal-rank fusion
+combines keyword and cosine rankings. Vector search is exact within each
+authorized repo; this version does not add a global approximate vector index.
+
+Run `npm run test:repo-context` for real Git + embedded Postgres/pgvector tests.
+With the Docker services running and migration 029 applied, run
+`npm run test:repo-context:live` to verify real local-model embeddings and hybrid
+retrieval in an isolated test schema. It cleans up its fixture data afterward.
 
 ### Project room chat memory
 The context router also recognizes requests about team discussions, decisions,
@@ -119,10 +175,10 @@ works with nothing but Postgres and the app itself.
 | Language | TypeScript |
 | Database | PostgreSQL (session/run/org metadata; git holds the code itself) |
 | Real time | Server-Sent Events; Redis pub/sub across processes, in-memory otherwise |
-| Queue | BullMQ on Redis for the decoupled agent-run and memory-consolidation workers |
+| Queue | BullMQ on Redis for agent runs; Postgres outboxes for memory and repository indexing |
 | Terminal | node-pty + xterm.js |
 | Agents | Claude Code, Codex, and Gemini CLIs, run locally |
-| Memory | `mnemosyne` sidecar over MCP (optional); LiteLLM to reach Claude for consolidation |
+| Memory | Postgres records, lifecycle, and edges; optional Mnemosyne search and model extraction |
 | Desktop | Electron shell around the same app |
 | Styling | Tailwind CSS |
 | Local services | Docker Compose (Postgres, Redis, pgAdmin, the sidecar) |
@@ -136,11 +192,11 @@ app/
   lib/            server + shared logic
     session/      git-native room repos, working copies, locks
     ai/           agent catalog, run execution, streaming, memory
-    queue/        BullMQ run + consolidation queues
+    queue/        BullMQ run queue (legacy consolidation helpers retained)
     events/       SSE event bus (Redis / in-memory)
     presence/     who is online (Redis / in-memory)
     project/, org/, auth/, terminal/
-worker/           standalone worker process (agent runs, memory consolidation)
+worker/           standalone worker process (agent runs, memory and repo jobs)
 db/               SQL migrations + runner
 docker/           Dockerfiles and compose service configs
 desktop/          Electron entry point
@@ -163,14 +219,14 @@ Then open http://localhost:3000. Other entry points:
 ```bash
 ./start.sh services       # just the backing services; start the app yourself
 npm run dev               # the Next.js dev server on its own
-npm run worker            # the background worker (agent runs / consolidation)
+npm run worker            # background memory/repo jobs; agent runs when enabled
 npm run start             # the Electron desktop app
 npm test                  # the test suite
 ```
 
 Configuration is read from `.env` — see `.env.example` for every setting,
-including `REDIS_URL`, `AGENT_WORKER`, the memory sidecar, and memory
-consolidation. Anything optional is off by default and degrades gracefully.
+including `REDIS_URL`, `AGENT_WORKER`, the memory sidecar, and optional memory
+extraction. Postgres memory remains available when those optional services are off.
 
 ### Desktop distribution
 

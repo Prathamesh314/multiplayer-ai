@@ -7,6 +7,7 @@ import { GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons
 import { PeopleStack } from "./People";
 
 type TopBarProps = {
+  onOpenMemory: () => void;
   onOpenGuide: () => void;
   session: Session;
   onInvite: () => void;
@@ -24,6 +25,7 @@ type TopBarProps = {
 };
 
 export function TopBar({
+  onOpenMemory,
   onOpenGuide,
   session,
   onInvite,
@@ -88,6 +90,7 @@ export function TopBar({
       <div className="ml-auto hidden sm:block"><PeopleStack members={members} /></div>
 
       <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Room guide</button>
+      <button type="button" onClick={onOpenMemory} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Memory</button>
 
       <button
         type="button"

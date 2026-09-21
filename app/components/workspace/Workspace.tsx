@@ -50,6 +50,7 @@ import { WelcomeView } from "./WelcomeView";
 import { RoomGuide, type RoomGuideAction } from "./RoomGuide";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
+import { MemoryDialog } from "./MemoryDialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -84,6 +85,7 @@ export function Workspace({
   const inputRef = useRef<HTMLInputElement>(null);
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   const [picked, setPicked] = useState<PickedSource | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -840,6 +842,7 @@ export function Workspace({
       onDrop={onDrop}
     >
       <TopBar
+        onOpenMemory={() => setMemoryOpen(true)}
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
         onInvite={() => setInviteOpen(true)}
@@ -857,6 +860,9 @@ export function Workspace({
       {helpDialog === "guide" && <RoomGuide hasRepo={!!repo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
       {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
       {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} />}
+      {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
+        void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
+      }} />}
       {repo && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-panel px-3 py-2.5">
         <button type="button" aria-expanded={showTeam} className="hidden rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover lg:block" onClick={() => setShowTeam(previous => !previous)}>Chats & team</button>
         <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium sm:flex-none">

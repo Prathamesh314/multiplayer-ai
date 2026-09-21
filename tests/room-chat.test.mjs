@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { citext } from "@electric-sql/pglite/contrib/citext";
 import { migrate } from "../db/migrate.mjs";
 import { planChatQuery } from "../app/lib/knowledge/chat-plan.ts";
@@ -9,7 +10,7 @@ import { buildKnowledgeContext } from "../app/lib/knowledge/index.ts";
 import { assembleAgentPrompt } from "../app/lib/ai/prompt.ts";
 
 delete process.env.MNEMOSYNE_URL;
-const db = await PGlite.create({ extensions: { citext } });
+const db = await PGlite.create({ extensions: { citext, vector } });
 globalThis.__maPool = { query: (sql, params) => db.query(sql, params) };
 let passed = 0;
 async function test(name, fn) {

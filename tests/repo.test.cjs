@@ -95,7 +95,7 @@ async function run() {
   });
 
   await test("publishing a room fast-forwards the project's main", async () => {
-    const p = "proj2";
+    const p = "02000000-0000-4000-8000-000000000002";
     await repo.ensureProjectRepo(p);
     const before = await repo.projectHeadSha(p);
 
@@ -108,6 +108,9 @@ async function run() {
     const after = await repo.projectHeadSha(p);
     assert.notEqual(after, before, "project main should advance after publish");
     assert.equal(readProjectMain(p, "a.txt"), "A1", "published file should be on project main");
+    assert.equal(await repo.repoContainsCommit(p, before, after), true, "published head contains the original commit");
+    assert.equal(await repo.repoContainsCommit(p, after, before), false, "the older head cannot approve a later commit");
+    await assert.rejects(repo.repoContainsCommit(p, "not-a-sha", after), /Invalid commit SHA/);
   });
 
   await test("two rooms editing different files converge with no lost work", async () => {
