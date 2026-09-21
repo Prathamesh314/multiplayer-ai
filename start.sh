@@ -8,7 +8,7 @@
 #   ./start.sh services   just the Docker services + migrations, no dev server
 #
 # Mnemosyne (the semantic memory sidecar) is optional: the app degrades to
-# fork + @room/chat context when it is absent, so startup never blocks on it —
+# Postgres keyword memory when it is absent, so startup never blocks on it —
 # its first build pulls an embedding model and finishes in the background.
 #
 # Ctrl+C stops the dev server; the Docker services keep running so the next
@@ -80,7 +80,7 @@ ensure_env() {
 
 # --- docker services --------------------------------------------------------
 compose_up() {
-  step "Starting services (Postgres, Redis, pgAdmin, Mnemosyne)"
+  step "Starting services (Postgres, Redis, pgAdmin, Mnemosyne, repo embeddings)"
   # Brings up every compose service. On the very first run this also builds the
   # Mnemosyne image and pulls its embedding model, which can take a few minutes;
   # the app starts regardless and picks memory up once the sidecar is ready.
@@ -147,8 +147,8 @@ run_migrations() {
 # container (see the `worker` profile in docker-compose.yml).
 WORKER_PID=""
 maybe_start_worker() {
-  [ "${AGENT_WORKER:-}" = "1" ] || return 0
-  step "Starting the agent worker (AGENT_WORKER=1)"
+  [ -n "${DATABASE_URL:-}" ] || [ "${AGENT_WORKER:-}" = "1" ] || return 0
+  step "Starting the background worker (memory and repo indexing; agent runs when enabled)"
   npm run worker &
   WORKER_PID=$!
   trap 'if [ -n "$WORKER_PID" ]; then kill "$WORKER_PID" 2>/dev/null || true; wait "$WORKER_PID" 2>/dev/null || true; fi' EXIT
@@ -178,7 +178,7 @@ start_services() {
   printf '%s   Postgres  %s\n' "$DIM" "${DATABASE_URL:-postgres://localhost:5432}${RESET}"
   printf '%s   pgAdmin   http://localhost:%s%s\n' "$DIM" "${PGADMIN_PORT:-5050}" "$RESET"
   printf '%s   Redis     %s%s\n' "$DIM" "${REDIS_URL:-redis://localhost:6380}" "$RESET"
-  printf '%s   Memory    %s%s\n' "$DIM" "${MNEMOSYNE_URL:-disabled (set MNEMOSYNE_URL to enable)}" "$RESET"
+  printf '%s   Memory    %s%s\n' "$DIM" "Postgres; semantic: ${MNEMOSYNE_URL:-off}" "$RESET"
   if [ "${AGENT_WORKER:-}" = "1" ]; then
     printf '%s   Runs      worker (AGENT_WORKER=1)%s\n' "$DIM" "$RESET"
   else

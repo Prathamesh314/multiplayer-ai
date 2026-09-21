@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
 import type { TreeNode } from "../types";
 import { repoLock } from "./lock";
-import { barePath, projectBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
+import { barePath, isSessionId, projectBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
 import type { ChangedFile, SessionRepo } from "./types";
 
 const run = promisify(execFile);
@@ -274,6 +274,55 @@ export async function projectHeadSha(projectId: string): Promise<string | null> 
   } catch {
     return null;
   }
+}
+
+function contextBare(ref: string): string {
+  if (!isSessionId(ref) && !/^[0-9a-f-]{36}$/i.test(ref)) throw new Error("Invalid repository ref");
+  return isSessionId(ref) ? barePath(ref) : projectBarePath(ref);
+}
+
+function commitSha(sha: string): string {
+  if (!/^[0-9a-f]{40,64}$/i.test(sha)) throw new Error("Invalid commit SHA");
+  return sha;
+}
+
+/** Exact ancestry proof used by memory publication/recovery. A Git failure
+ * must retry; it must never be mistaken for successful publication. */
+export async function repoContainsCommit(ref: string, ancestor: string, head: string): Promise<boolean> {
+  try {
+    await git(contextBare(ref), ["merge-base", "--is-ancestor", commitSha(ancestor), commitSha(head)]);
+    return true;
+  } catch (cause) {
+    if ((cause as { code?: number }).code === 1) return false;
+    throw cause;
+  }
+}
+
+/** Immutable, NUL-delimited snapshot reads for indexing. Errors must retry,
+ * never masquerade as an empty repository and erase the previous index. */
+export async function repoSnapshotPaths(ref: string, sha: string): Promise<string[]> {
+  const tree = await git(contextBare(ref), ["ls-tree", "-rz", commitSha(sha)]);
+  return tree.split("\0").filter(Boolean).flatMap((entry) => {
+    const tab = entry.indexOf("\t");
+    const metadata = entry.slice(0, tab);
+    return /^100(?:644|755) blob /.test(metadata) ? [entry.slice(tab + 1)] : [];
+  });
+}
+
+export async function repoSnapshotDiff(ref: string, from: string, to: string): Promise<string[]> {
+  const diff = await git(contextBare(ref), ["diff", "--no-renames", "--name-only", "-z", commitSha(from), commitSha(to), "--"]);
+  return diff.split("\0").filter(Boolean);
+}
+
+/** Skip oversized/binary files explicitly; never silently truncate source. */
+export async function repoSnapshotText(ref: string, sha: string, path: string): Promise<string | null> {
+  if (!path || path.includes("\0")) throw new Error("Invalid snapshot path");
+  const object = `${commitSha(sha)}:${path}`;
+  const bare = contextBare(ref);
+  const size = Number((await git(bare, ["cat-file", "-s", object])).trim());
+  if (size > MAX_TEXT_BYTES) return null;
+  const text = await git(bare, ["cat-file", "blob", object]);
+  return text.includes("\0") ? null : text;
 }
 
 /**

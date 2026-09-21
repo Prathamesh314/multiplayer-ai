@@ -1,5 +1,6 @@
 /*
- * The memory staging buffer.
+ * Legacy memory staging buffer. No active caller uses this module; durable
+ * memory_records/memory_jobs replaced it in migration 030.
  *
  * When a run finishes we already `remember` the exchange into the sidecar's
  * working memory — that, not this buffer, is what a later `sleep` consolidates.

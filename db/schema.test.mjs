@@ -7,6 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { citext } from "@electric-sql/pglite/contrib/citext";
 import { migrate } from "./migrate.mjs";
 
@@ -38,7 +39,7 @@ async function rejects(db, sql, params, expected) {
   }
 }
 
-const db = await PGlite.create({ extensions: { citext } });
+const db = await PGlite.create({ extensions: { citext, vector } });
 await migrate(db);
 
 console.log("\nschema constraints\n");
@@ -818,10 +819,9 @@ await test("deleting the run takes its queue entry with it", async () => {
 // --- repo-context index -----------------------------------------------------
 
 /**
- * The indexer's claim upsert (app/lib/knowledge/repo-context.ts): it must
- * return a row only when the stored SHA actually changes, so two servers
- * racing to index the same head distill it exactly once. Keyed by repo_ref —
- * a project id, a session id, or a room_repos id all point at their own bank.
+ * Legacy pointer compatibility after migration 029. These checks preserve
+ * the heterogeneous key behavior; tests/repo-context.test.mjs exercises the
+ * new durable jobs, atomic source publication, and pgvector retrieval.
  */
 const claimSql = `
   INSERT INTO repo_context_index (repo_ref, head_sha)

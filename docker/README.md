@@ -23,7 +23,9 @@ behind the `app` profile, so they never start unless you ask for them.
 The day-to-day path. The web server runs on the host so Next's hot-module reload
 stays fast; containerizing the dev server would drag file-watching across the VM
 boundary and make edits laggy. Docker here only provides Postgres, Redis,
-pgAdmin, and Mnemosyne.
+pgAdmin, Mnemosyne, and a local Ollama repo-embedding service. Its one-time
+model initializer downloads `nomic-embed-text:v1.5`; the weights are cached in
+the `repo-embedding-models` volume. No paid API key is needed.
 
 ```bash
 ./start.sh              # services → migrate → dev server (Ctrl+C stops)
@@ -32,9 +34,10 @@ pgAdmin, and Mnemosyne.
 ```
 
 **Runs are inline by default.** Set `AGENT_WORKER=1` in your `.env` to route them
-to a host worker instead; `start.sh` then starts `npm run worker` alongside the
-dev server and tears it down with it (SIGTERM, so BullMQ drains the in-flight
-job). On one host, web and worker share the same `MULTIPLAYER_AI_DATA` directory
+to a host worker instead. `start.sh` always starts `npm run worker` for durable
+repo indexing when `DATABASE_URL` is set, and tears it down with the dev server
+(SIGTERM drains in-flight work). Agent runs only use it when `AGENT_WORKER=1`.
+On one host, web and worker share the same `MULTIPLAYER_AI_DATA` directory
 for free — there is no volume to arrange.
 
 > Why `AGENT_WORKER` is its own switch and not just "is Redis set": `REDIS_URL` is

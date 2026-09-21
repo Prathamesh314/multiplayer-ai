@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir \
 
 # The SQLite store (one file, per-bank rows) lives here; mount a volume on it.
 ENV MNEMOSYNE_DATA_DIR=/data
+ENV MNEMOSYNE_AUTO_SLEEP_ENABLED=false
 RUN mkdir -p /data
 
 EXPOSE 8787

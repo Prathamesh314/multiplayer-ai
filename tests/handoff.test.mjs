@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { citext } from "@electric-sql/pglite/contrib/citext";
 import pg from "pg";
 import { migrate } from "../db/migrate.mjs";
@@ -46,7 +47,7 @@ if (realPostgres) {
   database = { query: (sql, params) => scoped.query(sql, params), exec: sql => scoped.query(sql) };
   cleanup = async () => { await scoped.end(); await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); };
 } else {
-  const embedded = await PGlite.create({ extensions: { citext } });
+  const embedded = await PGlite.create({ extensions: { citext, vector } });
   let waiting = Promise.resolve();
   async function acquire() {
     const previous = waiting;

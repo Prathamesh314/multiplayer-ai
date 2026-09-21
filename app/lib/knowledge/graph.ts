@@ -6,16 +6,16 @@
  * the indexed code context of the project's canonical `main`:
  *
  *   project ─┬─ repo                 bank: repo-<projectId>-<sha12>
- *            ├─ room ─┬─ run         bank: session-<roomId>
+ *            ├─ room ─┬─ run         bank: records-<roomId>
  *            │        └─ run
- *            └─ room ─── run         bank: session-<roomId>
+ *            └─ room ─── run         bank: records-<roomId>
  *
  * A *bank* is a vector collection in the mnemosyne sidecar. The graph is the
  * app-side structure that decides which banks a retrieval touches, and in what
  * order. Two deliberate choices shape it:
  *
- * - **Vectors live at room level; runs are structural.** The sidecar ingests
- *   and consolidates ("sleeps") per room bank, so that is where the vectors
+ * - **Vectors live at room level; runs are structural.** The sidecar indexes
+ *   approved record projections per room bank, so that is where the vectors
  *   are. Run nodes give the tree its chat level — recency ranking and
  *   provenance — without multiplying banks: a per-run bank would mean one
  *   recall call per chat, unbounded on the run's critical path.
@@ -40,7 +40,7 @@ export type KnowledgeNode = {
   id: string;
   /** Human label: project id, room name, run title, or the repo SHA. */
   name: string;
-  /** The mnemosyne bank holding this node's vectors; null for structural nodes. */
+  /** Room sidecar bank or logical repo snapshot label; null for structural nodes. */
   bank: string | null;
   /** Most recent activity (ms epoch) at or under this node; drives ranking. */
   lastActivity: number;
@@ -56,14 +56,13 @@ export type KnowledgeNode = {
 
 /** A room's memory bank. One bank per room keeps recall access-scoped per room. */
 export function roomBank(sessionId: string): string {
-  return `session-${sessionId}`;
+  return `records-${sessionId}`;
 }
 
 /**
- * The repo-context bank for one indexed HEAD. Keyed by SHA so an advance of
- * the head *replaces* the bank retrieval points at instead of mixing stale
- * facts into a current one — superseded banks are orphaned, never queried,
- * which is the delete story for code context.
+ * Logical graph label for an indexed repo snapshot. Repository retrieval now
+ * uses Postgres chunks/pgvector, not this legacy sidecar bank identifier.
+ * Keeping the label stable preserves graph consumers across the migration.
  */
 export function repoBank(ref: string, headSha: string): string {
   return `repo-${ref}-${headSha.slice(0, 12)}`;
@@ -72,7 +71,7 @@ export function repoBank(ref: string, headSha: string): string {
 export type RoomInput = {
   id: string;
   name: string;
-  /** Latest run activity in the room (0 = never ran anything → empty bank). */
+  /** Latest run or memory activity in the room (0 = no context yet). */
   lastActivity: number;
   runs?: { id: string; title: string | null; createdAt: number }[];
 };

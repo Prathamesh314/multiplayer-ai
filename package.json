@@ -29,12 +29,17 @@
     "test:repo": "tsc app/lib/session/repo.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/repo.test.cjs",
     "test:lock": "tsc app/lib/session/lock.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/lock.test.cjs",
     "test:prompt": "tsc app/lib/ai/prompt.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/prompt.test.cjs",
-    "test:knowledge": "tsc app/lib/knowledge/graph.ts app/lib/knowledge/router.ts app/lib/knowledge/repo-summary.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/knowledge.test.cjs",
+    "test:knowledge": "tsc app/lib/knowledge/graph.ts app/lib/knowledge/router.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/knowledge.test.cjs",
     "test:room-chat": "node --import tsx tests/room-chat.test.mjs",
     "test:stream": "tsc app/lib/ai/stream.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/stream.test.cjs",
     "test:models": "node --import tsx tests/models.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:room-chat && npm run test:stream && npm run test:handoff && npm run test:models"
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:models",
+    "test:memory": "node --import tsx tests/memory.test.mjs",
+    "eval:memory": "node --import tsx scripts/eval-memory.mjs",
+    "memory:reindex": "node scripts/reindex-memory.mjs",
+    "test:repo-context": "node --import tsx tests/repo-context.test.mjs",
+    "test:repo-context:live": "node --import tsx tests/repo-context-live.test.mjs"
   },
   "dependencies": {
     "@next/env": "16.3.4",
@@ -49,10 +54,17 @@
     "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "redis": "^6.2.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-go": "^0.21.2",
+    "tree-sitter-javascript": "^0.21.4",
+    "tree-sitter-python": "^0.21.0",
+    "tree-sitter-rust": "^0.21.0",
+    "tree-sitter-typescript": "^0.23.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",
+    "@electric-sql/pglite-pgvector": "^0.0.9",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",

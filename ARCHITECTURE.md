@@ -95,41 +95,42 @@ absent:
 
 - **Presence:** Redis when `REDIS_URL` is set, in-process otherwise
   (`app/lib/presence/index.ts`).
-- **Shared memory:** the mnemosyne sidecar when `MNEMOSYNE_URL` is set; recall
-  and ingest are skipped entirely otherwise, falling back to fork + `@room/chat`
-  context (`app/lib/ai/mnemosyne.ts`).
+- **Shared memory:** Postgres keyword retrieval always works. Optional Mnemosyne
+  adds semantic candidates; delivery failures remain in `memory_jobs` for retry.
 
 ## The knowledge layer
 
-Cross-chat context is organized as a **knowledge graph** over the project
-(`app/lib/knowledge/`): project → rooms → runs, plus repo context. Each room
-node maps to a vector bank in the sidecar (`session-<roomId>` — ingest writes
-there, `app/lib/ai/shared-memory.ts`); repo context is **per repo** — before
-the AI changes code it recalls from the bank of the repo it is about to edit
-(the room's fork or an imported repo) alongside the project's canonical
-`main`, each a per-SHA bank (`repo-<ref>-<sha12>`) distilled from that repo's
-own head (file map, manifests, docs, export signatures — `repo-context.ts`).
-Updates follow approval: publish refreshes the fork's and main's context;
-imported repos and personal rooms refresh at run completion, the only
-approval they have. Reads never index unapproved work.
+There are two separate structures in `app/lib/knowledge/`:
 
-- The graph is **derived, never stored** — Postgres already owns the
-  hierarchy, so deletion propagates for free: a deleted room never enters the
-  graph and its bank is never queried again; an advanced `main` orphans the old
-  repo bank. Only the indexed-SHA pointer is stored (migration 018).
-- Every retrieval is gated by `visibleRoomIds` before the graph is built, so
-  recall can never widen access.
-- Ingestion is **approval-gated**: an exchange whose run changed files is a
-  proposal, not knowledge — it stages in Postgres (migration 019) and enters
-  the room's bank only when the user approves the code by *publishing* the
-  room to `main` (`ingestApprovedExchanges`, hooked in the publish route,
-  which also re-indexes repo context for the new HEAD). Unpublished work never
-  becomes shared memory; pure Q&A exchanges ingest immediately, having no code
-  to approve.
-- A deterministic **router** (`router.ts`) classifies each prompt: code-shaped
-  → repo context + own-room memory; conversation-shaped → project-wide memory,
-  no repo; mixed/neutral → both. No LLM on the critical path, and the matched
-  signals are returned so the choice is explainable.
-- All recalls (episodic banks, canonical facts, repo bank) go out in one
-  parallel wave (`index.ts`), bounded by the sidecar's 4s timeout; everything
-  fails open per the section above.
+- `graph.ts` derives project → visible rooms → runs plus repository context.
+  This tree chooses accessible sources and ranks room activity; it is not a fact
+  graph. `router.ts` chooses own-room/code context or broader project discussion.
+- `memory_edges` persists typed relationships between source-backed memory
+  records, messages, and code turns: supersedes, supports, contradicts,
+  discussed_in, implemented_by, and mentions_file. Recursive SQL traverses up to
+  four hops. No separate graph database is needed.
+
+Migration 030 adds `memory_records`, `memory_events`, `memory_edges`, and
+`memory_jobs`. Run completion stores its historical episode and outbox jobs in
+the transcript transaction. Model extraction creates multiple proposed facts or
+procedures with exact evidence quotes. Editors explicitly approve, replace, or
+retract claims. Project-fork code episodes additionally need a verified ancestor
+commit in project main. Publish triggers this check; a durable job retries it
+after crashes. Publishing an episode does not approve the model's claims.
+
+The worker uses Postgres leases and retry backoff, without Redis for memory.
+Approved records may be projected into Mnemosyne `records-<roomId>` banks with
+stable IDs and revisions. Autonomous sidecar consolidation is disabled. The app
+uses candidates from those banks plus Postgres full-text search, then rechecks
+source hashes, permissions, scope, and lifecycle before returning attributed
+records. Supersession traversal resolves an old decision to its current approved
+replacement. Legacy free-form sidecar facts are not injected into prompts.
+
+Repository retrieval is independent: migration 029 stores per-SHA snapshots,
+symbol/line chunks, full-text indexes, optional pgvector embeddings, and durable
+indexing jobs in Postgres. The actual repositories and per-turn commits remain
+on disk in Git. Memory edges point to verified turn SHAs and changed paths;
+the agent still reads and edits the checkout through its tools.
+
+See [the implementation guide](docs/memory-management.md) for configuration,
+upgrade behavior, API and UI workflows, and the retrieval evaluation harness.

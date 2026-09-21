@@ -1,4 +1,5 @@
 import { events } from "../../../../lib/events";
+import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
 import { repositoryContext } from "../../../../lib/session/repository-context";
@@ -61,6 +62,9 @@ export async function PUT(request: Request, context: Context) {
       authorId: result.user.id, authorName: result.user.displayName,
       originId: typeof body.originId === "string" ? body.originId : null, at: Date.now(),
     })).catch(() => {});
+    if (outcome.status === "clean" && (repo.repoId || !result.session.projectId)) {
+      await ensureRepoContext(repo.ref, outcome.headSha);
+    }
     return Response.json({ headSha: outcome.headSha, committed: outcome.status === "clean" });
   } catch (cause) {
     return Response.json({ error: cause instanceof Error ? cause.message : "Could not save this file." }, { status: 422 });

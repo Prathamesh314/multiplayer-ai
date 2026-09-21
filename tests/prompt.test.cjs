@@ -136,6 +136,19 @@ test("memory keeps its head and marks truncation when it partially fits", () => 
   assert.ok(out.includes("[…memory truncated for length…]"));
 });
 
+test("structured memory keeps complete source records and drops a partial final record", () => {
+  const first = JSON.stringify({memoryId:"one",source:{turnId:"turn-one"},text:"Reviewed decision"});
+  const second = JSON.stringify({memoryId:"two",source:{turnId:"turn-two"},text:"x".repeat(200)});
+  const memory = `Evidence header\n${first}\n${second}\n`;
+  const out = assembleAgentPrompt({prompt:"p",sharedMemory:memory,structuredMemory:true,maxPrompt:300});
+  assert.ok(out.includes(first));
+  assert.ok(!out.includes('turn-two'));
+  const lines = out.split('<memory>\n')[1].split('\n</memory>')[0].split('\n');
+  assert.equal(lines.length,2);
+  assert.equal(JSON.parse(lines[1]).source.turnId,'turn-one');
+  assert.equal(assembleAgentPrompt({prompt:"p",sharedMemory:memory,structuredMemory:true,maxPrompt:150}),"p");
+});
+
 test("MAX_PROMPT is the exported default cap", () => {
   assert.equal(MAX_PROMPT, 20_000);
 });

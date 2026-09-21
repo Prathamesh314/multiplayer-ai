@@ -365,6 +365,7 @@ export async function POST(request: Request) {
     importedContext,
     repoContext,
     sharedMemory,
+    structuredMemory: true,
     roomChatContext,
   });
 

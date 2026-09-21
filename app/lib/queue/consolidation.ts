@@ -2,7 +2,8 @@ import { Queue, Worker, type Job } from "bullmq";
 import IORedis, { type Redis } from "ioredis";
 
 /**
- * The memory-consolidation queue: an app-owned debounce timer per room.
+ * Legacy consolidation queue. No active worker consumes it; migration 030's
+ * Postgres memory jobs and editor review replaced automatic consolidation.
  *
  * Instead of the sidecar's autonomous AUTO_SLEEP firing on its own cadence, we
  * drive consolidation: every ingested exchange (re)schedules a job that fires a
