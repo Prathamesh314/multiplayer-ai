@@ -92,19 +92,17 @@ services:
   #
   #     docker compose --profile app up --build
   #
-  # then open http://localhost:3000. Reaching it on localhost matters: runs are
-  # remote code execution and the guard only accepts loopback Hosts.
+  # then open http://localhost:3000 and pair each user's local runner.
+  # Coding agents run on that user's machine with their own provider login.
   #
   # The heart of this setup is ONE named volume (workspace_data) mounted at the
   # SAME absolute path (/app/workspaces) in BOTH containers. That is what makes
-  # the worker's commits visible to the web server — and, because neither
+  # repository indexing and web operations see the same Git state — and, because neither
   # container touches a host path, it eliminates the git absolute-gitdir
   # path-identity problem that a host bind mount would have imposed.
   #
-  # Both images install the agent CLIs and mount the machine's Claude login
-  # read-only: the worker to *run* them, the web tier to *detect* them so the
-  # composer has an agent to pick. Redis/Postgres are addressed by their compose
-  # network names, not the host port mappings.
+  # No operator AI login is mounted. The worker handles repository and memory
+  # indexing only. Redis/Postgres use their compose network names.
   web:
     profiles: ["app"]
     build:
@@ -118,12 +116,10 @@ services:
       redis:
         condition: service_healthy
     environment:
-      # Route runs to the worker (enqueue, not inline) — the worker reads the
-      # same switch, and both tiers must agree on it.
-      AGENT_WORKER: "1"
-      # Runs are RCE; a production build refuses them without this opt-in, and
-      # even then only over a loopback Host (hence http://localhost:3000).
-      MULTIPLAYER_AI_TERMINAL: "1"
+      # Require the caller's paired runner; disable both hosted execution paths.
+      LOCAL_RUNNERS: "1"
+      AGENT_WORKER: "0"
+      MULTIPLAYER_AI_TERMINAL: "0"
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:-localdev}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
       REPO_EMBEDDING_URL: ${REPO_EMBEDDING_CONTAINER_URL-http://repo-embeddings:11434/v1/embeddings}
@@ -139,8 +135,6 @@ services:
       - "${WEB_PORT:-3000}:3000"
     volumes:
       - workspace_data:/app/workspaces
-      # Reuse the machine's Claude login so the composer shows "signed in".
-      - ${HOME}/.claude:/root/.claude:ro
 
   worker:
     profiles: ["app"]
@@ -155,8 +149,9 @@ services:
       redis:
         condition: service_healthy
     environment:
-      AGENT_WORKER: "1"
-      AGENT_WORKER_CONCURRENCY: ${AGENT_WORKER_CONCURRENCY:-2}
+      # Keep background indexing running without consuming agent-run jobs.
+      AGENT_WORKER: "0"
+      MULTIPLAYER_AI_TERMINAL: "0"
       REPO_EMBEDDING_QUERY_PREFIX:
       REPO_EMBEDDING_DOCUMENT_PREFIX:
       REPO_EMBEDDING_URL: ${REPO_EMBEDDING_CONTAINER_URL-http://repo-embeddings:11434/v1/embeddings}
@@ -175,13 +170,11 @@ services:
     volumes:
       # The same named volume at the same path as `web` — the whole point.
       - workspace_data:/app/workspaces
-      # Reuse the machine's Claude login instead of an API key.
-      - ${HOME}/.claude:/root/.claude:ro
 
   litellm:
     # Optional chat-completions adapter for proposed memory extraction.
     # Configure the worker's MEMORY_EXTRACTION_URL to point here to use it.
-    profiles: ["app"]
+    profiles: ["memory-extraction"]
     image: ghcr.io/berriai/litellm:main-latest
     container_name: multiplayer-litellm
     restart: unless-stopped

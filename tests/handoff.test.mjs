@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Readable } from "node:stream";
 import { PGlite } from "@electric-sql/pglite";
 import { vector } from "@electric-sql/pglite-pgvector";
@@ -16,7 +17,8 @@ import { finalizeAgentRun } from "../app/lib/ai/finalize.ts";
 import { assembleAgentPrompt } from "../app/lib/ai/prompt.ts";
 import { createRepo, finishSeed, writeSeedBatch, prepareTurnWork, commitTurnWork, readCommittedBytes,
   listCommittedTree, mergeSave, writeRepoFile, readRepoFile, promoteTurn, committedChanges, headSha } from "../app/lib/session/repo.ts";
-import { workPath } from "../app/lib/session/paths.ts";
+import { barePath, workPath } from "../app/lib/session/paths.ts";
+import { RunnerGit } from "../runner/git.ts";
 import { attachRepo } from "../app/lib/session/store.ts";
 import { createRoomRepo, finishRoomRepoSeed } from "../app/lib/session/roomRepos.ts";
 import { repositoryContext } from "../app/lib/session/repository-context.ts";
@@ -376,6 +378,38 @@ try {
     assert.equal((await sql(`SELECT runner_supports_model('{}','ollama','',NULL) AS allowed`)).rows[0].allowed, false);
     assert.equal((await sql(`SELECT runner_supports_model('{}','codex',NULL,NULL) AS allowed`)).rows[0].allowed, true);
     assert.equal((await sql(`SELECT runner_supports_model('{}','codex','unadvertised',NULL) AS allowed`)).rows[0].allowed, false);
+  });
+  await test("persistent runner worktree candidates finalize and continue through the real server state machine", async () => {
+    const acceptedHead = async () => (await sql(`SELECT head_sha FROM session_repos WHERE session_id = $1`, [roomId])).rows[0].head_sha;
+    const base = await acceptedHead();
+    const target = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: base });
+    const remoteRoot = join(directory, "worktree-transport");
+    await mkdir(join(remoteRoot, "api", "git"), { recursive: true });
+    await symlink(barePath(roomId), join(remoteRoot, "api", "git", roomId), "junction");
+    const local = new RunnerGit(pathToFileURL(remoteRoot).href, "fixture", join(directory, "worktree-runner"));
+    let previous = base;
+    let workspacePath;
+    for (let index = 0; index < 2; index += 1) {
+      const job = { ...makeJob(randomUUID(), alice, 0, previous), runId: target.id };
+      await reserveTurn(target.id, alice, job.turnId, 0);
+      await prepareTurn(job);
+      assert.equal(await startTurn(job), true);
+      const sha = await local.withWorkspace(job, async workspace => {
+        if (workspacePath) assert.equal(workspace.path, workspacePath);
+        workspacePath = workspace.path;
+        await writeFile(join(workspace.path, `worktree-${index}.txt`), `Turn ${index}\n`);
+        return workspace.commitAndPush("Worktree integration", author);
+      });
+      assert.equal(await acceptedHead(), previous, "candidate alone cannot advance the room");
+      const result = await complete(job, sha);
+      assert.equal(result.status, "completed");
+      assert.equal(result.headSha, sha);
+      assert.equal(await acceptedHead(), sha);
+      assert.equal((await complete(job, sha)).headSha, sha, "duplicate completion remains idempotent");
+      previous = sha;
+    }
+    assert.equal((await readCommittedBytes(roomId, previous, "worktree-0.txt")).toString(), "Turn 0\n");
+    assert.equal((await readCommittedBytes(roomId, previous, "worktree-1.txt")).toString(), "Turn 1\n");
   });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");

@@ -403,6 +403,7 @@ export async function POST(request: Request) {
     baseSha: headSha,
     agentId: agent.id,
     agentPrompt,
+    projectId: result.session.projectId,
     model: runOptions.model,
     effort: runOptions.effort,
     author,

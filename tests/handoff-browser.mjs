@@ -301,9 +301,10 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.equal(job.runId, chat.id);
       assert.match(job.agentPrompt, /Continue the accessible checkout/);
       const runnerGit = new RunnerGit(server, deviceToken, join(directory, "simulated-runner"));
-      const work = await runnerGit.ensureWork(job.repoId ?? job.sessionId, job.baseSha, job.turnId);
-      await writeFile(join(work, `step-${index}.txt`), `Deterministic runner output ${index}\n`);
-      const resultSha = await runnerGit.commitAndPush(job.repoId ?? job.sessionId, "Simulated turn", job.author, job.turnId, job.baseSha);
+      const resultSha = await runnerGit.withWorkspace(job, async workspace => {
+        await writeFile(join(workspace.path, `step-${index}.txt`), `Deterministic runner output ${index}\n`);
+        return workspace.commitAndPush("Simulated turn", job.author);
+      });
       const report = { code: 0, resultSha, output: `Finished step ${index}`, errOutput: "", ms: 5 };
       assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/complete`, report)).status, 200);
       assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/complete`, report)).status, 200);

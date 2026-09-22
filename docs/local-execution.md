@@ -1,5 +1,12 @@
 # Local execution: running agents on the user's machine
 
+> Implementation update: hosted Compose now requires users' own runners and
+> disables server fallback. Runners use persistent room/repository worktrees,
+> sharing a local cache across primary forks of one project. The historical
+> design below includes earlier clone/fallback proposals; see
+> [runner workspaces](runner-workspaces.md) and [deployment](../docker/README.md)
+> for the current lifecycle, safety rules, and configuration.
+
 The plan for moving agent execution off our servers and onto each member's
 computer — Conductor's economics inside a multiplayer product. The web app we
 have today becomes the **control plane**; a **runner** on the user's machine

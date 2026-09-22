@@ -32,9 +32,10 @@ file is the overview.
 The persistent state of a room is a set of git coordinates
 (`repo_url · branch · head_sha`), not a filesystem image. Agent turns auto-commit
 at the turn boundary; human editor edits are committed on a short debounce.
-Working copies under the data root are a rebuildable cache — deleting them never
-loses a session. See `ARCHITECTURE.md` for why rooms are separate per-room repos
-rather than one shared checkout.
+Accepted code versions can be rebuilt from the server's Git repositories.
+Local working copies can also contain unfinished or undelivered work and must
+be preserved during recovery. See `ARCHITECTURE.md` for the server repository
+boundaries and [runner workspaces](docs/runner-workspaces.md) for local storage.
 
 ### Agents are local CLIs, driven one prompt at a time
 An agent run spawns the vendor CLI (`claude`, `codex`, or `gemini`) in one-shot
@@ -44,11 +45,16 @@ live stream of three kinds of output — reply, thinking, and tool activity — 
 to the browser as newline-delimited JSON. Whatever the agent changed is committed
 when the run ends.
 
-By default a run executes inline in the web server. When `AGENT_WORKER=1` (and
-Redis is configured), runs are instead enqueued and executed by a separate worker
-process, so a heavy or runaway agent never degrades the shared web server. The
-client sees the same stream either way. The web and worker tiers can also run as
-containers sharing one volume — see `docker/README.md`.
+The hosted Compose app requires the caller's paired local runner and disables
+server agent execution. The runner keeps one persistent worktree per room
+repository; successive chats/turns reuse it, including ignored dependencies and
+local configuration. Rooms of the same project share a local bare Git cache.
+Dirty workspaces and undelivered commits stop a new turn instead of being reset.
+See [runner workspaces](docs/runner-workspaces.md) for the lifecycle and recovery.
+
+Local development can still execute inline or opt into `AGENT_WORKER=1` with
+Redis and the terminal execution gate enabled. The hosted background worker
+handles indexing. See `docker/README.md` for deployment defaults.
 
 ### Real time over Server-Sent Events
 Live updates (file saved, someone is typing, run output, presence) are broadcast

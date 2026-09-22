@@ -96,23 +96,23 @@ async function processJob(
   try {
     if (!spec) throw new Error(`This machine doesn't know the agent "${job.agentId}".`);
 
-    const cwd = await git.ensureWork(repoRef, job.baseSha, job.turnId);
-    emit({ t: "start", agent: spec.bin, cwd, runId: job.runId });
+    sha = await git.withWorkspace(job, async (workspace) => {
+      emit({ t: "start", agent: spec.bin, cwd: workspace.path, runId: job.runId });
+      const result = await runAgentLocally({
+        spec,
+        prompt: job.agentPrompt,
+        model: job.model,
+        effort: job.effort,
+        cwd: workspace.path,
+        onEvent: emit,
+      });
+      code = result.code;
+      output = result.output;
+      errOutput = result.errOutput;
+      ms = result.ms;
 
-    const result = await runAgentLocally({
-      spec,
-      prompt: job.agentPrompt,
-      model: job.model,
-      effort: job.effort,
-      cwd,
-      onEvent: emit,
+      return workspace.commitAndPush(`${spec.bin}: agent run`, job.author);
     });
-    code = result.code;
-    output = result.output;
-    errOutput = result.errOutput;
-    ms = result.ms;
-
-    sha = await git.commitAndPush(repoRef, `${spec.bin}: agent run`, job.author, job.turnId, job.baseSha);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     emit({ t: "err", d: `${message}\n` });

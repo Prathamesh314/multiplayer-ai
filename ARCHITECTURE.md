@@ -9,15 +9,16 @@ changing the session, repo, or run-execution layers.
 The whole persistent state of a session is a set of git coordinates —
 `repo_url · session_branch · head_sha` (plus base branch, fork point, and a few
 cache-validity hashes) — **not** a filesystem or container snapshot. Git is the
-source of truth; the working copy is a disposable cache.
+source of truth for accepted code. Working copies may also contain unfinished
+or undelivered changes; those must be preserved during recovery.
 
 - **Invariant: never uncommitted.** Agent turns auto-commit at turn boundaries
   (`app/api/ai/run/route.ts`); human editor edits get a debounced WIP commit.
   If the design ever starts storing a working-tree *blob*, it has drifted back
   to snapshotting — that is the failure mode to watch for.
 - **Resume = `clone + checkout <sha>`.** `<root>/work/<id>` is rebuildable from
-  the bare repo on demand (`ensureWork`), so deleting all of `work/` must never
-  lose a session.
+  the bare repo on demand (`ensureWork`) for accepted commits. Local runners
+  reuse persistent worktrees and never discard uncommitted or undelivered work.
 - Session *metadata* lives in Postgres (`sessions` table, migration 005). The
   data root (`MULTIPLAYER_AI_DATA`) holds only git state — see
   `app/lib/session/paths.ts`.
@@ -60,12 +61,27 @@ standalone: no project remote, so publish/sync never touch them, and — having
 no publish step to approve their work — their exchanges skip the
 approval-gated memory staging and ingest directly.
 
-## Run execution is local-first, cloud-fallback
+## Persistent worktrees on each runner
+
+`runner/git.ts` keeps a worktree and local branch per room repository, shared by
+that room's chats and turns. Primary forks of the same project share one local
+bare cache; imported repos stay separate. Cache/workspace identities are scoped
+to the server URL and app user. This local optimization does not combine the
+server's separately authorized room repositories.
+
+A filesystem lock spans agent execution and candidate push. Reuse requires a
+clean workspace whose head can fast-forward to the assigned base; no reset or
+clean discards edits, ignored configuration, or undelivered commits. Candidate
+pushes, server verification, and handoff ownership checks remain per turn.
+See [runner workspaces](docs/runner-workspaces.md) for layout and recovery.
+
+## Run execution uses local runners in hosted deployments
 
 Agents execute on the *initiating member's own machine* when one of their
 paired devices is online (docs/local-execution.md) — their CPU, their AI
-login — and on the server otherwise. One job shape (`AgentRunJob`), three
-transports, one browser contract:
+login. The hosted Compose profile disables server execution and requires an
+online compatible runner. Local development can explicitly allow server
+execution. One job shape (`AgentRunJob`), three transports, one browser contract:
 
 1. **Local:** the run route parks the job in `runner_jobs`; the user's runner
    claims it (atomic `SKIP LOCKED`, long-poll `/api/runner/claim`), fetches
@@ -74,7 +90,7 @@ transports, one browser contract:
    streams events up (`/api/runner/runs/[id]/events` → the per-run Redis
    channel), and reports `/complete`, where the claimed commit is verified
    against the bare repo before any head moves. Requires Redis; a job no
-   device collects within ~20s is atomically reclaimed and falls back.
+   device collects within ~20s fails with a reconnect message, without fallback.
 2. **Server worker:** BullMQ, when the queue is enabled.
 3. **Inline:** in the web process, so local dev needs no extra infrastructure.
 
@@ -83,10 +99,9 @@ Local and cloud runs end through one shared finalization
 events, memory ingest — indistinguishable from the transcript out. The runner
 itself stays dumb: it states facts and never writes the database.
 
-Server-side execution still ties a run to the machine that starts it (the
-data root is a local path), so the *cloud* path scales only with the
-worker/queue model — an acceptable ceiling now that it is the fallback, not
-the product.
+Legacy server-side execution still uses a local data root and isolated turn
+clones. It is disabled in the hosted profile; local runner worktrees do not
+change that development-only execution path.
 
 ## Graceful degradation
 
