@@ -53,3 +53,7 @@ next-env.d.ts
 
 *.pdf
 PROJECT_GUIDE.md
+*.txt
+*.mp3
+*.mp4
+artifacts/*
