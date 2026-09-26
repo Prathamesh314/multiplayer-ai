@@ -32,6 +32,7 @@ import type { ScanResult } from "../../lib/types";
 import { FilesIcon, SparkleIcon, TerminalIcon } from "../icons";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
+import { isUUID } from "../../lib/tasks/types";
 import { AiPanel } from "./AiPanel";
 import type { Caret } from "./CodeEditor";
 import type { Buffer } from "./EditorArea";
@@ -176,11 +177,26 @@ export function Workspace({
   const importInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let cancelled = false;
-    void fetchRoomRepos(session.id).then((repos) => {
+    void fetchRoomRepos(session.id).then(async (repos) => {
       if (cancelled) return;
       setRoomRepos(repos);
       let remembered: string | null = null;
       try { remembered = sessionStorage.getItem(`room-repository:${session.id}`); } catch {}
+      const linkedRun = new URLSearchParams(window.location.search).get("run");
+      if (linkedRun) {
+        try {
+          if (!isUUID(linkedRun)) throw new Error("Invalid chat link.");
+          const { run } = await fetchRun(session.id, linkedRun);
+          if (cancelled) return;
+          remembered = run.repoId;
+          setEnteredRun(run);
+          setShowChat(true);
+          setMobilePane("chat");
+        } catch {
+          if (!cancelled) setError("The linked chat is unavailable or you no longer have access.");
+        }
+      }
+      if (cancelled) return;
       if (remembered && repos.some(repo => repo.id === remembered && repo.seededAt) && buffersRef.current.size === 0) {
         selectedRepoRef.current = remembered;
         loadGeneration.current += 1;

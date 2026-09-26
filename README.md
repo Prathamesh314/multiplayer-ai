@@ -22,9 +22,12 @@ file is the overview.
 - **Room = branch.** Opening a room checks out its own working copy on a
   `session/<id>` branch. Publishing a room merges its work back onto the
   project's `main`; syncing pulls `main` back into the room.
-- **Runs.** A single agent turn is a "run": a prompt, the agent's streamed
-  thinking/tool-activity/reply, and the commit it produces. Runs are durable —
-  they persist as a conversation others can watch and continue.
+- **Runs and turns.** A run is a durable AI conversation containing successive
+  turns: prompts, streamed thinking/tool activity/replies, and resulting commits.
+  Teammates can watch a chat, fork it, or accept a handoff to continue it.
+- **Human tasks.** Tag a room member from any accessible AI chat to assign work,
+  such as a code review. Tasks appear on their dashboard with a source chat link
+  and a status, independently of who controls the AI conversation.
 
 ## How it works
 
@@ -168,6 +171,15 @@ works with nothing but Postgres and the app itself.
   and recorded as a run others can open and continue.
 - **Reference other chats.** Mention another room or run with `@room/<id>` to
   pull its relevant context into the current prompt.
+- **Ask a teammate to help.** Open your chat or a teammate's chat, click
+  **@ Assign task** below the conversation, select their `@handle`, describe
+  the request, and click **Create task**. It appears under **Chat tasks** and
+  in the assignee's dashboard under **My tasks**, with a link back to the chat.
+  Track **To do**, **In progress**, **Done**, or **Cancelled**. Room owners and
+  editors can assign tasks; the assignee or creator can update them while they
+  retain the required room access. Task assignment does not invoke AI or transfer
+  chat control. Lists refresh every five seconds while visible and on window
+  focus. See [tasks from chats](docs/room-tasks.md) for permissions and storage.
 - **Publish / sync.** Merge a room's work up to the project's `main`, or pull the
   latest `main` down into a room. Conflicts abort cleanly and are reported.
 - **Develop the app.** `./start.sh` brings up the backing services, applies
@@ -180,6 +192,7 @@ works with nothing but Postgres and the app itself.
 | Web / API | Next.js (App Router) with React; the repo pins a specific Next build — read `AGENTS.md` before changing framework code |
 | Language | TypeScript |
 | Database | PostgreSQL (session/run/org metadata; git holds the code itself) |
+| Human tasks | PostgreSQL assignments linked to AI chats; dashboard inbox and status tracking |
 | Real time | Server-Sent Events; Redis pub/sub across processes, in-memory otherwise |
 | Queue | BullMQ on Redis for agent runs; Postgres outboxes for memory and repository indexing |
 | Terminal | node-pty + xterm.js |
@@ -193,11 +206,12 @@ works with nothing but Postgres and the app itself.
 
 ```
 app/
-  api/            HTTP + streaming endpoints (auth, orgs, projects, sessions, runs, ai, terminal)
+  api/            HTTP + streaming endpoints (auth, orgs, projects, sessions, runs, tasks, ai, terminal)
   components/     UI, including components/workspace/ (the room IDE)
   lib/            server + shared logic
     session/      git-native room repos, working copies, locks
     ai/           agent catalog, run execution, streaming, memory
+    tasks/        human assignments, status lifecycle, room permission checks
     queue/        BullMQ run queue (legacy consolidation helpers retained)
     events/       SSE event bus (Redis / in-memory)
     presence/     who is online (Redis / in-memory)
@@ -226,9 +240,16 @@ Then open http://localhost:3000. Other entry points:
 ./start.sh services       # just the backing services; start the app yourself
 npm run dev               # the Next.js dev server on its own
 npm run worker            # background memory/repo jobs; agent runs when enabled
+npm run db:migrate        # apply pending migrations when starting manually
 npm run start             # the Electron desktop app
 npm test                  # the test suite
+npm run test:tasks        # task storage, permissions, retries, and pagination
 ```
+
+Existing installations must apply migration `031_room_tasks.sql` with
+`npm run db:migrate` before using task assignments. `./start.sh` applies pending
+migrations automatically. Tasks need only Postgres and the app; no additional
+service or worker is required.
 
 Configuration is read from `.env` — see `.env.example` for every setting,
 including `REDIS_URL`, `AGENT_WORKER`, the memory sidecar, and optional memory

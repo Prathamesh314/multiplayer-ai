@@ -7,6 +7,7 @@ import { listRooms } from "../../lib/project/client";
 import type { Project } from "../../lib/project/types";
 import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
+import { TaskPanel } from "../tasks/TaskPanel";
 
 type Props = {
   onConnectAi: () => void;
@@ -46,6 +47,8 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             </div>
           )}
         </header>
+
+        {me && <TaskPanel key={me.id} userId={me.id} />}
 
         <section className="workspace-welcome mt-8 rounded-2xl border border-vs-border p-6 sm:p-8" aria-labelledby="workflow-heading">
           <div className="flex items-center gap-2 text-sm font-medium text-vs-muted">

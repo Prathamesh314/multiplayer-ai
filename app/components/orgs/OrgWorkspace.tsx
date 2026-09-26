@@ -49,6 +49,7 @@ import { ChatSection } from "../chat/ChatSection";
 import { ConversationView } from "../chat/ConversationView";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
+import { TaskPanel } from "../tasks/TaskPanel";
 
 // Minimal settings gear icon
 function SettingsIcon({ className }: { className?: string }) {
@@ -171,12 +172,15 @@ export function OrgWorkspace() {
           onOpenRoom={(id) => router.push(`/s/${id}`)}
         />
       ) : (
-        <EmptyState
-          loading={orgs === null}
-          inviteCount={invitations.length}
-          onCreate={() => setDialog({ kind: "createOrg" })}
-          onJoin={() => setDialog({ kind: "joinOrg" })}
-        />
+        <div className="vs-scroll min-w-0 flex-1 overflow-y-auto p-5">
+          {me && <TaskPanel key={me.id} userId={me.id} />}
+          <EmptyState
+            loading={orgs === null}
+            inviteCount={invitations.length}
+            onCreate={() => setDialog({ kind: "createOrg" })}
+            onJoin={() => setDialog({ kind: "joinOrg" })}
+          />
+        </div>
       )}
 
       {dialog?.kind === "createOrg" && (

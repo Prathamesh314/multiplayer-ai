@@ -1,0 +1,87 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { memoryFixture } from "./helpers/memory-fixture.mjs";
+import { createRun, getRun, listRunMessages } from "../app/lib/ai/runs.ts";
+import { createTask, listTasks, taskMembers, updateTask } from "../app/lib/tasks/store.ts";
+
+const f = await memoryFixture();
+let passed = 0;
+async function test(name,work) { await work(); passed++; console.log(`  ok ${name}`); }
+const rejects = (fn,status) => assert.rejects(fn,error => error.status === status);
+try {
+  const run = await createRun({sessionId:f.room,startedBy:f.alice,agentId:"codex",baseSha:"a".repeat(40),title:"Review retry logic"});
+  const input = {id:randomUUID(),sessionId:f.room,runId:run.id,assigneeId:f.bob,body:"Please review the retry logic."};
+  await test("assignments reach the assignee's inbox with source and authorship",async () => {
+    await createTask(f.alice,input);
+    const [task] = await listTasks(f.bob);
+    assert.equal(task.id,input.id); assert.equal(task.sessionId,f.room); assert.equal(task.runId,run.id);
+    assert.equal(task.creatorName,"Alice"); assert.equal(task.assigneeHandle,"bob"); assert.equal(task.status,"open");
+    assert.equal((await listTasks(f.alice)).length,0);
+  });
+  await test("retrying or concurrently submitting one request creates exactly one task",async () => {
+    await Promise.all([createTask(f.alice,input),createTask(f.alice,input)]);
+    assert.equal((await listTasks(f.bob)).length,1);
+    await rejects(() => createTask(f.alice,{...input,body:"Different request"}),409);
+  });
+  await test("inherited room members appear even without a room roster entry",async () => {
+    assert.ok((await taskMembers(f.room,f.alice)).some(m => m.userId === f.bob));
+    assert.ok(!(await taskMembers(f.room,f.alice)).some(m => m.userId === f.outsider));
+  });
+  await test("viewers can complete their own task, but cannot assign work",async () => {
+    await updateTask(f.bob,input.id,"in_progress");
+    await updateTask(f.bob,input.id,"done");
+    assert.equal((await listTasks(f.bob))[0].status,"done");
+    await rejects(() => createTask(f.bob,{...input,id:randomUUID()}),403);
+    await updateTask(f.alice,input.id,"open");
+  });
+  await test("unauthorised readers, assignees, and mismatched chat/room IDs are rejected",async () => {
+    await rejects(() => createTask(f.outsider,{...input,id:randomUUID()}),403);
+    await rejects(() => createTask(f.alice,{...input,id:randomUUID(),assigneeId:f.outsider}),403);
+    await rejects(() => createTask(f.alice,{...input,id:randomUUID(),sessionId:f.other}),403);
+    assert.deepEqual(await listTasks(f.outsider,{sessionId:f.room,runId:run.id}),[]);
+    assert.deepEqual(await taskMembers(f.room,f.outsider),[]);
+    await rejects(() => updateTask(f.outsider,input.id,"done"),403);
+  });
+  await test("editors assign from somebody else's chat without changing driver or AI transcript",async () => {
+    await f.db.query(`INSERT INTO project_members(project_id,org_id,user_id,role) VALUES ($1,$2,$3,'editor')`,[f.project,f.org,f.outsider]);
+    await createTask(f.outsider,{...input,id:randomUUID(),body:"Review this other person's chat."});
+    assert.equal((await getRun(run.id)).driverUserId,f.alice);
+    assert.equal((await listRunMessages(run.id)).length,0);
+    await rejects(() => updateTask(f.outsider,input.id,"cancelled"),403);
+  });
+  await test("private room tasks never leak to project colleagues",async () => {
+    const secretRun = await createRun({sessionId:f.secret,startedBy:f.outsider,agentId:"codex",baseSha:"b".repeat(40)});
+    const secretTask = {...input,id:randomUUID(),sessionId:f.secret,runId:secretRun.id,assigneeId:f.outsider};
+    await createTask(f.outsider,secretTask);
+    assert.deepEqual(await listTasks(f.alice,{sessionId:f.secret,runId:secretRun.id}),[]);
+    assert.deepEqual(await taskMembers(f.secret,f.alice),[]);
+    await rejects(() => createTask(f.alice,{...secretTask,id:randomUUID()}),403);
+    await rejects(() => createTask(f.outsider,{...secretTask,id:randomUUID(),assigneeId:f.bob}),403);
+  });
+  await test("revoked membership immediately hides assignments and prevents updates",async () => {
+    await f.db.query(`UPDATE project_members SET removed_at=now() WHERE project_id=$1 AND user_id=$2`,[f.project,f.bob]);
+    assert.deepEqual(await listTasks(f.bob),[]);
+    await rejects(() => updateTask(f.bob,input.id,"done"),403);
+    await rejects(() => createTask(f.alice,{...input,id:randomUUID()}),403);
+    await f.db.query(`UPDATE project_members SET removed_at=NULL WHERE project_id=$1 AND user_id=$2`,[f.project,f.bob]);
+  });
+  await test("invalid bodies, UUIDs and statuses return validation errors",async () => {
+    for (const value of [null,[],{...input,id:"invalid"},{...input,body:" "},{...input,body:"x".repeat(4001)},{...input,assigneeId:3}]) {
+      await rejects(() => createTask(f.alice,value),400);
+    }
+    await rejects(() => updateTask(f.bob,input.id,"invented"),400);
+    await rejects(() => listTasks(f.bob,{sessionId:f.room,runId:"invalid"}),400);
+  });
+  await test("pagination includes completed tasks without silently losing older assignments",async () => {
+    for (let n=0;n<52;n++) await createTask(f.alice,{...input,id:randomUUID(),body:`Task ${n}`});
+    const first = await listTasks(f.bob), next = await listTasks(f.bob,undefined,50);
+    assert.equal(first.length,51); assert.equal(next.length,4);
+    assert.equal(new Set([...first.slice(0,50),...next].map(t => t.id)).size,54);
+  });
+  await test("soft-deleted rooms disappear from the dashboard",async () => {
+    await f.db.query(`UPDATE sessions SET deleted_at=now() WHERE id=$1`,[f.room]);
+    assert.deepEqual(await listTasks(f.bob),[]);
+    await rejects(() => updateTask(f.bob,input.id,"done"),403);
+  });
+  console.log(`${passed} task checks passed`);
+} finally { await f.close(); }

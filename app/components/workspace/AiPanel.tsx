@@ -30,6 +30,7 @@ import {
 } from "../icons";
 import { Composer, type ComposerHandle, type MentionRoom } from "./chat";
 import { HandoffPanel } from "./HandoffPanel";
+import { TaskPanel } from "../tasks/TaskPanel";
 import { Markdown } from "./Markdown";
 import { PanelHeader } from "./TeamChatPanel";
 
@@ -803,6 +804,7 @@ export function AiPanel({
             {error}
           </p>
         )}
+        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} /></div>}
       </div>
 
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}

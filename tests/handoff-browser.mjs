@@ -122,10 +122,53 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         console.error(await evaluate("document.body.innerText.slice(0, 5000)"), runtimeErrors);
         throw cause;
       }
-      return { command, evaluate, click };
+      return { command, evaluate, click, targetId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
+    // A human assignment from another person's chat must work independently
+    // of AI provider availability and without transferring chat control.
+    const assigner = await tab(tokens[1], `${roomId}?run=${chat.id}`);
+    await assigner.click("@ Assign task");
+    const aliceHandle = (await sql(`SELECT handle FROM users WHERE id=$1`,[alice])).rows[0].handle;
+    const taskText = "Please review the changes in this shared chat.";
+    await eventually(() => assigner.evaluate(`Array.from(document.querySelectorAll('datalist option')).some(o => o.value === ${JSON.stringify(`@${aliceHandle}`)})`), "room member picker");
+    await assigner.evaluate(`(() => {
+      const form = document.querySelector('section[aria-label="Chat tasks"] form');
+      const input = form.querySelector('input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(`@${aliceHandle}`)});
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+      const textarea = form.querySelector('textarea');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(taskText)});
+      textarea.dispatchEvent(new Event('input',{bubbles:true}));
+    })()`);
+    // A failed delivery keeps the draft intact so the user can retry.
+    await assigner.command("Network.enable",{});
+    await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await assigner.click("Create task");
+    await eventually(() => assigner.evaluate('!!document.querySelector(\'section[aria-label="Chat tasks"] [role="alert"]\')'), "task delivery failure");
+    assert.equal(await assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] textarea\').value'),taskText);
+    await assigner.command("Network.setBlockedURLs",{urls:[]});
+    await assigner.click("Create task");
+    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] [role="status"]\')?.textContent.includes("Task assigned")'), "task assignment confirmation");
+    const stored = (await sql(`SELECT * FROM room_tasks WHERE run_id=$1`,[chat.id])).rows;
+    assert.equal(stored.length,1);
+    assert.equal(stored[0].assignee_id,alice);
+    assert.equal((await sql(`SELECT driver_user_id FROM agent_runs WHERE id=$1`,[chat.id])).rows[0].driver_user_id,alice);
+    assert.equal((await fetch(`${server}/api/tasks`)).status,401);
+    assert.equal((await request(tokens[1],"/api/tasks","POST",null)).status,400);
+    assert.equal((await request(tokens[1],`/api/tasks/${stored[0].id}`,"PATCH",{status:"invalid"})).status,400);
+    const inbox = await tab(tokens[0]);
+    await inbox.command("Page.navigate",{url:server});
+    await eventually(() => inbox.evaluate(`document.querySelector('section[aria-label="My tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "assignee dashboard inbox");
+    await inbox.evaluate(`(() => {const select=document.querySelector('section[aria-label="My tasks"] select');select.value='done';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
+    await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
+    await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
+    await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
+    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] select\')?.value === "done"'), "status refresh in source chat");
+    for (const view of [assigner,inbox]) await send("Target.closeTarget",{targetId:view.targetId});
+    console.log("  ok person tagging from another person's chat, failed-send draft recovery, dashboard assignment, completion, and source deep link");
     for (const view of [sender, recipient]) {
       await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility() && Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Chats & team" && button.getAttribute("aria-expanded") === "true")'), "Chats & team open by default");
       await view.click("Chats & team");
