@@ -121,7 +121,8 @@ try {
   }
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
-  await rm(directory, { recursive: true, force: true });
+  // Windows helpers can briefly retain SQLite handles after the parent exits.
+  await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 if (!packaged) {
@@ -144,6 +145,6 @@ if (!packaged) {
   } finally {
     backend.closeAllConnections();
     await new Promise(resolve => backend.close(resolve));
-    await rm(runnerDirectory, { recursive: true, force: true });
+    await rm(runnerDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }
