@@ -138,7 +138,7 @@ async function connect() {
     await waitForServer(settings.url, { timeoutMs: serverProcess ? 90000 : 15000, signal: controller.signal });
     if (controller.signal.aborted || quitting) return;
     const window = createWorkspace();
-    await window.loadURL(settings.url);
+    await window.loadURL(new URL("/workspace", settings.url).href);
     if (controller.signal.aborted || window.isDestroyed() || quitting) return;
     window.show();
     window.focus();

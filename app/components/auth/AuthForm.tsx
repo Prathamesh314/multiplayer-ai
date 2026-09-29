@@ -15,8 +15,8 @@ export function AuthForm() {
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
   // link bounce someone to another origin after they type their password.
-  const rawNext = params.get("next") ?? "/";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const rawNext = params.get("next") ?? "/workspace";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/workspace";
 
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");

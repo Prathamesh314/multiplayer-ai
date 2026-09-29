@@ -862,7 +862,7 @@ export function Workspace({
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
         onInvite={() => setInviteOpen(true)}
-        onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
+        onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/workspace"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}

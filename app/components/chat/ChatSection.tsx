@@ -6,8 +6,10 @@ import type { ConversationSummary, ConversationVisibility } from "../../lib/chat
 import { fetchOrgMembers } from "../../lib/org/client";
 import type { Org, OrgMember } from "../../lib/org/types";
 import { colorOf, initialsOf } from "../../lib/people";
-import { CheckIcon, PlusIcon, ShieldIcon, SpinnerIcon } from "../icons";
+import { CheckIcon, ChevronIcon, PlusIcon, ShieldIcon, SpinnerIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, inputClass, Modal, PrimaryButton } from "../ui/Modal";
+
+import styles from "./chat.module.css";
 
 type Dialog = { kind: "channel" } | { kind: "dm" } | null;
 
@@ -127,20 +129,19 @@ function Group({
   onAdd: () => void;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className="pt-3">
-      <div className="flex items-center justify-between px-4 pb-1">
-        <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">{title}</h2>
-        <button
-          type="button"
-          onClick={onAdd}
-          title={addTitle}
-          className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-        >
+    <div className={styles.channelGroup}>
+      <div className={styles.groupHeading}>
+        <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+          <ChevronIcon className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`} />
+          {title}
+        </button>
+        <button type="button" onClick={onAdd} title={addTitle} aria-label={addTitle} className={styles.iconButton}>
           <PlusIcon className="h-3.5 w-3.5" />
         </button>
       </div>
-      <ul className="space-y-0.5 px-2">{children}</ul>
+      {open && <ul className="space-y-0.5 px-2">{children}</ul>}
     </div>
   );
 }
@@ -172,26 +173,25 @@ function ConversationRow({
       <button
         type="button"
         onClick={onClick}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition ${
-          active ? "bg-vs-active text-vs-fg" : "text-vs-fg/90 hover:bg-vs-hover"
-        }`}
+        aria-current={active ? "page" : undefined}
+        className={styles.channelRow}
       >
         {conversation.kind === "dm" ? (
           <span
-            className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${colorOf(conversation.otherUserId ?? conversation.id).chip}`}
+            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${colorOf(conversation.otherUserId ?? conversation.id).chip}`}
           >
             {initialsOf(conversation.name)}
           </span>
         ) : conversation.visibility === "private" ? (
           <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
         ) : (
-          <span className="w-3.5 shrink-0 text-center text-vs-muted">#</span>
+          <span className={styles.channelHash}>#</span>
         )}
         <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold text-vs-fg" : ""}`}>
           {conversation.name}
         </span>
         {unread && (
-          <span className="shrink-0 rounded-full bg-vs-accent px-1.5 text-[11px] font-semibold text-vs-accent-fg">
+          <span className={styles.channelUnread}>
             {conversation.unread > 99 ? "99+" : conversation.unread}
           </span>
         )}

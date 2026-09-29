@@ -50,6 +50,7 @@ import { ConversationView } from "../chat/ConversationView";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
 import { TaskPanel } from "../tasks/TaskPanel";
+import chatStyles from "../chat/chat.module.css";
 
 // Minimal settings gear icon
 function SettingsIcon({ className }: { className?: string }) {
@@ -125,7 +126,7 @@ export function OrgWorkspace() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-vs-editor text-vs-fg">
+    <div className={`${chatStyles.workspace} flex h-dvh overflow-hidden bg-vs-editor text-vs-fg`}>
       <OrgRail
         orgs={orgs}
         me={me}
@@ -308,7 +309,7 @@ function OrgRail({
   return (
     <nav
       aria-label="Organisations"
-      className="flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-vs-border bg-vs-chrome py-3"
+      className={`${chatStyles.workspaceRail} flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-vs-border bg-vs-chrome py-3`}
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-vs-accent/12 text-vs-accent">
         <SparkleIcon className="h-5 w-5" />
@@ -510,7 +511,7 @@ function OrgPanel({
         <span className="truncate text-sm font-semibold">{org.name}</span>
         <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & chat"}</button>
       </div>
-      <aside id="workspace-navigation" className={`${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r`}>
+      <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r`}>
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
           <div className="flex min-w-0 items-center gap-2">
             {org.image && (
@@ -634,6 +635,14 @@ function OrgPanel({
             />
           )}
         </div>
+        {me && (
+          <div className={chatStyles.profileBar}>
+            <span className={chatStyles.profileAvatar}>{initials(me.displayName)}</span>
+            <div className={chatStyles.profileName}><p>{me.displayName}</p><span>@{me.handle}</span></div>
+            <button type="button" className={chatStyles.iconButton} aria-label="AI providers" title="AI providers" onClick={onConnectAi}><SparkleIcon /></button>
+            <button type="button" className={chatStyles.iconButton} aria-label="Your computers" title="Your computers" onClick={onConnectComputer}><TerminalIcon /></button>
+          </div>
+        )}
       </aside>
 
       {activeConversationId && me ? (

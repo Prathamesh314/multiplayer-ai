@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CurrentUser } from "../../lib/auth/types";
 import {
   fetchChatMessages,
@@ -11,8 +11,15 @@ import {
 } from "../../lib/chat/client";
 import type { ChatMessage, Conversation } from "../../lib/chat/types";
 import { colorOf, initialsOf } from "../../lib/people";
-import { SpinnerIcon, UsersIcon } from "../icons";
-import { Composer } from "../workspace/chat";
+import { CloseIcon, SearchIcon, ShieldIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { ConversationComposer } from "./ConversationComposer";
+import styles from "./chat.module.css";
+
+function subscribeToWideLayout(onChange: () => void) {
+  const query = window.matchMedia("(min-width: 1100px)");
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
 
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -23,7 +30,7 @@ function Avatar({ userId, name }: { userId: string; name: string }) {
   const color = colorOf(userId);
   return (
     <span
-      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${color.chip}`}
+      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold ${color.chip}`}
     >
       {initialsOf(name)}
     </span>
@@ -56,6 +63,11 @@ export function ConversationView({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const wideLayout = useSyncExternalStore(subscribeToWideLayout, () => window.matchMedia("(min-width: 1100px)").matches, () => false);
+  const [memberPreference, setShowMembers] = useState<boolean | null>(null);
+  const showMembers = memberPreference ?? wideLayout;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
@@ -142,6 +154,7 @@ export function ConversationView({
   }
 
   async function onSend(text: string) {
+    setError(null);
     const pendingId = `pending-${Date.now()}`;
     const optimistic: ChatMessage = {
       id: pendingId,
@@ -161,121 +174,113 @@ export function ConversationView({
       // Drop the optimistic copy and surface why.
       setMessages((prev) => prev.filter((m) => m.id !== pendingId));
       setError(cause instanceof Error ? cause.message : "Could not send that message.");
+      throw cause;
     }
   }
 
   const rows = useMemo(() => {
-    return messages.map((message, index) => {
-      const prev = messages[index - 1];
-      const grouped =
-        prev != null &&
-        prev.userId === message.userId &&
-        message.createdAt - prev.createdAt < 5 * 60_000;
-      return { message, grouped };
+    const needle = search.trim().toLowerCase();
+    const visible = needle
+      ? messages.filter((message) => `${message.userName} ${message.body}`.toLowerCase().includes(needle))
+      : messages;
+    return visible.map((message, index) => {
+      const prev = visible[index - 1];
+      const day = new Date(message.createdAt).toDateString();
+      const startsDay = !prev || new Date(prev.createdAt).toDateString() !== day;
+      const grouped = !startsDay && prev.userId === message.userId && message.createdAt - prev.createdAt < 5 * 60_000;
+      return { message, grouped, startsDay };
     });
-  }, [messages]);
+  }, [messages, search]);
+
+  const channelName = conversation?.kind === "channel" ? `#${conversation.name}` : conversation?.name ?? "conversation";
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-vs-editor">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-vs-border px-4">
-        {conversation?.kind === "channel" ? (
-          <span className="text-vs-muted">{conversation.visibility === "private" ? "🔒" : "#"}</span>
-        ) : null}
-        <h2 className="min-w-0 truncate font-display text-[15px] font-semibold tracking-tight">
-          {conversation?.name ?? "…"}
-        </h2>
-        {conversation && conversation.kind === "channel" && (
-          <span className="flex items-center gap-1 text-[12px] text-vs-muted">
-            <UsersIcon className="h-3.5 w-3.5" />
-            {conversation.members.length}
-          </span>
-        )}
-        {conversation?.topic && (
-          <span className="min-w-0 truncate border-l border-vs-border pl-2 text-[13px] text-vs-muted">
-            {conversation.topic}
-          </span>
-        )}
-        <span
-          className={`ml-auto h-1.5 w-1.5 rounded-full ${live ? "bg-vs-success" : "bg-vs-muted/40"}`}
-          title={live ? "Live" : "Reconnecting…"}
-        />
+    <section className={styles.conversation} aria-label={channelName}>
+      <header className={styles.conversationHeader}>
+        <span className={styles.channelSymbol} aria-hidden="true">
+          {conversation?.visibility === "private" && conversation.kind === "channel" ? <ShieldIcon /> : conversation?.kind === "dm" ? "@" : "#"}
+        </span>
+        <h2>{conversation?.name ?? "Opening conversation…"}</h2>
+        {conversation?.topic && <p className={styles.topic} title={conversation.topic}>{conversation.topic}</p>}
+        <div className={styles.headerActions}>
+          <span className={`${styles.connection} ${live ? styles.connected : ""}`} title={live ? "Connected to live messages" : "Reconnecting to live messages"} aria-label={live ? "Connected to live messages" : "Reconnecting to live messages"} />
+          <button type="button" className={styles.iconButton} aria-label="Search messages" aria-expanded={searchOpen} aria-controls="conversation-search" onClick={() => { setSearchOpen((value) => !value); setSearch(""); }}><SearchIcon /></button>
+          <button type="button" className={styles.iconButton} aria-label="Toggle member list" aria-expanded={showMembers} aria-controls="conversation-members" onClick={() => setShowMembers(!showMembers)}><UsersIcon /></button>
+        </div>
       </header>
 
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="vs-scroll flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-4 py-3"
-      >
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center text-vs-muted">
-            <SpinnerIcon className="h-5 w-5" />
-          </div>
-        ) : error ? (
-          <div className="flex flex-1 items-center justify-center px-6 text-center text-[14px] text-vs-danger">
-            {error}
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-vs-muted">
-            <p className="text-[15px] font-medium text-vs-fg">
-              {conversation?.kind === "dm"
-                ? `This is the start of your conversation with ${conversation.name}.`
-                : `Welcome to ${conversation ? (conversation.kind === "channel" ? "#" : "") : ""}${conversation?.name ?? ""}`}
-            </p>
-            <p className="text-[13px]">Say hello 👋</p>
-          </div>
-        ) : (
-          <>
-            {hasMore && (
-              <div className="flex justify-center py-2">
-                <button
-                  type="button"
-                  onClick={loadEarlier}
-                  disabled={loadingMore}
-                  className="rounded-full border border-vs-border px-3 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-60"
-                >
-                  {loadingMore ? "Loading…" : "Load earlier messages"}
-                </button>
-              </div>
+      {searchOpen && (
+        <div id="conversation-search" className={styles.searchBar}>
+          <SearchIcon />
+          <input autoFocus type="search" aria-label="Search loaded messages" placeholder={`Search loaded messages in ${channelName}`} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearch(""); } }} />
+          <span role="status">{rows.length} messages</span>
+          <button type="button" className={styles.iconButton} aria-label="Close message search" onClick={() => { setSearchOpen(false); setSearch(""); }}><CloseIcon /></button>
+        </div>
+      )}
+
+      <div className={styles.conversationBody}>
+        <div className={styles.messageColumn}>
+          <div ref={scrollRef} onScroll={onScroll} className={`${styles.timeline} vs-scroll`} aria-busy={loading}>
+            {loading ? (
+              <div className={styles.loading} role="status"><SpinnerIcon className="h-5 w-5" /> Loading conversation…</div>
+            ) : !conversation ? (
+              <p className={styles.error} role="alert">{error ?? "Could not open this conversation."}</p>
+            ) : (
+              <>
+                {!hasMore && !search && (
+                  <div className={styles.channelWelcome}>
+                    <span aria-hidden="true">{conversation.kind === "channel" ? "#" : "@"}</span>
+                    <h3>{conversation.kind === "channel" ? `Welcome to #${conversation.name}` : conversation.name}</h3>
+                    <p>{conversation.topic ?? (conversation.kind === "channel" ? "This is the beginning of your team’s conversation. Share an update, ask a question, or start something together." : `This is the start of your conversation with ${conversation.name}.`)}</p>
+                  </div>
+                )}
+                {hasMore && (
+                  <button type="button" onClick={loadEarlier} disabled={loadingMore} className={styles.loadEarlier}>
+                    {loadingMore ? "Loading…" : "Load earlier messages"}
+                  </button>
+                )}
+                {search && rows.length === 0 && <p className={styles.noResults}>No loaded messages match “{search}”.</p>}
+                {rows.map(({ message, grouped, startsDay }) => (
+                  <Fragment key={message.id}>
+                    {startsDay && <div className={styles.dateDivider}><time dateTime={new Date(message.createdAt).toISOString()}>{new Date(message.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</time></div>}
+                    <article className={`${styles.message} ${grouped ? styles.groupedMessage : ""} ${message.id.startsWith("pending-") ? styles.pendingMessage : ""} ${message.body.split(/\s+/).some(word => word.replace(/[.,!?;:]$/, "").toLowerCase() === `@${me.handle.toLowerCase()}`) ? styles.mentionedMessage : ""}`}>
+                      <div className={styles.messageAvatar}>
+                        {!grouped ? <Avatar userId={message.userId} name={message.userName} /> : <time className={styles.groupedTime} dateTime={new Date(message.createdAt).toISOString()}>{clock(message.createdAt)}</time>}
+                      </div>
+                      <div className={styles.messageContent}>
+                        {!grouped && (
+                          <header>
+                            <span className={colorOf(message.userId).text}>{message.userName}</span>
+                            <time dateTime={new Date(message.createdAt).toISOString()} title={new Date(message.createdAt).toLocaleString()}>{clock(message.createdAt)}</time>
+                            {message.id.startsWith("pending-") && <small>Sending…</small>}
+                          </header>
+                        )}
+                        <p>{message.body.split(/(@[a-zA-Z0-9_-]+)/g).map((part, index) => part.startsWith("@") ? <mark key={index}>{part}</mark> : part)}</p>
+                      </div>
+                    </article>
+                  </Fragment>
+                ))}
+              </>
             )}
-            {rows.map(({ message, grouped }) => (
-              <article
-                key={message.id}
-                className={`flex gap-3 rounded-md px-2 hover:bg-vs-hover/40 ${grouped ? "py-0" : "pt-2"} ${
-                  message.id.startsWith("pending-") ? "opacity-60" : ""
-                }`}
-              >
-                <div className="w-9 shrink-0">
-                  {!grouped && <Avatar userId={message.userId} name={message.userName} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  {!grouped && (
-                    <header className="flex items-baseline gap-2">
-                      <span className="truncate text-[14px] font-semibold text-vs-fg">
-                        {message.userName}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-vs-muted">{clock(message.createdAt)}</span>
-                    </header>
-                  )}
-                  <p className="whitespace-pre-wrap break-words text-[14px] leading-6 text-vs-fg/90">
-                    {message.body}
-                  </p>
-                </div>
-              </article>
-            ))}
-          </>
+          </div>
+          {error && conversation && <p role="alert" className={styles.sendError}>{error} Your message is still in the composer.</p>}
+          <ConversationComposer name={channelName} disabled={loading || !conversation} onSend={onSend} />
+        </div>
+
+        {showMembers && conversation && (
+          <aside id="conversation-members" className={styles.memberList} aria-label="Conversation members">
+            <div className={styles.memberListHeading}><h3>Members — {conversation.members.length}</h3><button type="button" className={styles.iconButton} aria-label="Close member list" onClick={() => setShowMembers(false)}><CloseIcon /></button></div>
+            <ul>{conversation.members.map((member) => (
+              <li key={member.userId}>
+                <Avatar userId={member.userId} name={member.displayName} />
+                <div><span>{member.displayName}{member.userId === me.id && <small> (you)</small>}</span><p>@{member.handle}</p></div>
+                {member.role === "owner" && <span className={styles.ownerBadge} title="Channel owner"><ShieldIcon className="h-3.5 w-3.5" /></span>}
+              </li>
+            ))}</ul>
+            {conversation.members.length === 0 && <p className={styles.memberNote}>Send a message to join this channel.</p>}
+          </aside>
         )}
       </div>
-
-      <Composer
-        placeholder={
-          conversation
-            ? conversation.kind === "dm"
-              ? `Message ${conversation.name}`
-              : `Message #${conversation.name}`
-            : "Message"
-        }
-        onSend={(text) => void onSend(text)}
-      />
     </section>
   );
 }

@@ -28,7 +28,7 @@ export default function InvitePage() {
       }
       try {
         await acceptInvitationToken(token);
-        if (!cancelled) router.replace("/");
+        if (!cancelled) router.replace("/workspace");
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "That link is not valid.");
       }

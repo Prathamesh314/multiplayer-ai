@@ -234,7 +234,10 @@ cp .env.example .env      # optional; sensible dev defaults are built in
 ./start.sh                # services -> migrations -> dev server
 ```
 
-Then open http://localhost:3000. Other entry points:
+Then open http://localhost:3000 for the product website, or
+http://localhost:3000/workspace for the application. Website download links and
+release configuration are described in [website setup](docs/website.md).
+Other entry points:
 
 ```bash
 ./start.sh services       # just the backing services; start the app yourself

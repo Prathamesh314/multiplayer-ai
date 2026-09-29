@@ -200,7 +200,7 @@ function LockedScreen({
           </button>
           <button
             type="button"
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/workspace")}
             className="rounded-lg border border-vs-border px-4 py-2 text-base transition hover:bg-vs-hover"
           >
             Start over
