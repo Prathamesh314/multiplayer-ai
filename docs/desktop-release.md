@@ -229,6 +229,25 @@ microphone or notification features requires a scoped permission design.
   against the production service, real-model inference and signed upgrades remain
   unverified shipment gates. CI workflows are checked in, not executed remotely.
 
+## Validation record — September 29, 2026
+
+- [Native preview workflow](https://github.com/Prathamesh314/multiplayer-ai/actions/runs/36580459520)
+  passed on macOS 15 arm64, macOS 15 Intel, Windows 2025 x64, and Ubuntu 22.04 x64
+  at commit `2715c54`. Each job passed all 11 policy/packaging tests, the development
+  Electron/runner smoke test, archive allowlist verification and the packaged
+  setup-screen launch test before uploading installers and SHA-256 checksums.
+- Produced macOS DMG/ZIP for both architectures, Windows NSIS `.exe`, and Linux
+  AppImage. All previews use the setup screen with no embedded workspace or update
+  URL. Build commands never publish artifacts automatically.
+- Local Apple Silicon DMG/ZIP packaging, development/packaged smoke tests,
+  deep/strict ad-hoc signature verification, DMG integrity and checksum checks
+  also passed. Intel Mac DMG/ZIP cross packaging succeeded locally.
+- Fixed a Windows test cleanup race: Electron helpers briefly retained cookie
+  database handles after shutdown; bounded filesystem retries now allow cleanup.
+- These checks launch the packaged executables; they do not establish clean-user
+  installer/uninstaller acceptance, production login/pairing, or signed upgrades.
+  Developer ID/notarization and Windows publisher signing remain unconfigured.
+
 ## References
 
 - [Electron security checklist](https://www.electronjs.org/docs/latest/tutorial/security)
