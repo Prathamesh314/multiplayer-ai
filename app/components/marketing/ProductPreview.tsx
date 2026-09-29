@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { AppScreenshot } from "./AppScreenshot";
 import styles from "./marketing.module.css";
 
 const views = [
@@ -41,27 +41,11 @@ const views = [
 
 export function ProductPreview() {
   const [active, setActive] = useState(0);
-  const dialog = useRef<HTMLDialogElement>(null);
   const view = views[active];
 
   return (
     <figure className={styles.preview}>
-      <button
-        type="button"
-        className={styles.screenshotButton}
-        aria-label={`Enlarge screenshot: ${view.label}`}
-        onClick={() => dialog.current?.showModal()}
-      >
-        <Image
-          src={view.src}
-          alt={view.alt}
-          width={view.width}
-          height={view.height}
-          sizes="(max-width: 760px) 100vw, (max-width: 1240px) 94vw, 1160px"
-          className={styles.productScreenshot}
-        />
-        <span className={styles.expandScreenshot}>View full size ↗</span>
-      </button>
+      <AppScreenshot {...view} />
       <div className={styles.previewControls}>
         <div role="group" aria-label="Explore screenshots of the app">
           {views.map((item, index) => (
@@ -81,23 +65,6 @@ export function ProductPreview() {
         <p aria-live="polite">{view.caption}</p>
         <span>Actual app interface · Sample project and demo accounts</span>
       </figcaption>
-      <dialog
-        ref={dialog}
-        className={styles.screenshotDialog}
-        aria-label={`${view.label} — full-size app screenshot`}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) dialog.current?.close();
-        }}
-      >
-        <div className={styles.screenshotDialogHeader}>
-          <span>{view.label}</span>
-          <button type="button" onClick={() => dialog.current?.close()} aria-label="Close screenshot">Close ×</button>
-        </div>
-        <div className={styles.screenshotDialogBody}>
-          <Image src={view.src} alt={view.alt} width={view.width} height={view.height} sizes="1256px" />
-        </div>
-        <p>Actual app interface · Scroll to explore the screenshot</p>
-      </dialog>
     </figure>
   );
 }
