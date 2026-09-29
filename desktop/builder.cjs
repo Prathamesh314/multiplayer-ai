@@ -22,7 +22,7 @@ module.exports = {
     onlyLoadAppFromAsar: true,
   },
   forceCodeSigning: release,
-  artifactName: "Multiplayer-AI-\${version}-\${os}-\${arch}.\${ext}",
+  artifactName: "Multiplayer-AI-\${version}-\${os}-\${arch}" + (release ? "" : "-preview") + ".\${ext}",
   publish: config.updateUrl ? [{ provider: "generic", url: config.updateUrl }] : null,
   mac: {
     target: ["dmg", "zip"], category: "public.app-category.developer-tools",
@@ -31,5 +31,5 @@ module.exports = {
   },
   win: { target: ["nsis"], icon: "icon.png", verifyUpdateCodeSignature: true },
   nsis: { oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false },
-  linux: { target: ["AppImage"], icon: "icon.png", category: "Development" },
+  linux: { target: ["AppImage"], executableName: "multiplayer-ai", icon: "icon.png", category: "Development" },
 };

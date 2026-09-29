@@ -22,7 +22,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-15
+            platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+          - os: windows-2025
+            platform: win
+            arch: x64
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -36,17 +48,29 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run test:desktop
-      - run: npm run test:desktop:smoke
-      - run: npm run desktop:dist
-      - run: node tests/desktop-smoke.mjs --packaged
+      - name: Development smoke test
+        if: runner.os != 'Linux'
+        run: npm run test:desktop:smoke
+      - name: Development smoke test (virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:desktop:smoke
+      - name: Build setup-screen preview installers
+        run: npm run desktop:dist -- --${{ matrix.platform }} --${{ matrix.arch }} --setup
+      - name: Packaged smoke test
+        if: runner.os != 'Linux'
+        run: node tests/desktop-smoke.mjs --packaged
+      - name: Packaged smoke test (virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
       - uses: actions/upload-artifact@v7
         with:
-          name: desktop-preview-${{ matrix.os }}
+          name: desktop-preview-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 14
           path: |
             desktop-dist/*.dmg
             desktop-dist/*.zip
             desktop-dist/*.exe
+            desktop-dist/*.AppImage
             desktop-dist/*.blockmap
             desktop-dist/SHA256SUMS-*.txt

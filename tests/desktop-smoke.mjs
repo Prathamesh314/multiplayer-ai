@@ -9,10 +9,9 @@ import { once } from "node:events";
 
 const require = createRequire(import.meta.url);
 const packaged = process.argv.includes("--packaged") || Boolean(process.env.DESKTOP_SMOKE_EXECUTABLE);
-const outputDirectory = packaged ? JSON.parse(await readFile(".desktop-build/output.json", "utf8")).directory : "desktop-dist";
-const packagedPath = process.platform === "darwin"
-  ? resolve(outputDirectory, "mac" + (process.arch === "x64" ? "" : "-" + process.arch), "Multiplayer AI.app", "Contents", "MacOS", "Multiplayer AI")
-  : resolve(outputDirectory, "win-unpacked", "Multiplayer AI.exe");
+const build = packaged && !process.env.DESKTOP_SMOKE_EXECUTABLE ? JSON.parse(await readFile(".desktop-build/output.json", "utf8")) : null;
+if (build && (build.platform !== process.platform || build.arch !== process.arch)) throw new Error("Run the packaged smoke test on the build's native platform and architecture.");
+const packagedPath = build?.executable || (build && require("../desktop/targets.cjs").packagedExecutable(build.directory, build.platform, build.arch));
 const executable = process.env.DESKTOP_SMOKE_EXECUTABLE || (packaged ? packagedPath : require("electron"));
 const directory = await mkdtemp(join(tmpdir(), "multiplayer-desktop-smoke-"));
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -72,6 +71,7 @@ try {
   const origin = "http://127.0.0.1:" + server.address().port;
   const args = packaged ? [] : [".desktop-build/app"];
   child = spawn(executable, [...args, "--user-data-dir=" + directory, "--remote-debugging-port=0"], { env: { ...process.env, APP_URL: "", DESKTOP_RUNNER: "0", DESKTOP_SPAWN_SERVER: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  child.on("error", error => { output += error.stack; });
   child.stdout.on("data", chunk => { output += chunk; });
   child.stderr.on("data", chunk => { output += chunk; });
   const port = await eventually(async () => (await readFile(join(directory, "DevToolsActivePort"), "utf8")).split("\n")[0], "Electron debugging endpoint");

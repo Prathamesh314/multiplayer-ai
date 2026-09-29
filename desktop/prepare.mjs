@@ -31,7 +31,7 @@ await writeFile(join(target, "package.json"), JSON.stringify({ name: "multiplaye
 
 const notices = [];
 const packages = new Set();
-for (const input of Object.keys(main.metafile.inputs)) {
+for (const input of new Set([...Object.keys(main.metafile.inputs), ...Object.keys(runner.metafile.inputs)])) {
   if (!input.includes("node_modules/")) continue;
   let folder = dirname(resolve(root, input));
   while (folder !== root && folder !== dirname(folder)) {

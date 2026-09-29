@@ -52,7 +52,8 @@ acceptance are mandatory external release inputs. Backend risks in
   installation requires another confirmation, a stopped runner and no pairing in
   progress. No automatic install on quit or downgrade. Platform updater signature
   verification remains enabled.
-- Desktop policy tests, real Electron smoke tests and preview CI for macOS/Windows.
+- Desktop policy tests, real Electron smoke tests and preview CI for macOS,
+  Windows and Linux, including Apple Silicon and Intel Macs.
   A separate manual macOS candidate workflow uses a protected release environment
   and never publishes automatically.
 
@@ -68,8 +69,40 @@ npm run test:desktop
 npm run test:desktop:smoke       # opens isolated test windows; no paid AI requests
 npm run desktop:pack            # unpacked application
 npm run desktop:dist            # preview installers for this OS/architecture
+npm run desktop:dist:mac        # setup-screen DMG + ZIP for this Mac architecture
+npm run desktop:dist:win        # setup-screen Windows x64 NSIS .exe
+npm run desktop:dist:linux      # setup-screen Linux x64 AppImage
 node tests/desktop-smoke.mjs --packaged
 ```
+
+Preview installers start with **Workspace address**. Enter the HTTPS origin of
+your deployed workspace; these installers do not deploy a server. The platform
+scripts use `--setup`, which clears any workspace/update URL inherited from the
+build environment. Preview filenames include `-preview` and are not published.
+The website's placeholder download links remain placeholders until distribution
+is ready.
+
+Build one platform/architecture at a time, for example
+`npm run desktop:dist -- --mac --x64 --setup`. Supported architectures are `x64`
+and `arm64`; cross-platform builds default to x64. Build macOS on a Mac, and run
+signed releases on their native platform. Other cross builds may need additional
+system tooling; use the native CI jobs for reproducible results. The packaged
+smoke test requires the target OS and architecture.
+
+In GitHub Actions, run **Desktop checks and preview installers** on the desired
+branch. Its four jobs build and smoke-test macOS arm64, macOS x64, Windows x64 and
+Linux x64, then upload separate `desktop-preview-*` artifacts for 14 days. Linux
+tests use Xvfb for a virtual display. Download and extract an artifact to get the
+installer and its `SHA256SUMS-*-preview.txt` file. This workflow does not create a
+public GitHub Release or upload to an update feed.
+
+On macOS, open the DMG and drag the app to Applications (or extract the ZIP). On
+Windows, run the NSIS `.exe` and choose an installation location. On Linux, mark
+the AppImage executable with `chmod +x Multiplayer-AI-*.AppImage` and run it;
+systems without FUSE can use `./Multiplayer-AI-…AppImage --appimage-extract-and-run`.
+Preview Mac builds are ad-hoc signed and Windows builds are unsigned, so normal
+OS trust checks may warn or block them. Public distribution still needs the
+signing steps below.
 
 `desktop:prod` is an alias for attach mode, not a standalone backend installer.
 For a local production server, build the web application and start `next:start`
@@ -201,4 +234,6 @@ microphone or notification features requires a scoped permission design.
 - [Electron security checklist](https://www.electronjs.org/docs/latest/tutorial/security)
 - [Electron utility processes](https://www.electronjs.org/docs/latest/api/utility-process)
 - [electron-builder updates](https://www.electron.build/v26/docs/features/auto-update/)
+- [electron-builder platform builds](https://www.electron.build/v26/docs/features/multi-platform-build/)
+- [Electron headless testing](https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci)
 - [electron-builder signing](https://www.electron.build/docs/features/code-signing/)

@@ -133,6 +133,25 @@ test("desktop staging uses an allowlist and release packaging requires signing",
   assert.doesNotMatch(builder, /"\*\*\/\*"/);
 });
 
+test("desktop build targets record the target architecture when cross compiling", () => {
+  const { buildTarget, packagedExecutable } = require("../desktop/targets.cjs");
+  assert.equal(buildTarget(["--win"], "darwin", "arm64").arch, "x64");
+  assert.deepEqual(buildTarget(["--linux", "--arm64", "--setup"], "darwin", "arm64").builderArgs, ["--linux", "--arm64"]);
+  assert.equal(buildTarget([], "darwin", "arm64").arch, "arm64");
+  assert.match(packagedExecutable("output", "linux", "x64"), /linux-unpacked[/\\]multiplayer-ai$/);
+  assert.match(packagedExecutable("output", "win32", "arm64"), /win-arm64-unpacked[/\\]Multiplayer AI\.exe$/);
+  assert.match(packagedExecutable("output", "darwin", "x64"), /mac[/\\]Multiplayer AI\.app[/\\]Contents[/\\]MacOS[/\\]Multiplayer AI$/);
+});
+
+test("desktop build arguments cannot bypass preview publishing or release requirements", () => {
+  const { buildTarget } = require("../desktop/targets.cjs");
+  for (const args of [["--publish", "always"], ["--config", "other.json"], ["--mac", "--win"], ["--x64", "--arm64"], ["--release", "--setup"]]) {
+    assert.throws(() => buildTarget(args, "darwin", "arm64"));
+  }
+  assert.throws(() => buildTarget(["--mac"], "linux", "x64"), /on a Mac/);
+  assert.throws(() => buildTarget(["--win", "--release"], "darwin", "arm64"), /target platform/);
+});
+
 test("approved native pairing stores a private token, starts the bundled runner, and drains on pause", async () => {
   const instance = harness();
   instance.electron.dialog.showMessageBox = async () => ({ response: 1 });
