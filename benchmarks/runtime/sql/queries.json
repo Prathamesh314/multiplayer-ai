@@ -1,0 +1,14 @@
+{
+  "auth": "WITH valid AS MATERIALIZED (SELECT t.id AS token_id,u.id FROM auth_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=decode($1,'hex') AND t.revoked_at IS NULL AND t.expires_at>now() AND u.deleted_at IS NULL), touched AS (UPDATE auth_tokens t SET last_used_at=now() FROM valid v WHERE t.id=v.token_id AND t.revoked_at IS NULL AND (t.last_used_at IS NULL OR t.last_used_at<now()-interval '1 minute') RETURNING t.id) SELECT id::text AS id FROM valid",
+  "gate": "SELECT COALESCE(room_access_role($1,$2::uuid),'') AS role",
+  "roster": "WITH room AS MATERIALIZED (SELECT id,project_id,org_id,visibility FROM sessions WHERE id=$1 AND deleted_at IS NULL AND room_access_role(id,$2::uuid) IS NOT NULL), candidates AS MATERIALIZED (SELECT m.user_id FROM room r JOIN session_members m ON m.session_id=r.id WHERE m.removed_at IS NULL UNION SELECT m.user_id FROM room r JOIN project_members m ON m.project_id=r.project_id WHERE r.visibility='public' AND m.removed_at IS NULL UNION SELECT m.user_id FROM room r JOIN org_members m ON m.org_id=r.org_id WHERE r.visibility='public' AND m.status='active' AND m.role IN ('owner','admin')) SELECT COALESCE(json_agg(x),'[]')::text AS body FROM (SELECT u.id,u.handle,u.display_name FROM candidates c JOIN users u ON u.id=c.user_id WHERE room_access_role($1,u.id) IS NOT NULL ORDER BY u.display_name,u.handle) x",
+  "tasks": "SELECT COALESCE(json_agg(x),'[]')::text AS body FROM (SELECT t.id,t.run_id,t.assignee_id,t.body,t.status FROM room_tasks t JOIN agent_runs r ON r.id=t.run_id WHERE r.session_id=$1 AND room_access_role(r.session_id,$2::uuid) IS NOT NULL ORDER BY t.created_at DESC,t.id DESC LIMIT 50) x",
+  "allow": "SELECT id::text AS id FROM agent_runs WHERE id=$1::uuid AND session_id=$2 AND room_access_role(session_id,$3::uuid) IN ('owner','editor') AND room_access_role(session_id,$4::uuid) IS NOT NULL",
+  "insert": "INSERT INTO room_tasks(id,run_id,created_by,assignee_id,body) VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5) ON CONFLICT(id) DO NOTHING",
+  "existing": "SELECT id::text AS id FROM room_tasks WHERE id=$1::uuid AND run_id=$2::uuid AND created_by=$3::uuid AND assignee_id=$4::uuid AND body=$5",
+  "complete": "UPDATE room_tasks t SET status='done',updated_at=now() FROM agent_runs r WHERE t.id=$1::uuid AND r.id=t.run_id AND room_access_role(r.session_id,$2::uuid) IS NOT NULL AND (t.assignee_id=$2::uuid OR (t.created_by=$2::uuid AND room_access_role(r.session_id,$2::uuid) IN ('owner','editor'))) RETURNING t.id::text AS id",
+  "hold": "SELECT pg_sleep(0.1)",
+  "begin": "BEGIN",
+  "commit": "COMMIT",
+  "rollback": "ROLLBACK"
+}

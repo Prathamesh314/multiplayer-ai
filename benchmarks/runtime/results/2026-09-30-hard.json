@@ -1,0 +1,2924 @@
+{
+  "version": 1,
+  "profile": "hard",
+  "seconds": 10,
+  "rounds": 2,
+  "users": 10000,
+  "environment": {
+    "node": "v24.14.0",
+    "go": "go version go1.26.1 darwin/arm64",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpus": 12,
+    "memoryBytes": 17179869184,
+    "sameHostGenerator": true,
+    "computeWorkers": 4,
+    "databasePool": 10,
+    "httpConnections": 256
+  },
+  "trials": [
+    {
+      "runtime": "typescript",
+      "round": 1,
+      "checks": [
+        "benchmark key and token required",
+        "cross-room access denied",
+        "read results equal shared SQL",
+        "revoked token denied immediately",
+        "64 concurrent duplicate writes produce exactly one task",
+        "viewer cannot assign tasks",
+        "invalid bodies rejected and oversized body bounded",
+        "graph snapshot and Git outputs verified",
+        "database recovers after clients cancel",
+        "CPU overload rejects excess work and recovers"
+      ],
+      "scenarios": [
+        {
+          "name": "database-reads",
+          "concurrency": 256,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.072,
+          "requests": 32198,
+          "requestsPerSecond": 3196.71,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 5.107049,
+          "peakServerRssBytes": 357974016,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.89,
+          "generatorLagMaxMs": 21.14,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 16099,
+              "p50Ms": 78.2,
+              "p95Ms": 93.763,
+              "p99Ms": 107.625,
+              "maxMs": 118.968,
+              "failed": 0,
+              "status": {
+                "200": 16099
+              },
+              "pool": {
+                "count": 16099,
+                "p50Ms": 73.978,
+                "p95Ms": 88.797,
+                "p99Ms": 102.15,
+                "maxMs": 112.371
+              },
+              "database": {
+                "count": 16099,
+                "p50Ms": 2.876,
+                "p95Ms": 4.65,
+                "p99Ms": 6.349,
+                "maxMs": 20.883
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 16099,
+              "p50Ms": 78.509,
+              "p95Ms": 94.082,
+              "p99Ms": 108.084,
+              "maxMs": 118.106,
+              "failed": 0,
+              "status": {
+                "200": 16099
+              },
+              "pool": {
+                "count": 16099,
+                "p50Ms": 74.045,
+                "p95Ms": 88.975,
+                "p99Ms": 102.64,
+                "maxMs": 112.12
+              },
+              "database": {
+                "count": 16099,
+                "p50Ms": 2.939,
+                "p95Ms": 4.656,
+                "p99Ms": 6.251,
+                "maxMs": 23.279
+              }
+            }
+          ]
+        },
+        {
+          "name": "transaction-writes",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.056,
+          "requests": 22524,
+          "requestsPerSecond": 2239.79,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 4.757389,
+          "peakServerRssBytes": 313032704,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.94,
+          "generatorLagMaxMs": 22.4,
+          "operations": [
+            {
+              "operation": "write",
+              "count": 22524,
+              "p50Ms": 56.365,
+              "p95Ms": 64.543,
+              "p99Ms": 73.25,
+              "maxMs": 82.812,
+              "failed": 0,
+              "status": {
+                "201": 22524
+              },
+              "pool": {
+                "count": 22524,
+                "p50Ms": 50.899,
+                "p95Ms": 58.591,
+                "p99Ms": 65.383,
+                "maxMs": 77.097
+              },
+              "database": {
+                "count": 22524,
+                "p50Ms": 4.268,
+                "p95Ms": 5.909,
+                "p99Ms": 8.218,
+                "maxMs": 19.659
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-fixed-rate",
+          "concurrency": 256,
+          "offeredRate": 1000,
+          "missedStarts": 0,
+          "durationSeconds": 10.003,
+          "requests": 10000,
+          "requestsPerSecond": 999.72,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.363121,
+          "peakServerRssBytes": 315293696,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.32,
+          "generatorLagMaxMs": 21.74,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 5000,
+              "p50Ms": 3.627,
+              "p95Ms": 5.595,
+              "p99Ms": 7.738,
+              "maxMs": 19.844,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0.006,
+                "p95Ms": 0.023,
+                "p99Ms": 0.059,
+                "maxMs": 4.038
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.759,
+                "p95Ms": 2.88,
+                "p99Ms": 4.249,
+                "maxMs": 17.022
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 5000,
+              "p50Ms": 3.632,
+              "p95Ms": 5.631,
+              "p99Ms": 7.894,
+              "maxMs": 15.976,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0.006,
+                "p95Ms": 0.022,
+                "p99Ms": 0.058,
+                "maxMs": 6.194
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.837,
+                "p95Ms": 2.95,
+                "p99Ms": 4.371,
+                "maxMs": 12.98
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-pool-saturation",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 2.91,
+          "requests": 256,
+          "requestsPerSecond": 87.97,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 0.078635,
+          "peakServerRssBytes": 313016320,
+          "resourceSamples": 2,
+          "generatorLagP99Ms": 23.56,
+          "generatorLagMaxMs": 25.87,
+          "operations": [
+            {
+              "operation": "hold",
+              "count": 256,
+              "p50Ms": 1342.595,
+              "p95Ms": 1468.648,
+              "p99Ms": 1471.893,
+              "maxMs": 1472.257,
+              "failed": 0,
+              "status": {
+                "200": 256
+              },
+              "pool": {
+                "count": 256,
+                "p50Ms": 1226.599,
+                "p95Ms": 1351.842,
+                "p99Ms": 1357.39,
+                "maxMs": 1359.097
+              },
+              "database": {
+                "count": 256,
+                "p50Ms": 111.44,
+                "p95Ms": 118.116,
+                "p99Ms": 121.154,
+                "maxMs": 121.837
+              }
+            }
+          ]
+        },
+        {
+          "name": "cpu-graph",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 11.218,
+          "requests": 286,
+          "requestsPerSecond": 25.49,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 44.400057,
+          "peakServerRssBytes": 321994752,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.05,
+          "generatorLagMaxMs": 21.1,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 286,
+              "p50Ms": 1239.329,
+              "p95Ms": 1265.65,
+              "p99Ms": 1277.348,
+              "maxMs": 1377.839,
+              "failed": 0,
+              "status": {
+                "200": 286
+              },
+              "pool": {
+                "count": 286,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 286,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "large-snapshot",
+          "concurrency": 16,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.062,
+          "requests": 1055,
+          "requestsPerSecond": 104.85,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 19.166455,
+          "peakServerRssBytes": 751648768,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.76,
+          "generatorLagMaxMs": 21.89,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 1055,
+              "p50Ms": 151.412,
+              "p95Ms": 173.526,
+              "p99Ms": 182.043,
+              "maxMs": 266.724,
+              "failed": 0,
+              "status": {
+                "200": 1055
+              },
+              "pool": {
+                "count": 1055,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1055,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "git-diff",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.138,
+          "requests": 1144,
+          "requestsPerSecond": 112.84,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 1.558923,
+          "peakServerRssBytes": 929087488,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 24.51,
+          "generatorLagMaxMs": 26.59,
+          "operations": [
+            {
+              "operation": "git",
+              "count": 1144,
+              "p50Ms": 281.321,
+              "p95Ms": 341.604,
+              "p99Ms": 388.941,
+              "maxMs": 476.438,
+              "failed": 0,
+              "status": {
+                "200": 1144
+              },
+              "pool": {
+                "count": 1144,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1144,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "mixed-with-1000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 12.581,
+          "requests": 5809,
+          "requestsPerSecond": 461.74,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 52.51829,
+          "peakServerRssBytes": 870711296,
+          "resourceSamples": 7,
+          "generatorLagP99Ms": 21.59,
+          "generatorLagMaxMs": 29.03,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 290,
+              "p50Ms": 2524.959,
+              "p95Ms": 2579.581,
+              "p99Ms": 2607.144,
+              "maxMs": 2630.994,
+              "failed": 0,
+              "status": {
+                "200": 290
+              },
+              "pool": {
+                "count": 290,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 290,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 2034,
+              "p50Ms": 4.71,
+              "p95Ms": 98.043,
+              "p99Ms": 118.799,
+              "maxMs": 157.245,
+              "failed": 0,
+              "status": {
+                "200": 2034
+              },
+              "pool": {
+                "count": 2034,
+                "p50Ms": 0.008,
+                "p95Ms": 85.65,
+                "p99Ms": 102.938,
+                "maxMs": 106.682
+              },
+              "database": {
+                "count": 2034,
+                "p50Ms": 2.976,
+                "p95Ms": 12.349,
+                "p99Ms": 18.014,
+                "maxMs": 36.496
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 2035,
+              "p50Ms": 15.188,
+              "p95Ms": 98.996,
+              "p99Ms": 118.343,
+              "maxMs": 149.579,
+              "failed": 0,
+              "status": {
+                "200": 2035
+              },
+              "pool": {
+                "count": 2035,
+                "p50Ms": 0.007,
+                "p95Ms": 84.926,
+                "p99Ms": 102.842,
+                "maxMs": 106.622
+              },
+              "database": {
+                "count": 2035,
+                "p50Ms": 3.105,
+                "p95Ms": 12.728,
+                "p99Ms": 18.082,
+                "maxMs": 27.568
+              }
+            },
+            {
+              "operation": "write",
+              "count": 1160,
+              "p50Ms": 13.904,
+              "p95Ms": 107.977,
+              "p99Ms": 123.983,
+              "maxMs": 149.814,
+              "failed": 0,
+              "status": {
+                "201": 1160
+              },
+              "pool": {
+                "count": 1160,
+                "p50Ms": 0.009,
+                "p95Ms": 90.688,
+                "p99Ms": 103.529,
+                "maxMs": 110.287
+              },
+              "database": {
+                "count": 1160,
+                "p50Ms": 7.784,
+                "p95Ms": 18.832,
+                "p99Ms": 30.25,
+                "maxMs": 44.738
+              }
+            },
+            {
+              "operation": "graph",
+              "count": 290,
+              "p50Ms": 2686.327,
+              "p95Ms": 2744.008,
+              "p99Ms": 2759.703,
+              "maxMs": 2764.964,
+              "failed": 0,
+              "status": {
+                "200": 290
+              },
+              "pool": {
+                "count": 290,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 290,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ],
+          "streams": 1000,
+          "ready": 1000,
+          "connectionSeconds": 0.235,
+          "expectedDeliveries": 4000,
+          "received": 4000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 4000,
+            "p50Ms": 6.868,
+            "p95Ms": 117.822,
+            "p99Ms": 153.886,
+            "maxMs": 154.504
+          },
+          "deliverySeconds": 12.687
+        },
+        {
+          "name": "mixed-with-10000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 12.625,
+          "requests": 5581,
+          "requestsPerSecond": 442.07,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 51.788623,
+          "peakServerRssBytes": 911605760,
+          "resourceSamples": 6,
+          "generatorLagP99Ms": 22.36,
+          "generatorLagMaxMs": 27.08,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 279,
+              "p50Ms": 2537.847,
+              "p95Ms": 2657.368,
+              "p99Ms": 2667.049,
+              "maxMs": 2676.825,
+              "failed": 0,
+              "status": {
+                "200": 279
+              },
+              "pool": {
+                "count": 279,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 279,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 1953,
+              "p50Ms": 7.699,
+              "p95Ms": 129.206,
+              "p99Ms": 142.339,
+              "maxMs": 195.019,
+              "failed": 0,
+              "status": {
+                "200": 1953
+              },
+              "pool": {
+                "count": 1953,
+                "p50Ms": 0.01,
+                "p95Ms": 112.628,
+                "p99Ms": 124.993,
+                "maxMs": 130.327
+              },
+              "database": {
+                "count": 1953,
+                "p50Ms": 3.863,
+                "p95Ms": 14.75,
+                "p99Ms": 21.293,
+                "maxMs": 31.778
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 1954,
+              "p50Ms": 18.881,
+              "p95Ms": 128.779,
+              "p99Ms": 142.778,
+              "maxMs": 187.673,
+              "failed": 0,
+              "status": {
+                "200": 1954
+              },
+              "pool": {
+                "count": 1954,
+                "p50Ms": 0.01,
+                "p95Ms": 112.193,
+                "p99Ms": 124.549,
+                "maxMs": 130.85
+              },
+              "database": {
+                "count": 1954,
+                "p50Ms": 3.924,
+                "p95Ms": 14.926,
+                "p99Ms": 22.407,
+                "maxMs": 31.91
+              }
+            },
+            {
+              "operation": "write",
+              "count": 1116,
+              "p50Ms": 20.145,
+              "p95Ms": 137.676,
+              "p99Ms": 147.614,
+              "maxMs": 187.285,
+              "failed": 0,
+              "status": {
+                "201": 1116
+              },
+              "pool": {
+                "count": 1116,
+                "p50Ms": 0.012,
+                "p95Ms": 115.154,
+                "p99Ms": 125.425,
+                "maxMs": 130.387
+              },
+              "database": {
+                "count": 1116,
+                "p50Ms": 10.185,
+                "p95Ms": 23.834,
+                "p99Ms": 30.239,
+                "maxMs": 40.822
+              }
+            },
+            {
+              "operation": "graph",
+              "count": 279,
+              "p50Ms": 2691.186,
+              "p95Ms": 2829.184,
+              "p99Ms": 2838.746,
+              "maxMs": 2848.053,
+              "failed": 0,
+              "status": {
+                "200": 279
+              },
+              "pool": {
+                "count": 279,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 279,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ],
+          "streams": 10000,
+          "ready": 10000,
+          "connectionSeconds": 1.987,
+          "expectedDeliveries": 40000,
+          "received": 40000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 40000,
+            "p50Ms": 6.394,
+            "p95Ms": 95.949,
+            "p99Ms": 135.452,
+            "maxMs": 185.585
+          },
+          "deliverySeconds": 13.265
+        }
+      ],
+      "finalStats": {
+        "cpuUserMicros": 222114762,
+        "cpuSystemMicros": 10407213,
+        "rss": 898269184,
+        "openStreams": 0,
+        "dropped": 0,
+        "errors": 0,
+        "queued": 0
+      },
+      "persistedTasks": 124801,
+      "serverLog": ""
+    },
+    {
+      "runtime": "go",
+      "round": 1,
+      "checks": [
+        "benchmark key and token required",
+        "cross-room access denied",
+        "read results equal shared SQL",
+        "revoked token denied immediately",
+        "64 concurrent duplicate writes produce exactly one task",
+        "viewer cannot assign tasks",
+        "invalid bodies rejected and oversized body bounded",
+        "graph snapshot and Git outputs verified",
+        "database recovers after clients cancel",
+        "CPU overload rejects excess work and recovers"
+      ],
+      "scenarios": [
+        {
+          "name": "database-reads",
+          "concurrency": 256,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.079,
+          "requests": 32460,
+          "requestsPerSecond": 3220.56,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 7.754125,
+          "peakServerRssBytes": 53215232,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.99,
+          "generatorLagMaxMs": 21.18,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 16230,
+              "p50Ms": 78.368,
+              "p95Ms": 87.688,
+              "p99Ms": 95.947,
+              "maxMs": 102.289,
+              "failed": 0,
+              "status": {
+                "200": 16230
+              },
+              "pool": {
+                "count": 16230,
+                "p50Ms": 74.109,
+                "p95Ms": 83.095,
+                "p99Ms": 91.211,
+                "maxMs": 96.627
+              },
+              "database": {
+                "count": 16230,
+                "p50Ms": 2.859,
+                "p95Ms": 4.475,
+                "p99Ms": 6.151,
+                "maxMs": 17.408
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 16230,
+              "p50Ms": 78.533,
+              "p95Ms": 87.847,
+              "p99Ms": 96.203,
+              "maxMs": 102.57,
+              "failed": 0,
+              "status": {
+                "200": 16230
+              },
+              "pool": {
+                "count": 16230,
+                "p50Ms": 74.148,
+                "p95Ms": 83.133,
+                "p99Ms": 91.554,
+                "maxMs": 97.29
+              },
+              "database": {
+                "count": 16230,
+                "p50Ms": 2.909,
+                "p95Ms": 4.539,
+                "p99Ms": 6.236,
+                "maxMs": 17.584
+              }
+            }
+          ]
+        },
+        {
+          "name": "transaction-writes",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.062,
+          "requests": 20811,
+          "requestsPerSecond": 2068.28,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 8.551394,
+          "peakServerRssBytes": 49446912,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.94,
+          "generatorLagMaxMs": 21.95,
+          "operations": [
+            {
+              "operation": "write",
+              "count": 20811,
+              "p50Ms": 60.838,
+              "p95Ms": 71.925,
+              "p99Ms": 83.932,
+              "maxMs": 105.063,
+              "failed": 0,
+              "status": {
+                "201": 20811
+              },
+              "pool": {
+                "count": 20811,
+                "p50Ms": 55.005,
+                "p95Ms": 65.187,
+                "p99Ms": 76.844,
+                "maxMs": 98.049
+              },
+              "database": {
+                "count": 20811,
+                "p50Ms": 4.616,
+                "p95Ms": 6.317,
+                "p99Ms": 8.215,
+                "maxMs": 26.315
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-fixed-rate",
+          "concurrency": 256,
+          "offeredRate": 1000,
+          "missedStarts": 0,
+          "durationSeconds": 10.005,
+          "requests": 10000,
+          "requestsPerSecond": 999.52,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.621962,
+          "peakServerRssBytes": 32833536,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.27,
+          "generatorLagMaxMs": 27.41,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 5000,
+              "p50Ms": 3.508,
+              "p95Ms": 5.849,
+              "p99Ms": 12.551,
+              "maxMs": 41.786,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0,
+                "p95Ms": 0.002,
+                "p99Ms": 0.923,
+                "maxMs": 7.856
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.742,
+                "p95Ms": 3.133,
+                "p99Ms": 5.647,
+                "maxMs": 35.579
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 5000,
+              "p50Ms": 3.541,
+              "p95Ms": 5.799,
+              "p99Ms": 12.332,
+              "maxMs": 41.91,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0,
+                "p95Ms": 0.002,
+                "p99Ms": 1.047,
+                "maxMs": 7.776
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.806,
+                "p95Ms": 3.155,
+                "p99Ms": 5.605,
+                "maxMs": 35.543
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-pool-saturation",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 2.992,
+          "requests": 256,
+          "requestsPerSecond": 85.57,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 0.089278,
+          "peakServerRssBytes": 32702464,
+          "resourceSamples": 1,
+          "generatorLagP99Ms": 26.48,
+          "generatorLagMaxMs": 29.49,
+          "operations": [
+            {
+              "operation": "hold",
+              "count": 256,
+              "p50Ms": 1369.311,
+              "p95Ms": 1508.445,
+              "p99Ms": 1509.934,
+              "maxMs": 1511.71,
+              "failed": 0,
+              "status": {
+                "200": 256
+              },
+              "pool": {
+                "count": 256,
+                "p50Ms": 1258.06,
+                "p95Ms": 1392.614,
+                "p99Ms": 1394.328,
+                "maxMs": 1394.77
+              },
+              "database": {
+                "count": 256,
+                "p50Ms": 113.673,
+                "p95Ms": 123.308,
+                "p99Ms": 128.303,
+                "maxMs": 128.447
+              }
+            }
+          ]
+        },
+        {
+          "name": "cpu-graph",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.061,
+          "requests": 5098,
+          "requestsPerSecond": 506.72,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 39.856837,
+          "peakServerRssBytes": 33013760,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.15,
+          "generatorLagMaxMs": 48.69,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 5098,
+              "p50Ms": 63.018,
+              "p95Ms": 83.687,
+              "p99Ms": 94.614,
+              "maxMs": 122.846,
+              "failed": 0,
+              "status": {
+                "200": 5098
+              },
+              "pool": {
+                "count": 5098,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 5098,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "large-snapshot",
+          "concurrency": 16,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.072,
+          "requests": 1329,
+          "requestsPerSecond": 131.94,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 39.706933,
+          "peakServerRssBytes": 104153088,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.64,
+          "generatorLagMaxMs": 22.25,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 1329,
+              "p50Ms": 110.17,
+              "p95Ms": 229.997,
+              "p99Ms": 293.778,
+              "maxMs": 410.914,
+              "failed": 0,
+              "status": {
+                "200": 1329
+              },
+              "pool": {
+                "count": 1329,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1329,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "git-diff",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.151,
+          "requests": 1116,
+          "requestsPerSecond": 109.94,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.628551,
+          "peakServerRssBytes": 293601280,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 30.18,
+          "generatorLagMaxMs": 39.35,
+          "operations": [
+            {
+              "operation": "git",
+              "count": 1116,
+              "p50Ms": 288.113,
+              "p95Ms": 360.396,
+              "p99Ms": 392.403,
+              "maxMs": 425.753,
+              "failed": 0,
+              "status": {
+                "200": 1116
+              },
+              "pool": {
+                "count": 1116,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1116,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "mixed-with-1000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.053,
+          "requests": 13570,
+          "requestsPerSecond": 1349.8,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 33.282135,
+          "peakServerRssBytes": 120045568,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.32,
+          "generatorLagMaxMs": 33.54,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 678,
+              "p50Ms": 10.929,
+              "p95Ms": 15.388,
+              "p99Ms": 21.693,
+              "maxMs": 62.879,
+              "failed": 0,
+              "status": {
+                "200": 678
+              },
+              "pool": {
+                "count": 678,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 678,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 4751,
+              "p50Ms": 100.808,
+              "p95Ms": 113.368,
+              "p99Ms": 129.33,
+              "maxMs": 179.083,
+              "failed": 0,
+              "status": {
+                "200": 4751
+              },
+              "pool": {
+                "count": 4751,
+                "p50Ms": 90.333,
+                "p95Ms": 102.352,
+                "p99Ms": 116.785,
+                "maxMs": 143.816
+              },
+              "database": {
+                "count": 4751,
+                "p50Ms": 6.755,
+                "p95Ms": 13.401,
+                "p99Ms": 16.015,
+                "maxMs": 40.611
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 4751,
+              "p50Ms": 100.87,
+              "p95Ms": 113.684,
+              "p99Ms": 129.85,
+              "maxMs": 172.29,
+              "failed": 0,
+              "status": {
+                "200": 4751
+              },
+              "pool": {
+                "count": 4751,
+                "p50Ms": 90.375,
+                "p95Ms": 102.458,
+                "p99Ms": 115.924,
+                "maxMs": 137.362
+              },
+              "database": {
+                "count": 4751,
+                "p50Ms": 6.339,
+                "p95Ms": 13.234,
+                "p99Ms": 15.952,
+                "maxMs": 45.37
+              }
+            },
+            {
+              "operation": "snapshot",
+              "count": 678,
+              "p50Ms": 37.891,
+              "p95Ms": 45.092,
+              "p99Ms": 61.349,
+              "maxMs": 89.045,
+              "failed": 0,
+              "status": {
+                "200": 678
+              },
+              "pool": {
+                "count": 678,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 678,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "write",
+              "count": 2712,
+              "p50Ms": 104.61,
+              "p95Ms": 118.579,
+              "p99Ms": 134.495,
+              "maxMs": 183.983,
+              "failed": 0,
+              "status": {
+                "201": 2712
+              },
+              "pool": {
+                "count": 2712,
+                "p50Ms": 92.474,
+                "p95Ms": 104.844,
+                "p99Ms": 119.045,
+                "maxMs": 130.621
+              },
+              "database": {
+                "count": 2712,
+                "p50Ms": 10.405,
+                "p95Ms": 17.793,
+                "p99Ms": 22.201,
+                "maxMs": 42.915
+              }
+            }
+          ],
+          "streams": 1000,
+          "ready": 1000,
+          "connectionSeconds": 0.22,
+          "expectedDeliveries": 4000,
+          "received": 4000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 4000,
+            "p50Ms": 5.922,
+            "p95Ms": 121.397,
+            "p99Ms": 127.262,
+            "maxMs": 129.207
+          },
+          "deliverySeconds": 10.148
+        },
+        {
+          "name": "mixed-with-10000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.052,
+          "requests": 12766,
+          "requestsPerSecond": 1270.04,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 32.040752,
+          "peakServerRssBytes": 724221952,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 22.86,
+          "generatorLagMaxMs": 29.03,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 638,
+              "p50Ms": 10.872,
+              "p95Ms": 17.346,
+              "p99Ms": 27.571,
+              "maxMs": 39.467,
+              "failed": 0,
+              "status": {
+                "200": 638
+              },
+              "pool": {
+                "count": 638,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 638,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "snapshot",
+              "count": 638,
+              "p50Ms": 36.232,
+              "p95Ms": 57.286,
+              "p99Ms": 64.952,
+              "maxMs": 84.12,
+              "failed": 0,
+              "status": {
+                "200": 638
+              },
+              "pool": {
+                "count": 638,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 638,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 4469,
+              "p50Ms": 105.421,
+              "p95Ms": 132.127,
+              "p99Ms": 149.026,
+              "maxMs": 165.904,
+              "failed": 0,
+              "status": {
+                "200": 4469
+              },
+              "pool": {
+                "count": 4469,
+                "p50Ms": 94.423,
+                "p95Ms": 119.582,
+                "p99Ms": 135.826,
+                "maxMs": 152.337
+              },
+              "database": {
+                "count": 4469,
+                "p50Ms": 5.972,
+                "p95Ms": 15.09,
+                "p99Ms": 21.864,
+                "maxMs": 41.094
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 4469,
+              "p50Ms": 105.383,
+              "p95Ms": 132.002,
+              "p99Ms": 148.419,
+              "maxMs": 165.821,
+              "failed": 0,
+              "status": {
+                "200": 4469
+              },
+              "pool": {
+                "count": 4469,
+                "p50Ms": 94.333,
+                "p95Ms": 119.636,
+                "p99Ms": 135.43,
+                "maxMs": 153.215
+              },
+              "database": {
+                "count": 4469,
+                "p50Ms": 5.563,
+                "p95Ms": 14.63,
+                "p99Ms": 21.53,
+                "maxMs": 39.778
+              }
+            },
+            {
+              "operation": "write",
+              "count": 2552,
+              "p50Ms": 110.759,
+              "p95Ms": 138.389,
+              "p99Ms": 154.013,
+              "maxMs": 165.462,
+              "failed": 0,
+              "status": {
+                "201": 2552
+              },
+              "pool": {
+                "count": 2552,
+                "p50Ms": 96.17,
+                "p95Ms": 122.042,
+                "p99Ms": 136.344,
+                "maxMs": 152.201
+              },
+              "database": {
+                "count": 2552,
+                "p50Ms": 10.361,
+                "p95Ms": 20.923,
+                "p99Ms": 29.383,
+                "maxMs": 61.188
+              }
+            }
+          ],
+          "streams": 10000,
+          "ready": 10000,
+          "connectionSeconds": 1.739,
+          "expectedDeliveries": 40000,
+          "received": 40000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 40000,
+            "p50Ms": 6.155,
+            "p95Ms": 122.495,
+            "p99Ms": 139.38,
+            "maxMs": 155.926
+          },
+          "deliverySeconds": 10.66
+        }
+      ],
+      "finalStats": {
+        "cpuSystemMicros": 21820518,
+        "cpuUserMicros": 152641149,
+        "dropped": 0,
+        "errors": 0,
+        "openStreams": 0,
+        "queued": 0
+      },
+      "persistedTasks": 126076,
+      "serverLog": ""
+    },
+    {
+      "runtime": "go",
+      "round": 2,
+      "checks": [
+        "benchmark key and token required",
+        "cross-room access denied",
+        "read results equal shared SQL",
+        "revoked token denied immediately",
+        "64 concurrent duplicate writes produce exactly one task",
+        "viewer cannot assign tasks",
+        "invalid bodies rejected and oversized body bounded",
+        "graph snapshot and Git outputs verified",
+        "database recovers after clients cancel",
+        "CPU overload rejects excess work and recovers"
+      ],
+      "scenarios": [
+        {
+          "name": "database-reads",
+          "concurrency": 256,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.082,
+          "requests": 33252,
+          "requestsPerSecond": 3298.14,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 8.245339,
+          "peakServerRssBytes": 50937856,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.94,
+          "generatorLagMaxMs": 21.1,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 16626,
+              "p50Ms": 77.098,
+              "p95Ms": 85.315,
+              "p99Ms": 93.227,
+              "maxMs": 96.804,
+              "failed": 0,
+              "status": {
+                "200": 16626
+              },
+              "pool": {
+                "count": 16626,
+                "p50Ms": 72.886,
+                "p95Ms": 80.745,
+                "p99Ms": 88.942,
+                "maxMs": 92.288
+              },
+              "database": {
+                "count": 16626,
+                "p50Ms": 2.811,
+                "p95Ms": 4.282,
+                "p99Ms": 5.53,
+                "maxMs": 14.757
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 16626,
+              "p50Ms": 77.2,
+              "p95Ms": 85.476,
+              "p99Ms": 93.316,
+              "maxMs": 97.383,
+              "failed": 0,
+              "status": {
+                "200": 16626
+              },
+              "pool": {
+                "count": 16626,
+                "p50Ms": 72.891,
+                "p95Ms": 80.766,
+                "p99Ms": 88.927,
+                "maxMs": 92.303
+              },
+              "database": {
+                "count": 16626,
+                "p50Ms": 2.864,
+                "p95Ms": 4.356,
+                "p99Ms": 5.684,
+                "maxMs": 10.807
+              }
+            }
+          ]
+        },
+        {
+          "name": "transaction-writes",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.077,
+          "requests": 21286,
+          "requestsPerSecond": 2112.36,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 8.95142,
+          "peakServerRssBytes": 50970624,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.02,
+          "generatorLagMaxMs": 24.61,
+          "operations": [
+            {
+              "operation": "write",
+              "count": 21286,
+              "p50Ms": 59.606,
+              "p95Ms": 67.676,
+              "p99Ms": 77.128,
+              "maxMs": 82.827,
+              "failed": 0,
+              "status": {
+                "201": 21286
+              },
+              "pool": {
+                "count": 21286,
+                "p50Ms": 53.908,
+                "p95Ms": 61.465,
+                "p99Ms": 71.131,
+                "maxMs": 76.431
+              },
+              "database": {
+                "count": 21286,
+                "p50Ms": 4.53,
+                "p95Ms": 6.087,
+                "p99Ms": 8.233,
+                "maxMs": 21.085
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-fixed-rate",
+          "concurrency": 256,
+          "offeredRate": 1000,
+          "missedStarts": 0,
+          "durationSeconds": 10.003,
+          "requests": 10000,
+          "requestsPerSecond": 999.72,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.746924,
+          "peakServerRssBytes": 50987008,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.09,
+          "generatorLagMaxMs": 26.12,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 5000,
+              "p50Ms": 3.382,
+              "p95Ms": 5.139,
+              "p99Ms": 7.032,
+              "maxMs": 22.306,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0,
+                "p95Ms": 0.002,
+                "p99Ms": 0.009,
+                "maxMs": 9.184
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.66,
+                "p95Ms": 2.656,
+                "p99Ms": 3.751,
+                "maxMs": 17.018
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 5000,
+              "p50Ms": 3.429,
+              "p95Ms": 5.238,
+              "p99Ms": 7.34,
+              "maxMs": 21.22,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0,
+                "p95Ms": 0.002,
+                "p99Ms": 0.006,
+                "maxMs": 9.235
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.735,
+                "p95Ms": 2.739,
+                "p99Ms": 3.958,
+                "maxMs": 13.991
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-pool-saturation",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 2.954,
+          "requests": 256,
+          "requestsPerSecond": 86.67,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 0.089078,
+          "peakServerRssBytes": 50987008,
+          "resourceSamples": 1,
+          "generatorLagP99Ms": 23.89,
+          "generatorLagMaxMs": 24.89,
+          "operations": [
+            {
+              "operation": "hold",
+              "count": 256,
+              "p50Ms": 1365.904,
+              "p95Ms": 1493.425,
+              "p99Ms": 1499.103,
+              "maxMs": 1500.978,
+              "failed": 0,
+              "status": {
+                "200": 256
+              },
+              "pool": {
+                "count": 256,
+                "p50Ms": 1250.851,
+                "p95Ms": 1378.936,
+                "p99Ms": 1380.598,
+                "maxMs": 1381.704
+              },
+              "database": {
+                "count": 256,
+                "p50Ms": 113.057,
+                "p95Ms": 120.644,
+                "p99Ms": 122.067,
+                "maxMs": 122.933
+              }
+            }
+          ]
+        },
+        {
+          "name": "cpu-graph",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.061,
+          "requests": 5154,
+          "requestsPerSecond": 512.3,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 39.966851,
+          "peakServerRssBytes": 51085312,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.12,
+          "generatorLagMaxMs": 42.8,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 5154,
+              "p50Ms": 62.454,
+              "p95Ms": 81.165,
+              "p99Ms": 92.366,
+              "maxMs": 123.917,
+              "failed": 0,
+              "status": {
+                "200": 5154
+              },
+              "pool": {
+                "count": 5154,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 5154,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "large-snapshot",
+          "concurrency": 16,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.079,
+          "requests": 1326,
+          "requestsPerSecond": 131.57,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 39.568337,
+          "peakServerRssBytes": 108298240,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.79,
+          "generatorLagMaxMs": 30.97,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 1326,
+              "p50Ms": 108.143,
+              "p95Ms": 235.344,
+              "p99Ms": 302.404,
+              "maxMs": 365.239,
+              "failed": 0,
+              "status": {
+                "200": 1326
+              },
+              "pool": {
+                "count": 1326,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1326,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "git-diff",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.098,
+          "requests": 1111,
+          "requestsPerSecond": 110.02,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.673464,
+          "peakServerRssBytes": 299253760,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 26.28,
+          "generatorLagMaxMs": 30.26,
+          "operations": [
+            {
+              "operation": "git",
+              "count": 1111,
+              "p50Ms": 290.288,
+              "p95Ms": 350.111,
+              "p99Ms": 382.96,
+              "maxMs": 482.472,
+              "failed": 0,
+              "status": {
+                "200": 1111
+              },
+              "pool": {
+                "count": 1111,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1111,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "mixed-with-1000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.056,
+          "requests": 12851,
+          "requestsPerSecond": 1277.88,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 33.865756,
+          "peakServerRssBytes": 116457472,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.25,
+          "generatorLagMaxMs": 22.1,
+          "operations": [
+            {
+              "operation": "roster",
+              "count": 4499,
+              "p50Ms": 106.625,
+              "p95Ms": 118.033,
+              "p99Ms": 134.939,
+              "maxMs": 175.659,
+              "failed": 0,
+              "status": {
+                "200": 4499
+              },
+              "pool": {
+                "count": 4499,
+                "p50Ms": 95.633,
+                "p95Ms": 105.212,
+                "p99Ms": 116.214,
+                "maxMs": 130.14
+              },
+              "database": {
+                "count": 4499,
+                "p50Ms": 7.45,
+                "p95Ms": 14.011,
+                "p99Ms": 16.648,
+                "maxMs": 55.871
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 4500,
+              "p50Ms": 106.918,
+              "p95Ms": 118.289,
+              "p99Ms": 133.091,
+              "maxMs": 174.125,
+              "failed": 0,
+              "status": {
+                "200": 4500
+              },
+              "pool": {
+                "count": 4500,
+                "p50Ms": 95.761,
+                "p95Ms": 105.188,
+                "p99Ms": 115.369,
+                "maxMs": 130.142
+              },
+              "database": {
+                "count": 4500,
+                "p50Ms": 6.739,
+                "p95Ms": 13.947,
+                "p99Ms": 16.524,
+                "maxMs": 56.203
+              }
+            },
+            {
+              "operation": "graph",
+              "count": 642,
+              "p50Ms": 11.579,
+              "p95Ms": 16.452,
+              "p99Ms": 27.071,
+              "maxMs": 97.418,
+              "failed": 0,
+              "status": {
+                "200": 642
+              },
+              "pool": {
+                "count": 642,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 642,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "snapshot",
+              "count": 642,
+              "p50Ms": 40.775,
+              "p95Ms": 47.356,
+              "p99Ms": 64.822,
+              "maxMs": 106.073,
+              "failed": 0,
+              "status": {
+                "200": 642
+              },
+              "pool": {
+                "count": 642,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 642,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "write",
+              "count": 2568,
+              "p50Ms": 110.884,
+              "p95Ms": 123.458,
+              "p99Ms": 138.068,
+              "maxMs": 181.904,
+              "failed": 0,
+              "status": {
+                "201": 2568
+              },
+              "pool": {
+                "count": 2568,
+                "p50Ms": 97.9,
+                "p95Ms": 108.641,
+                "p99Ms": 117.957,
+                "maxMs": 132.826
+              },
+              "database": {
+                "count": 2568,
+                "p50Ms": 11.18,
+                "p95Ms": 18.476,
+                "p99Ms": 23.363,
+                "maxMs": 72.963
+              }
+            }
+          ],
+          "streams": 1000,
+          "ready": 1000,
+          "connectionSeconds": 0.212,
+          "expectedDeliveries": 4000,
+          "received": 4000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 4000,
+            "p50Ms": 7.153,
+            "p95Ms": 104.571,
+            "p99Ms": 131.013,
+            "maxMs": 138.23
+          },
+          "deliverySeconds": 10.163
+        },
+        {
+          "name": "mixed-with-10000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.055,
+          "requests": 12194,
+          "requestsPerSecond": 1212.71,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 32.623621,
+          "peakServerRssBytes": 719994880,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 22.09,
+          "generatorLagMaxMs": 25.05,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 609,
+              "p50Ms": 11.503,
+              "p95Ms": 17.645,
+              "p99Ms": 28.788,
+              "maxMs": 59.281,
+              "failed": 0,
+              "status": {
+                "200": 609
+              },
+              "pool": {
+                "count": 609,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 609,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "snapshot",
+              "count": 609,
+              "p50Ms": 38.15,
+              "p95Ms": 60.765,
+              "p99Ms": 69.755,
+              "maxMs": 84.321,
+              "failed": 0,
+              "status": {
+                "200": 609
+              },
+              "pool": {
+                "count": 609,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 609,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 4270,
+              "p50Ms": 109.833,
+              "p95Ms": 138.19,
+              "p99Ms": 146.482,
+              "maxMs": 187.887,
+              "failed": 0,
+              "status": {
+                "200": 4270
+              },
+              "pool": {
+                "count": 4270,
+                "p50Ms": 98.657,
+                "p95Ms": 126.599,
+                "p99Ms": 133.366,
+                "maxMs": 151.114
+              },
+              "database": {
+                "count": 4270,
+                "p50Ms": 6.483,
+                "p95Ms": 15.74,
+                "p99Ms": 23.304,
+                "maxMs": 49.321
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 4270,
+              "p50Ms": 110.115,
+              "p95Ms": 138.574,
+              "p99Ms": 146.919,
+              "maxMs": 188.884,
+              "failed": 0,
+              "status": {
+                "200": 4270
+              },
+              "pool": {
+                "count": 4270,
+                "p50Ms": 98.399,
+                "p95Ms": 126.638,
+                "p99Ms": 133.395,
+                "maxMs": 152.477
+              },
+              "database": {
+                "count": 4270,
+                "p50Ms": 5.929,
+                "p95Ms": 15.757,
+                "p99Ms": 23.899,
+                "maxMs": 59.34
+              }
+            },
+            {
+              "operation": "write",
+              "count": 2436,
+              "p50Ms": 115.889,
+              "p95Ms": 142.64,
+              "p99Ms": 154.033,
+              "maxMs": 191.096,
+              "failed": 0,
+              "status": {
+                "201": 2436
+              },
+              "pool": {
+                "count": 2436,
+                "p50Ms": 100.67,
+                "p95Ms": 129.746,
+                "p99Ms": 135.599,
+                "maxMs": 150.54
+              },
+              "database": {
+                "count": 2436,
+                "p50Ms": 10.91,
+                "p95Ms": 21.804,
+                "p99Ms": 30.476,
+                "maxMs": 45.139
+              }
+            }
+          ],
+          "streams": 10000,
+          "ready": 10000,
+          "connectionSeconds": 1.752,
+          "expectedDeliveries": 40000,
+          "received": 40000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 40000,
+            "p50Ms": 6.123,
+            "p95Ms": 130.967,
+            "p99Ms": 151.639,
+            "maxMs": 192.538
+          },
+          "deliverySeconds": 10.654
+        }
+      ],
+      "finalStats": {
+        "cpuSystemMicros": 22592743,
+        "cpuUserMicros": 154146596,
+        "dropped": 0,
+        "errors": 0,
+        "openStreams": 0,
+        "queued": 0
+      },
+      "persistedTasks": 126291,
+      "serverLog": ""
+    },
+    {
+      "runtime": "typescript",
+      "round": 2,
+      "checks": [
+        "benchmark key and token required",
+        "cross-room access denied",
+        "read results equal shared SQL",
+        "revoked token denied immediately",
+        "64 concurrent duplicate writes produce exactly one task",
+        "viewer cannot assign tasks",
+        "invalid bodies rejected and oversized body bounded",
+        "graph snapshot and Git outputs verified",
+        "database recovers after clients cancel",
+        "CPU overload rejects excess work and recovers"
+      ],
+      "scenarios": [
+        {
+          "name": "database-reads",
+          "concurrency": 256,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.085,
+          "requests": 33053,
+          "requestsPerSecond": 3277.53,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 5.020747,
+          "peakServerRssBytes": 370491392,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 20.92,
+          "generatorLagMaxMs": 21.86,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 16527,
+              "p50Ms": 77.009,
+              "p95Ms": 88.115,
+              "p99Ms": 101.115,
+              "maxMs": 108.751,
+              "failed": 0,
+              "status": {
+                "200": 16527
+              },
+              "pool": {
+                "count": 16527,
+                "p50Ms": 72.875,
+                "p95Ms": 83.535,
+                "p99Ms": 96.789,
+                "maxMs": 103.671
+              },
+              "database": {
+                "count": 16527,
+                "p50Ms": 2.796,
+                "p95Ms": 4.451,
+                "p99Ms": 6.064,
+                "maxMs": 22.841
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 16526,
+              "p50Ms": 77.401,
+              "p95Ms": 88.458,
+              "p99Ms": 101.864,
+              "maxMs": 109.988,
+              "failed": 0,
+              "status": {
+                "200": 16526
+              },
+              "pool": {
+                "count": 16526,
+                "p50Ms": 72.995,
+                "p95Ms": 83.607,
+                "p99Ms": 96.763,
+                "maxMs": 104.426
+              },
+              "database": {
+                "count": 16526,
+                "p50Ms": 2.864,
+                "p95Ms": 4.514,
+                "p99Ms": 6.098,
+                "maxMs": 22.015
+              }
+            }
+          ]
+        },
+        {
+          "name": "transaction-writes",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.056,
+          "requests": 21772,
+          "requestsPerSecond": 2165.04,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 4.960668,
+          "peakServerRssBytes": 373276672,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.04,
+          "generatorLagMaxMs": 21.95,
+          "operations": [
+            {
+              "operation": "write",
+              "count": 21772,
+              "p50Ms": 58.42,
+              "p95Ms": 65.939,
+              "p99Ms": 74.956,
+              "maxMs": 85.844,
+              "failed": 0,
+              "status": {
+                "201": 21772
+              },
+              "pool": {
+                "count": 21772,
+                "p50Ms": 52.797,
+                "p95Ms": 59.994,
+                "p99Ms": 68.072,
+                "maxMs": 79.87
+              },
+              "database": {
+                "count": 21772,
+                "p50Ms": 4.414,
+                "p95Ms": 5.991,
+                "p99Ms": 8.584,
+                "maxMs": 19.35
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-fixed-rate",
+          "concurrency": 256,
+          "offeredRate": 1000,
+          "missedStarts": 0,
+          "durationSeconds": 10.003,
+          "requests": 10000,
+          "requestsPerSecond": 999.71,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 2.462211,
+          "peakServerRssBytes": 374865920,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.71,
+          "generatorLagMaxMs": 22.74,
+          "operations": [
+            {
+              "operation": "tasks",
+              "count": 5000,
+              "p50Ms": 3.606,
+              "p95Ms": 5.448,
+              "p99Ms": 7.69,
+              "maxMs": 17.156,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0.007,
+                "p95Ms": 0.018,
+                "p99Ms": 0.041,
+                "maxMs": 4.592
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.695,
+                "p95Ms": 2.777,
+                "p99Ms": 4.244,
+                "maxMs": 14.324
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 5000,
+              "p50Ms": 3.618,
+              "p95Ms": 5.47,
+              "p99Ms": 7.816,
+              "maxMs": 15.753,
+              "failed": 0,
+              "status": {
+                "200": 5000
+              },
+              "pool": {
+                "count": 5000,
+                "p50Ms": 0.007,
+                "p95Ms": 0.019,
+                "p99Ms": 0.042,
+                "maxMs": 2.273
+              },
+              "database": {
+                "count": 5000,
+                "p50Ms": 1.783,
+                "p95Ms": 2.859,
+                "p99Ms": 4.342,
+                "maxMs": 13.447
+              }
+            }
+          ]
+        },
+        {
+          "name": "database-pool-saturation",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 2.958,
+          "requests": 256,
+          "requestsPerSecond": 86.53,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 0.085847,
+          "peakServerRssBytes": 374915072,
+          "resourceSamples": 2,
+          "generatorLagP99Ms": 22.45,
+          "generatorLagMaxMs": 26.23,
+          "operations": [
+            {
+              "operation": "hold",
+              "count": 256,
+              "p50Ms": 1367.08,
+              "p95Ms": 1489.331,
+              "p99Ms": 1492.79,
+              "maxMs": 1493.364,
+              "failed": 0,
+              "status": {
+                "200": 256
+              },
+              "pool": {
+                "count": 256,
+                "p50Ms": 1251.574,
+                "p95Ms": 1375.56,
+                "p99Ms": 1376.357,
+                "maxMs": 1376.69
+              },
+              "database": {
+                "count": 256,
+                "p50Ms": 113.518,
+                "p95Ms": 122.19,
+                "p99Ms": 123.993,
+                "maxMs": 124.68
+              }
+            }
+          ]
+        },
+        {
+          "name": "cpu-graph",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 11.224,
+          "requests": 288,
+          "requestsPerSecond": 25.66,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 44.657774,
+          "peakServerRssBytes": 378142720,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.68,
+          "generatorLagMaxMs": 22.25,
+          "operations": [
+            {
+              "operation": "graph",
+              "count": 288,
+              "p50Ms": 1236.395,
+              "p95Ms": 1252.682,
+              "p99Ms": 1294.693,
+              "maxMs": 1381.703,
+              "failed": 0,
+              "status": {
+                "200": 288
+              },
+              "pool": {
+                "count": 288,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 288,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "large-snapshot",
+          "concurrency": 16,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.073,
+          "requests": 1071,
+          "requestsPerSecond": 106.33,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 19.095953,
+          "peakServerRssBytes": 781221888,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 21.71,
+          "generatorLagMaxMs": 22,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 1071,
+              "p50Ms": 149.716,
+              "p95Ms": 167.121,
+              "p99Ms": 176.093,
+              "maxMs": 248.49,
+              "failed": 0,
+              "status": {
+                "200": 1071
+              },
+              "pool": {
+                "count": 1071,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1071,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "git-diff",
+          "concurrency": 32,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 10.109,
+          "requests": 1150,
+          "requestsPerSecond": 113.76,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 1.602532,
+          "peakServerRssBytes": 942473216,
+          "resourceSamples": 5,
+          "generatorLagP99Ms": 24.87,
+          "generatorLagMaxMs": 28.92,
+          "operations": [
+            {
+              "operation": "git",
+              "count": 1150,
+              "p50Ms": 279.45,
+              "p95Ms": 344.867,
+              "p99Ms": 389.566,
+              "maxMs": 426.64,
+              "failed": 0,
+              "status": {
+                "200": 1150
+              },
+              "pool": {
+                "count": 1150,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 1150,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "mixed-with-1000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 12.557,
+          "requests": 5935,
+          "requestsPerSecond": 472.66,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 53.115781,
+          "peakServerRssBytes": 923549696,
+          "resourceSamples": 7,
+          "generatorLagP99Ms": 21.77,
+          "generatorLagMaxMs": 22.69,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 296,
+              "p50Ms": 2488.003,
+              "p95Ms": 2552.652,
+              "p99Ms": 2582.976,
+              "maxMs": 2599.362,
+              "failed": 0,
+              "status": {
+                "200": 296
+              },
+              "pool": {
+                "count": 296,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 296,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 2079,
+              "p50Ms": 11.343,
+              "p95Ms": 88.582,
+              "p99Ms": 107.556,
+              "maxMs": 138.172,
+              "failed": 0,
+              "status": {
+                "200": 2079
+              },
+              "pool": {
+                "count": 2079,
+                "p50Ms": 0.006,
+                "p95Ms": 76.032,
+                "p99Ms": 94.096,
+                "maxMs": 100.159
+              },
+              "database": {
+                "count": 2079,
+                "p50Ms": 2.729,
+                "p95Ms": 11.731,
+                "p99Ms": 15.917,
+                "maxMs": 20.778
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 2079,
+              "p50Ms": 4.291,
+              "p95Ms": 89.146,
+              "p99Ms": 106.614,
+              "maxMs": 138.196,
+              "failed": 0,
+              "status": {
+                "200": 2079
+              },
+              "pool": {
+                "count": 2079,
+                "p50Ms": 0.007,
+                "p95Ms": 76.364,
+                "p99Ms": 94.005,
+                "maxMs": 98.857
+              },
+              "database": {
+                "count": 2079,
+                "p50Ms": 2.598,
+                "p95Ms": 11.354,
+                "p99Ms": 15.286,
+                "maxMs": 20.306
+              }
+            },
+            {
+              "operation": "write",
+              "count": 1185,
+              "p50Ms": 12.751,
+              "p95Ms": 97.399,
+              "p99Ms": 112.309,
+              "maxMs": 137.285,
+              "failed": 0,
+              "status": {
+                "201": 1185
+              },
+              "pool": {
+                "count": 1185,
+                "p50Ms": 0.008,
+                "p95Ms": 81.024,
+                "p99Ms": 94.292,
+                "maxMs": 99.637
+              },
+              "database": {
+                "count": 1185,
+                "p50Ms": 6.345,
+                "p95Ms": 17.71,
+                "p99Ms": 21.877,
+                "maxMs": 29.128
+              }
+            },
+            {
+              "operation": "graph",
+              "count": 296,
+              "p50Ms": 2648.473,
+              "p95Ms": 2703.139,
+              "p99Ms": 2721.725,
+              "maxMs": 2723.768,
+              "failed": 0,
+              "status": {
+                "200": 296
+              },
+              "pool": {
+                "count": 296,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 296,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ],
+          "streams": 1000,
+          "ready": 1000,
+          "connectionSeconds": 0.22,
+          "expectedDeliveries": 4000,
+          "received": 4000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 4000,
+            "p50Ms": 6.805,
+            "p95Ms": 106.211,
+            "p99Ms": 143.383,
+            "maxMs": 145.189
+          },
+          "deliverySeconds": 12.663
+        },
+        {
+          "name": "mixed-with-10000-live-users",
+          "concurrency": 128,
+          "offeredRate": null,
+          "missedStarts": 0,
+          "durationSeconds": 12.628,
+          "requests": 5324,
+          "requestsPerSecond": 421.61,
+          "failed": 0,
+          "failures": [],
+          "cpuSeconds": 53.486675,
+          "peakServerRssBytes": 1049346048,
+          "resourceSamples": 6,
+          "generatorLagP99Ms": 22.25,
+          "generatorLagMaxMs": 22.74,
+          "operations": [
+            {
+              "operation": "snapshot",
+              "count": 266,
+              "p50Ms": 2728.798,
+              "p95Ms": 2888.426,
+              "p99Ms": 2895.652,
+              "maxMs": 2898.982,
+              "failed": 0,
+              "status": {
+                "200": 266
+              },
+              "pool": {
+                "count": 266,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 266,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            },
+            {
+              "operation": "tasks",
+              "count": 1864,
+              "p50Ms": 17.324,
+              "p95Ms": 109.425,
+              "p99Ms": 133.565,
+              "maxMs": 158.503,
+              "failed": 0,
+              "status": {
+                "200": 1864
+              },
+              "pool": {
+                "count": 1864,
+                "p50Ms": 0.008,
+                "p95Ms": 93.49,
+                "p99Ms": 117.406,
+                "maxMs": 129.28
+              },
+              "database": {
+                "count": 1864,
+                "p50Ms": 3.034,
+                "p95Ms": 13.264,
+                "p99Ms": 17.244,
+                "maxMs": 30.534
+              }
+            },
+            {
+              "operation": "roster",
+              "count": 1864,
+              "p50Ms": 5.724,
+              "p95Ms": 108.071,
+              "p99Ms": 134.393,
+              "maxMs": 158.568,
+              "failed": 0,
+              "status": {
+                "200": 1864
+              },
+              "pool": {
+                "count": 1864,
+                "p50Ms": 0.008,
+                "p95Ms": 93.228,
+                "p99Ms": 117.44,
+                "maxMs": 129.437
+              },
+              "database": {
+                "count": 1864,
+                "p50Ms": 3.022,
+                "p95Ms": 13.344,
+                "p99Ms": 17.382,
+                "maxMs": 31.18
+              }
+            },
+            {
+              "operation": "write",
+              "count": 1064,
+              "p50Ms": 17.259,
+              "p95Ms": 115.491,
+              "p99Ms": 140.16,
+              "maxMs": 150.282,
+              "failed": 0,
+              "status": {
+                "201": 1064
+              },
+              "pool": {
+                "count": 1064,
+                "p50Ms": 0.01,
+                "p95Ms": 98.283,
+                "p99Ms": 118.738,
+                "maxMs": 130.974
+              },
+              "database": {
+                "count": 1064,
+                "p50Ms": 8.251,
+                "p95Ms": 19.568,
+                "p99Ms": 26.057,
+                "maxMs": 32.481
+              }
+            },
+            {
+              "operation": "graph",
+              "count": 266,
+              "p50Ms": 2884.902,
+              "p95Ms": 3073.243,
+              "p99Ms": 3080.651,
+              "maxMs": 3097.841,
+              "failed": 0,
+              "status": {
+                "200": 266
+              },
+              "pool": {
+                "count": 266,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              },
+              "database": {
+                "count": 266,
+                "p50Ms": 0,
+                "p95Ms": 0,
+                "p99Ms": 0,
+                "maxMs": 0
+              }
+            }
+          ],
+          "streams": 10000,
+          "ready": 10000,
+          "connectionSeconds": 1.757,
+          "expectedDeliveries": 40000,
+          "received": 40000,
+          "unexpected": 0,
+          "streamErrors": 0,
+          "dropped": 0,
+          "delivery": {
+            "count": 40000,
+            "p50Ms": 6.318,
+            "p95Ms": 87.449,
+            "p99Ms": 133.626,
+            "maxMs": 165.308
+          },
+          "deliverySeconds": 13.256
+        }
+      ],
+      "finalStats": {
+        "cpuUserMicros": 225019986,
+        "cpuSystemMicros": 9959937,
+        "rss": 943308800,
+        "openStreams": 0,
+        "dropped": 0,
+        "errors": 0,
+        "queued": 0
+      },
+      "persistedTasks": 124022,
+      "serverLog": ""
+    }
+  ],
+  "status": "passed",
+  "fixture": {
+    "users": 10000,
+    "rooms": 1000,
+    "seededTasks": 100000,
+    "snapshotBytes": 1257909,
+    "graph": {
+      "nodes": 20000,
+      "rounds": 32,
+      "seed": 73
+    },
+    "git": {
+      "files": 500,
+      "modified": 125,
+      "deleted": 25,
+      "added": 25
+    },
+    "graphExpected": {
+      "checksum": 2122163898,
+      "visited": 502741
+    },
+    "snapshotExpected": {
+      "added": 1000,
+      "modified": 3000,
+      "deleted": 1000,
+      "bytes": 10240000,
+      "checksum": 2585805181
+    },
+    "gitExpected": {
+      "bytes": 3405,
+      "sha256": "9d0da4b3e889c0c0cb7563ab329038dd816782e0e4e4d914aab5a5cc149b1bd0"
+    }
+  },
+  "cleanup": {
+    "ok": true,
+    "errors": []
+  }
+}

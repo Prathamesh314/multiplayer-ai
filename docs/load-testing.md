@@ -341,3 +341,7 @@ Raw local reports:
 Validation: full `npm test`, production Webpack build, lint on changed code,
 17 desktop unit checks, desktop smoke checks, and both server lifecycle checks
 passed. Migrations 035 and 036 were applied to the local development database.
+
+For the separate Go versus TypeScript experiment, see
+[the prototype comparison](runtime-comparison.md). Its smaller HTTP services and
+different workload are not a direct speedup measurement against this full-app test.

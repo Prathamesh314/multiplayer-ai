@@ -51,7 +51,10 @@
     "test:storage": "node --import tsx --test tests/storage.test.mjs",
     "test:load": "node --import tsx tests/load/run.mjs",
     "test:load:unit": "node --test tests/load/core.test.mjs tests/load/cancellation.test.mjs tests/load/resources.test.mjs",
-    "test:performance": "node --import tsx tests/session-token.test.mjs && node --import tsx tests/room-access-parity.test.mjs && node --import tsx --test tests/git-read-cache.test.mjs tests/server-config.test.mjs"
+    "test:performance": "node --import tsx tests/session-token.test.mjs && node --import tsx tests/room-access-parity.test.mjs && node --import tsx --test tests/git-read-cache.test.mjs tests/server-config.test.mjs",
+    "bench:runtime:build": "node benchmarks/runtime/build.mjs",
+    "bench:runtime:test": "node --import tsx --test benchmarks/runtime/compute.test.mjs && cd benchmarks/runtime/go && go test -race ./...",
+    "bench:runtime": "node --import tsx benchmarks/runtime/compare.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",
