@@ -1,75 +1,42 @@
 import { ingestApprovedExchanges } from "../../../../lib/ai/shared-memory";
 import { events } from "../../../../lib/events";
 import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
+import { publishSelectedRepository } from "../../../../lib/project/repository-workspaces";
+import { projectRoleOf } from "../../../../lib/project/store";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
-import { ensureWork, publishRoom, withRepoLock } from "../../../../lib/session/repo";
-import { setHeadSha } from "../../../../lib/session/store";
+import { repositoryContext } from "../../../../lib/session/repository-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export type PublishResponse = { ok: true; sha: string; projectRepositoryId?: string } | { ok: false; reason: "conflict"; files: string[] };
 
-export type PublishResponse =
-  | { ok: true; sha: string }
-  | { ok: false; reason: "conflict"; files: string[] };
-
-/**
- * Publish a room's work back to its project's canonical `main` — the "merge to
- * the source of truth" step of the Git/Branch model.
- *
- * Needs write access (it changes the shared main), and only applies to a room
- * that belongs to a project. Conflicts are reported, not forced.
- */
-export async function POST(_request: Request, context: RouteContext<"/api/sessions/[id]/publish">) {
+/** Publish only the selected repository; first publication explicitly shares it. */
+export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/publish">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-
-  if (!canWrite(result.role)) {
-    return forbidden("Publishing changes the project's shared main, which needs edit access.");
+  const projectId = result.session.projectId;
+  if (!canWrite(result.role)) return forbidden("Publishing needs edit access to this room.");
+  if (!projectId) return Response.json({ error: "This room has no project to share with." }, { status: 400 });
+  const role = await projectRoleOf(projectId, result.user.id);
+  if (!role || role === "viewer") return forbidden("Publishing needs edit access to the project.");
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
+  let outcome;
+  try {
+    outcome = await publishSelectedRepository({ sessionId: id, repoId: repo.repoId, projectId, name: repo.rootName, createdBy: result.user.id, headSha: repo.headSha });
+  } catch (cause) {
+    if ((cause as { code?: string }).code === "23505") return Response.json({ error: "A project repository already uses that name. Select it from Project repositories, or import this folder under a different name before sharing." }, { status: 409 });
+    throw cause;
   }
-  if (!result.session.projectId || !result.session.repo) {
-    return Response.json(
-      { error: "This room isn't part of a project, so there's nothing to publish to." },
-      { status: 400 },
-    );
-  }
-
-  // The working copy may have been reclaimed by retention; restore it first.
-  await withRepoLock(id, () => ensureWork(id, result.session.repo!.headSha));
-
-  const outcome = await publishRoom(id, result.session.projectId);
-  if (!outcome.ok) {
-    return Response.json(outcome satisfies PublishResponse, { status: 409 });
-  }
-
-  await setHeadSha(id, outcome.sha);
-
-  // Publishing is the approval event for the knowledge layer: the room's
-  // matching source episodes become approved, and the published code is
-  // re-indexed for repo context — both the freshly advanced canonical `main`
-  // and the room's own fork, so the AI's understanding of the repo it edits
-  // tracks exactly what the human accepted. Persist indexing requests before
-  // returning; parsing/embedding happen in the background and fail open.
-  // Each episode already has a durable publication job. A transient failure
-  // here must not report a successful Git publish as failed; the worker retries.
-  await ingestApprovedExchanges(id, outcome.sha, result.user.id).catch(cause => {
+  if (!outcome.ok) return Response.json(outcome satisfies PublishResponse, { status: 409 });
+  const repositoryId = outcome.projectRepositoryId;
+  await ingestApprovedExchanges(id, outcome.sha, result.user.id, repo.ref).catch(cause => {
     console.warn("Published memory approval deferred to its durable job", cause instanceof Error ? cause.message : cause);
   });
-  await Promise.all([
-    ensureRepoContext(result.session.projectId, outcome.sha),
-    ensureRepoContext(id, outcome.sha),
-  ]);
-
-  await (await events()).publish(id, {
-    type: "file.saved",
-    path: "",
-    headSha: outcome.sha,
-    authorId: result.user.id,
-    authorName: `${result.user.displayName} · published`,
-    originId: null,
-    at: Date.now(),
-  });
-
-  return Response.json(outcome satisfies PublishResponse);
+  await Promise.all([ensureRepoContext(repositoryId, outcome.sha), ensureRepoContext(repo.ref, outcome.sha)]);
+  await (await events()).publish(id, { type: "file.saved", repoId: repo.repoId, path: "", headSha: outcome.sha,
+    authorId: result.user.id, authorName: `${result.user.displayName} · published`, originId: null, at: Date.now() });
+  return Response.json({ ...outcome, projectRepositoryId: repositoryId } satisfies PublishResponse);
 }

@@ -26,7 +26,7 @@ type Props = {
 export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
   const [search, setSearch] = useState("");
   const visible = projects?.filter((project) =>
-    `${project.name} ${project.githubRepo ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()),
+    project.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
   return (
@@ -55,7 +55,7 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             <SparkleIcon className="h-4 w-4 text-vs-accent" /> From your first prompt to a team result
           </div>
           <h2 id="workflow-heading" className="font-display mt-3 text-2xl font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-vs-muted">A project organizes your code. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-vs-muted">A project organizes your team and repositories. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
           <details open={projects?.length === 0} className="mt-4">
             <summary className="cursor-pointer rounded-lg py-2 text-sm font-medium text-vs-fg">How this workspace works</summary>
           <ol className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
@@ -142,10 +142,10 @@ function ProjectCard({ project, org, me, onManageMembers, onOpenRoom }: Pick<Pro
     <article className="flex min-w-0 flex-col rounded-xl border border-vs-border bg-vs-panel p-5 transition-colors hover:border-vs-muted/50">
       <div className="flex items-start gap-3">
         <span className="rounded-xl border border-vs-border bg-vs-editor p-3"><GitBranchIcon className="h-5 w-5 text-vs-muted" /></span>
-        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 truncate text-xs text-vs-muted" title={project.githubRepo ?? undefined}>{project.githubRepo ? `${project.githubRepo} · reference only` : "Add or browse code in your room"}</p></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 truncate text-xs text-vs-muted" >Multiple repositories, one team workspace</p></div>
         <span className="rounded-md border border-vs-border px-2 py-1 text-xs capitalize text-vs-muted">{project.myRole}</span>
       </div>
-      <div className="mt-5 flex items-center gap-2 text-xs text-vs-muted"><GitBranchIcon className="h-3.5 w-3.5" /><span className="truncate">{project.defaultBranch ?? "main"}</span><span aria-hidden>·</span><span>Separate rooms, shared project</span></div>
+      <div className="mt-5 flex items-center gap-2 text-xs text-vs-muted"><GitBranchIcon className="h-3.5 w-3.5" /><span className="truncate">Repositories</span><span aria-hidden>·</span><span>Separate rooms, shared project</span></div>
       {error && <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
         <button type="button" onClick={onManageMembers} className="flex items-center gap-2 rounded-md py-2 text-sm text-vs-muted hover:text-vs-fg"><UsersIcon className="h-4 w-4" /> Members</button>

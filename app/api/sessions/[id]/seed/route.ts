@@ -23,6 +23,9 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   if (result.role !== "owner") {
     return forbidden("Only the session owner can add the folder.");
   }
+  if (result.session.projectId && !result.session.repo) {
+    return Response.json({ error: "Import a repository through the room repository picker." }, { status: 409 });
+  }
   if (result.session.repo) {
     return Response.json({ error: "This session already holds a repository." }, { status: 409 });
   }

@@ -1,17 +1,4 @@
-/*
- * Additional repos inside a room.
- *
- * A room is born with one repo — its fork of the project's `main`
- * (session_repos). This module manages the rest: codebases a member imports
- * into their room to work on alongside the project. Each gets an id from the
- * same alphabet sessions use, so the whole git layer (barePath/workPath,
- * seeding, locking, committing, ensureWork) operates on it unchanged — the id
- * *is* the repo handle, exactly as it is for sessions.
- *
- * Imported repos are standalone: no project remote, so publish/sync never
- * touch them, and their history lives entirely in their own bare repo. Agent
- * runs bind to one via agent_runs.repo_id (null = the room's project fork).
- */
+/** Independently selected repositories inside a room; no mandatory project fork. */
 
 import { query, queryOne } from "../db/client";
 import { mintPathId } from "./store";
@@ -19,6 +6,7 @@ import { mintPathId } from "./store";
 export type RoomRepo = {
   id: string;
   sessionId: string;
+  projectRepositoryId?: string | null;
   rootName: string;
   headSha: string | null;
   baseSha: string | null;
@@ -32,6 +20,7 @@ export type RoomRepo = {
 type RepoRow = {
   id: string;
   session_id: string;
+  project_repository_id: string | null;
   root_name: string;
   head_sha: string | null;
   base_sha: string | null;
@@ -44,6 +33,7 @@ type RepoRow = {
 const toRepo = (row: RepoRow): RoomRepo => ({
   id: row.id,
   sessionId: row.session_id,
+  projectRepositoryId: row.project_repository_id,
   rootName: row.root_name,
   headSha: row.head_sha,
   baseSha: row.base_sha,
@@ -53,7 +43,7 @@ const toRepo = (row: RepoRow): RoomRepo => ({
   seededAt: row.seeded_at ? row.seeded_at.getTime() : null,
 });
 
-const COLUMNS = "base_sha, id, session_id, root_name, head_sha, upstream_url, created_by, created_at, seeded_at";
+const COLUMNS = "project_repository_id, base_sha, id, session_id, root_name, head_sha, upstream_url, created_by, created_at, seeded_at";
 
 /** A room's imported repos, oldest first — stable order for pickers and lists. */
 export async function listRoomRepos(sessionId: string): Promise<RoomRepo[]> {
@@ -83,6 +73,7 @@ export async function getRoomRepo(repoId: string): Promise<RoomRepo | null> {
  */
 export async function createRoomRepo(input: {
   sessionId: string;
+  projectRepositoryId?: string | null;
   rootName: string;
   createdBy: string;
 }): Promise<RoomRepo> {
@@ -92,11 +83,11 @@ export async function createRoomRepo(input: {
     if (taken) continue;
     try {
       const row = await queryOne<RepoRow>(
-        `INSERT INTO room_repos (id, session_id, root_name, created_by)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO room_repos (id, session_id, root_name, created_by, project_repository_id)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO NOTHING
          RETURNING ${COLUMNS}`,
-        [id, input.sessionId, input.rootName, input.createdBy],
+        [id, input.sessionId, input.rootName, input.createdBy, input.projectRepositoryId ?? null],
       );
       if (row) return toRepo(row);
     } catch (cause) {

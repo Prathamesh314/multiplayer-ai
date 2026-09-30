@@ -405,14 +405,12 @@ await test("personal rooms are not limited to one per owner", async () => {
 
 // --- project members: the access gate --------------------------------------
 
-await test("a github project must name a repo", async () => {
-  await rejects(
-    db,
-    `INSERT INTO projects (org_id, slug, name, created_by, source)
-     VALUES ($1, 'gh1', 'GH', $2, 'github')`,
-    [acme, alice],
-    /projects_github_needs_repo/,
-  );
+await test("a project starts without a repository and can contain several", async () => {
+  const count = await db.query(`SELECT count(*)::int AS n FROM project_repositories WHERE project_id = $1`, [acmeProject]);
+  assert.equal(count.rows[0].n, 0);
+  await db.query(`INSERT INTO project_repositories(project_id,name,created_by) VALUES ($1,'frontend',$2),($1,'backend',$2)`, [acmeProject,alice]);
+  const multiple = await db.query(`SELECT count(*)::int AS n FROM project_repositories WHERE project_id = $1`, [acmeProject]);
+  assert.equal(multiple.rows[0].n, 2);
 });
 
 await test("a non-org-member cannot be added to a project", async () => {

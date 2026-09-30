@@ -247,93 +247,32 @@ export function CreateProjectDialog({
   onClose: () => void;
   onCreated: (project: Project) => void;
 }) {
-  const [source, setSource] = useState<"github" | "local">("local");
   const [name, setName] = useState("");
-  const [repo, setRepo] = useState("");
-  const [branch, setBranch] = useState("main");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (busy || !name.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      const project = await createProject(org.slug, {
-        name: name.trim() || repo.split("/").pop() || "Project",
-        source,
-        githubRepo: source === "github" ? repo.trim() : undefined,
-        defaultBranch: source === "github" ? branch.trim() || "main" : undefined,
-        upstreamUrl: source === "github" ? `https://github.com/${repo.trim()}.git` : undefined,
-      });
-      onCreated(project);
+      onCreated(await createProject(org.slug, { name: name.trim() }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong.");
+      setError(cause instanceof Error ? cause.message : "Could not create the project.");
       setBusy(false);
     }
   }
 
-  const valid = source === "github" ? /^[^/\s]+\/[^/\s]+$/.test(repo.trim()) : name.trim().length > 0;
-
   return (
-    <Modal
-      title="New project"
-      description="Give your work a name. After creating the project, open your room to add code and start an AI chat. Room visibility controls who can see your work."
+    <Modal title="New project"
+      description="Organize your team, rooms, and repositories. Start empty, then add as many repositories as your work needs."
       onClose={onClose}
-      footer={
-        <>
-          <GhostButton onClick={onClose}>Cancel</GhostButton>
-          <PrimaryButton onClick={submit} disabled={busy || !valid}>
-            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
-          </PrimaryButton>
-        </>
-      }
+      footer={<><GhostButton onClick={onClose}>Cancel</GhostButton><PrimaryButton onClick={submit} disabled={busy || !name.trim()}>{busy && <SpinnerIcon className="h-4 w-4" />} Create</PrimaryButton></>}
     >
       {error && <ErrorNote>{error}</ErrorNote>}
-      <div className="flex gap-2">
-        {(["local", "github"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setSource(option)}
-            aria-pressed={source === option}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${
-              source === option
-                ? "border-vs-accent bg-vs-accent/10 text-vs-fg"
-                : "border-vs-border text-vs-muted hover:bg-vs-hover"
-            }`}
-          >
-            {option === "github" ? "GitHub reference" : "Start a project"}
-          </button>
-        ))}
-      </div>
-
-      {source === "github" ? (
-        <>
-          <p className="rounded-lg border border-vs-warn/30 bg-vs-warn/5 p-3 text-sm leading-6 text-vs-muted">This saves a GitHub repository reference only. It does not connect your GitHub account, download files, or create pull requests. Import the code from a folder after opening your room.</p>
-          <Field label="Repository" hint="owner/name, as it appears on GitHub.">
-            <input
-              autoFocus
-              className={inputClass}
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              placeholder="acme/web"
-            />
-          </Field>
-          <Field label="Default branch">
-            <input className={inputClass} value={branch} onChange={(e) => setBranch(e.target.value)} />
-          </Field>
-        </>
-      ) : (
-        <Field label="Name">
-          <input
-            autoFocus
-            className={inputClass}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Prototype"
-          />
-        </Field>
-      )}
+      <Field label="Name">
+        <input autoFocus className={inputClass} value={name} maxLength={80} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void submit(); }} placeholder="Customer platform" />
+      </Field>
     </Modal>
   );
 }

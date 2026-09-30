@@ -6,6 +6,8 @@ import type { TreeNode } from "../types";
  * up in here, the design has drifted back to snapshotting.
  */
 export type SessionRepo = {
+  /** Explicit shared repository, absent for room-only imports. */
+  projectRepositoryId?: string | null;
   /** Name of the folder that was seeded, for the explorer header. */
   rootName: string;
   /** Branch the session forked from. */

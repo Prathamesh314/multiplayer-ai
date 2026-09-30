@@ -81,7 +81,8 @@ export function assembleKnowledgeGraph(input: {
   projectId: string;
   rooms: RoomInput[];
   /** The indexed HEAD of the project repo, when one exists. */
-  repoSha: string | null;
+  repoSha?: string | null;
+  repositories?: { id: string; name: string; sha: string }[];
 }): KnowledgeNode {
   const rooms: KnowledgeNode[] = input.rooms.map((room) => ({
     kind: "room",
@@ -99,19 +100,14 @@ export function assembleKnowledgeGraph(input: {
     })),
   }));
 
-  const children: KnowledgeNode[] = input.repoSha
-    ? [
-        {
-          kind: "repo",
-          id: `repo:${input.projectId}`,
-          name: input.repoSha.slice(0, 12),
-          bank: repoBank(input.projectId, input.repoSha),
-          lastActivity: 0,
-          children: [],
-        },
-        ...rooms,
-      ]
-    : rooms;
+  const repositories = input.repositories ?? (input.repoSha ? [{ id: input.projectId, name: input.repoSha.slice(0, 12), sha: input.repoSha }] : []);
+  const children: KnowledgeNode[] = [
+    ...repositories.map(repository => ({
+      kind: "repo" as const, id: `repo:${repository.id}`, name: repository.name,
+      bank: repoBank(repository.id, repository.sha), lastActivity: 0, children: [],
+    })),
+    ...rooms,
+  ];
 
   return {
     kind: "project",

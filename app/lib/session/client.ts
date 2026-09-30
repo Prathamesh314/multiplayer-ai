@@ -94,17 +94,25 @@ export type MergeOutcome =
   | { ok: false; reason: "conflict"; files: string[] };
 
 /** Merge this room's work back into the project's shared main. */
-export async function publishRoom(id: string): Promise<MergeOutcome> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/publish`, { method: "POST" });
-  if (response.status === 409) return (await response.json()) as MergeOutcome;
+export async function publishRoom(id: string, repoId: string | null = null): Promise<MergeOutcome> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/publish?repoId=${encodeURIComponent(repoId ?? "")}`, { method: "POST" });
+  if (response.status === 409) {
+    const body = await response.json();
+    if (body.reason === "conflict" && Array.isArray(body.files)) return body as MergeOutcome;
+    throw new Error(body.error ?? "Repository action could not be completed.");
+  }
   if (!response.ok) throw new Error(await readError(response, "Could not publish to the project."));
   return (await response.json()) as MergeOutcome;
 }
 
 /** Pull the project's latest main into this room. */
-export async function syncRoom(id: string): Promise<MergeOutcome> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/sync`, { method: "POST" });
-  if (response.status === 409) return (await response.json()) as MergeOutcome;
+export async function syncRoom(id: string, repoId: string | null = null): Promise<MergeOutcome> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/sync?repoId=${encodeURIComponent(repoId ?? "")}`, { method: "POST" });
+  if (response.status === 409) {
+    const body = await response.json();
+    if (body.reason === "conflict" && Array.isArray(body.files)) return body as MergeOutcome;
+    throw new Error(body.error ?? "Repository action could not be completed.");
+  }
   if (!response.ok) throw new Error(await readError(response, "Could not sync from the project."));
   return (await response.json()) as MergeOutcome;
 }

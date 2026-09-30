@@ -40,6 +40,7 @@ export async function POST(
   if (!repo || repo.sessionId !== id) {
     return Response.json({ error: "That repo isn't in this room." }, { status: 404 });
   }
+  if (repo.projectRepositoryId) return Response.json({ error: "This repository is a shared checkout and cannot be seeded." }, { status: 409 });
   if (repo.createdBy !== result.user.id) return forbidden("Only the importing member can upload this repository.");
 
   let body: SeedRequest;

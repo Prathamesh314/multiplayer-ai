@@ -321,7 +321,7 @@ try {
   await test("effective project access includes implicit editors and refuses suspension, removal, and private rooms", async () => {
     const orgId = (await sql(`INSERT INTO orgs(slug,name,created_by) VALUES ('handoff-org','Handoff org',$1) RETURNING id`, [alice])).rows[0].id;
     await sql(`INSERT INTO org_members(org_id,user_id,role) VALUES ($1,$2,'owner'),($1,$3,'member')`, [orgId, alice, bob]);
-    const projectId = (await sql(`INSERT INTO projects(org_id,slug,name,source,created_by) VALUES ($1,'handoff-project','Handoff project','local',$2) RETURNING id`, [orgId, alice])).rows[0].id;
+    const projectId = (await sql(`INSERT INTO projects(org_id,slug,name,created_by) VALUES ($1,'handoff-project','Handoff project',$2) RETURNING id`, [orgId, alice])).rows[0].id;
     await sql(`INSERT INTO project_members(project_id,org_id,user_id,role) VALUES ($1,$2,$3,'editor')`, [projectId, orgId, bob]);
     await sql(`INSERT INTO sessions(id,name,join_code,owner_id,org_id,project_id) VALUES ('projectrooms','Project room','ABCD-MNPQ',$1,$2,$3)`, [alice, orgId, projectId]);
     const role = async () => (await sql(`SELECT room_access_role('projectrooms',$1) AS role`, [bob])).rows[0].role;

@@ -1,7 +1,6 @@
 import { isUniqueViolation, queryOne } from "../db/client";
 import type { ProjectRole } from "../project/types";
-import { forkRoomFromProject, gitAvailable } from "./repo";
-import { attachRepo, createSession, memberRoomInProject } from "./store";
+import { createSession, memberRoomInProject } from "./store";
 import type { Session } from "./types";
 
 /**
@@ -9,15 +8,15 @@ import type { Session } from "./types";
  * makes one: named after their handle (renameable later), public, and pinned
  * so the retention sweep never reaps a member's only room in a project.
  *
- * Viewers are the exception — a room is a writable branch of the project, and
+ * Viewers are the exception — a room is a writable workspace, and
  * a read-only role must not own one. They get theirs if they are promoted.
  *
  * Idempotent by construction — the sessions_member_room_key index refuses a
  * second room, so two concurrent calls settle on the same row. Returns null
- * when no room is owed or git is unavailable; a later call creates the room.
+ * when no room is owed. Creating a room does not create or select a repository.
  */
 export async function ensureMemberRoom(
-  project: { id: string; orgId: string; upstreamUrl: string | null },
+  project: { id: string; orgId: string },
   userId: string,
   projectRole: ProjectRole,
   handle?: string,
@@ -26,7 +25,6 @@ export async function ensureMemberRoom(
   if (existing) return existing;
 
   if (projectRole === "viewer") return null;
-  if (!(await gitAvailable())) return null;
 
   const name =
     handle ??
@@ -49,6 +47,5 @@ export async function ensureMemberRoom(
     throw cause;
   }
 
-  const repo = await forkRoomFromProject(session.id, project.id, session.name);
-  return (await attachRepo(session.id, repo, project.upstreamUrl)) ?? session;
+  return session;
 }

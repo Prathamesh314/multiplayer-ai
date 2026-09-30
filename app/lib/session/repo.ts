@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
 import type { TreeNode } from "../types";
 import { repoLock } from "./lock";
-import { barePath, isSessionId, projectBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
+import { barePath, isSessionId, sharedRepositoryBarePath, resolveInside, safeRelativePath, workPath } from "./paths";
 import type { ChangedFile, SessionRepo } from "./types";
 
 const run = promisify(execFile);
@@ -127,14 +127,14 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * Ensures the project's canonical bare repo exists with an initial `main`.
+ * Ensures the shared repository's canonical bare repo exists with an initial `main`.
  *
  * Idempotent: rooms call it on the way to forking, and only the first one does
  * any work. `main` starts as an empty root commit so a room always has a real
  * commit to fork from, even before anyone has published anything.
  */
-export async function ensureProjectRepo(projectId: string): Promise<void> {
-  const bare = projectBarePath(projectId);
+export async function ensureSharedRepository(repositoryId: string): Promise<void> {
+  const bare = sharedRepositoryBarePath(repositoryId);
   if (await exists(bare)) return;
 
   await mkdir(dirname(bare), { recursive: true });
@@ -142,11 +142,11 @@ export async function ensureProjectRepo(projectId: string): Promise<void> {
 
   // A bare repo can't hold a commit on its own; make the root commit in a throwaway
   // work tree and push it, so `main` exists for the first fork.
-  const seed = join(dirname(bare), `.seed-${projectId}`);
+  const seed = join(dirname(bare), `.seed-${repositoryId}`);
   await mkdir(seed, { recursive: true });
   try {
     await git(seed, ["init", "-b", BASE_BRANCH]);
-    await git(seed, ["commit", "--allow-empty", "-m", "Initialize project"]);
+    await git(seed, ["commit", "--allow-empty", "-m", "Initialize repository"]);
     await git(seed, ["remote", "add", "origin", bare]);
     await git(seed, ["push", "origin", BASE_BRANCH]);
   } finally {
@@ -155,20 +155,20 @@ export async function ensureProjectRepo(projectId: string): Promise<void> {
 }
 
 /**
- * Creates a room as a branch of the project: its bare repo is a clone of the
- * project's, so it starts at the project's current `main`, and `session/<id>`
- * forks from there. The room also keeps the project repo as a `project` remote
+ * Creates a room checkout of an explicitly selected shared repository. Its
+ * bare repo starts at that repository's current `main`, and `session/<id>`
+ * forks from there. The room keeps the shared repo as a `project` remote
  * for later publish and sync.
  *
  * This is the fork half of the Git/Branch model; publishRoom is the merge half.
  */
-export async function forkRoomFromProject(
+export async function forkRoomRepository(
   roomId: string,
-  projectId: string,
+  repositoryId: string,
   rootName: string,
 ): Promise<SessionRepo> {
-  await ensureProjectRepo(projectId);
-  const projectBare = projectBarePath(projectId);
+  await ensureSharedRepository(repositoryId);
+  const sharedBare = sharedRepositoryBarePath(repositoryId);
   const bare = barePath(roomId);
   const work = workPath(roomId);
   const branch = sessionBranchOf(roomId);
@@ -176,14 +176,15 @@ export async function forkRoomFromProject(
   await mkdir(dirname(bare), { recursive: true });
   await mkdir(dirname(work), { recursive: true });
 
-  // Room bare = a clone of the project repo, so it carries the shared main.
-  await git(dirname(bare), ["clone", "--bare", projectBare, bare]);
+  // Room bare = a clone of the selected shared repo, so it carries the shared main.
+  if (!await exists(bare)) await git(dirname(bare), ["clone", "--bare", sharedBare, bare]);
   // Working copy clones the room bare (its origin), matching every other room.
-  await git(dirname(work), ["clone", "--branch", BASE_BRANCH, bare, work]);
-  await git(work, ["remote", "add", PROJECT_REMOTE, projectBare]);
+  if (!await exists(work)) await git(dirname(work), ["clone", "--branch", BASE_BRANCH, bare, work]);
+  await ensureProjectRemote(work, repositoryId);
 
   const baseSha = (await git(work, ["rev-parse", "HEAD"])).trim();
-  await git(work, ["checkout", "-b", branch]);
+  if (await gitOk(work, ["show-ref", "--verify", `refs/heads/${branch}`])) await git(work, ["checkout", branch]);
+  else await git(work, ["checkout", "-b", branch]);
   await git(work, ["push", "-u", "origin", branch]);
 
   return {
@@ -206,25 +207,25 @@ export type MergeResult =
   /** The room and project diverged on the same lines; nothing was changed. */
   | { ok: false; reason: "conflict"; files: string[] };
 
-/** Makes sure the room's working copy has the project repo as a remote. */
-async function ensureProjectRemote(work: string, projectId: string): Promise<void> {
+/** Makes sure the room checkout has its selected shared repository as a remote. */
+async function ensureProjectRemote(work: string, repositoryId: string): Promise<void> {
   const has = await gitOk(work, ["remote", "get-url", PROJECT_REMOTE]);
-  if (!has) await git(work, ["remote", "add", PROJECT_REMOTE, projectBarePath(projectId)]);
+  if (!has) await git(work, ["remote", "add", PROJECT_REMOTE, sharedRepositoryBarePath(repositoryId)]);
 }
 
 /**
- * Publishes a room's work back to the project's `main` — the "merge back to the
+ * Publishes a room's work back to the shared repository's `main` — the "merge back to the
  * source of truth" step.
  *
- * The project's latest main is merged into the room branch first, so publishing
+ * The repository's latest main is merged into the room branch first, so publishing
  * is always a fast-forward of main and never clobbers a concurrent publish from
  * another room. A merge conflict aborts cleanly and is reported, leaving both
- * the room and the project exactly as they were.
+ * the room and the shared repository exactly as they were.
  */
-export async function publishRoom(roomId: string, projectId: string): Promise<MergeResult> {
+export async function publishRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
   const work = workPath(roomId);
   return withRepoLock(roomId, async () => {
-    await ensureProjectRemote(work, projectId);
+    await ensureProjectRemote(work, repositoryId);
     await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
 
     const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
@@ -243,13 +244,13 @@ export async function publishRoom(roomId: string, projectId: string): Promise<Me
 }
 
 /**
- * Pulls the project's latest `main` into a room — the reverse of publish, for
+ * Pulls the shared repository's latest `main` into a room — the reverse of publish, for
  * picking up what other rooms have merged without leaving the room.
  */
-export async function syncRoom(roomId: string, projectId: string): Promise<MergeResult> {
+export async function syncRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
   const work = workPath(roomId);
   return withRepoLock(roomId, async () => {
-    await ensureProjectRemote(work, projectId);
+    await ensureProjectRemote(work, repositoryId);
     await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
 
     const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
@@ -265,9 +266,9 @@ export async function syncRoom(roomId: string, projectId: string): Promise<Merge
   });
 }
 
-/** The current `main` of a project's canonical repo, or null if uninitialised. */
-export async function projectHeadSha(projectId: string): Promise<string | null> {
-  const bare = projectBarePath(projectId);
+/** The current `main` of a shared repository's canonical repo, or null if uninitialised. */
+export async function sharedRepositoryHeadSha(repositoryId: string): Promise<string | null> {
+  const bare = sharedRepositoryBarePath(repositoryId);
   if (!(await exists(bare))) return null;
   try {
     return (await git(bare, ["rev-parse", BASE_BRANCH])).trim();
@@ -278,7 +279,7 @@ export async function projectHeadSha(projectId: string): Promise<string | null> 
 
 function contextBare(ref: string): string {
   if (!isSessionId(ref) && !/^[0-9a-f-]{36}$/i.test(ref)) throw new Error("Invalid repository ref");
-  return isSessionId(ref) ? barePath(ref) : projectBarePath(ref);
+  return isSessionId(ref) ? barePath(ref) : sharedRepositoryBarePath(ref);
 }
 
 function commitSha(sha: string): string {
@@ -345,12 +346,12 @@ export async function verifyPushedCommit(
 }
 
 /**
- * Every tracked path at the project's `main` HEAD, read straight from the bare
+ * Every tracked path at the shared repository's `main` HEAD, read straight from the bare
  * repo — no working copy needed, so this is safe from any process. Used by the
  * repo-context indexer (app/lib/knowledge/repo-context.ts).
  */
-export async function listProjectFiles(projectId: string): Promise<string[]> {
-  const bare = projectBarePath(projectId);
+export async function listSharedRepositoryFiles(repositoryId: string): Promise<string[]> {
+  const bare = sharedRepositoryBarePath(repositoryId);
   if (!(await exists(bare))) return [];
   try {
     const out = await git(bare, ["ls-tree", "-r", "--name-only", BASE_BRANCH]);
@@ -364,7 +365,7 @@ export async function listProjectFiles(projectId: string): Promise<string[]> {
  * The same three reads for a *room's* repo — its fork, or an imported one —
  * whose bare lives at `repos/<id>.git` and whose work happens on
  * `session/<id>`. These exist so the context indexer can understand the repo
- * a chat actually edits, not just the project's canonical main.
+ * a chat actually edits, not just the shared repository's canonical main.
  */
 
 /** The head of a room repo's working branch, straight from its bare repo. */
@@ -410,18 +411,18 @@ export async function readRepoRefFileText(
 }
 
 /**
- * One file's text at the project's `main` HEAD, or null when it is missing,
+ * One file's text at the shared repository's `main` HEAD, or null when it is missing,
  * binary, or the path is unsafe. Truncated to `maxBytes` — the callers distill
  * summaries, so a file's head is all they need.
  */
-export async function readProjectFileText(
-  projectId: string,
+export async function readSharedRepositoryFileText(
+  repositoryId: string,
   relative: string,
   maxBytes = 64 * 1024,
 ): Promise<string | null> {
   const path = safeRelativePath(relative);
   if (!path) return null;
-  const bare = projectBarePath(projectId);
+  const bare = sharedRepositoryBarePath(repositoryId);
   if (!(await exists(bare))) return null;
   try {
     const out = await git(bare, ["show", `${BASE_BRANCH}:${path}`]);
@@ -1014,4 +1015,13 @@ export async function committedChanges(id: string, base: string, head: string): 
     changes.push({ status: fields[index] as ChangedFile["status"], path: fields[index + 1] });
   }
   return changes;
+}
+
+/** First explicit publication of a room-only repository. No project-wide repo is inferred. */
+export async function initializeSharedRepository(ref: string, repositoryId: string, sha: string): Promise<void> {
+  const bare = sharedRepositoryBarePath(repositoryId);
+  if (await sharedRepositoryHeadSha(repositoryId)) return;
+  await mkdir(dirname(bare), { recursive: true });
+  if (!await exists(bare)) await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
+  await git(bare, ["fetch", barePath(ref), `${sha}:refs/heads/${BASE_BRANCH}`]);
 }

@@ -6,7 +6,7 @@ Chats and successive turns for that repository reuse its files and branch.
 Different rooms have different worktrees. A handoff to another computer fetches
 the accepted commit into that computer's own workspace.
 
-Primary room forks in the same project share a bare repository cache locally.
+Room checkouts of the same explicitly selected project repository share a bare repository cache locally. Different repositories in a project have separate caches.
 Imported repositories have separate caches: an import is not assumed to be the
 same codebase merely because its name or source URL matches another import.
 Server repositories and their room authorization boundaries remain separate.
@@ -81,9 +81,9 @@ on each execution machine.
 - **Older installations:** old `work/<turnId>` clones are left untouched for
   recovery. New workspaces use the separate `workspaces-v1` namespace. Existing
   unpushed edits are not silently imported into another turn.
-- **Older queued jobs:** `projectId` is optional and old runners can ignore it.
+- **Older queued jobs:** `projectRepositoryId` is optional; jobs without it use a cache per room repository.
   A new runner receiving an old job creates a repo-scoped cache and pins that
-  choice, so subsequent jobs with project metadata keep the same workspace.
+  choice, so subsequent jobs with repository metadata keep the same workspace.
 - **Retention:** local worktrees and caches persist across turns and restarts.
   Cloud room archival does not automatically delete local work. There is no
   automatic local pruning in this change; do not treat these directories as

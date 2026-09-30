@@ -1,6 +1,6 @@
 import { query, queryOne, transaction } from "../db/client";
 import type { Memory } from "../ai/mnemosyne";
-import { projectHeadSha, repoRefHeadSha, repoSnapshotDiff, repoSnapshotPaths, repoSnapshotText } from "../session/repo";
+import { sharedRepositoryHeadSha, repoRefHeadSha, repoSnapshotDiff, repoSnapshotPaths, repoSnapshotText } from "../session/repo";
 import { isSessionId } from "../session/paths";
 import { queueEnabled } from "../queue";
 import { chunkSource, identifierText, indexableSourcePath, INDEX_VERSION } from "./repo-chunks";
@@ -19,7 +19,7 @@ export async function indexedRepoSha(ref: string): Promise<string | null> {
  * from the read path; room/import context remains approval-gated. */
 export async function ensureRepoContext(ref: string, approvedSha?: string): Promise<void> {
   try {
-    const sha = approvedSha ?? await (isSessionId(ref) ? repoRefHeadSha(ref) : projectHeadSha(ref));
+    const sha = approvedSha ?? await (isSessionId(ref) ? repoRefHeadSha(ref) : sharedRepositoryHeadSha(ref));
     if (!sha) return;
     await query(`INSERT INTO repo_context_jobs(repo_ref, head_sha)
       SELECT $1, $2 WHERE NOT EXISTS (

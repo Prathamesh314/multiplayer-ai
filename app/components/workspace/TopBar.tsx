@@ -21,7 +21,11 @@ type TopBarProps = {
   /** False once this session owns a repo — a session is seeded exactly once. */
   canOpenFolder: boolean;
   members: SessionMember[];
-  importedRepo?: boolean;
+  repoId: string | null;
+  hasRepository: boolean;
+  sharedRepository: boolean;
+  beforePublish: () => Promise<boolean>;
+  onPublished: () => Promise<void>;
 };
 
 export function TopBar({
@@ -38,7 +42,7 @@ export function TopBar({
   onOpenFolder,
   canOpenFolder,
   members,
-  importedRepo = false,
+  repoId, hasRepository, sharedRepository, beforePublish, onPublished,
 }: TopBarProps) {
   return (
     <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 py-2 border-b border-vs-border bg-vs-chrome px-3">
@@ -83,8 +87,8 @@ export function TopBar({
         </span>
       </div>
 
-      {session.projectId && !importedRepo && canEdit(session.myRole) && (
-        <PublishControls sessionId={session.id} />
+      {session.projectId && hasRepository && canEdit(session.myRole) && (
+        <PublishControls key={repoId ?? "legacy"} sessionId={session.id} repoId={repoId} shared={sharedRepository} beforePublish={beforePublish} onPublished={onPublished} />
       )}
 
       <div className="ml-auto hidden sm:block"><PeopleStack members={members} /></div>
@@ -115,10 +119,9 @@ export function TopBar({
 }
 
 /**
- * Sync from / publish to the project's shared main — the Git/Branch model made
- * visible. A room is a branch; these are its pull and merge-back.
+ * Sync and publish the selected repository's room branch.
  */
-function PublishControls({ sessionId }: { sessionId: string }) {
+function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished }: { sessionId: string; repoId: string | null; shared: boolean; beforePublish: () => Promise<boolean>; onPublished: () => Promise<void> }) {
   const [busy, setBusy] = useState<"publish" | "sync" | null>(null);
   const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
@@ -126,8 +129,10 @@ function PublishControls({ sessionId }: { sessionId: string }) {
     setBusy(kind);
     setStatus(null);
     try {
-      const outcome = await (kind === "publish" ? publishRoom(sessionId) : syncRoom(sessionId));
+      if (!await beforePublish()) throw new Error("Save or resolve your edits first.");
+      const outcome = await (kind === "publish" ? publishRoom(sessionId, repoId) : syncRoom(sessionId, repoId));
       if (outcome.ok) {
+        await onPublished();
         setStatus({ tone: "ok", text: kind === "publish" ? "Published to project" : "Up to date with project" });
       } else {
         setStatus({
@@ -148,8 +153,8 @@ function PublishControls({ sessionId }: { sessionId: string }) {
       <button
         type="button"
         onClick={() => run("sync")}
-        disabled={busy !== null}
-        title="Pull the project's latest main into this room"
+        disabled={busy !== null || !shared}
+        title="Get the selected repository’s latest shared changes"
         className="rounded px-2 py-1 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
       >
         {busy === "sync" ? "Syncing…" : "Get latest"}
@@ -158,11 +163,11 @@ function PublishControls({ sessionId }: { sessionId: string }) {
         type="button"
         onClick={() => run("publish")}
         disabled={busy !== null}
-        title="Merge saved room changes into the shared project, not GitHub. Review Changes first."
+        title="Share saved changes in the selected repository with project members. Review Changes first."
         className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-sm text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
       >
         <GitBranchIcon className="h-3 w-3" />
-        {busy === "publish" ? "Publishing…" : "Publish"}
+        {busy === "publish" ? "Publishing…" : shared ? "Publish" : "Share repository"}
       </button>
       {status && (
         <span

@@ -45,6 +45,7 @@ import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
 import { TerminalPanel } from "./TerminalPanel";
+import { ProjectRepositoryPicker } from "./ProjectRepositoryPicker";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
@@ -169,6 +170,9 @@ export function Workspace({
   // project's codebase: any folder can be imported and chatted about here.
   const [roomRepos, setRoomRepos] = useState<RoomRepo[]>([]);
   const [chatRepoId, setChatRepoId] = useState<string | null>(null);
+  const activeRepository = chatRepoId ? roomRepos.find(item => item.id === chatRepoId) : repo;
+  const hasRepo = !!activeRepository && activeRepository.seededAt !== null;
+  const selectedProjectRepositoryId = activeRepository?.projectRepositoryId ?? null;
   const selectedRepoRef = useRef<string | null>(null);
   const loadGeneration = useRef(0);
   const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
@@ -197,6 +201,7 @@ export function Workspace({
         }
       }
       if (cancelled) return;
+      if (!remembered && !session.repo) remembered = repos.find(item => item.seededAt)?.id ?? null;
       if (remembered && repos.some(repo => repo.id === remembered && repo.seededAt) && buffersRef.current.size === 0) {
         selectedRepoRef.current = remembered;
         loadGeneration.current += 1;
@@ -207,34 +212,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session.id]);
-
-  async function importRepoFromSource(source: PickedSource) {
-      setImportingRepo(true);
-      setError(null);
-      try {
-        const scanned =
-          source.kind === "handle"
-            ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
-            : await scanFileList(source.files, "input", { includeIgnored: false });
-        const { repo: imported, skipped } = await importRoomRepo(session.id, scanned, setImportProgress);
-        setRoomRepos((previous) => [...previous.filter(repo => repo.id !== imported.id), imported]);
-        // The next new chat targets what was just imported — that's why it was.
-        const selected = await selectRepository(imported.id);
-        if (!selected) return;
-        setMobilePane("files");
-        setShowChat(true);
-        setEnteredRun(null);
-        if (skipped.length > 0) {
-          setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
-        }
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Could not import that folder.");
-      } finally {
-        setImportingRepo(false);
-        setImportProgress(null);
-      }
-  }
+  }, [session.id, session.repo]);
 
   async function openImportPicker() {
     if (!window.showDirectoryPicker) {
@@ -279,7 +257,7 @@ export function Workspace({
   const repoOptions = useMemo(() => {
     const defaultLabel = repo?.rootName ?? session.name;
     return [
-      { id: "", label: defaultLabel },
+      ...(repo ? [{ id: "", label: defaultLabel }] : []),
       ...roomRepos
         .filter((imported) => imported.seededAt)
         .map((imported) => ({ id: imported.id, label: imported.rootName })),
@@ -325,7 +303,7 @@ export function Workspace({
     [session.id, chatRepoId, savedFile],
   );
 
-  async function selectRepository(next: string | null): Promise<boolean> {
+  const selectRepository = useCallback(async (next: string | null): Promise<boolean> => {
     if (next === selectedRepoRef.current) return true;
     const generation = loadGeneration.current;
     if (!await saver.flush() || [...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) {
@@ -352,7 +330,34 @@ export function Workspace({
     setError(null);
     try { sessionStorage.setItem(`room-repository:${session.id}`, next ?? ""); } catch {}
     return true;
-  }
+  }, [saver, chatRepoId, tabs, activePath, session.id]);
+
+  const importRepoFromSource = useCallback(async (source: PickedSource) => {
+      setImportingRepo(true);
+      setError(null);
+      try {
+        const scanned =
+          source.kind === "handle"
+            ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
+            : await scanFileList(source.files, "input", { includeIgnored: false });
+        const { repo: imported, skipped } = await importRoomRepo(session.id, scanned, setImportProgress);
+        setRoomRepos((previous) => [...previous.filter(repo => repo.id !== imported.id), imported]);
+        // The next new chat targets what was just imported — that's why it was.
+        const selected = await selectRepository(imported.id);
+        if (!selected) return;
+        setMobilePane("files");
+        setShowChat(true);
+        setEnteredRun(null);
+        if (skipped.length > 0) {
+          setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+      } finally {
+        setImportingRepo(false);
+        setImportProgress(null);
+      }
+  }, [session.id, selectRepository]);
 
   async function enterRun(target: AgentRun) {
     if (await selectRepository(target.repoId)) {
@@ -397,11 +402,11 @@ export function Workspace({
   const trackCaret = useCallback(
     (next: Caret) => {
       setCaret(next);
-      if (repo && !readOnly && activePath) {
+      if (hasRepo && !readOnly && activePath) {
         notifyEditing(session.id, activePath, next.line, next.column, chatRepoId);
       }
     },
-    [repo, readOnly, activePath, session.id, chatRepoId],
+    [hasRepo, readOnly, activePath, session.id, chatRepoId],
   );
 
   // One heartbeat per open tab, for as long as this session is open. The tab
@@ -497,6 +502,7 @@ export function Workspace({
 
   const start = useCallback(
     async (source: PickedSource) => {
+      if (session.projectId) { await importRepoFromSource(source); return; }
       setPicked(source);
       // A new folder invalidates every open buffer.
       setTabs([]);
@@ -505,7 +511,7 @@ export function Workspace({
       const scanned = await scan(source, includeIgnored);
       if (scanned) await publish(scanned);
     },
-    [includeIgnored, publish, scan],
+    [includeIgnored, publish, scan, session.projectId, importRepoFromSource],
   );
 
   // A folder chosen in the create dialog is waiting for this session. Reading it
@@ -541,7 +547,7 @@ export function Workspace({
   }, []);
 
   useEffect(() => {
-    if (!repo) return;
+    if (!hasRepo) return;
 
     let cancelled = false;
     const generation = loadGeneration.current;
@@ -567,7 +573,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session, repo, chatRepoId, treeRevision, refreshOpenBuffers]);
+  }, [session, repo, hasRepo, chatRepoId, treeRevision, refreshOpenBuffers]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
@@ -740,7 +746,7 @@ export function Workspace({
       return next;
     });
 
-    if (repo && !readOnly) {
+    if (hasRepo && !readOnly) {
       // Sent on the keystroke, not on the save: a save is over a second away,
       // which is far too late to show that someone is in the file.
       notifyEditing(session.id, path, caretRef.current.line, caretRef.current.column, chatRepoId);
@@ -832,7 +838,7 @@ export function Workspace({
     if (action === "providers" || action === "devices") setHelpDialog(action);
     else if (action === "invite") setInviteOpen(true);
     else if (action === "files") {
-      if (!repo && !readOnly) void openPicker();
+      if (!readOnly) void openImportPicker();
       else setMobilePane("files");
     } else if (action === "team") {
       setShowTeam(true);
@@ -869,29 +875,45 @@ export function Workspace({
         terminalOpen={terminalOpen}
         onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
         onOpenFolder={openPicker}
-        canOpenFolder={!repo && !readOnly}
+        canOpenFolder={!hasRepo && !readOnly}
         members={people.members}
-        importedRepo={!!chatRepoId}
+        repoId={chatRepoId}
+        hasRepository={hasRepo}
+        sharedRepository={!!selectedProjectRepositoryId}
+        beforePublish={async () => await saver.flush() && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)}
+        onPublished={async () => {
+          const [fresh, repos] = await Promise.all([loadSession(session.id), fetchRoomRepos(session.id)]);
+          if (fresh.state === "ready") setRepo(fresh.session.repo);
+          setRoomRepos(repos); setTreeRevision(value => value + 1);
+        }}
       />
-      {helpDialog === "guide" && <RoomGuide hasRepo={!!repo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
+      {helpDialog === "guide" && <RoomGuide hasRepo={hasRepo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
       {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
       {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} />}
       {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
         void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
       }} />}
-      {repo && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-panel px-3 py-2.5">
+      {<div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-panel px-3 py-2.5">
         <button type="button" aria-expanded={showTeam} className="hidden rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover lg:block" onClick={() => setShowTeam(previous => !previous)}>Chats & team</button>
         <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium sm:flex-none">
           <span className="text-vs-muted">Repository</span>
           <select aria-label="Active repository" value={chatRepoId ?? ""} disabled={importingRepo} onChange={event => { const next = event.target.value || null; void selectRepository(next).then(changed => { if (changed) { startNewRun(); setMobilePane("files"); } }); }} className="min-w-0 max-w-64 flex-1 rounded-lg border border-vs-border bg-vs-editor px-2 py-1.5 text-vs-fg">
+            {!repoOptions.length && <option value="">No repository selected</option>}
             {repoOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
         {!readOnly && <button type="button" disabled={importingRepo} onClick={() => void openImportPicker()} className="rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50">{importingRepo ? importProgress ? `Uploading ${importProgress.uploaded}/${importProgress.total}` : "Scanning folder…" : "Import folder"}</button>}
+        {session.projectId && !readOnly && <ProjectRepositoryPicker sessionId={session.id}
+          selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
+          onAttached={async imported => {
+            setRoomRepos(previous => [...previous.filter(item => item.id !== imported.id), imported]);
+            if (!await selectRepository(imported.id)) throw new Error("Repository added. Save your edits before switching to it.");
+            setEnteredRun(null); setMobilePane("files");
+          }} />}
         <span className="ml-auto hidden items-center gap-1.5 text-xs text-vs-muted sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-accent" : "bg-vs-danger"}`} />{live ? "Live room" : "Reconnecting"}</span>
         <nav aria-label="Room panels" className="flex w-full gap-1 rounded-lg bg-vs-editor p-1 lg:hidden">{(["chat", "files", "team"] as const).map(pane => <button key={pane} aria-pressed={mobilePane === pane} onClick={() => setMobilePane(pane)} className={`flex-1 rounded-md px-3 py-1.5 text-xs capitalize ${mobilePane === pane ? "bg-vs-hover font-semibold text-vs-fg" : "text-vs-muted"}`}>{pane === "team" ? "Chats & team" : pane === "chat" ? "Workspace" : "Files & changes"}</button>)}</nav>
       </div>}
-      {error && repo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
+      {error && hasRepo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
       {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
         <span className="min-w-0 flex-1 truncate"><strong>{offer.sender}</strong> offered you a handoff · {offer.title ?? "AI chat"}</span>
         <button className="shrink-0 rounded-lg border border-vs-accent/40 px-3 py-1 font-medium text-vs-accent" onClick={() => { void fetchRun(session.id, offer.runId).then(({ run }) => enterRun(run)).catch(() => setError("Could not open this handoff. Refresh the room and try again.")); }}>Open handoff</button>
@@ -924,19 +946,19 @@ export function Workspace({
       />
 
       <div className="flex min-h-0 flex-1">
-        {!repo ? (
+        {!hasRepo ? (
           // Before a repo exists: the folder upload / open flow fills the room.
           <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
             <WelcomeView
               readOnly={readOnly}
               dragging={dragging}
-              scanning={scanning}
-              seeding={seeding}
+              scanning={scanning || importingRepo}
+              seeding={seeding ?? importProgress}
               progress={progress}
               supportsPicker={supportsPicker}
               error={error}
               hasFolder={!!result}
-              hasRepo={!!repo}
+              hasRepo={hasRepo}
               onOpenPicker={openPicker}
               onOpenInput={() => inputRef.current?.click()}
             />
@@ -1034,18 +1056,18 @@ export function Workspace({
                     key={`${chatRepoId ?? "default"}:${includeIgnored}`}
                     result={result}
                     activePath={activePath}
-                    scanning={scanning}
+                    scanning={scanning || importingRepo}
                     error={treeError}
                     onRefresh={refreshTree}
                     onImport={!readOnly ? () => void openImportPicker() : undefined}
                     repositories={repoOptions.filter(option => option.id !== (chatRepoId ?? ""))}
                     onSelectRepository={next => { void selectRepository(next || null).then(changed => { if (changed) { startNewRun(); setMobilePane("files"); } }); }}
                     includeIgnored={includeIgnored}
-                    canRescan={!repo}
+                    canRescan={!hasRepo}
                     onToggleIgnored={toggleIgnored}
                     onOpenFile={openFile}
                     editing={people.editing}
-                    sessionId={repo ? session.id : undefined}
+                    sessionId={hasRepo ? session.id : undefined}
                     repoId={chatRepoId}
                   />
                 ) : (

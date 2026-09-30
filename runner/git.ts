@@ -14,7 +14,7 @@ import { withWorkspaceLock } from "./workspace-lock";
 const run = promisify(execFile);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const CONFIG = ["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
-type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "userId" | "baseSha" | "turnId">;
+type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId">;
 type Binding = { version: 1; repoRef: string; cacheKey: string };
 
 export type RunnerWorkspace = {
@@ -68,7 +68,7 @@ export class RunnerGit {
     const work = join(root, "work", key);
     const branch = `workspace/${key}`;
     return withWorkspaceLock(join(root, "locks", `workspace-${key}`), job.turnId, async () => {
-      // Pin the cache choice so old queued jobs without projectId keep their
+      // Pin the cache choice so old queued jobs without repository metadata keep their
       // workspace when a newer server starts supplying the field.
       const bindingPath = join(root, "bindings", `${key}.json`);
       let binding: Binding;
@@ -78,7 +78,7 @@ export class RunnerGit {
           throw new Error(`Workspace metadata needs recovery: ${bindingPath}. Existing files were preserved.`);
         }
       } else {
-        binding = { version: 1, repoRef, cacheKey: digest(!job.repoId && job.projectId ? `project:${job.projectId}` : `repo:${repoRef}`) };
+        binding = { version: 1, repoRef, cacheKey: digest(job.projectRepositoryId ? `repository:${job.projectRepositoryId}` : `repo:${repoRef}`) };
         await mkdir(dirname(bindingPath), { recursive: true, mode: 0o700 });
         const temp = `${bindingPath}.${randomUUID()}.tmp`;
         await writeFile(temp, JSON.stringify(binding), { mode: 0o600 });

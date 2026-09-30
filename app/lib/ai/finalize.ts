@@ -1,3 +1,4 @@
+import { projectRepositoryForRoom } from "../project/repositories";
 import { queryOne, transaction } from "../db/client";
 import { events } from "../events";
 import { ensureRepoContext } from "../knowledge/repo-context";
@@ -119,7 +120,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   await bus.publish(saved.sessionId, { type: "run.finished", runId: saved.runId, status: result.status, headSha: result.headSha, at: Date.now() }).catch(() => {});
   if (committed.fresh && result.status === "completed") {
     const session = await queryOne<{ project_id: string | null }>(`SELECT project_id FROM sessions WHERE id = $1`, [saved.sessionId]);
-    const publishGated = saved.repoId === null && !!session?.project_id;
+    const publishGated = !!session?.project_id && (saved.repoId === null || !!await projectRepositoryForRoom(saved.sessionId, saved.repoId));
     if (result.headSha && !publishGated) await ensureRepoContext(repoRef, result.headSha);
   }
   return result;

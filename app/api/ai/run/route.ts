@@ -1,3 +1,4 @@
+import { projectRepositoryForRoom } from "../../../lib/project/repositories";
 import { randomUUID } from "node:crypto";
 import { continuationContext } from "../../../lib/ai/handoff";
 import { ControlError, isUuid, reserveTurn, prepareTurn, failTurn } from "../../../lib/ai/turns";
@@ -29,7 +30,7 @@ import {
   reclaimForServer,
 } from "../../../lib/runner/jobs";
 import { events } from "../../../lib/events";
-import { getRoomRepo } from "../../../lib/session/roomRepos";
+import { resolveRepository } from "../../../lib/session/repository-context";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { terminalAccess } from "../../../lib/terminal/guard";
 
@@ -107,9 +108,6 @@ export async function POST(request: Request) {
   if (!canWrite(result.role)) {
     return forbidden("Running an agent changes files, which needs edit access.");
   }
-  if (!result.session.repo) {
-    return Response.json({ error: "This session has no repository yet." }, { status: 404 });
-  }
 
   const gate = terminalAccess(request);
 
@@ -155,17 +153,9 @@ export async function POST(request: Request) {
   // anything is created, and an import still mid-upload takes no runs.
   let repoId: string | null = run ? run.repoId : null;
   if (!run && typeof body.repoId === "string" && body.repoId) repoId = body.repoId;
-  let headSha = result.session.repo.headSha;
-  if (repoId) {
-    const roomRepo = await getRoomRepo(repoId);
-    if (!roomRepo || roomRepo.sessionId !== sessionId) {
-      return Response.json({ error: "That repo isn't in this room." }, { status: 404 });
-    }
-    if (!roomRepo.seededAt || !roomRepo.headSha) {
-      return Response.json({ error: "That repo is still importing." }, { status: 409 });
-    }
-    headSha = roomRepo.headSha;
-  }
+  const repository = await resolveRepository(result.session, repoId);
+  if (repository instanceof Response) return repository;
+  const headSha = repository.headSha;
 
   // "Import context from…" only makes sense for a brand new chat. Resolved
   // (and validated against project room visibility, via listForkableRuns)
@@ -400,6 +390,7 @@ export async function POST(request: Request) {
     sessionId,
     runId: run.id,
     repoId,
+    projectRepositoryId: await projectRepositoryForRoom(sessionId, repoId),
     baseSha: headSha,
     agentId: agent.id,
     agentPrompt,

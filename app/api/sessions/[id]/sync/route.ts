@@ -1,52 +1,33 @@
 import { events } from "../../../../lib/events";
+import { projectRepositoryForRoom } from "../../../../lib/project/repositories";
+import { projectRoleOf } from "../../../../lib/project/store";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { ensureWork, syncRoom, withRepoLock } from "../../../../lib/session/repo";
+import { repositoryContext } from "../../../../lib/session/repository-context";
+import { setRoomRepoHeadSha } from "../../../../lib/session/roomRepos";
 import { setHeadSha } from "../../../../lib/session/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export type SyncResponse = { ok: true; sha: string } | { ok: false; reason: "conflict"; files: string[] };
 
-export type SyncResponse =
-  | { ok: true; sha: string }
-  | { ok: false; reason: "conflict"; files: string[] };
-
-/**
- * Pull the project's latest `main` into a room — pick up what other rooms have
- * published without leaving the room. The reverse of publish.
- */
-export async function POST(_request: Request, context: RouteContext<"/api/sessions/[id]/sync">) {
+export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/sync">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-
-  if (!canWrite(result.role)) {
-    return forbidden("Syncing rewrites the room's files, which needs edit access.");
-  }
-  if (!result.session.projectId || !result.session.repo) {
-    return Response.json(
-      { error: "This room isn't part of a project, so there's nothing to sync from." },
-      { status: 400 },
-    );
-  }
-
-  await withRepoLock(id, () => ensureWork(id, result.session.repo!.headSha));
-
-  const outcome = await syncRoom(id, result.session.projectId);
-  if (!outcome.ok) {
-    return Response.json(outcome satisfies SyncResponse, { status: 409 });
-  }
-
-  await setHeadSha(id, outcome.sha);
-  await (await events()).publish(id, {
-    type: "file.saved",
-    path: "",
-    headSha: outcome.sha,
-    authorId: result.user.id,
-    authorName: `${result.user.displayName} · synced`,
-    originId: null,
-    at: Date.now(),
-  });
-
+  if (!canWrite(result.role)) return forbidden("Syncing needs edit access to this room.");
+  if (!result.session.projectId || !await projectRoleOf(result.session.projectId, result.user.id)) return forbidden("Syncing needs project membership.");
+  const repo = await repositoryContext(result.session, request);
+  if (repo instanceof Response) return repo;
+  const repositoryId = await projectRepositoryForRoom(id, repo.repoId);
+  if (!repositoryId) return Response.json({ error: "Share this repository with the project before syncing." }, { status: 400 });
+  await withRepoLock(repo.ref, () => ensureWork(repo.ref, repo.headSha));
+  const outcome = await syncRoom(repo.ref, repositoryId);
+  if (!outcome.ok) return Response.json(outcome satisfies SyncResponse, { status: 409 });
+  if (repo.repoId) await setRoomRepoHeadSha(repo.repoId, outcome.sha);
+  else await setHeadSha(id, outcome.sha);
+  await (await events()).publish(id, { type: "file.saved", repoId: repo.repoId, path: "", headSha: outcome.sha,
+    authorId: result.user.id, authorName: `${result.user.displayName} · synced`, originId: null, at: Date.now() });
   return Response.json(outcome satisfies SyncResponse);
 }

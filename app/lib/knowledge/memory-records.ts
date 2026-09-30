@@ -49,12 +49,13 @@ export async function recordExchange(tx: PoolClient, input: {
   sessionId: string; runId: string; turnId: string; prompt: string; reply: string;
   agentMessageId: string | null; commitSha: string | null; repoRef: string;
 }) {
-  const { rows: [source] } = await tx.query(`SELECT s.project_id, r.repo_id, t.driver_user_id, t.created_at
+  const { rows: [source] } = await tx.query(`SELECT s.project_id, r.repo_id, rr.project_repository_id, t.driver_user_id, t.created_at
     FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id JOIN sessions s ON s.id = r.session_id
+    LEFT JOIN room_repos rr ON rr.id = r.repo_id
     WHERE t.id = $1 AND r.id = $2 AND s.id = $3 AND t.status = 'completed'`, [input.turnId, input.runId, input.sessionId]);
   if (!source) throw new MemoryError("A completed source turn is required.");
   const text = [`User: ${input.prompt.trim()}`, `Agent: ${input.reply.trim()}`].join("\n").slice(0, 20000);
-  const gated = !!(input.commitSha && source.project_id && !source.repo_id);
+  const gated = !!(input.commitSha && source.project_id && (!source.repo_id || source.project_repository_id));
   const { rows: [memory] } = await tx.query<MemoryRecord>(`INSERT INTO memory_records
     (room_id, kind, text, status, stated_by, speaker, stated_at, source_run_id, source_turn_id,
      source_agent_message_id, repo_ref, commit_sha, publish_gated, dedupe_key, approved_at)

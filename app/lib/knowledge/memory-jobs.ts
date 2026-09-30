@@ -1,7 +1,8 @@
+import { projectRepositoryForRoom } from "../project/repositories";
 import { randomUUID } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
 import { memoryEnabled, remember } from "../ai/mnemosyne";
-import { projectHeadSha, repoContainsCommit } from "../session/repo";
+import { sharedRepositoryHeadSha, repoContainsCommit } from "../session/repo";
 import { isUuid } from "../ai/turns";
 import { enqueueMemoryJob, extractedKey, insertDerivedMemory, recordMemoryEvent, type MemoryRecord } from "./memory-records";
 import { extractClaims, extractionEnabled, validateClaims } from "./memory-extraction";
@@ -35,12 +36,14 @@ async function markPublished(id: string, actorId: string | null) {
 
 /** Called after Publish and also by durable per-episode jobs. An immutable
  * ancestry check excludes code completed concurrently after the publication. */
-export async function approvePublishedMemories(roomId: string, sha: string, actorId: string): Promise<number> {
+export async function approvePublishedMemories(roomId: string, sha: string, actorId: string, repoRef?: string): Promise<number> {
   const records = await query<MemoryRecord>(`SELECT * FROM memory_records WHERE room_id=$1
     AND kind='episode' AND status='proposed' AND publish_gated AND commit_sha IS NOT NULL`, [roomId]);
   let approved = 0;
   for (const memory of records) {
-    if (memory.project_id && await repoContainsCommit(memory.project_id, memory.commit_sha!, sha)) {
+    if (repoRef && memory.repo_ref !== repoRef) continue;
+    const repositoryId = await projectRepositoryForRoom(roomId, memory.repo_ref === roomId ? null : memory.repo_ref);
+    if (repositoryId && await repoContainsCommit(repositoryId, memory.commit_sha!, sha)) {
       if (await markPublished(memory.id, actorId)) approved++;
     }
   }
@@ -76,8 +79,9 @@ export async function processMemoryJob(deps: MemoryJobDependencies = {}): Promis
     }
     if (job.operation === "publish") {
       const published = deps.published ?? (async (m: MemoryRecord) => {
-        const head = m.project_id ? await projectHeadSha(m.project_id) : null;
-        return !!(head && m.project_id && m.commit_sha && await repoContainsCommit(m.project_id, m.commit_sha, head));
+        const repositoryId = await projectRepositoryForRoom(m.room_id, m.repo_ref === m.room_id ? null : m.repo_ref);
+        const head = repositoryId ? await sharedRepositoryHeadSha(repositoryId) : null;
+        return !!(head && repositoryId && m.commit_sha && await repoContainsCommit(repositoryId, m.commit_sha, head));
       });
       if (!await published(memory)) throw new Error("Waiting for source commit to be published");
       await markPublished(memory.id, null);

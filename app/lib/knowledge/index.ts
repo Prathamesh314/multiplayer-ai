@@ -15,11 +15,11 @@
  */
 
 import { query } from "../db/client";
-import { visibleRoomIds } from "../project/store";
+import { listProjectRepositories, projectRepositoryForRoom } from "../project/repositories";
+import { projectRoleOf, visibleRoomIds } from "../project/store";
 import { recallMemories } from "./memory-retrieval";
 import {
   assembleKnowledgeGraph,
-  repoNode,
   selectRoomBanks,
 } from "./graph";
 import type { KnowledgeNode, RoomInput } from "./graph";
@@ -72,7 +72,7 @@ export async function loadKnowledgeGraph(input: {
   // layer's contract: a chat can always recall its own memory.
   const ids = [...new Set([input.currentSessionId, ...visible])];
 
-  const [rooms, activity, runs, repoSha] = await Promise.all([
+  const [rooms, activity, runs, repositories] = await Promise.all([
     query<{ id: string; name: string }>(
       `SELECT id, name FROM sessions WHERE id = ANY($1)`,
       [ids],
@@ -90,7 +90,9 @@ export async function loadKnowledgeGraph(input: {
         ORDER BY created_at DESC LIMIT $2`,
       [ids, RUN_NODE_CAP],
     ),
-    input.projectId ? indexedRepoSha(input.projectId) : Promise.resolve(null),
+    input.projectId && await projectRoleOf(input.projectId, input.userId)
+      ? listProjectRepositories(input.projectId).then(repositories => Promise.all(repositories.map(async repository => ({ ...repository, sha: await indexedRepoSha(repository.id) }))))
+      : Promise.resolve([]),
   ]);
 
   const activityByRoom = new Map(
@@ -111,7 +113,7 @@ export async function loadKnowledgeGraph(input: {
       lastActivity: activityByRoom.get(room.id) ?? 0,
       runs: runsByRoom.get(room.id) ?? [],
     })),
-    repoSha,
+    repositories: repositories.filter((repository): repository is typeof repository & { sha: string } => !!repository.sha),
   });
 }
 
@@ -158,17 +160,10 @@ async function buildBankContext(input: KnowledgeInput): Promise<Omit<KnowledgeCo
     maxBanks: MAX_BANKS,
   });
 
-  // Keep the canonical-main bank warm even on turns that don't recall from
-  // it — main is approved by definition, so the read path may index it. The
-  // chat's own repo (fork or import) is deliberately NOT kicked here: its
-  // context updates only at approval points (publish / completion).
-  if (input.projectId && (repoNode(graph) === null || route.repo)) {
-    void ensureRepoIndexed(input.projectId);
-  }
-
-  // The repo the AI is about to change comes first; the project's canonical
-  // main rides along as the shared frame of reference.
   const targetRepoRef = input.repoId ?? input.currentSessionId;
+  const sharedRepositoryId = input.projectId && await projectRoleOf(input.projectId, input.userId)
+    ? await projectRepositoryForRoom(input.currentSessionId, input.repoId ?? null) : null;
+  if (sharedRepositoryId) void ensureRepoIndexed(sharedRepositoryId);
 
   // Independent sources: a sidecar outage cannot discard SQL-backed evidence.
   const [memories, repoHits] = await Promise.all([
@@ -176,7 +171,7 @@ async function buildBankContext(input: KnowledgeInput): Promise<Omit<KnowledgeCo
       .catch((cause) => { console.warn("Memory recall failed", cause); return { text: null, records: [] }; }),
     route.repo
       ? recallRepoContext(
-          input.projectId ? [targetRepoRef, input.projectId] : [targetRepoRef],
+          sharedRepositoryId ? [targetRepoRef, sharedRepositoryId] : [targetRepoRef],
           input.prompt,
         ).catch(() => [])
       : Promise.resolve([]),

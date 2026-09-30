@@ -23,7 +23,7 @@ const DATA = mkdtempSync(join(tmpdir(), "mp-repo-test-"));
 process.env.MULTIPLAYER_AI_DATA = DATA;
 
 const repo = require("../.test-build/session/repo.js");
-const { workPath, projectBarePath } = require("../.test-build/session/paths.js");
+const { workPath, sharedRepositoryBarePath } = require("../.test-build/session/paths.js");
 
 let passed = 0;
 let failed = 0;
@@ -61,7 +61,7 @@ function readWork(roomId, rel) {
 /** Read a path at the project's canonical `main`, or null if absent there. */
 function readProjectMain(projectId, rel) {
   try {
-    return execFileSync("git", ["--git-dir", projectBarePath(projectId), "show", `main:${rel}`], {
+    return execFileSync("git", ["--git-dir", sharedRepositoryBarePath(projectId), "show", `main:${rel}`], {
       encoding: "utf8",
     });
   } catch {
@@ -84,11 +84,11 @@ async function run() {
 
   await test("a room forks from the project and starts on its own branch", async () => {
     const p = "proj1";
-    await repo.ensureProjectRepo(p);
-    const before = await repo.projectHeadSha(p);
-    assert.ok(before, "project main should exist after ensureProjectRepo");
+    await repo.ensureSharedRepository(p);
+    const before = await repo.sharedRepositoryHeadSha(p);
+    assert.ok(before, "project main should exist after ensureSharedRepository");
 
-    const r = await repo.forkRoomFromProject("p1-ra", p, "root");
+    const r = await repo.forkRoomRepository("p1-ra", p, "root");
     assert.equal(r.baseBranch, "main");
     assert.equal(r.sessionBranch, "session/p1-ra");
     assert.equal(r.headSha, r.baseShaAtFork, "a fresh fork starts level with base");
@@ -96,16 +96,16 @@ async function run() {
 
   await test("publishing a room fast-forwards the project's main", async () => {
     const p = "02000000-0000-4000-8000-000000000002";
-    await repo.ensureProjectRepo(p);
-    const before = await repo.projectHeadSha(p);
+    await repo.ensureSharedRepository(p);
+    const before = await repo.sharedRepositoryHeadSha(p);
 
-    await repo.forkRoomFromProject("p2-ra", p, "root");
+    await repo.forkRoomRepository("p2-ra", p, "root");
     await editAndCommit("p2-ra", "a.txt", "A1", "Alice");
 
     const res = await repo.publishRoom("p2-ra", p);
     assert.ok(res.ok, `publish should succeed, got ${JSON.stringify(res)}`);
 
-    const after = await repo.projectHeadSha(p);
+    const after = await repo.sharedRepositoryHeadSha(p);
     assert.notEqual(after, before, "project main should advance after publish");
     assert.equal(readProjectMain(p, "a.txt"), "A1", "published file should be on project main");
     assert.equal(await repo.repoContainsCommit(p, before, after), true, "published head contains the original commit");
@@ -115,11 +115,11 @@ async function run() {
 
   await test("two rooms editing different files converge with no lost work", async () => {
     const p = "proj3";
-    await repo.ensureProjectRepo(p);
+    await repo.ensureSharedRepository(p);
 
     // Both fork from the same initial main, before either publishes.
-    await repo.forkRoomFromProject("p3-ra", p, "root");
-    await repo.forkRoomFromProject("p3-rb", p, "root");
+    await repo.forkRoomRepository("p3-ra", p, "root");
+    await repo.forkRoomRepository("p3-rb", p, "root");
 
     // Room A publishes first.
     await editAndCommit("p3-ra", "a.txt", "A1", "Alice");
@@ -144,20 +144,20 @@ async function run() {
 
   await test("conflicting publishes abort cleanly, leaving both sides intact", async () => {
     const p = "proj4";
-    await repo.ensureProjectRepo(p);
+    await repo.ensureSharedRepository(p);
 
     // Seed a shared file on main via room C, so both later rooms fork with it.
-    await repo.forkRoomFromProject("p4-seed", p, "root");
+    await repo.forkRoomRepository("p4-seed", p, "root");
     await editAndCommit("p4-seed", "shared.txt", "base\n", "Seed");
     assert.ok((await repo.publishRoom("p4-seed", p)).ok);
 
-    await repo.forkRoomFromProject("p4-rc", p, "root");
-    await repo.forkRoomFromProject("p4-rd", p, "root");
+    await repo.forkRoomRepository("p4-rc", p, "root");
+    await repo.forkRoomRepository("p4-rd", p, "root");
 
     // Both edit the same line; C publishes first and wins main.
     await editAndCommit("p4-rc", "shared.txt", "from-C\n", "Carol");
     assert.ok((await repo.publishRoom("p4-rc", p)).ok, "C publishes first");
-    const mainAfterC = await repo.projectHeadSha(p);
+    const mainAfterC = await repo.sharedRepositoryHeadSha(p);
 
     // D's publish must conflict on the same line and abort — reporting the file,
     // touching neither the project main nor D's own working copy.
@@ -167,7 +167,7 @@ async function run() {
     assert.equal(pubD.reason, "conflict");
     assert.deepEqual(pubD.files, ["shared.txt"], "the conflicted file is reported");
 
-    assert.equal(await repo.projectHeadSha(p), mainAfterC, "project main is untouched by the failed publish");
+    assert.equal(await repo.sharedRepositoryHeadSha(p), mainAfterC, "project main is untouched by the failed publish");
     assert.equal(readProjectMain(p, "shared.txt"), "from-C\n", "main still holds C's version");
     assert.equal(
       readWork("p4-rd", "shared.txt"),
@@ -178,8 +178,8 @@ async function run() {
 
   await test("per-file diff stats come straight from the bare repo", async () => {
     const p = "proj5";
-    await repo.ensureProjectRepo(p);
-    await repo.forkRoomFromProject("p5-ra", p, "root");
+    await repo.ensureSharedRepository(p);
+    await repo.forkRoomRepository("p5-ra", p, "root");
     const base = await repo.headSha("p5-ra");
 
     // Two files changed: one brand new, one replacing seeded content.

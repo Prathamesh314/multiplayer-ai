@@ -43,6 +43,7 @@ type SessionRow = {
   last_test_status: string | null;
   last_test_sha: string | null;
   repo_root_name: string | null;
+  project_repository_id: string | null;
   seeded_at: Date | null;
 };
 
@@ -51,7 +52,7 @@ const SELECT_SESSION = `
          s.root_name, s.created_at, s.last_active_at, s.pinned, s.archived_at,
          r.base_branch, r.base_sha_at_fork, r.session_branch, r.head_sha,
          r.dep_lockfile_hash, r.spec_doc_sha, r.container_image_digest,
-         r.last_test_status, r.last_test_sha, r.root_name AS repo_root_name, r.seeded_at
+         r.project_repository_id, r.last_test_status, r.last_test_sha, r.root_name AS repo_root_name, r.seeded_at
     FROM sessions s
     LEFT JOIN session_repos r ON r.session_id = s.id
 `;
@@ -59,6 +60,7 @@ const SELECT_SESSION = `
 function toSession(row: SessionRow, myRole?: SessionRole | null): Session {
   const repo: SessionRepo | null = row.session_branch
     ? {
+        projectRepositoryId: row.project_repository_id ?? null,
         rootName: row.repo_root_name ?? row.root_name ?? row.name,
         baseBranch: row.base_branch!,
         baseShaAtFork: row.base_sha_at_fork!,

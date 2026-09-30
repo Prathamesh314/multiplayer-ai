@@ -20,10 +20,6 @@ type ProjectRow = {
   org_id: string;
   slug: string;
   name: string;
-  source: "github" | "local";
-  github_repo: string | null;
-  default_branch: string | null;
-  upstream_url: string | null;
   created_at: Date;
   archived_at: Date | null;
   my_role: ProjectRole;
@@ -34,10 +30,6 @@ const toProject = (row: ProjectRow): Project => ({
   orgId: row.org_id,
   slug: row.slug,
   name: row.name,
-  source: row.source,
-  githubRepo: row.github_repo,
-  defaultBranch: row.default_branch,
-  upstreamUrl: row.upstream_url,
   myRole: row.my_role,
   createdAt: row.created_at.getTime(),
   archivedAt: row.archived_at ? row.archived_at.getTime() : null,
@@ -58,10 +50,6 @@ export type CreateProjectInput = {
   createdBy: string;
   name: string;
   slug?: string;
-  source?: "github" | "local";
-  githubRepo?: string | null;
-  defaultBranch?: string | null;
-  upstreamUrl?: string | null;
 };
 
 export type CreateProjectResult =
@@ -77,11 +65,6 @@ export async function createProject(input: CreateProjectInput): Promise<CreatePr
   const name = input.name.trim().replace(/\s+/g, " ").slice(0, 80);
   if (name.length === 0) return { ok: false, error: "Give the project a name." };
 
-  const source = input.source ?? "local";
-  if (source === "github" && !input.githubRepo) {
-    return { ok: false, error: "Connect a GitHub repository first." };
-  }
-
   let slug = slugify(input.slug ?? name);
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -89,18 +72,13 @@ export async function createProject(input: CreateProjectInput): Promise<CreatePr
       const project = await transaction(async (tx) => {
         const inserted = await tx.query<Omit<ProjectRow, "my_role">>(
           `INSERT INTO projects
-             (org_id, slug, name, source, github_repo, default_branch, upstream_url, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING id, org_id, slug, name, source, github_repo, default_branch,
-                     upstream_url, created_at, archived_at`,
+             (org_id, slug, name, created_by)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, org_id, slug, name, created_at, archived_at`,
           [
             input.orgId,
             slug,
             name,
-            source,
-            input.githubRepo ?? null,
-            input.defaultBranch ?? null,
-            input.upstreamUrl ?? null,
             input.createdBy,
           ],
         );
@@ -144,8 +122,7 @@ const EFFECTIVE_ROLE = `
 /** Projects in an org the caller can see (member of, or org admin). */
 export async function listProjectsForUser(orgId: string, userId: string): Promise<Project[]> {
   const rows = await query<ProjectRow>(
-    `SELECT p.id, p.org_id, p.slug, p.name, p.source, p.github_repo, p.default_branch,
-            p.upstream_url, p.created_at, p.archived_at,
+    `SELECT p.id, p.org_id, p.slug, p.name, p.created_at, p.archived_at,
             ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} AS my_role
        FROM projects p
       WHERE p.org_id = $1
@@ -163,8 +140,7 @@ export async function getProjectForUser(
   userId: string,
 ): Promise<Project | null> {
   const row = await queryOne<ProjectRow>(
-    `SELECT p.id, p.org_id, p.slug, p.name, p.source, p.github_repo, p.default_branch,
-            p.upstream_url, p.created_at, p.archived_at,
+    `SELECT p.id, p.org_id, p.slug, p.name, p.created_at, p.archived_at,
             ${EFFECTIVE_ROLE.replace(/\$USER/g, "$3")} AS my_role
        FROM projects p
       WHERE p.org_id = $1 AND p.slug = $2

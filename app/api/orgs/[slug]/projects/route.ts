@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/orgs/[s
   });
 }
 
-/** Create a project, optionally connected to a GitHub repo. Admins only. */
+/** Create a repository-independent collaboration project. */
 export async function POST(request: Request, context: RouteContext<"/api/orgs/[slug]/projects">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
@@ -42,10 +42,7 @@ export async function POST(request: Request, context: RouteContext<"/api/orgs/[s
     createdBy: result.user.id,
     name: String(body.name ?? ""),
     slug: body.slug,
-    source: body.source === "github" ? "github" : "local",
-    githubRepo: body.githubRepo?.trim() || null,
-    defaultBranch: body.defaultBranch?.trim() || null,
-    upstreamUrl: body.upstreamUrl?.trim() || null,
+
   });
   if (!created.ok) return Response.json({ error: created.error }, { status: 400 });
 

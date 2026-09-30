@@ -12,7 +12,11 @@ export type RepositoryContext = {
 };
 
 export async function repositoryContext(session: Session, request: Request): Promise<RepositoryContext | Response> {
-  const repoId = new URL(request.url).searchParams.get("repoId");
+  return resolveRepository(session, new URL(request.url).searchParams.get("repoId"));
+}
+
+/** Shared by file routes and AI runs, including rooms without a legacy primary repo. */
+export async function resolveRepository(session: Session, repoId: string | null): Promise<RepositoryContext | Response> {
   if (repoId) {
     const repo = isSessionId(repoId) ? await getRoomRepo(repoId) : null;
     if (!repo || repo.sessionId !== session.id) return Response.json({ error: "Repository not found in this room." }, { status: 404 });

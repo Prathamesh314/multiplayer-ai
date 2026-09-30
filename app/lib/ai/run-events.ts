@@ -57,6 +57,8 @@ export type AgentRunJob = {
   repoId: string | null;
   /** Optional for old queued jobs. Only primary room forks share this cache. */
   projectId?: string | null;
+  /** Repository identity for local cache sharing; never inferred from projectId. */
+  projectRepositoryId?: string | null;
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;
   agentId: string;

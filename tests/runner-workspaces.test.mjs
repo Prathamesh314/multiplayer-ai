@@ -12,7 +12,7 @@ import { RunnerGit } from "../runner/git.ts";
 const exec = promisify(execFile);
 const author = { name: "Workspace test", email: "workspace@example.test" };
 const git = async (cwd, ...args) => (await exec("git", ["-c", "commit.gpgsign=false", "-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`, ...args], { cwd })).stdout.trim();
-const job = (baseSha, extra = {}) => ({ userId: "alice", sessionId: "room-a", repoId: null, projectId: "project-a", turnId: randomUUID(), baseSha, ...extra });
+const job = (baseSha, extra = {}) => ({ userId: "alice", sessionId: "room-a", repoId: null, projectId: "project-a", projectRepositoryId: "repository-a", turnId: randomUUID(), baseSha, ...extra });
 const common = work => git(work, "rev-parse", "--path-format=absolute", "--git-common-dir");
 
 async function fixture(t) {
@@ -199,7 +199,7 @@ test("user scopes and imported repositories do not share workspace caches", asyn
   let primary;
   await f.runner().withWorkspace(job(f.base), async w => { primary = await common(w.path); });
   await f.runner().withWorkspace(job(f.base, { userId: "bob" }), async w => assert.notEqual(await common(w.path), primary));
-  await f.runner().withWorkspace(job(f.base, { repoId: "room-b" }), async w => assert.notEqual(await common(w.path), primary));
+  await f.runner().withWorkspace(job(f.base, { repoId: "room-b", projectRepositoryId: null }), async w => assert.notEqual(await common(w.path), primary));
 });
 
 test("an old job without projectId pins its cache and legacy turn directories stay untouched", async t => {
@@ -208,7 +208,7 @@ test("an old job without projectId pins its cache and legacy turn directories st
   await mkdir(legacy, { recursive: true });
   await writeFile(join(legacy, "unfinished.txt"), "legacy work\n");
   let path;
-  await f.runner().withWorkspace(job(f.base, { projectId: undefined }), async w => { path = w.path; });
+  await f.runner().withWorkspace(job(f.base, { projectId: undefined, projectRepositoryId: undefined }), async w => { path = w.path; });
   await f.runner().withWorkspace(job(f.base), async w => assert.equal(w.path, path));
   assert.equal(await readFile(join(legacy, "unfinished.txt"), "utf8"), "legacy work\n");
 });
@@ -237,4 +237,14 @@ test("abandoned process locks are not stolen on restart", async t => {
   const [scope] = await readdir(join(f.data, "workspaces-v1"));
   const locks = await readdir(join(f.data, "workspaces-v1", scope, "locks"));
   assert.equal(locks.length, 1);
+});
+
+
+test("different repositories in one project never share a new cache", async t => {
+  const f = await fixture(t);
+  let first;
+  await f.runner().withWorkspace(job(f.base), async w => { first = await common(w.path); });
+  await f.runner().withWorkspace(job(f.base, { sessionId: "room-b", projectRepositoryId: "repository-b" }), async w => {
+    assert.notEqual(await common(w.path), first);
+  });
 });

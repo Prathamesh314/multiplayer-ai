@@ -30,10 +30,6 @@ export type Project = {
   orgId: string;
   slug: string;
   name: string;
-  source: "github" | "local";
-  githubRepo: string | null;
-  defaultBranch: string | null;
-  upstreamUrl: string | null;
   /** The requesting account's effective role, for gating. */
   myRole: ProjectRole;
   createdAt: number;
@@ -55,11 +51,6 @@ export type ProjectMembersResponse = { members: ProjectMember[] };
 export type CreateProjectRequest = {
   name: string;
   slug?: string;
-  /** 'github' connects a repo; 'local' opens the folder-upload path. */
-  source?: "github" | "local";
-  githubRepo?: string;
-  defaultBranch?: string;
-  upstreamUrl?: string;
 };
 
 export type AddProjectMemberRequest = {
