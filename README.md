@@ -247,7 +247,11 @@ npm run db:migrate        # apply pending migrations when starting manually
 npm run start             # the Electron desktop app
 npm test                  # the test suite
 npm run test:tasks        # task storage, permissions, retries, and pagination
+npm run test:load         # isolated collaboration load test (production build required)
 ```
+
+See [load testing](docs/load-testing.md) for 100/1,000-user profiles, workload
+coverage, latency thresholds, resource reports, and cleanup behavior.
 
 Existing installations must apply migration `031_room_tasks.sql` with
 `npm run db:migrate` before using task assignments. `./start.sh` applies pending
