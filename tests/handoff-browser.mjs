@@ -159,7 +159,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal((await request(tokens[1],"/api/tasks","POST",null)).status,400);
     assert.equal((await request(tokens[1],`/api/tasks/${stored[0].id}`,"PATCH",{status:"invalid"})).status,400);
     const inbox = await tab(tokens[0]);
-    await inbox.command("Page.navigate",{url:server});
+    await inbox.command("Page.navigate",{url:`${server}/workspace`});
     await eventually(() => inbox.evaluate(`document.querySelector('section[aria-label="My tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "assignee dashboard inbox");
     await inbox.evaluate(`(() => {const select=document.querySelector('section[aria-label="My tasks"] select');select.value='done';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
@@ -167,6 +167,82 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
     await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] select\')?.value === "done"'), "status refresh in source chat");
+    // @people in the actual composer assigns a human task without running AI.
+    const composerSelector = '.room-main textarea[placeholder="Type @ to assign a task to a teammate…"]';
+    const setComposer = text => assigner.evaluate(`(() => {
+      const textarea=document.querySelector(${JSON.stringify(composerSelector)});
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(text)});
+      textarea.setSelectionRange(textarea.value.length,textarea.value.length);
+      textarea.dispatchEvent(new Event('input',{bubbles:true}));
+    })()`);
+    await eventually(()=>assigner.evaluate(`!!document.querySelector(${JSON.stringify(composerSelector)})`),"task composer for non-driver");
+    await setComposer('@');
+    await eventually(()=>assigner.evaluate('document.body.textContent.includes("People & chat references")'),"people mention picker");
+    await assigner.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
+    const taggedTask='Please verify the release checklist.';
+    await setComposer('@'+aliceHandle+' '+taggedTask);
+    await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await assigner.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
+    await eventually(()=>assigner.evaluate(`document.querySelector(${JSON.stringify(composerSelector)}).disabled === false && document.body.innerText.includes("Failed to fetch")`),"failed task keeps composer draft");
+    assert.equal(await assigner.evaluate(`document.querySelector(${JSON.stringify(composerSelector)}).value`),'@'+aliceHandle+' '+taggedTask);
+    await assigner.command("Network.setBlockedURLs",{urls:[]});
+    const turnsBefore=(await sql('SELECT count(*)::int AS count FROM agent_turns')).rows[0].count;
+    await assigner.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
+    await eventually(async()=> (await sql('SELECT count(*)::int AS count FROM room_tasks WHERE run_id=$1',[chat.id])).rows[0].count===2,"composer task delivery");
+    const tagged=(await sql('SELECT * FROM room_tasks WHERE run_id=$1 AND body=$2',[chat.id,taggedTask])).rows[0];
+    assert.equal(tagged.assignee_id,alice);
+    assert.equal((await sql('SELECT count(*)::int AS count FROM agent_turns')).rows[0].count,turnsBefore);
+    await eventually(()=>assigner.evaluate(`document.querySelector(${JSON.stringify(composerSelector)}).value === ''`),"task composer clears after success");
+    assert.equal((await sql('SELECT driver_user_id FROM agent_runs WHERE id=$1',[chat.id])).rows[0].driver_user_id,alice);
+    console.log("  ok @person assignment from chat composer, failed-send recovery, and no AI turn or control transfer");
+    // Regression: the screenshot reported by the user was the fresh composer,
+    // before a run exists, with an imported repository selected.
+    {
+    const fresh = await tab(tokens[0]);
+    await fresh.evaluate(`(() => {
+      const select=document.querySelector('select[aria-label="Active repository"]');
+      select.value=${JSON.stringify(imported.id)};select.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    const freshSelector='.room-main textarea[placeholder="Type @ to assign a task, or connect an agent…"]';
+    const writeFresh = text => fresh.evaluate(`(() => {
+      const textarea=document.querySelector(${JSON.stringify(freshSelector)});
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(text)});
+      textarea.setSelectionRange(textarea.value.length,textarea.value.length);
+      textarea.dispatchEvent(new Event('input',{bubbles:true}));
+    })()`);
+    await eventually(()=>fresh.evaluate(`!!document.querySelector(${JSON.stringify(freshSelector)}) && !document.querySelector('section[aria-label="Chat tasks"]')`),"fresh chat task composer");
+    const bobHandle=(await sql('SELECT handle FROM users WHERE id=$1',[bob])).rows[0].handle;
+    await eventually(async()=>{
+      await writeFresh('@');
+      return fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`);
+    },"people in fresh composer mention picker");
+    assert.ok(await fresh.evaluate('document.body.textContent.includes("People & chat references")'));
+    const preview=await fresh.command("Page.captureScreenshot",{format:"png"});
+    await writeFile("/private/tmp/new-chat-task-picker.png",Buffer.from(preview.data,"base64"));
+    await fresh.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
+    const freshBody='Please review the imported storefront before we begin.';
+    await writeFresh('@'+bobHandle+' '+freshBody);
+    const chatCount=(await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n;
+    const turnCount=(await sql('SELECT count(*)::int AS n FROM agent_turns')).rows[0].n;
+    await fresh.command("Network.enable",{});
+    await fresh.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await fresh.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
+    await eventually(()=>fresh.evaluate('document.body.textContent.includes("Failed to fetch")'),"fresh task send failure");
+    assert.equal(await fresh.evaluate(`document.querySelector(${JSON.stringify(freshSelector)}).value`),'@'+bobHandle+' '+freshBody);
+    assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatCount);
+    await fresh.command("Network.setBlockedURLs",{urls:[]});
+    await fresh.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
+    await eventually(()=>fresh.evaluate(`document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(freshBody)})`),"new source chat opens with assigned task");
+    const freshTask=(await sql('SELECT t.*,r.repo_id,r.driver_user_id FROM room_tasks t JOIN agent_runs r ON r.id=t.run_id WHERE t.body=$1',[freshBody])).rows;
+    assert.equal(freshTask.length,1);assert.equal(freshTask[0].assignee_id,bob);
+    assert.equal(freshTask[0].repo_id,imported.id);assert.equal(freshTask[0].driver_user_id,alice);
+    assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatCount+1);
+    assert.equal((await sql('SELECT count(*)::int AS n FROM agent_turns')).rows[0].n,turnCount);
+    const taskInbox=await request(tokens[1],'/api/tasks');
+    assert.ok((await taskInbox.json()).tasks.some(task=>task.id===freshTask[0].id));
+    await send("Target.closeTarget",{targetId:fresh.targetId});
+    console.log("  ok fresh-chat @people picker, failed-send draft recovery, selected repository, inbox delivery, and no AI execution");
+    }
     for (const view of [assigner,inbox]) await send("Target.closeTarget",{targetId:view.targetId});
     console.log("  ok person tagging from another person's chat, failed-send draft recovery, dashboard assignment, completion, and source deep link");
     for (const view of [sender, recipient]) {
@@ -353,6 +429,44 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/complete`, report)).status, 200);
       assert.match(await streamText, /"t":"exit"/);
     }
+    const interrupted = await request(tokens[1], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 1, prompt: "Checkpoint unfinished work", turnId: randomUUID() });
+    assert.equal(interrupted.status,200); const interruptedOutput=interrupted.text();
+    const pendingJob=(await (await runnerRequest("/api/runner/claim",{version:"2",waitMs:0})).json()).job;
+    const checkpointRunner=new RunnerGit(server,deviceToken,join(directory,"simulated-runner"));
+    await checkpointRunner.withWorkspace(pendingJob,async workspace=>{
+      await writeFile(join(workspace.path,"unfinished.txt"),"Available after laptop shutdown\n");
+      await workspace.checkpoint();
+    });
+    await checkpointRunner.deliverCheckpoints({checkpoint:async snapshot=>{
+      const reply=await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/checkpoints`,snapshot);
+      assert.equal(reply.status,200,await reply.text());
+    }});
+    const activityBody={sequence:1,events:[{t:"act",d:"Edited unfinished.txt"},{t:"out",d:"Saved before disconnect"}]};
+    assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/events`,activityBody)).status,200);
+    assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/events`,activityBody)).status,200);
+    assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/complete`,{code:1,resultSha:null,output:"Disconnected",errOutput:"Interrupted",ms:10})).status,200);
+    await interruptedOutput;
+    const historyUrl=`/api/sessions/${roomId}/runs/${chat.id}/history`;
+    const history=await (await request(tokens[0],historyUrl)).json(); assert.ok(history.snapshots.length);
+    const checkpoint=history.snapshots[0];
+    const replay=await (await request(tokens[0],historyUrl+`?turn=${pendingJob.turnId}`)).json();
+    assert.equal(replay.batches.length,1); assert.equal(replay.batches[0].events[0].d,"Edited unfinished.txt");
+    const changed=await (await request(tokens[0],historyUrl+`?snapshot=${checkpoint.id}&path=unfinished.txt`)).json();
+    assert.match(changed.diff,/Available after laptop shutdown/);
+    assert.equal((await request(tokens[0],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,409);
+    assert.equal((await request(tokens[1],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,200);
+    await recipient.command("Page.navigate",{url:`${server}/s/${roomId}?run=${chat.id}`});
+    await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
+    await recipient.click("Activity & checkpoints");
+    await eventually(()=>recipient.evaluate(`document.querySelector('select[aria-label="Code checkpoint"]')?.options.length > 1`),"uploaded checkpoint visible");
+    await recipient.evaluate(`(()=>{const select=document.querySelector('select[aria-label="Code checkpoint"]');select.value=${JSON.stringify(checkpoint.id)};select.dispatchEvent(new Event("change",{bubbles:true}));})()`);
+    await eventually(()=>recipient.evaluate('document.querySelector("dialog")?.textContent.includes("unfinished.txt")'),"offline checkpoint files");
+    await recipient.click("A unfinished.txt");
+    await eventually(()=>recipient.evaluate('document.querySelector("dialog pre")?.textContent.includes("Available after laptop shutdown")'),"checkpoint diff displayed");
+    const historyScreenshot=await recipient.command("Page.captureScreenshot",{format:"png"});
+    await writeFile("/tmp/workspace-history.png",Buffer.from(historyScreenshot.data,"base64"));
+    await recipient.evaluate(`document.querySelector('button[aria-label="Close Synchronized workspace history"]').click()`);
+    console.log("  ok real checkpoint push/report, durable activity retry/replay, offline diff browsing, driver-only restore selection, and history UI");
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok real run/claim/smart-HTTP/completion APIs: two successive turns on recipient device, duplicate completion, old-driver refusal");
     assert.equal((await request(tokens[0], "/api/orgs", "POST", { name: "UX workshop", slug: "ux-workshop" })).status, 201);
@@ -360,16 +474,14 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       fetch(server),
       ...["/api/orgs/ux-workshop/projects", "/api/orgs/ux-workshop/usage", "/api/chat/conversations?org=ux-workshop", "/api/invitations", "/api/runner/devices"].map(path => request(tokens[0], path)),
     ]);
-    await sender.command("Page.navigate", { url: server });
+    await sender.command("Page.navigate", { url: `${server}/workspace` });
     await eventually(() => sender.evaluate('!!document.querySelector(\'button[title="UX workshop"]\')'), "organization navigation");
     await sender.evaluate('document.querySelector(\'button[title="UX workshop"]\').click()');
     await eventually(() => sender.evaluate('document.querySelector("main h1")?.textContent === "UX workshop"'), "guided project overview");
     assert.equal(await sender.evaluate('document.querySelector("dialog") === null'), true, "First visit does not interrupt onboarding with provider setup");
     await sender.click("New project");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Start a project")'), "project setup");
-    assert.equal(await sender.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent === "Start a project").getAttribute("aria-pressed")'), "true", "Local project is the honest default");
-    await sender.click("GitHub reference");
-    assert.equal(await sender.evaluate('document.querySelector("dialog").textContent.includes("does not connect your GitHub account")'), true);
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("add as many repositories as your work needs")'), "project setup");
+    assert.equal(await sender.evaluate(`document.querySelector('dialog input[type="url"]') === null`), true, "A project does not bind a single repository");
     await sender.click("Cancel");
     await sender.command("Network.enable", {});
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/ai/agents*"] });
@@ -381,7 +493,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/runner/devices*"] });
     await sender.click("Connect your computer");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("A runner connects your computer")'), "AI setup links to device pairing");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("The desktop app connects this computer automatically after sign-in")'), "AI setup links to device pairing");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
     await sender.command("Network.setBlockedURLs", { urls: [] });
     await sender.click("Try again");

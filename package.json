@@ -39,15 +39,18 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
     "test:runner-workspaces": "node --import tsx --test tests/runner-workspaces.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models",
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models && npm run test:storage",
     "test:memory": "node --import tsx tests/memory.test.mjs",
     "eval:memory": "node --import tsx scripts/eval-memory.mjs",
     "memory:reindex": "node scripts/reindex-memory.mjs",
     "test:repo-context": "node --import tsx tests/repo-context.test.mjs",
     "test:repo-context:live": "node --import tsx tests/repo-context-live.test.mjs",
-    "test:project-repositories": "node --import tsx tests/project-repositories.test.mjs"
+    "test:project-repositories": "node --import tsx tests/project-repositories.test.mjs",
+    "storage:maintain": "node --import tsx scripts/storage-maintenance.ts",
+    "test:storage": "node --import tsx --test tests/storage.test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1143.0",
     "@next/env": "16.3.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

@@ -1,3 +1,6 @@
+import { captureCheckpoint, restoreCheckpoint } from "./checkpoints";
+import { checkpointRef, type Checkpoint } from "../app/lib/runner/checkpoint-types";
+import type { RunnerApi } from "./api";
 /*
  * One persistent branch/worktree per room repository, backed by a bare cache
  * shared by rooms of the same repository on this user's device. The cloud owns
@@ -5,7 +8,7 @@
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
@@ -15,12 +18,13 @@ import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, writeW
 const run = promisify(execFile);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const CONFIG = ["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
-type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId" | "workspaceNames">;
-type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string };
+type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId" | "workspaceNames" | "restoreCheckpoint">;
+type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string; checkpointOwner?: string; checkpointJob?: { turnId: string; baseSha: string }; checkpointSequence?: number; checkpointTree?: string };
 
 export type RunnerWorkspace = {
   path: string;
   branch: string;
+  checkpoint(): Promise<void>;
   /** Only valid during withWorkspace; creates and pushes this turn's candidate. */
   commitAndPush(message: string, author: { name: string; email: string }): Promise<string | null>;
 };
@@ -33,13 +37,13 @@ async function exists(path: string): Promise<boolean> {
 export class RunnerGit {
   constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string, private readonly workspacesDir = join(dataDir, "workspaces")) {}
 
-  private async git(cwd: string, args: string[], turnId?: string): Promise<string> {
+  private async git(cwd: string, args: string[], turnId?: string, checkpointSequence?: number): Promise<string> {
     // A runner launched from another worktree must not inherit its Git paths.
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
     const auth = turnId ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, "-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [];
     try {
-      const { stdout } = await run("git", [...CONFIG, ...auth, ...args], {
+      const { stdout } = await run("git", [...CONFIG, ...auth, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args], {
         cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
         timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
       });
@@ -139,6 +143,18 @@ export class RunnerGit {
             await this.git(work, ["merge", "--ff-only", "--no-autostash", "--no-overwrite-ignore", job.baseSha]);
           }
         }
+        if (job.restoreCheckpoint) {
+          const snapshot = job.restoreCheckpoint;
+          if (snapshot.baseSha !== job.baseSha && snapshot.headSha !== job.baseSha) throw new Error("The repository advanced since this checkpoint. Review it before restoring.");
+          await this.git(cache, ["fetch", "--no-tags", this.remoteUrl(repoRef), `${checkpointRef(snapshot)}:${checkpointRef(snapshot)}`], job.turnId);
+          if ((await this.git(cache, ["rev-parse", checkpointRef(snapshot)])).trim() !== snapshot.snapshotSha) throw new Error("Checkpoint ref does not match its recorded content.");
+          await restoreCheckpoint(work, snapshot);
+        }
+        binding.checkpointOwner = digest(`${this.server}\0${this.token}`);
+        binding.checkpointJob = { turnId: job.turnId, baseSha: job.baseSha };
+        binding.checkpointSequence = 0;
+        binding.checkpointTree = undefined;
+        await writeWorkspaceMetadata(bindingPath, binding);
         // Durable marker: even a clean workspace cannot replay a paid turn.
         await this.git(cache, ["update-ref", attempt, job.baseSha, ""]);
       });
@@ -147,6 +163,10 @@ export class RunnerGit {
       let committed = false;
       const workspace: RunnerWorkspace = {
         path: work!, branch,
+        checkpoint: async () => {
+          if (!active) throw new Error("Workspace turn ended.");
+          await lockedGit(() => this.capture(bindingPath, binding, work, cache));
+        },
         commitAndPush: async (message, author) => {
           if (!active || committed) throw new Error("This workspace turn is no longer available for committing.");
           committed = true;
@@ -169,6 +189,74 @@ export class RunnerGit {
       try { return await task(workspace); }
       finally { active = false; }
     });
+  }
+
+  private checkpointDirectory() {
+    return join(this.dataDir, "checkpoint-outbox", digest(`${this.server}\0${this.token}`));
+  }
+
+  private async capture(bindingPath: string, binding: Binding, work: string, cache: string) {
+    const job = binding.checkpointJob;
+    if (!job || (binding.checkpointSequence ?? 0) >= 120) return;
+    await this.checkWorktree(work, cache, `workspace/${digest(binding.repoRef)}`);
+    const sequence = (binding.checkpointSequence ?? 0) + 1;
+    const snapshot = await captureCheckpoint(work, cache, job.turnId, job.baseSha, sequence, binding.checkpointTree);
+    if (!snapshot) return;
+    const tree = (await this.git(cache, ["rev-parse", `${snapshot.snapshotSha}^{tree}`])).trim() + ":" +
+      (await this.git(cache, ["rev-parse", `${snapshot.indexSha}^{tree}`])).trim() + ":" + snapshot.headSha;
+    if (binding.checkpointTree === tree) return;
+    binding.checkpointSequence = sequence;
+    await writeWorkspaceMetadata(bindingPath, binding);
+    await this.git(cache, ["update-ref", checkpointRef(snapshot), snapshot.snapshotSha, ""]);
+    const directory = this.checkpointDirectory();
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeWorkspaceMetadata(join(directory, `${snapshot.id}.json`), { snapshot, repoRef: binding.repoRef, cache });
+    binding.checkpointSequence = sequence;
+    binding.checkpointTree = tree;
+    await writeWorkspaceMetadata(bindingPath, binding);
+  }
+
+  /** Poll saved workspaces between jobs too, so manual edits can synchronize. */
+  async checkpointIdleWorkspaces() {
+    const roots = await readdir(join(this.dataDir, "workspaces-v1"), { withFileTypes: true }).catch(() => []);
+    for (const scope of roots) {
+      if (!scope.isDirectory() || !/^[a-f0-9]{64}$/.test(scope.name)) continue;
+      const root = join(this.dataDir, "workspaces-v1", scope.name);
+      for (const file of await readdir(join(root, "bindings")).catch(() => [])) {
+        if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+        const bindingPath = join(root, "bindings", file);
+        const binding: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
+        // Scope binds the server and account; the stored job was captured by this runner.
+        if (!binding.location || !binding.checkpointJob || binding.checkpointOwner !== digest(`${this.server}\0${this.token}`)) continue;
+        const work = locationPath(binding.location), cache = join(root, "repos", `${binding.cacheKey}.git`);
+        try {
+          await withWorkspaceLock(join(root, "locks", `workspace-${digest(binding.repoRef)}`), binding.checkpointJob.turnId, () =>
+            withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), binding.checkpointJob!.turnId, async () => {
+              const current: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
+              if (current.checkpointOwner !== digest(`${this.server}\0${this.token}`) || current.repoRef !== binding.repoRef || current.cacheKey !== binding.cacheKey || !current.location || locationPath(current.location) !== work) return;
+              await this.capture(bindingPath, current, work, cache);
+            }));
+        } catch (cause) { console.error(`[runner] checkpoint pending: ${String(cause)}`); }
+      }
+    }
+  }
+
+  async deliverCheckpoints(api: RunnerApi) {
+    const directory = this.checkpointDirectory();
+    for (const file of await readdir(directory).catch(() => [])) {
+      if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
+      try {
+        const entry = JSON.parse(await readFile(join(directory, file), "utf8")) as { snapshot: Checkpoint; repoRef: string; cache: string };
+        const { snapshot, cache, repoRef } = entry;
+        const ref = checkpointRef(snapshot);
+        // A lost HTTP response after push is safe to retry without updating the immutable ref.
+        const remote = (await this.git(cache, ["ls-remote", this.remoteUrl(repoRef), ref], snapshot.turnId)).trim().split(/\s+/)[0];
+        if (remote && remote !== snapshot.snapshotSha) throw new Error("Remote checkpoint sequence has different content.");
+        if (!remote) await this.git(cache, ["push", this.remoteUrl(repoRef), `${snapshot.snapshotSha}:${ref}`], snapshot.turnId, snapshot.sequence);
+        await api.checkpoint(snapshot);
+        await unlink(join(directory, file));
+      } catch (cause) { console.error(`[runner] checkpoint retained for retry: ${String(cause)}`); }
+    }
   }
 
   private async checkWorktree(work: string, cache: string, branch: string): Promise<void> {

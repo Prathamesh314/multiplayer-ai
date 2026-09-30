@@ -30,7 +30,7 @@ export function ModelPicker({ inventory, value, onChange, onRefresh, refreshing,
     {open && <Modal title={`Models · ${provider}`} description="Model inventories refresh automatically. Selecting a model does not start a run or download model weights." onClose={() => setOpen(false)} width="max-w-xl">
       <div className="space-y-3 p-4">
         <div className="flex items-center gap-2">
-          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-vs-border px-3 py-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-vs-border px-3 py-2 focus-within:border-vs-accent">
             <SearchIcon className="h-4 w-4 shrink-0 text-vs-muted" />
             <input autoFocus aria-label="Search models" placeholder="Search models or providers…" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
           </label>

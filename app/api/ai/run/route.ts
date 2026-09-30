@@ -1,3 +1,4 @@
+import { getCheckpoint } from "../../../lib/runner/checkpoints";
 import { projectRepositoryForRoom } from "../../../lib/project/repositories";
 import { randomUUID } from "node:crypto";
 import { continuationContext } from "../../../lib/ai/handoff";
@@ -383,7 +384,9 @@ export async function POST(request: Request) {
   // Everything the run needs is now plain data. The agent's bin/args/parser are
   // rebuilt from agentId inside executeAgentRun, because they are functions and
   // cannot cross a queue (see AgentRunJob).
+  const restoreCheckpoint = run.restoreSnapshotId ? await getCheckpoint(run.restoreSnapshotId, run.id) : null;
   const job: AgentRunJob = {
+    ...(restoreCheckpoint ? { restoreCheckpoint } : {}),
     turnId,
     userId: result.user.id,
     controlVersion: run.controlVersion,

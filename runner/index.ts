@@ -1,3 +1,4 @@
+import { ActivityOutbox } from "./activity-outbox";
 /*
  * The multiplayer-ai runner: agents on your machine, rooms in the cloud.
  *
@@ -27,7 +28,7 @@ import { RunnerGit } from "./git";
 const HEARTBEAT_MS = 15_000;
 const CLAIM_WAIT_MS = 20_000;
 /** Events buffer briefly so a chatty agent becomes a few requests per second. */
-const FLUSH_MS = 250;
+const FLUSH_MS = 1000;
 
 const log = (message: string) => console.log(`[runner] ${message}`);
 let stopping = false;
@@ -66,25 +67,30 @@ async function processJob(
   api: RunnerApi,
   dataDir: string,
   git: RunnerGit,
+  activity: ActivityOutbox,
   job: NonNullable<Awaited<ReturnType<RunnerApi["claim"]>>>,
 ): Promise<void> {
   const repoRef = job.repoId ?? job.sessionId;
   const spec = agentById(job.agentId);
   log(`run ${job.runId}: claimed (${job.agentId} on ${repoRef})`);
 
-  // The up-stream: order-preserving batches on a short timer. A send failure
-  // drops that batch, not the run — /complete carries the full output anyway.
   let queue: AiRunEvent[] = [];
-  let sending = Promise.resolve();
+  let sequence = 0;
   const flush = () => {
-    if (queue.length === 0) return;
-    const batch = queue;
+    if (!queue.length) return;
+    activity.store(job.turnId, ++sequence, queue);
     queue = [];
-    sending = sending.then(() => api.postEvents(job.turnId, batch).catch(() => {}));
+    void activity.deliver(api);
   };
   const timer = setInterval(flush, FLUSH_MS);
-  const lease = setInterval(() => { sending = sending.then(() => api.postEvents(job.turnId, []).catch(() => {})); }, 15_000);
+  const lease = setInterval(() => { void api.postEvents(job.turnId, []).catch(() => {}); }, 15_000);
   const emit = (event: AiRunEvent) => {
+    // Bound a batch even when a CLI emits a large chunk in one callback.
+    if ("d" in event && event.d.length > 16000) {
+      for (let offset = 0; offset < event.d.length; offset += 16000) emit({ ...event, d: event.d.slice(offset, offset + 16000) });
+      return;
+    }
+    if (queue.length >= 50 || Buffer.byteLength(JSON.stringify([...queue, event])) > 128 * 1024) flush();
     queue.push(event);
   };
 
@@ -99,14 +105,19 @@ async function processJob(
 
     sha = await git.withWorkspace(job, async (workspace) => {
       emit({ t: "start", agent: spec.bin, cwd: workspace.path, runId: job.runId });
-      const result = await runAgentLocally({
+      let checkpointing = Promise.resolve();
+      const checkpoint = () => { checkpointing = checkpointing.then(() => workspace.checkpoint()).then(() => git.deliverCheckpoints(api)).catch(cause => emit({ t: "notice", message: `Checkpoint pending: ${String(cause)}` })); };
+      checkpoint();
+      const snapshotTimer = setInterval(checkpoint, 30_000);
+      let result;
+      try { result = await runAgentLocally({
         spec,
         prompt: job.agentPrompt,
         model: job.model,
         effort: job.effort,
         cwd: workspace.path,
         onEvent: emit,
-      });
+      }); } finally { clearInterval(snapshotTimer); checkpoint(); await checkpointing; }
       code = result.code;
       output = result.output;
       errOutput = result.errOutput;
@@ -123,7 +134,7 @@ async function processJob(
     clearInterval(timer);
     clearInterval(lease);
     flush();
-    await sending;
+    await activity.deliver(api);
   }
 
   await storeCompletion(dataDir, job.turnId, { code, resultSha: sha, output, errOutput, ms });
@@ -148,6 +159,7 @@ async function start(): Promise<void> {
   }
 
   const api = new RunnerApi(config.server, config.token);
+  const activity = new ActivityOutbox(config.dataDir, config.server, config.token);
   const workspacesDir = resolveWorkspacesDir(flag("workspaces") ?? ("workspacesDir" in config ? config.workspacesDir : undefined));
   const git = new RunnerGit(config.server, config.token, config.dataDir, workspacesDir);
   log(`worktrees: ${workspacesDir}`);
@@ -160,6 +172,9 @@ async function start(): Promise<void> {
   heartbeat.unref?.();
 
   while (!stopping) {
+    await git.checkpointIdleWorkspaces();
+    await git.deliverCheckpoints(api);
+    await activity.deliver(api);
     await deliverCompletions(config.dataDir, api);
     let job: Awaited<ReturnType<RunnerApi["claim"]>> = null;
     try {
@@ -176,7 +191,7 @@ async function start(): Promise<void> {
     }
     if (!job) continue;
 
-    await processJob(api, config.dataDir, git, job).catch((cause) =>
+    await processJob(api, config.dataDir, git, activity, job).catch((cause) =>
       console.error(`[runner] run ${job!.runId} failed to report: ${String(cause)}`),
     );
     if (once) break;

@@ -1,4 +1,5 @@
 import { query, queryOne, transaction } from "../db/client";
+import { agentById } from "../ai/catalog";
 import { isUUID, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "./types";
 
 export class TaskError extends Error {
@@ -33,14 +34,43 @@ export async function listTasks(actor: string, scope?: { sessionId: string; runI
     scope ? [actor,scope.sessionId,scope.runId,offset] : [actor,offset]);
 }
 
-export async function createTask(actor: string, input: unknown): Promise<string> {
+export async function createTask(actor: string, input: unknown): Promise<{ id: string; runId: string }> {
   if (!input || typeof input !== "object") throw new TaskError("Expected a task.");
-  const { id, sessionId, runId, assigneeId, body } = input as Record<string,unknown>;
+  const { id, sessionId, runId: existingRunId, assigneeId, body, newChat } = input as Record<string,unknown>;
+  const chat = newChat && typeof newChat === "object" ? newChat as Record<string,unknown> : null;
+  // A new chat and its first task share a request ID so retries cannot create
+  // orphan chats. Both records commit together; no AI turn is submitted.
+  const runId = chat ? id : existingRunId;
+  if (newChat !== undefined && (!chat || existingRunId !== undefined ||
+      typeof chat.agentId !== "string" || !agentById(chat.agentId) ||
+      (chat.repoId !== null && typeof chat.repoId !== "string"))) throw new TaskError("Invalid new chat.");
   if (!isUUID(id) || !isUUID(runId) || !isUUID(assigneeId) || typeof sessionId !== "string" ||
       typeof body !== "string" || !body.trim() || body.trim().length > 4000) {
     throw new TaskError("Choose a room member and enter a task of 1–4000 characters.");
   }
   return transaction(async tx => {
+    if (chat) {
+      const access = await tx.query(`SELECT id FROM sessions WHERE id=$1
+        AND room_access_role(id,$2) IN ('owner','editor') AND room_access_role(id,$3) IS NOT NULL`,
+      [sessionId,actor,assigneeId]);
+      if (!access.rows.length) throw new TaskError("You cannot assign this task. Check room access for you and the assignee.",403);
+      const repo = chat.repoId === null
+        ? await tx.query(`SELECT head_sha FROM session_repos WHERE session_id=$1`,[sessionId])
+        : await tx.query(`SELECT head_sha FROM room_repos WHERE id=$1 AND session_id=$2 AND seeded_at IS NOT NULL`,[chat.repoId,sessionId]);
+      if (chat.repoId !== null && !repo.rows[0]?.head_sha) throw new TaskError("Repository not ready or not in this room.",409);
+      const created = await tx.query(`INSERT INTO agent_runs(id,session_id,repo_id,started_by,driver_user_id,agent_id,base_sha,title,status)
+        VALUES ($1,$2,$3,$4,$4,$5,$6,$7,'completed') ON CONFLICT (id) DO NOTHING RETURNING id`,
+      [runId,sessionId,chat.repoId,actor,chat.agentId,repo.rows[0]?.head_sha ?? "",body.trim().slice(0,200)]);
+      if (created.rows.length) {
+        await tx.query(`INSERT INTO agent_run_participants(run_id,user_id,role) VALUES ($1,$2,'owner')`,[runId,actor]);
+      } else {
+        const retry = await tx.query(`SELECT r.id FROM agent_runs r JOIN room_tasks t ON t.run_id=r.id
+          WHERE r.id=$1 AND r.session_id=$2 AND r.started_by=$3 AND r.repo_id IS NOT DISTINCT FROM $4
+          AND r.agent_id=$5 AND t.id=$1 AND t.created_by=$3 AND t.assignee_id=$6 AND t.body=$7`,
+        [runId,sessionId,actor,chat.repoId,chat.agentId,assigneeId,body.trim()]);
+        if (!retry.rows.length) throw new TaskError("This request ID was already used. Start a new task.",409);
+      }
+    }
     const allowed = await tx.query(`SELECT id FROM agent_runs WHERE id=$1 AND session_id=$2
       AND room_access_role(session_id,$3) IN ('owner','editor')
       AND room_access_role(session_id,$4) IS NOT NULL`, [runId,sessionId,actor,assigneeId]);
@@ -52,7 +82,7 @@ export async function createTask(actor: string, input: unknown): Promise<string>
         AND created_by=$3 AND assignee_id=$4 AND body=$5`, [id,runId,actor,assigneeId,body.trim()]);
       if (!existing.rows.length) throw new TaskError("This request ID was already used. Start a new task.",409);
     }
-    return id;
+    return { id, runId };
   });
 }
 

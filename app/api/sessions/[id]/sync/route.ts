@@ -2,7 +2,7 @@ import { events } from "../../../../lib/events";
 import { projectRepositoryForRoom } from "../../../../lib/project/repositories";
 import { projectRoleOf } from "../../../../lib/project/store";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
-import { ensureWork, syncRoom, withRepoLock } from "../../../../lib/session/repo";
+import { syncRoom } from "../../../../lib/session/repo";
 import { repositoryContext } from "../../../../lib/session/repository-context";
 import { setRoomRepoHeadSha } from "../../../../lib/session/roomRepos";
 import { setHeadSha } from "../../../../lib/session/store";
@@ -22,7 +22,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   if (repo instanceof Response) return repo;
   const repositoryId = await projectRepositoryForRoom(id, repo.repoId);
   if (!repositoryId) return Response.json({ error: "Share this repository with the project before syncing." }, { status: 400 });
-  await withRepoLock(repo.ref, () => ensureWork(repo.ref, repo.headSha));
   const outcome = await syncRoom(repo.ref, repositoryId);
   if (!outcome.ok) return Response.json(outcome satisfies SyncResponse, { status: 409 });
   if (repo.repoId) await setRoomRepoHeadSha(repo.repoId, outcome.sha);

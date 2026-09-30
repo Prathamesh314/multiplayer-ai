@@ -102,6 +102,7 @@
 .composerHint kbd { font-family: inherit; font-weight: 600; color: #9696a3; }
 .composerHint > span > span { margin: 0 7px; }
 .searchBar { display: flex; gap: 12px; align-items: center; min-width: 0; padding: 9px 22px; background: #222229; border-bottom: 1px solid #ffffff0c; }
+.searchBar:focus-within { border-bottom-color: var(--vs-accent); }
 .searchBar > svg { width: 16px; height: 16px; color: #9390b8; flex-shrink: 0; }
 .searchBar input { min-width: 0; flex: 1; color: #dedee8; background: transparent; outline: 0; font-size: 12px; }
 .searchBar input::placeholder { color: #9898a7; }

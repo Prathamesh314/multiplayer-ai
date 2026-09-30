@@ -1,4 +1,4 @@
-import { query, queryOne, transaction } from "../db/client";
+import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
 
 export class ControlError extends Error {
@@ -44,9 +44,13 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
 }
 
 export async function prepareTurn(job: AgentRunJob) {
-  await query(`UPDATE agent_turns SET payload = $2, status = 'queued' WHERE id = $1 AND status = 'preparing'`, [job.turnId, JSON.stringify(job)]);
-  await query(`UPDATE agent_runs SET agent_id = $2 WHERE id = $1 AND control_version = $3 AND driver_user_id = $4`,
-    [job.runId, job.agentId, job.controlVersion, job.userId]);
+  await transaction(async tx => {
+    await tx.query(`SELECT id FROM agent_runs WHERE id = $1 FOR UPDATE`, [job.runId]);
+    await tx.query(`UPDATE agent_turns SET payload = $2, status = 'queued' WHERE id = $1 AND status = 'preparing'`, [job.turnId, JSON.stringify(job)]);
+    await tx.query(`UPDATE agent_runs SET agent_id = $2 WHERE id = $1 AND control_version = $3 AND driver_user_id = $4`,
+      [job.runId, job.agentId, job.controlVersion, job.userId]);
+    if (job.restoreCheckpoint) await tx.query(`UPDATE agent_runs SET restore_snapshot_id = NULL WHERE id = $1 AND restore_snapshot_id = $2`, [job.runId, job.restoreCheckpoint.id]);
+  });
 }
 
 export async function startTurn(job: AgentRunJob): Promise<boolean> {

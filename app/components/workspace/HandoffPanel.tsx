@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
 import type { HandoffAction, HandoffState } from "../../lib/ai/handoff";
 import { openSessionStream } from "../../lib/events/client";
@@ -9,12 +9,13 @@ import { Modal } from "../ui/Modal";
 type State = HandoffState & { run: AgentRun };
 const button = "rounded-lg border border-vs-border px-3 py-1.5 text-xs font-medium transition hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50";
 
-export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated }: {
+export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, children }: {
   run: AgentRun;
   userId: string | null;
   canEdit: boolean;
   isOwner: boolean;
   onUpdated: (run: AgentRun) => void;
+  children?: ReactNode;
 }) {
   const [state, setState] = useState<State | null>(null);
   const [open, setOpen] = useState(false);
@@ -74,11 +75,16 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated }: {
   const eligible = pending && canEdit && !mine && (!pending.toUserId || pending.toUserId === userId);
   const version = current.controlVersion;
   return (
-    <section aria-label="Chat control" className="shrink-0 border-b border-vs-border bg-vs-accent/5 px-3 py-2.5 text-xs">
+    <section aria-label="Chat control" className="shrink-0 border-b border-vs-border px-4 pb-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-vs-accent" />
-        <span><strong>{mine ? "You are driving" : `${current.driverName} is driving`}</strong><span className="ml-2 text-vs-muted">{active ? "Turn in progress" : "Between turns"}</span></span>
-        <button className={`${button} ml-auto`} onClick={() => setOpen(true)}>{pending ? "View handoff" : mine && canEdit ? "Hand off" : "Handoff history"}</button>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-vs-success" : "bg-vs-muted"}`} />
+        <span className="min-w-0 flex-1 truncate text-vs-muted" title={`${current.driverName} is driving${active ? " · Turn in progress" : ""}`}>
+          {mine ? "You are driving" : `${current.driverName} is driving`}{active && <span className="ml-2 text-vs-success">Working</span>}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {children}
+          <button className="rounded-md px-2 py-1.5 font-medium text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" onClick={() => setOpen(true)}>{pending ? "View handoff" : mine && canEdit ? "Hand off" : "Handoff history"}</button>
+        </div>
       </div>
       {pending && <div className="mt-2 space-y-2 rounded-lg border border-vs-accent/25 bg-vs-panel p-3">
         <p>{pending.fromName} offered control to <strong>{pending.toName ?? "any room editor"}</strong>.</p>
@@ -90,9 +96,9 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated }: {
           {mine && <button className={button} disabled={busy} onClick={() => void act({ action: "cancel", handoffId: pending.id, version })}>Cancel offer</button>}
         </div>
       </div>}
-      {current.controlVersion > 0 && mine && <p className="mt-2 text-vs-muted">Same chat, same repository. Connect your runner, review the conversation, then send your next prompt.</p>}
       {error && <p role="alert" className="mt-2 text-vs-danger">{error}</p>}
       {open && <Modal title="Hand off this chat" description="Transfer control between turns. Accepting never starts an agent or spends compute." onClose={() => { if (!busy) setOpen(false); }}>
+        {current.controlVersion > 0 && mine && <p className="text-sm text-vs-muted">You have control of this chat. Review the conversation and any uploaded checkpoint before sending your next prompt.</p>}
         {mine && canEdit && !pending && <form className="space-y-4" onSubmit={event => { event.preventDefault(); void act({ action: "offer", toUserId: recipient || null, note, version }); }}>
           <label className="block text-sm">Recipient
             <select aria-label="Handoff recipient" className="mt-1 w-full rounded-lg border border-vs-border bg-vs-editor p-2" value={recipient} onChange={event => setRecipient(event.target.value)} disabled={!state || busy}>

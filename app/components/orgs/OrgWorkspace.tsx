@@ -25,6 +25,7 @@ import {
   CloseIcon,
   GitBranchIcon,
   PlusIcon,
+  SearchIcon,
   ShieldIcon,
   SparkleIcon,
   SpinnerIcon,
@@ -478,6 +479,7 @@ function OrgPanel({
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectVersion, setProjectVersion] = useState(0);
+  const [roomSearch, setRoomSearch] = useState("");
   const [showNavigation, setShowNavigation] = useState(false);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
   // The open team-chat conversation, rendered in <main> instead of the welcome
@@ -593,6 +595,22 @@ function OrgPanel({
             )}
           </div>
 
+          <div className="px-4 pb-2 pt-1">
+            <div className="flex items-center gap-2 rounded-lg border border-vs-border bg-vs-editor px-2.5 focus-within:border-vs-accent">
+              <SearchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
+              <input
+                type="search"
+                aria-label="Search rooms"
+                placeholder="Search rooms…"
+                value={roomSearch}
+                onChange={(event) => setRoomSearch(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Escape") setRoomSearch(""); }}
+                className="min-w-0 flex-1 bg-transparent py-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted [&::-webkit-search-cancel-button]:hidden"
+              />
+              {roomSearch && <button type="button" aria-label="Clear room search" onClick={() => setRoomSearch("")} className="rounded p-0.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+            </div>
+          </div>
+
           <div className="px-2">
             {projectError ? (
               <p role="alert" className="px-2 py-2 text-sm text-vs-danger">Could not load projects. Retry from the project overview.</p>
@@ -615,6 +633,7 @@ function OrgPanel({
                     org={org}
                     project={project}
                     currentUserId={me?.id ?? null}
+                    roomSearch={roomSearch}
                     onManageMembers={() => onManageMembers(project)}
                     onRoomSettings={(room) => onRoomSettings(project, room)}
                     onOpenRoom={onOpenRoom}
@@ -675,6 +694,7 @@ function ProjectRow({
   org,
   project,
   currentUserId,
+  roomSearch,
   onManageMembers,
   onRoomSettings,
   onOpenRoom,
@@ -682,15 +702,21 @@ function ProjectRow({
   org: Org;
   project: Project;
   currentUserId: string | null;
+  roomSearch: string;
   onManageMembers: () => void;
   onRoomSettings: (room: Session) => void;
   onOpenRoom: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [rooms, setRooms] = useState<Session[] | null>(null);
+  const query = roomSearch.trim().toLowerCase();
+  const expanded = open || query.length > 0;
+  const visibleRooms = rooms
+    ?.filter((room) => room.name.toLowerCase().includes(query))
+    .sort((a, b) => currentUserId ? Number(b.ownerId === currentUserId) - Number(a.ownerId === currentUserId) : 0);
 
   useEffect(() => {
-    if (!open || rooms !== null) return;
+    if (!expanded || rooms !== null) return;
     let cancelled = false;
     void listRooms(org.slug, project.slug)
       .then((list) => !cancelled && setRooms(list))
@@ -698,7 +724,7 @@ function ProjectRow({
     return () => {
       cancelled = true;
     };
-  }, [open, rooms, org.slug, project.slug]);
+  }, [expanded, rooms, org.slug, project.slug]);
 
   return (
     <li>
@@ -706,11 +732,12 @@ function ProjectRow({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
+          aria-expanded={expanded}
+          disabled={query.length > 0}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <ChevronIcon
-            className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition ${open ? "rotate-90" : ""}`}
+            className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition ${expanded ? "rotate-90" : ""}`}
           />
           <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{project.name}</span>
@@ -730,7 +757,7 @@ function ProjectRow({
         </button>
       </div>
 
-      {open && (
+      {expanded && (
         <ul className="ml-4 border-l border-vs-border pl-2">
           {rooms === null ? (
             <li className="px-2 py-1 text-[12px] text-vs-muted">Loading…</li>
@@ -738,8 +765,10 @@ function ProjectRow({
             <li className="px-2 py-1 text-[12px] text-vs-muted">
               No rooms yet — yours is created when this list loads.
             </li>
+          ) : visibleRooms?.length === 0 ? (
+            <li role="status" className="px-2 py-2 text-[12px] text-vs-muted">No rooms match your search.</li>
           ) : (
-            rooms.map((room) => (
+            visibleRooms?.map((room) => (
               <li
                 key={room.id}
                 className="group/room flex items-center gap-1 rounded-md pr-1 hover:bg-vs-hover"

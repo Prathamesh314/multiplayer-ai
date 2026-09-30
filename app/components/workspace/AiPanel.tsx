@@ -22,17 +22,19 @@ import type { SessionMember } from "../../lib/session/types";
 import {
   AlertIcon,
   CheckIcon,
+  CloseIcon,
   EyeIcon,
   GitBranchIcon,
   PlusIcon,
   SparkleIcon,
   SpinnerIcon,
+  TerminalIcon,
 } from "../icons";
-import { Composer, type ComposerHandle, type MentionRoom } from "./chat";
+import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
+import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { Markdown } from "./Markdown";
-import { PanelHeader } from "./TeamChatPanel";
 
 type AiPanelProps = {
   sessionId: string;
@@ -126,6 +128,9 @@ export function AiPanel({
   onClose,
 }: AiPanelProps) {
   const composer = useRef<ComposerHandle>(null);
+  const [taskRevision, setTaskRevision] = useState(0);
+  const [taskPeople, setTaskPeople] = useState<MentionPerson[]>([]);
+  const taskRequest = useRef<{ payload: string; id: string } | null>(null);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [serverCanRun, setServerCanRun] = useState(true);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -150,6 +155,22 @@ export function AiPanel({
   // Every room in the project (with its chats) for the composer's @ picker —
   // includes empty rooms, unlike forkableRuns.
   const [mentionTargets, setMentionTargets] = useState<MentionRoom[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/tasks?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal, cache: "no-store" });
+        if (response.ok) {
+          const data = await response.json();
+          if (!controller.signal.aborted) setTaskPeople(data.members);
+        }
+      } catch { /* A later refresh retries the room roster. */ }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 15000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [sessionId]);
 
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
@@ -715,23 +736,47 @@ export function AiPanel({
   const enteredRepoLabel = entered?.repoId
     ? (repoOptions.find((option) => option.id === entered.repoId)?.label ?? "removed repo")
     : null;
+  async function assignChatTask(person: MentionPerson, body: string) {
+    if (!canRun) throw new Error("You need edit access to assign a task.");
+    const payload = JSON.stringify({ sessionId, ...(entered ? { runId: entered.id } : { newChat: { repoId: repoId ?? null, agentId: active?.id ?? "codex" } }), assigneeId: person.userId, body });
+    if (taskRequest.current?.payload !== payload) taskRequest.current = { payload, id: crypto.randomUUID() };
+    const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...JSON.parse(payload), id: taskRequest.current.id }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "Could not assign task.");
+    taskRequest.current = null;
+    setTaskRevision(value => value + 1);
+    onRunsChanged();
+    if (!entered) {
+      // Saving a human task creates its source chat, without starting the AI.
+      // A failed follow-up read must not turn a saved task into a failed send.
+      void fetchRun(sessionId, result.runId).then(({ run }) => onEntered?.(run)).catch(() => {});
+    }
+  }
+  const chatTitle = entered?.title ?? (entered ? "Agent run" : "New chat");
+  const repoLabel = enteredRepoLabel ?? repoOptions.find(option => option.id === (entered ? entered.repoId ?? "" : repoId ?? ""))?.label;
+  const executionLabel = active?.execution === "runner" ? "Paired computer" : "App’s machine";
+  const executionDetail = active?.execution === "runner"
+    ? "Tasks run in local worktrees on your paired computer, using its tools and AI account."
+    : "Tasks run on the machine hosting this app. Connect your computer to use its local worktrees instead.";
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader
-        title={
-          entered
-            ? `${entered.title ?? "Agent run"}${enteredRepoLabel ? ` · ${enteredRepoLabel}` : ""}`
-            : "New chat"
-        }
-        onClose={onClose}
-      >
+      <header className={`flex min-w-0 shrink-0 items-center gap-3 px-4 pb-2 pt-3 ${entered ? "" : "border-b border-vs-border"}`}>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-vs-muted">
+            {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
+            {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
+            {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
         {entered &&
           (enteredIsMine ? (
             <button
               type="button"
               onClick={onNewRun}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <PlusIcon className="h-3 w-3" />
               New
@@ -741,21 +786,26 @@ export function AiPanel({
               type="button"
               onClick={() => onForkEntered(entered)}
               title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
               Copy chat
             </button>
           ))}
         <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover">Providers</button>
-        <WatchingCluster members={members} />
-      </PanelHeader>
-      {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} />}
-      {active?.installed && <p className="border-b border-vs-border px-3 py-2 text-xs text-vs-muted">{active.execution === "runner" ? "Execution: your paired computer" : "Execution: the app’s machine"} · {active.name}{!canRun ? " · View-only access" : ""}</p>}
+        <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
+        {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+        </div>
+      </header>
+      {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)}>
+        <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />
+      </HandoffPanel>}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
       {(!ready || showProviders) && (
+        <>
+        {active?.installed && <p className="px-4 py-2 text-xs leading-5 text-vs-muted">{executionDetail}</p>}
         <AgentSelector
           agents={agents}
           connected={connected}
@@ -765,6 +815,7 @@ export function AiPanel({
           onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
           onRecheck={recheck}
         />
+        </>
       )}
 
       {!serverCanRun && blockedReason && (
@@ -804,7 +855,7 @@ export function AiPanel({
             {error}
           </p>
         )}
-        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} /></div>}
+        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} refreshVersion={taskRevision} /></div>}
       </div>
 
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
@@ -821,7 +872,10 @@ export function AiPanel({
           </button>
         </div>
       ) : entered && !enteredIsMine ? (
+        <>
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">You’re watching {entered.driverName}’s chat. Accept a handoff to continue here, or <button className="text-vs-accent underline" onClick={() => onForkEntered(entered)}>fork a new chat</button>.</div>
+        {canRun && <Composer key={`tasks-${entered.id}`} placeholder="Type @ to assign a task to a teammate…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />}
+        </>
       ) : entered && ["running", "queued"].includes(entered.status) ? (
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">A turn is already in progress. You can continue when it finishes.</div>
       ) : (
@@ -833,12 +887,14 @@ export function AiPanel({
           narrow
           footer={composerFooter}
           mentions={mentionRooms}
+          people={taskPeople}
+          onAssignTask={canRun ? assignChatTask : undefined}
           placeholder={
             !ready
-              ? "Connect an agent first…"
+              ? canRun ? "Type @ to assign a task, or connect an agent…" : "Connect an agent first…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (type @ to reference another chat)" : ""}`
+                : `Message ${active!.name}…${canRun ? "  (@ people or chats)" : mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
           }
           onSend={ask}
         />

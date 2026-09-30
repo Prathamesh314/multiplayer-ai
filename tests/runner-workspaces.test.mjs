@@ -363,3 +363,50 @@ test("CLI and desktop default to a visible directory under the user's home", () 
   assert.equal(defaultWorkspacesDir(),join(homedir(),"multiplayer-ai","workspaces"));
   assert.equal(resolveWorkspacesDir("~/my-worktrees"),join(homedir(),"my-worktrees"));
 });
+
+test("checkpoints survive restart and restore staged, unstaged and untracked state on another device", async t => {
+  const f = await fixture(t);
+  const original = job(f.base);
+  let work, uploaded;
+  await f.runner().withWorkspace(original, async w => {
+    work = w.path;
+    await writeFile(join(work, "code.txt"), "staged\n");
+    await git(work, "add", "code.txt");
+    await writeFile(join(work, "code.txt"), "unstaged\n");
+    await writeFile(join(work, "new.txt"), "untracked\n");
+    await writeFile(join(work, ".env.local"), "SECRET=local\n");
+    await w.checkpoint();
+    await w.checkpoint(); // unchanged trees must not produce another saved checkpoint
+    assert.equal(await git(work, "show", ":code.txt"), "staged");
+    assert.equal(await git(work, "rev-parse", "HEAD"), f.base);
+  });
+  let count = 0;
+  await f.runner().deliverCheckpoints({ checkpoint: async snapshot => { count++; uploaded = snapshot; throw new Error("temporary metadata outage"); } });
+  await f.runner().deliverCheckpoints({ checkpoint: async snapshot => { count++; uploaded = snapshot; } });
+  assert.equal(count, 2);
+  const bob = new RunnerGit(f.server, "bob", join(f.root, "bob-checkpoints"));
+  await bob.withWorkspace(job(f.base, { restoreCheckpoint: uploaded }), async w => {
+    assert.equal(await readFile(join(w.path, "code.txt"), "utf8"), "unstaged\n");
+    assert.equal(await git(w.path, "show", ":code.txt"), "staged");
+    assert.equal(await readFile(join(w.path, "new.txt"), "utf8"), "untracked\n");
+    assert.match(await git(w.path, "status", "--porcelain"), /\?\? new.txt/);
+    await assert.rejects(readFile(join(w.path, ".env.local")), { code: "ENOENT" });
+    assert.equal(await git(w.path, "rev-parse", "HEAD"), f.base);
+  });
+  assert.equal(await readFile(join(work, ".env.local"), "utf8"), "SECRET=local\n");
+});
+
+test("background checkpoints capture manual edits and cannot leak another pairing's workspaces", async t => {
+  const f = await fixture(t);
+  let work;
+  await f.runner().withWorkspace(job(f.base), async w => { work = w.path; await w.checkpoint(); });
+  await f.runner().deliverCheckpoints({ checkpoint: async () => {} });
+  await writeFile(join(work, "code.txt"), "manual edit between runs\n");
+  await new RunnerGit(f.server, "another-pairing", f.data).checkpointIdleWorkspaces();
+  let count = 0;
+  await f.runner().deliverCheckpoints({ checkpoint: async () => { count++; } });
+  assert.equal(count, 0);
+  await f.runner().checkpointIdleWorkspaces();
+  await f.runner().deliverCheckpoints({ checkpoint: async snapshot => { count++; assert.equal(snapshot.sequence, 2); } });
+  assert.equal(count, 1);
+});

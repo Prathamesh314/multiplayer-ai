@@ -1,6 +1,6 @@
 import { query } from "../db/client";
 import { createRoomRepo, finishRoomRepoSeed, getRoomRepo, listRoomRepos, setRoomRepoHeadSha } from "../session/roomRepos";
-import { ensureWork, initializeSharedRepository, publishRoom, forkRoomRepository, withRepoLock } from "../session/repo";
+import { initializeSharedRepository, publishRoom, forkRoomRepository, withRepoLock } from "../session/repo";
 import { registerRoomRepository, type ProjectRepository } from "./repositories";
 import { setHeadSha } from "../session/store";
 
@@ -24,7 +24,6 @@ export async function publishSelectedRepository(input: {
   const ref = input.repoId ?? input.sessionId;
   const repositoryId = await withRepoLock(ref, async () => {
     const repositoryId = await registerRoomRepository(input);
-    await ensureWork(ref, input.headSha);
     await initializeSharedRepository(ref, repositoryId, input.headSha);
     await query(`UPDATE project_repositories SET ready = true WHERE id = $1`, [repositoryId]);
     return repositoryId;

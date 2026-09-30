@@ -103,7 +103,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="Your computers"
-      description="A runner connects your computer to this workspace. It executes tasks you submit, including chats handed to you, using your configured AI provider."
+      description="The desktop app connects this computer automatically after sign-in. Your AI tasks run here using your installed AI tools. You can pause the connection from the desktop menu."
       width="max-w-xl"
       onClose={onClose}
       footer={<PrimaryButton onClick={onClose}>Done</PrimaryButton>}
@@ -121,7 +121,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
         </div>
       ) : devices.length === 0 && !pairing ? (
         <p className="py-2 text-[13px] text-vs-muted">
-          No computers paired yet. Connect one to run tasks with your own AI setup. Cloud execution is not automatically provided.
+          No computers connected yet. In the desktop app, the connection starts after sign-in. In a browser, use Connect a computer below.
         </p>
       ) : (
         <ul className="space-y-2">

@@ -1,3 +1,6 @@
+import { withStoredRepo } from "../storage/git-cache";
+import { filterImportIndex } from "../git/import-index";
+import { objectGit, objectText, withTemporaryIndex, putBlob, commitTree } from "../git/objects";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile, lstat } from "node:fs/promises";
@@ -93,29 +96,22 @@ export async function gitAvailable(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 /**
- * Creates the bare repo (the record) and its working clone (the cache).
+ * Creates only the bare repository; imported files are written as Git objects.
  *
  * The bare repo is what a sandbox will clone later, which is why it exists even
  * though nothing remote is involved yet: it keeps `repo_url` meaningful for
  * every session, including folders the user opened with no Git remote at all.
  */
-export async function createRepo(id: string): Promise<void> {
+async function stored_createRepo(id: string): Promise<void> {
   const bare = barePath(id);
-  const work = workPath(id);
-
   await mkdir(dirname(bare), { recursive: true });
-  await mkdir(work, { recursive: true });
-
   await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
-  await git(work, ["init", "-b", BASE_BRANCH]);
-  if (!await gitOk(work, ["remote", "get-url", "origin"])) await git(work, ["remote", "add", "origin", bare]);
 }
 
 // ---------------------------------------------------------------------------
 // Project canonical repo — the single source of truth (Git/Branch model)
 // ---------------------------------------------------------------------------
 
-const PROJECT_REMOTE = "project";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -133,25 +129,16 @@ async function exists(path: string): Promise<boolean> {
  * any work. `main` starts as an empty root commit so a room always has a real
  * commit to fork from, even before anyone has published anything.
  */
-export async function ensureSharedRepository(repositoryId: string): Promise<void> {
+async function stored_ensureSharedRepository(repositoryId: string): Promise<void> {
   const bare = sharedRepositoryBarePath(repositoryId);
   if (await exists(bare)) return;
 
   await mkdir(dirname(bare), { recursive: true });
   await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
 
-  // A bare repo can't hold a commit on its own; make the root commit in a throwaway
-  // work tree and push it, so `main` exists for the first fork.
-  const seed = join(dirname(bare), `.seed-${repositoryId}`);
-  await mkdir(seed, { recursive: true });
-  try {
-    await git(seed, ["init", "-b", BASE_BRANCH]);
-    await git(seed, ["commit", "--allow-empty", "-m", "Initialize repository"]);
-    await git(seed, ["remote", "add", "origin", bare]);
-    await git(seed, ["push", "origin", BASE_BRANCH]);
-  } finally {
-    await rm(seed, { recursive: true, force: true });
-  }
+  const tree = await objectText(bare, ["mktree"], "");
+  const sha = await commitTree(bare, tree, [], "Initialize repository");
+  await git(bare, ["update-ref", `refs/heads/${BASE_BRANCH}`, sha]);
 }
 
 /**
@@ -162,7 +149,7 @@ export async function ensureSharedRepository(repositoryId: string): Promise<void
  *
  * This is the fork half of the Git/Branch model; publishRoom is the merge half.
  */
-export async function forkRoomRepository(
+async function stored_forkRoomRepository(
   roomId: string,
   repositoryId: string,
   rootName: string,
@@ -170,23 +157,11 @@ export async function forkRoomRepository(
   await ensureSharedRepository(repositoryId);
   const sharedBare = sharedRepositoryBarePath(repositoryId);
   const bare = barePath(roomId);
-  const work = workPath(roomId);
   const branch = sessionBranchOf(roomId);
-
   await mkdir(dirname(bare), { recursive: true });
-  await mkdir(dirname(work), { recursive: true });
-
-  // Room bare = a clone of the selected shared repo, so it carries the shared main.
   if (!await exists(bare)) await git(dirname(bare), ["clone", "--bare", sharedBare, bare]);
-  // Working copy clones the room bare (its origin), matching every other room.
-  if (!await exists(work)) await git(dirname(work), ["clone", "--branch", BASE_BRANCH, bare, work]);
-  await ensureProjectRemote(work, repositoryId);
-
-  const baseSha = (await git(work, ["rev-parse", "HEAD"])).trim();
-  if (await gitOk(work, ["show-ref", "--verify", `refs/heads/${branch}`])) await git(work, ["checkout", branch]);
-  else await git(work, ["checkout", "-b", branch]);
-  await git(work, ["push", "-u", "origin", branch]);
-
+  const baseSha = (await git(bare, ["rev-parse", BASE_BRANCH])).trim();
+  await git(bare, ["update-ref", `refs/heads/${branch}`, baseSha]);
   return {
     rootName,
     baseBranch: BASE_BRANCH,
@@ -207,67 +182,45 @@ export type MergeResult =
   /** The room and project diverged on the same lines; nothing was changed. */
   | { ok: false; reason: "conflict"; files: string[] };
 
-/** Makes sure the room checkout has its selected shared repository as a remote. */
-async function ensureProjectRemote(work: string, repositoryId: string): Promise<void> {
-  const has = await gitOk(work, ["remote", "get-url", PROJECT_REMOTE]);
-  if (!has) await git(work, ["remote", "add", PROJECT_REMOTE, sharedRepositoryBarePath(repositoryId)]);
+/** Merge committed objects without materializing a working directory. */
+async function mergeObjects(bare: string, ours: string, theirs: string): Promise<MergeResult> {
+  if (await gitOk(bare, ["merge-base", "--is-ancestor", theirs, ours])) return { ok: true, sha: ours };
+  if (await gitOk(bare, ["merge-base", "--is-ancestor", ours, theirs])) return { ok: true, sha: theirs };
+  let tree: string;
+  try { tree = await objectText(bare, ["merge-tree", "--write-tree", "--name-only", "-z", ours, theirs]); }
+  catch (cause) {
+    const error = cause as { code?: number; stdout?: Buffer };
+    if (error.code !== 1 || !error.stdout) throw cause;
+    const records = error.stdout.toString().split("\0").slice(1);
+    const end = records.indexOf("");
+    return { ok: false, reason: "conflict", files: records.slice(0, end < 0 ? records.length : end) };
+  }
+  return { ok: true, sha: await commitTree(bare, tree.replace(/\0/g, ""), [ours, theirs], "Merge shared repository") };
 }
 
-/**
- * Publishes a room's work back to the shared repository's `main` — the "merge back to the
- * source of truth" step.
- *
- * The repository's latest main is merged into the room branch first, so publishing
- * is always a fast-forward of main and never clobbers a concurrent publish from
- * another room. A merge conflict aborts cleanly and is reported, leaving both
- * the room and the shared repository exactly as they were.
- */
-export async function publishRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
-  const work = workPath(roomId);
-  return withRepoLock(roomId, async () => {
-    await ensureProjectRemote(work, repositoryId);
-    await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
-
-    const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
-    if (!merged) {
-      const files = await conflictedFiles(work);
-      await gitOk(work, ["merge", "--abort"]);
-      return { ok: false, reason: "conflict", files };
-    }
-
-    await git(work, ["push", PROJECT_REMOTE, `HEAD:${BASE_BRANCH}`]);
-    const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
-    // Keep the room's own branch ref in step with what was published.
-    await gitOk(work, ["push", "origin", sessionBranchOf(roomId)]);
-    return { ok: true, sha };
-  });
+async function mergeShared(roomId: string, repositoryId: string, publish: boolean): Promise<MergeResult> {
+  return withRepoLock(roomId, () => withRepoLock(`shared:${repositoryId}`, async () => {
+    const bare = barePath(roomId), shared = sharedRepositoryBarePath(repositoryId);
+    const ref = `refs/heads/${sessionBranchOf(roomId)}`;
+    const ours = (await git(bare, ["rev-parse", ref])).trim();
+    await git(bare, ["fetch", "--no-tags", shared, `refs/heads/${BASE_BRANCH}`]);
+    const theirs = (await git(bare, ["rev-parse", "FETCH_HEAD"])).trim();
+    const outcome = await mergeObjects(bare, ours, theirs);
+    if (!outcome.ok) return outcome;
+    if (publish) await git(bare, ["push", shared, `${outcome.sha}:refs/heads/${BASE_BRANCH}`]);
+    await git(bare, ["update-ref", ref, outcome.sha, ours]);
+    return outcome;
+  }));
 }
-
-/**
- * Pulls the shared repository's latest `main` into a room — the reverse of publish, for
- * picking up what other rooms have merged without leaving the room.
- */
-export async function syncRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
-  const work = workPath(roomId);
-  return withRepoLock(roomId, async () => {
-    await ensureProjectRemote(work, repositoryId);
-    await git(work, ["fetch", PROJECT_REMOTE, BASE_BRANCH]);
-
-    const merged = await gitOk(work, ["merge", "--no-edit", `${PROJECT_REMOTE}/${BASE_BRANCH}`]);
-    if (!merged) {
-      const files = await conflictedFiles(work);
-      await gitOk(work, ["merge", "--abort"]);
-      return { ok: false, reason: "conflict", files };
-    }
-
-    const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
-    await gitOk(work, ["push", "origin", sessionBranchOf(roomId)]);
-    return { ok: true, sha };
-  });
+async function stored_publishRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
+  return mergeShared(roomId, repositoryId, true);
+}
+async function stored_syncRoom(roomId: string, repositoryId: string): Promise<MergeResult> {
+  return mergeShared(roomId, repositoryId, false);
 }
 
 /** The current `main` of a shared repository's canonical repo, or null if uninitialised. */
-export async function sharedRepositoryHeadSha(repositoryId: string): Promise<string | null> {
+async function stored_sharedRepositoryHeadSha(repositoryId: string): Promise<string | null> {
   const bare = sharedRepositoryBarePath(repositoryId);
   if (!(await exists(bare))) return null;
   try {
@@ -289,7 +242,7 @@ function commitSha(sha: string): string {
 
 /** Exact ancestry proof used by memory publication/recovery. A Git failure
  * must retry; it must never be mistaken for successful publication. */
-export async function repoContainsCommit(ref: string, ancestor: string, head: string): Promise<boolean> {
+async function stored_repoContainsCommit(ref: string, ancestor: string, head: string): Promise<boolean> {
   try {
     await git(contextBare(ref), ["merge-base", "--is-ancestor", commitSha(ancestor), commitSha(head)]);
     return true;
@@ -301,7 +254,7 @@ export async function repoContainsCommit(ref: string, ancestor: string, head: st
 
 /** Immutable, NUL-delimited snapshot reads for indexing. Errors must retry,
  * never masquerade as an empty repository and erase the previous index. */
-export async function repoSnapshotPaths(ref: string, sha: string): Promise<string[]> {
+async function stored_repoSnapshotPaths(ref: string, sha: string): Promise<string[]> {
   const tree = await git(contextBare(ref), ["ls-tree", "-rz", commitSha(sha)]);
   return tree.split("\0").filter(Boolean).flatMap((entry) => {
     const tab = entry.indexOf("\t");
@@ -310,13 +263,13 @@ export async function repoSnapshotPaths(ref: string, sha: string): Promise<strin
   });
 }
 
-export async function repoSnapshotDiff(ref: string, from: string, to: string): Promise<string[]> {
+async function stored_repoSnapshotDiff(ref: string, from: string, to: string): Promise<string[]> {
   const diff = await git(contextBare(ref), ["diff", "--no-renames", "--name-only", "-z", commitSha(from), commitSha(to), "--"]);
   return diff.split("\0").filter(Boolean);
 }
 
 /** Skip oversized/binary files explicitly; never silently truncate source. */
-export async function repoSnapshotText(ref: string, sha: string, path: string): Promise<string | null> {
+async function stored_repoSnapshotText(ref: string, sha: string, path: string): Promise<string | null> {
   if (!path || path.includes("\0")) throw new Error("Invalid snapshot path");
   const object = `${commitSha(sha)}:${path}`;
   const bare = contextBare(ref);
@@ -332,7 +285,7 @@ export async function repoSnapshotText(ref: string, sha: string, path: string): 
  * completion report from pointing the head at history that was never pushed
  * through the guarded smart-HTTP endpoint (or at someone else's commit).
  */
-export async function verifyPushedCommit(
+async function stored_verifyPushedCommit(
   repoRef: string,
   baseSha: string,
   sha: string,
@@ -350,7 +303,7 @@ export async function verifyPushedCommit(
  * repo — no working copy needed, so this is safe from any process. Used by the
  * repo-context indexer (app/lib/knowledge/repo-context.ts).
  */
-export async function listSharedRepositoryFiles(repositoryId: string): Promise<string[]> {
+async function stored_listSharedRepositoryFiles(repositoryId: string): Promise<string[]> {
   const bare = sharedRepositoryBarePath(repositoryId);
   if (!(await exists(bare))) return [];
   try {
@@ -369,7 +322,7 @@ export async function listSharedRepositoryFiles(repositoryId: string): Promise<s
  */
 
 /** The head of a room repo's working branch, straight from its bare repo. */
-export async function repoRefHeadSha(id: string): Promise<string | null> {
+async function stored_repoRefHeadSha(id: string): Promise<string | null> {
   const bare = barePath(id);
   if (!(await exists(bare))) return null;
   try {
@@ -380,7 +333,7 @@ export async function repoRefHeadSha(id: string): Promise<string | null> {
 }
 
 /** Every tracked path at a room repo's working-branch head. */
-export async function listRepoRefFiles(id: string): Promise<string[]> {
+async function stored_listRepoRefFiles(id: string): Promise<string[]> {
   const bare = barePath(id);
   if (!(await exists(bare))) return [];
   try {
@@ -392,7 +345,7 @@ export async function listRepoRefFiles(id: string): Promise<string[]> {
 }
 
 /** One file's text at a room repo's working-branch head; caps like the project variant. */
-export async function readRepoRefFileText(
+async function stored_readRepoRefFileText(
   id: string,
   relative: string,
   maxBytes = 64 * 1024,
@@ -415,7 +368,7 @@ export async function readRepoRefFileText(
  * binary, or the path is unsafe. Truncated to `maxBytes` — the callers distill
  * summaries, so a file's head is all they need.
  */
-export async function readSharedRepositoryFileText(
+async function stored_readSharedRepositoryFileText(
   repositoryId: string,
   relative: string,
   maxBytes = 64 * 1024,
@@ -433,46 +386,28 @@ export async function readSharedRepositoryFileText(
   }
 }
 
-async function conflictedFiles(work: string): Promise<string[]> {
-  try {
-    const out = await git(work, ["diff", "--name-only", "--diff-filter=U"]);
-    return out.split("\n").map((line) => line.trim()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Seeding
 // ---------------------------------------------------------------------------
 
 export type SeedOutcome = { written: number; skipped: string[] };
 
-/** Writes one batch of uploaded files into the working copy. Does not commit. */
-export async function writeSeedBatch(
+/** Writes uploaded blobs into a private import index; no extracted project folder. */
+async function stored_writeSeedBatch(
   id: string,
   files: { path: string; data: string }[],
 ): Promise<SeedOutcome> {
-  const work = workPath(id);
+  const bare = barePath(id);
+  const index = { GIT_INDEX_FILE: join(bare, "import.index") };
+  if (!await exists(index.GIT_INDEX_FILE)) await objectGit(bare, ["read-tree", "--empty"], undefined, index);
   const skipped: string[] = [];
   let written = 0;
-
   for (const file of files) {
     const relative = safeRelativePath(file.path);
-    const absolute = relative ? resolveInside(work, relative) : null;
-    if (!relative || !absolute) {
-      skipped.push(String(file.path));
-      continue;
-    }
-
+    if (!relative || /(^|\/)(node_modules|\.next|\.env(?:\.(?:local|development|production|test)(?:\.local)?)?)(\/|$)/.test(relative)) { skipped.push(String(file.path)); continue; }
     const bytes = Buffer.from(file.data, "base64");
-    if (bytes.byteLength > MAX_SEED_FILE_BYTES) {
-      skipped.push(relative);
-      continue;
-    }
-
-    await mkdir(dirname(absolute), { recursive: true });
-    await writeFile(absolute, bytes);
+    if (bytes.length > MAX_SEED_FILE_BYTES) { skipped.push(relative); continue; }
+    await putBlob(bare, index, relative, bytes);
     written += 1;
   }
 
@@ -484,23 +419,16 @@ export async function writeSeedBatch(
  * from it. Base and session start level, so drift begins at zero and is always
  * measured against a real commit.
  */
-export async function finishSeed(id: string, rootName: string): Promise<SessionRepo> {
-  const work = workPath(id);
-  const branch = sessionBranchOf(id);
-
-  await git(work, ["add", "-A"]);
-  // --allow-empty: an empty folder still needs a base commit to fork from.
-  if (!await gitOk(work, ["rev-parse", "HEAD"]) || (await git(work, ["status", "--porcelain"])).trim()) {
-    await git(work, ["commit", "--allow-empty", "-m", "Seed session"]);
-  }
-
-  const baseSha = (await git(work, ["rev-parse", "HEAD"])).trim();
-  await git(work, ["push", "origin", BASE_BRANCH]);
-
-  if (await gitOk(work, ["show-ref", "--verify", `refs/heads/${branch}`])) await git(work, ["checkout", branch]);
-  else await git(work, ["checkout", "-b", branch]);
-  await git(work, ["push", "-u", "origin", branch]);
-
+async function stored_finishSeed(id: string, rootName: string): Promise<SessionRepo> {
+  const bare = barePath(id), branch = sessionBranchOf(id);
+  const index = { GIT_INDEX_FILE: join(bare, "import.index") };
+  if (!await exists(index.GIT_INDEX_FILE)) await objectGit(bare, ["read-tree", "--empty"], undefined, index);
+  await filterImportIndex(bare, index);
+  const tree = await objectText(bare, ["write-tree"], undefined, index);
+  const baseSha = await commitTree(bare, tree, [], "Seed session");
+  await git(bare, ["update-ref", `refs/heads/${BASE_BRANCH}`, baseSha]);
+  await git(bare, ["update-ref", `refs/heads/${branch}`, baseSha]);
+  await rm(index.GIT_INDEX_FILE, { force: true });
   return {
     rootName,
     baseBranch: BASE_BRANCH,
@@ -541,7 +469,8 @@ async function lockfileHash(id: string): Promise<string | null> {
     const absolute = resolveInside(work, name);
     if (!absolute) continue;
     try {
-      const bytes = await readFile(absolute);
+      const bytes = await readCommittedBytes(id, await headSha(id), name);
+      if (!bytes) continue;
       hash.update(name);
       hash.update(bytes);
       found = true;
@@ -561,10 +490,9 @@ const SPEC_DOCS = ["AGENTS.md", "CLAUDE.md"];
  * value on every regeneration.
  */
 async function specDocSha(id: string): Promise<string | null> {
-  const work = workPath(id);
   for (const name of SPEC_DOCS) {
     try {
-      const sha = (await git(work, ["rev-parse", `HEAD:${name}`])).trim();
+      const sha = (await git(barePath(id), ["rev-parse", `${await headSha(id)}:${name}`])).trim();
       if (sha) return sha;
     } catch {
       // Not tracked at this commit.
@@ -581,10 +509,8 @@ async function specDocSha(id: string): Promise<string | null> {
  * Lists the tree at HEAD. Read from git rather than from disk so the listing is
  * always a committed state — untracked scratch files never leak into it.
  */
-export async function listTree(id: string, rootName: string): Promise<TreeNode> {
-  const work = workPath(id);
-  const stdout = await git(work, ["ls-tree", "-r", "-l", "--full-tree", "HEAD"]);
-  return buildTree(rootName, parseLsTree(stdout));
+async function stored_listTree(id: string, rootName: string): Promise<TreeNode> {
+  return listCommittedTree(id, rootName, await headSha(id));
 }
 
 /**
@@ -593,7 +519,7 @@ export async function listTree(id: string, rootName: string): Promise<TreeNode> 
  * one is what the explorer opens.
  */
 /** Added/removed line totals between two commits, for a run's diff badge. */
-export async function diffStat(
+async function stored_diffStat(
   id: string,
   base: string,
   head: string,
@@ -609,7 +535,7 @@ export async function diffStat(
  * to the bare repo, but the server's working copy (if any) hasn't fetched it,
  * so diffing there would silently report nothing changed.
  */
-export async function diffStatBare(
+async function stored_diffStatBare(
   id: string,
   base: string,
   head: string,
@@ -628,7 +554,7 @@ export type FileChange = { path: string; added: number; removed: number };
  * no line counts and come back as 0/0 rather than being dropped, so a run
  * that only touched an image still names the file.
  */
-export async function diffFilesBare(id: string, base: string, head: string): Promise<FileChange[]> {
+async function stored_diffFilesBare(id: string, base: string, head: string): Promise<FileChange[]> {
   const stdout = await git(barePath(id), ["diff", "--numstat", base, head]).catch(() => "");
   const files: FileChange[] = [];
   for (const line of stdout.split("\n")) {
@@ -658,7 +584,7 @@ function countNumstat(stdout: string): { added: number; removed: number } {
   return { added, removed };
 }
 
-export async function listChangedFiles(id: string, baseSha: string): Promise<ChangedFile[]> {
+async function stored_listChangedFiles(id: string, baseSha: string): Promise<ChangedFile[]> {
   const work = workPath(id);
   const stdout = await git(work, ["diff", "--name-status", "-M", baseSha, "HEAD"]).catch(() => "");
 
@@ -675,26 +601,7 @@ export async function listChangedFiles(id: string, baseSha: string): Promise<Cha
   return changes;
 }
 
-/** `<mode> SP <type> SP <sha> SP* <size> TAB <path>` */
-function parseLsTree(stdout: string): TreeEntry[] {
-  const entries: TreeEntry[] = [];
 
-  for (const line of stdout.split("\n")) {
-    const tabAt = line.indexOf("\t");
-    if (tabAt < 0) continue;
-
-    const fields = line.slice(0, tabAt).trim().split(/\s+/);
-    if (fields.length < 4 || fields[1] !== "blob") continue;
-
-    const size = Number(fields[3]);
-    entries.push({
-      path: line.slice(tabAt + 1),
-      size: Number.isFinite(size) ? size : 0,
-    });
-  }
-
-  return entries;
-}
 
 export type RepoFile = {
   text: string;
@@ -707,7 +614,7 @@ export type RepoFile = {
  * Reads from the working copy rather than from git: the "never uncommitted"
  * invariant makes them equal, and this way a read costs no process spawn.
  */
-export async function readRepoFile(id: string, relative: string): Promise<RepoFile | null> {
+async function stored_readRepoFile(id: string, relative: string): Promise<RepoFile | null> {
   const absolute = await safeWorkFile(id, relative);
   if (!absolute) return null;
 
@@ -732,7 +639,7 @@ export async function readRepoFile(id: string, relative: string): Promise<RepoFi
   };
 }
 
-export async function readRepoBytes(id: string, relative: string): Promise<Buffer | null> {
+async function stored_readRepoBytes(id: string, relative: string): Promise<Buffer | null> {
   const absolute = await safeWorkFile(id, relative);
   if (!absolute) return null;
   try {
@@ -742,15 +649,15 @@ export async function readRepoBytes(id: string, relative: string): Promise<Buffe
   }
 }
 
-export async function headSha(id: string): Promise<string> {
-  return (await git(workPath(id), ["rev-parse", "HEAD"])).trim();
+async function stored_headSha(id: string): Promise<string> {
+  return (await git(barePath(id), ["rev-parse", `refs/heads/${sessionBranchOf(id)}`])).trim();
 }
 
 // ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
 
-export async function writeRepoFile(id: string, relative: string, text: string): Promise<boolean> {
+async function stored_writeRepoFile(id: string, relative: string, text: string): Promise<boolean> {
   const absolute = await safeWorkFile(id, relative);
   if (!absolute) return false;
 
@@ -789,7 +696,7 @@ async function mergeFile(ours: string, base: string, theirs: string): Promise<nu
  * line-level collisions are reported as a conflict — which commits nothing, so a
  * concurrent edit can never be silently lost.
  */
-export async function mergeSave(
+async function stored_mergeSave(
   id: string,
   relative: string,
   baseText: string,
@@ -798,65 +705,40 @@ export async function mergeSave(
   author: { name: string; email: string },
   onCommitted?: (sha: string) => Promise<void>,
 ): Promise<SaveResult> {
-  const work = workPath(id);
+  const bare = barePath(id);
   return withRepoLock(id, async () => {
-    const canonical = (await git(barePath(id), ["rev-parse", `refs/heads/${sessionBranchOf(id)}`])).trim();
-    await ensureWork(id, canonical || headAtRequest);
-    await git(work, ["fetch", "origin", sessionBranchOf(id)]);
-    if ((await git(work, ["status", "--porcelain"])).trim()) throw new Error("The server checkout contains unsaved changes. They were preserved; ask the room owner to recover them.");
-    const localHead = await headSha(id);
-    if (localHead !== canonical && !await gitOk(work, ["merge-base", "--is-ancestor", localHead, canonical])) {
-      throw new Error("The server checkout has undelivered commits. They were preserved for recovery.");
+    const canonical = await headSha(id);
+    const clean = safeRelativePath(relative);
+    if (!clean) throw new Error("Unsafe path.");
+    const entry = await git(bare, ["ls-tree", "-z", canonical, "--", clean]);
+    if (entry && !entry.startsWith("100")) throw new Error("Unsafe path or symbolic link.");
+    // Reject a path beneath an existing file/symlink rather than replacing it.
+    const parts = clean.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const parent = await git(bare, ["ls-tree", "-z", canonical, "--", parts.slice(0, i).join("/")]);
+      if (parent && !parent.startsWith("040000")) throw new Error("Unsafe parent path.");
     }
-    await checkoutHead(id, canonical);
-
-    const absolute = await safeWorkFile(id, relative);
-    if (!absolute) throw new Error("Unsafe path or symbolic link.");
-
-    let ours = "";
-    try {
-      ours = await readFile(absolute, "utf8");
-    } catch {
-      ours = ""; // new file
+    const ours = (await readCommittedBytes(id, canonical, clean))?.toString("utf8") ?? "";
+    if (ours === incomingText) return { status: "nochange", headSha: canonical };
+    let text = incomingText;
+    if (ours !== baseText) {
+      const scratch = join(bare, `.merge-${randomBytes(6).toString("hex")}`);
+      await mkdir(scratch);
+      try {
+        const a = join(scratch, "ours"), b = join(scratch, "base"), c = join(scratch, "theirs");
+        await Promise.all([writeFile(a, ours), writeFile(b, baseText), writeFile(c, incomingText)]);
+        if (await mergeFile(a, b, c) !== 0) return { status: "conflict", headSha: canonical };
+        text = await readFile(a, "utf8");
+      } finally { await rm(scratch, { recursive: true, force: true }); }
     }
-
-    if (ours === incomingText) return { status: "nochange", headSha: await headSha(id) };
-
-    // Fast path: the file hasn't moved under the editor, so the write is safe.
-    if (ours === baseText) {
-      await writeRepoFile(id, relative, incomingText);
-      const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
-      const savedSha = sha ?? (await headSha(id));
-      await onCommitted?.(savedSha);
-      return { status: "clean", headSha: savedSha };
-    }
-
-    // The file changed under the editor — merge the two sets of edits.
-    const scratch = join(dirname(work), `.merge-${randomBytes(6).toString("hex")}`);
-    await mkdir(scratch, { recursive: true });
-    try {
-      const oursTmp = join(scratch, "ours");
-      const baseTmp = join(scratch, "base");
-      const theirsTmp = join(scratch, "theirs");
-      await writeFile(oursTmp, ours, "utf8");
-      await writeFile(baseTmp, baseText, "utf8");
-      await writeFile(theirsTmp, incomingText, "utf8");
-
-      const conflicts = await mergeFile(oursTmp, baseTmp, theirsTmp);
-      if (conflicts !== 0) {
-        // Leave the room untouched; the client keeps the user's text to resolve.
-        return { status: "conflict", headSha: await headSha(id) };
-      }
-
-      const merged = await readFile(oursTmp, "utf8");
-      await writeRepoFile(id, relative, merged);
-      const sha = await commitWork(id, `WIP: ${relative}`, author.name, author.email);
-      const savedSha = sha ?? (await headSha(id));
-      await onCommitted?.(savedSha);
-      return { status: "clean", headSha: savedSha };
-    } finally {
-      await rm(scratch, { recursive: true, force: true });
-    }
+    const sha = await withTemporaryIndex(bare, async env => {
+      await objectGit(bare, ["read-tree", canonical], undefined, env);
+      await putBlob(bare, env, clean, text, entry.startsWith("100755") ? "100755" : "100644");
+      return commitTree(bare, await objectText(bare, ["write-tree"], undefined, env), [canonical], `WIP: ${clean}`, author);
+    });
+    await git(bare, ["update-ref", `refs/heads/${sessionBranchOf(id)}`, sha, canonical]);
+    await onCommitted?.(sha);
+    return { status: "clean", headSha: sha };
   });
 }
 
@@ -864,7 +746,7 @@ export async function mergeSave(
  * Commits whatever is dirty and pushes it. Returns null when the tree was
  * already clean, so a redundant save does not manufacture an empty commit.
  */
-export async function commitWork(
+async function stored_commitWork(
   id: string,
   message: string,
   authorName?: string,
@@ -893,7 +775,7 @@ export async function commitWork(
 }
 
 /** Restores the working copy to a session's recorded HEAD. */
-export async function checkoutHead(id: string, sha: string): Promise<void> {
+async function stored_checkoutHead(id: string, sha: string): Promise<void> {
   const work = workPath(id);
   await git(work, ["checkout", "--force", sessionBranchOf(id)]);
   await git(work, ["reset", "--hard", sha]);
@@ -906,13 +788,13 @@ export async function checkoutHead(id: string, sha: string): Promise<void> {
  * aspirational: `<root>/work` can be deleted wholesale and every session still
  * resumes, because the bare repo is the only thing that was ever the record.
  */
-export async function ensureWork(id: string, sha: string): Promise<void> {
+async function stored_ensureWork(id: string, sha: string): Promise<void> {
   const work = workPath(id);
   const branch = sessionBranchOf(id);
 
   if (await isWorkTree(work)) {
     await git(work, ["fetch", "origin", branch]);
-    const current = await headSha(id);
+    const current = (await git(work, ["rev-parse", "HEAD"])).trim();
     if (current === sha) return;
     if ((await git(work, ["status", "--porcelain"])).trim() || !await gitOk(work, ["merge-base", "--is-ancestor", current, sha])) {
       throw new Error("This checkout has unsaved changes or undelivered commits. They were preserved for recovery.");
@@ -935,7 +817,7 @@ async function isWorkTree(work: string): Promise<boolean> {
   }
 }
 
-export async function prepareTurnWork(repoRef: string, turnId: string, baseSha: string): Promise<string> {
+async function stored_prepareTurnWork(repoRef: string, turnId: string, baseSha: string): Promise<string> {
   const work = workPath(`turn-${turnId}`);
   await mkdir(dirname(work), { recursive: true });
   await git(dirname(work), ["clone", "--no-checkout", barePath(repoRef), work]);
@@ -943,19 +825,20 @@ export async function prepareTurnWork(repoRef: string, turnId: string, baseSha: 
   return work;
 }
 
-export async function commitTurnWork(repoRef: string, turnId: string, baseSha: string, author: { name: string; email: string }): Promise<string | null> {
+async function stored_commitTurnWork(repoRef: string, turnId: string, baseSha: string, author: { name: string; email: string }): Promise<string | null> {
   const work = workPath(`turn-${turnId}`);
   await git(work, ["add", "-A"]);
   if ((await git(work, ["status", "--porcelain"])).trim()) {
     await git(work, ["-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`, "commit", "-m", "Agent turn"]);
   }
   const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
-  if (sha === baseSha) return null;
+  if (sha === baseSha) { await rm(work, { recursive: true, force: true }); return null; }
   await git(work, ["push", "origin", `HEAD:refs/turns/${turnId}`]);
+  await rm(work, { recursive: true, force: true });
   return sha;
 }
 
-export async function promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string): Promise<void> {
+async function stored_promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string): Promise<void> {
   const bare = barePath(repoRef);
   const candidate = (await git(bare, ["rev-parse", `refs/turns/${turnId}`])).trim();
   if (candidate !== sha || !await verifyPushedCommit(repoRef, baseSha, sha)) throw new Error("The turn's candidate commit could not be verified.");
@@ -981,7 +864,7 @@ async function safeWorkFile(id: string, relative: string): Promise<string | null
   return current;
 }
 
-export async function listCommittedTree(id: string, rootName: string, sha: string): Promise<TreeNode> {
+async function stored_listCommittedTree(id: string, rootName: string, sha: string): Promise<TreeNode> {
   const output = await git(barePath(id), ["ls-tree", "-rzl", "--full-tree", sha]);
   const entries: TreeEntry[] = [];
   for (const record of output.split("\0")) {
@@ -993,7 +876,7 @@ export async function listCommittedTree(id: string, rootName: string, sha: strin
   return buildTree(rootName, entries);
 }
 
-export async function readCommittedBytes(id: string, sha: string, relative: string): Promise<Buffer | null> {
+async function stored_readCommittedBytes(id: string, sha: string, relative: string): Promise<Buffer | null> {
   if (!safeRelativePath(relative)) return null;
   const bare = barePath(id);
   const entry = await git(bare, ["ls-tree", "-z", sha, "--", relative]);
@@ -1007,7 +890,7 @@ export async function readCommittedBytes(id: string, sha: string, relative: stri
   return stdout;
 }
 
-export async function committedChanges(id: string, base: string, head: string): Promise<ChangedFile[]> {
+async function stored_committedChanges(id: string, base: string, head: string): Promise<ChangedFile[]> {
   const output = await git(barePath(id), ["diff", "--name-status", "--no-renames", "-z", base, head]);
   const fields = output.split("\0");
   const changes: ChangedFile[] = [];
@@ -1018,10 +901,86 @@ export async function committedChanges(id: string, base: string, head: string): 
 }
 
 /** First explicit publication of a room-only repository. No project-wide repo is inferred. */
-export async function initializeSharedRepository(ref: string, repositoryId: string, sha: string): Promise<void> {
+async function stored_initializeSharedRepository(ref: string, repositoryId: string, sha: string): Promise<void> {
   const bare = sharedRepositoryBarePath(repositoryId);
   if (await sharedRepositoryHeadSha(repositoryId)) return;
   await mkdir(dirname(bare), { recursive: true });
   if (!await exists(bare)) await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
   await git(bare, ["fetch", barePath(ref), `${sha}:refs/heads/${BASE_BRANCH}`]);
 }
+
+export const createRepo = (...args: Parameters<typeof stored_createRepo>): ReturnType<typeof stored_createRepo> => withStoredRepo(barePath(args[0]), () => stored_createRepo(...args));
+
+export const writeSeedBatch = (...args: Parameters<typeof stored_writeSeedBatch>): ReturnType<typeof stored_writeSeedBatch> => withStoredRepo(barePath(args[0]), () => stored_writeSeedBatch(...args));
+
+export const finishSeed = (...args: Parameters<typeof stored_finishSeed>): ReturnType<typeof stored_finishSeed> => withStoredRepo(barePath(args[0]), () => stored_finishSeed(...args));
+
+export const verifyPushedCommit = (...args: Parameters<typeof stored_verifyPushedCommit>): ReturnType<typeof stored_verifyPushedCommit> => withStoredRepo(barePath(args[0]), () => stored_verifyPushedCommit(...args));
+
+export const repoRefHeadSha = (...args: Parameters<typeof stored_repoRefHeadSha>): ReturnType<typeof stored_repoRefHeadSha> => withStoredRepo(barePath(args[0]), () => stored_repoRefHeadSha(...args));
+
+export const listRepoRefFiles = (...args: Parameters<typeof stored_listRepoRefFiles>): ReturnType<typeof stored_listRepoRefFiles> => withStoredRepo(barePath(args[0]), () => stored_listRepoRefFiles(...args));
+
+export const readRepoRefFileText = (...args: Parameters<typeof stored_readRepoRefFileText>): ReturnType<typeof stored_readRepoRefFileText> => withStoredRepo(barePath(args[0]), () => stored_readRepoRefFileText(...args));
+
+export const listTree = (...args: Parameters<typeof stored_listTree>): ReturnType<typeof stored_listTree> => withStoredRepo(barePath(args[0]), () => stored_listTree(...args));
+
+export const diffStat = (...args: Parameters<typeof stored_diffStat>): ReturnType<typeof stored_diffStat> => withStoredRepo(barePath(args[0]), () => stored_diffStat(...args));
+
+export const diffStatBare = (...args: Parameters<typeof stored_diffStatBare>): ReturnType<typeof stored_diffStatBare> => withStoredRepo(barePath(args[0]), () => stored_diffStatBare(...args));
+
+export const diffFilesBare = (...args: Parameters<typeof stored_diffFilesBare>): ReturnType<typeof stored_diffFilesBare> => withStoredRepo(barePath(args[0]), () => stored_diffFilesBare(...args));
+
+export const listChangedFiles = (...args: Parameters<typeof stored_listChangedFiles>): ReturnType<typeof stored_listChangedFiles> => withStoredRepo(barePath(args[0]), () => stored_listChangedFiles(...args));
+
+export const readRepoFile = (...args: Parameters<typeof stored_readRepoFile>): ReturnType<typeof stored_readRepoFile> => withStoredRepo(barePath(args[0]), () => stored_readRepoFile(...args));
+
+export const readRepoBytes = (...args: Parameters<typeof stored_readRepoBytes>): ReturnType<typeof stored_readRepoBytes> => withStoredRepo(barePath(args[0]), () => stored_readRepoBytes(...args));
+
+export const headSha = (...args: Parameters<typeof stored_headSha>): ReturnType<typeof stored_headSha> => withStoredRepo(barePath(args[0]), () => stored_headSha(...args));
+
+export const writeRepoFile = (...args: Parameters<typeof stored_writeRepoFile>): ReturnType<typeof stored_writeRepoFile> => withStoredRepo(barePath(args[0]), () => stored_writeRepoFile(...args));
+
+export const mergeSave = (...args: Parameters<typeof stored_mergeSave>): ReturnType<typeof stored_mergeSave> => withStoredRepo(barePath(args[0]), () => stored_mergeSave(...args));
+
+export const commitWork = (...args: Parameters<typeof stored_commitWork>): ReturnType<typeof stored_commitWork> => withStoredRepo(barePath(args[0]), () => stored_commitWork(...args));
+
+export const checkoutHead = (...args: Parameters<typeof stored_checkoutHead>): ReturnType<typeof stored_checkoutHead> => withStoredRepo(barePath(args[0]), () => stored_checkoutHead(...args));
+
+export const ensureWork = (...args: Parameters<typeof stored_ensureWork>): ReturnType<typeof stored_ensureWork> => withStoredRepo(barePath(args[0]), () => stored_ensureWork(...args));
+
+export const prepareTurnWork = (...args: Parameters<typeof stored_prepareTurnWork>): ReturnType<typeof stored_prepareTurnWork> => withStoredRepo(barePath(args[0]), () => stored_prepareTurnWork(...args));
+
+export const commitTurnWork = (...args: Parameters<typeof stored_commitTurnWork>): ReturnType<typeof stored_commitTurnWork> => withStoredRepo(barePath(args[0]), () => stored_commitTurnWork(...args));
+
+export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): ReturnType<typeof stored_promoteTurn> => withStoredRepo(barePath(args[0]), () => stored_promoteTurn(...args));
+
+export const listCommittedTree = (...args: Parameters<typeof stored_listCommittedTree>): ReturnType<typeof stored_listCommittedTree> => withStoredRepo(barePath(args[0]), () => stored_listCommittedTree(...args));
+
+export const readCommittedBytes = (...args: Parameters<typeof stored_readCommittedBytes>): ReturnType<typeof stored_readCommittedBytes> => withStoredRepo(barePath(args[0]), () => stored_readCommittedBytes(...args));
+
+export const committedChanges = (...args: Parameters<typeof stored_committedChanges>): ReturnType<typeof stored_committedChanges> => withStoredRepo(barePath(args[0]), () => stored_committedChanges(...args));
+
+export const ensureSharedRepository = (...args: Parameters<typeof stored_ensureSharedRepository>): ReturnType<typeof stored_ensureSharedRepository> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_ensureSharedRepository(...args));
+
+export const sharedRepositoryHeadSha = (...args: Parameters<typeof stored_sharedRepositoryHeadSha>): ReturnType<typeof stored_sharedRepositoryHeadSha> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_sharedRepositoryHeadSha(...args));
+
+export const listSharedRepositoryFiles = (...args: Parameters<typeof stored_listSharedRepositoryFiles>): ReturnType<typeof stored_listSharedRepositoryFiles> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_listSharedRepositoryFiles(...args));
+
+export const readSharedRepositoryFileText = (...args: Parameters<typeof stored_readSharedRepositoryFileText>): ReturnType<typeof stored_readSharedRepositoryFileText> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_readSharedRepositoryFileText(...args));
+
+export const repoContainsCommit = (...args: Parameters<typeof stored_repoContainsCommit>): ReturnType<typeof stored_repoContainsCommit> => withStoredRepo(contextBare(args[0]), () => stored_repoContainsCommit(...args));
+
+export const repoSnapshotPaths = (...args: Parameters<typeof stored_repoSnapshotPaths>): ReturnType<typeof stored_repoSnapshotPaths> => withStoredRepo(contextBare(args[0]), () => stored_repoSnapshotPaths(...args));
+
+export const repoSnapshotDiff = (...args: Parameters<typeof stored_repoSnapshotDiff>): ReturnType<typeof stored_repoSnapshotDiff> => withStoredRepo(contextBare(args[0]), () => stored_repoSnapshotDiff(...args));
+
+export const repoSnapshotText = (...args: Parameters<typeof stored_repoSnapshotText>): ReturnType<typeof stored_repoSnapshotText> => withStoredRepo(contextBare(args[0]), () => stored_repoSnapshotText(...args));
+
+export const forkRoomRepository = (...args: Parameters<typeof stored_forkRoomRepository>): ReturnType<typeof stored_forkRoomRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_forkRoomRepository(...args)));
+
+export const publishRoom = (...args: Parameters<typeof stored_publishRoom>): ReturnType<typeof stored_publishRoom> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_publishRoom(...args)));
+
+export const syncRoom = (...args: Parameters<typeof stored_syncRoom>): ReturnType<typeof stored_syncRoom> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_syncRoom(...args)));
+
+export const initializeSharedRepository = (...args: Parameters<typeof stored_initializeSharedRepository>): ReturnType<typeof stored_initializeSharedRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_initializeSharedRepository(...args)));

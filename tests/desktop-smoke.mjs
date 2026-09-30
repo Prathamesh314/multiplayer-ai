@@ -18,8 +18,23 @@ const delay = milliseconds => new Promise(resolve => setTimeout(resolve, millise
 const clients = [];
 let child;
 let output = "";
+let automaticPairs = 0;
+const fixtureUser = "a06b6c4d-b8ed-43c1-a092-f7304c6c94e4";
+const fixtureDevice = "15dc2939-43e7-450b-9d4e-f7f19a7c02c1";
 const server = createServer((request, response) => {
-  if (request.url === "/api/runner/claim") {
+  const json = body => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+  if (request.url === "/api/auth/me") {
+    json({ user: request.headers.cookie?.includes("ma_auth=fixture-alice") ? { id: fixtureUser } : null });
+  } else if (request.url === "/api/runner/pairing") {
+    assert.match(request.headers.cookie ?? "", /ma_auth=fixture-alice/);
+    json({ code: "RN-ABCD-EFGH" });
+  } else if (request.url === "/api/runner/pair") {
+    automaticPairs++;
+    json({ token: "fixture-private-device-token", device: { id: fixtureDevice, userId: fixtureUser } });
+  } else if (request.url === "/api/runner/me") {
+    assert.equal(request.headers.authorization, "Bearer fixture-private-device-token");
+    json({ device: { id: fixtureDevice, userId: fixtureUser } });
+  } else if (request.url === "/api/runner/claim") {
     setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end('{"job":null}'), 100);
   } else if (request.url === "/api/runner/heartbeat") {
     response.writeHead(200, { "content-type": "application/json" }).end("{}");
@@ -70,7 +85,7 @@ try {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const origin = "http://127.0.0.1:" + server.address().port;
   const args = packaged ? [] : [".desktop-build/app"];
-  child = spawn(executable, [...args, "--user-data-dir=" + directory, "--remote-debugging-port=0"], { env: { ...process.env, APP_URL: "", DESKTOP_RUNNER: "0", DESKTOP_SPAWN_SERVER: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(executable, [...args, "--user-data-dir=" + directory, "--remote-debugging-port=0"], { env: { ...process.env, APP_URL: "", DESKTOP_RUNNER: "1", DESKTOP_SPAWN_SERVER: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   child.on("error", error => { output += error.stack; });
   child.stdout.on("data", chunk => { output += chunk; });
   child.stderr.on("data", chunk => { output += chunk; });
@@ -105,6 +120,23 @@ try {
     assert.equal(await workspace.evaluate("location.origin"), origin);
     assert.equal((await targets()).filter(target => target.type === "page").length, 2);
     console.log("ok workspace preload, privileged bridge separation, popup and navigation blocks");
+    assert.equal(automaticPairs, 0, "No device is paired before sign-in");
+    await workspace.send("Network.setCookie", { name: "ma_auth", value: "fixture-alice", url: origin, httpOnly: true });
+    await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "online", "automatic desktop connection after sign-in");
+    assert.equal(automaticPairs, 1);
+    const saved = JSON.parse(await readFile(join(directory,"runner.json"),"utf8"));
+    assert.equal(saved.userId, fixtureUser);
+    assert.equal(saved.deviceId, fixtureDevice);
+    assert.equal(saved.token,"fixture-private-device-token");
+    assert.equal(await workspace.evaluate("JSON.stringify(window.desktop).includes('fixture-private-device-token')"),false);
+    await workspace.send("Network.deleteCookies",{name:"ma_auth",url:origin});
+    await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "paused", "sign-out drains runner");
+    await workspace.send("Network.setCookie",{name:"ma_auth",value:"fixture-alice",url:origin,httpOnly:true});
+    await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "online", "sign-in reuses saved connection");
+    assert.equal(automaticPairs,1);
+    await setup.evaluate("window.desktopSetup.toggleRunner()");
+    await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "paused", "manual pause");
+    console.log("ok native automatic pairing, cookie isolation, sign-out, reuse without duplicate devices, and pause");
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
     await workspace.send("Page.reload");

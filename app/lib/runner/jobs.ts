@@ -69,3 +69,12 @@ export async function reclaimForServer(turnId: string): Promise<AgentRunJob | nu
 export function localRunnersEnabled(): boolean {
   return Boolean(process.env.REDIS_URL) && process.env.LOCAL_RUNNERS !== "0";
 }
+
+/** Late artifact delivery cannot execute or promote code; access is checked again. */
+export async function artifactJob(turnId: string, deviceId: string): Promise<AgentRunJob | null> {
+  const row = await queryOne<{ payload: AgentRunJob }>(`SELECT j.payload FROM runner_jobs j
+    JOIN agent_runs r ON r.id = j.run_id
+    WHERE j.turn_id = $1 AND j.device_id = $2 AND j.status IN ('claimed','done','failed')
+      AND room_access_role(r.session_id, j.user_id) IN ('owner','editor')`, [turnId, deviceId]);
+  return row?.payload ?? null;
+}

@@ -1,3 +1,9 @@
+import { persistActivity, activityPage } from "../app/lib/runner/activity.ts";
+import { saveCheckpoint, listCheckpoints, getCheckpoint } from "../app/lib/runner/checkpoints.ts";
+import { archiveStoredRepo, withStoredRepo } from "../app/lib/storage/git-cache.ts";
+import { ActivityOutbox } from "../runner/activity-outbox.ts";
+import { objectText } from "../app/lib/git/objects.ts";
+import { stat } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from "node:fs/promises";
@@ -218,6 +224,7 @@ try {
     const outside = join(directory, "outside");
     await mkdir(outside);
     await writeFile(join(outside, "secret.txt"), "secret");
+    await mkdir(workPath(roomId), { recursive: true });
     await symlink(join(outside, "secret.txt"), join(workPath(roomId), "link.txt"));
     await symlink(outside, join(workPath(roomId), "linked"));
     assert.equal(await readRepoFile(roomId, "link.txt"), null);
@@ -410,6 +417,76 @@ try {
     }
     assert.equal((await readCommittedBytes(roomId, previous, "worktree-0.txt")).toString(), "Turn 0\n");
     assert.equal((await readCommittedBytes(roomId, previous, "worktree-1.txt")).toString(), "Turn 1\n");
+  });
+  await test("object-only imports honor root and nested Git ignores across batches without a checkout", async () => {
+    const id = "ignoredimport";
+    await createRepo(id);
+    const batch = files => writeSeedBatch(id, Object.entries(files).map(([path,text]) => ({path,data:Buffer.from(text).toString("base64")})));
+    await batch({"generated/large.txt":"ignored", "secret.txt":"ignored", "src/local.txt":"ignored", "src/keep.txt":"keep"});
+    await batch({".gitignore":"generated/\nsecret.txt\n", "src/.gitignore":"*.txt\n!keep.txt\n"});
+    const result = await finishSeed(id,"Ignored import");
+    assert.equal(await readCommittedBytes(id,result.headSha,"secret.txt"),null);
+    assert.equal(await readCommittedBytes(id,result.headSha,"generated/large.txt"),null);
+    assert.equal(await readCommittedBytes(id,result.headSha,"src/local.txt"),null);
+    assert.equal((await readCommittedBytes(id,result.headSha,"src/keep.txt")).toString(),"keep");
+    await assert.rejects(stat(workPath(id)),{code:"ENOENT"});
+  });
+  await test("durable activity survives retries, rejects gaps and mismatched content, and omits private thinking", async () => {
+    const target = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: await headSha(roomId) });
+    const id = randomUUID(); await reserveTurn(target.id, alice, id, 0);
+    const events = [{ t: "act", d: "Read component" }, { t: "out", d: "Working on the button" }, { t: "think", d: "private" }];
+    assert.equal(await persistActivity(id, 1, events), true);
+    assert.equal(await persistActivity(id, 1, events), false);
+    await assert.rejects(persistActivity(id, 1, [{ t: "out", d: "changed" }]));
+    await assert.rejects(persistActivity(id, 3, events));
+    await persistActivity(id, 2, [{ t: "err", d: "Test failed" }]);
+    const page = await activityPage(id, 0);
+    assert.equal(page.length, 2); assert.equal(page[0].events.length, 2);
+    assert.doesNotMatch(JSON.stringify(page), /private/);
+    assert.equal((await activityPage(id, 1))[0].sequence, 2);
+    await failTurn(id, "Interrupted laptop");
+    // Uploads already queued on that device may append history after interruption.
+    await persistActivity(id, 3, [{ t: "notice", message: "Last saved output" }]);
+    assert.equal((await activityPage(id, 2))[0].events[0].message, "Last saved output");
+  });
+  await test("activity outbox retries in sequence after a runner restart", async () => {
+    const local = new ActivityOutbox(directory, "server", "token");
+    const id = randomUUID(); local.store(id, 1, [{t:"out",d:"first"}]); local.store(id, 2, [{t:"out",d:"second"}]);
+    let calls = [];
+    await local.deliver({postEvents: async (_id,_events,seq) => { calls.push(seq); throw new Error("offline"); }});
+    assert.deepEqual(calls, [1]); calls = [];
+    await new ActivityOutbox(directory,"server","token").deliver({postEvents: async (_id,_events,seq) => { calls.push(seq); }});
+    assert.deepEqual(calls, [1,2]);
+  });
+  await test("uploaded checkpoints remain readable with the laptop offline and cannot be attached to another turn", async () => {
+    const base = await headSha(roomId);
+    const target = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: base });
+    const job = {...makeJob(randomUUID(),alice,0,base), runId:target.id};
+    await reserveTurn(target.id,alice,job.turnId,0); await prepareTurn(job);
+    const device = (await sql(`INSERT INTO runner_devices(user_id,name,token_hash) VALUES ($1,'snapshots',$2) RETURNING id`,[alice,Buffer.from(randomUUID())])).rows[0].id;
+    const local = new RunnerGit(pathToFileURL(join(directory,"worktree-transport")).href,"checkpoints",join(directory,"checkpoint-runner"));
+    let captured;
+    await local.withWorkspace(job,async w => { await writeFile(join(w.path,"unfinished.txt"),"available offline"); await w.checkpoint(); });
+    await local.deliverCheckpoints({checkpoint:async snapshot => { captured=snapshot; await saveCheckpoint(job,device,snapshot); }});
+    assert.ok(captured);
+    const rows = await listCheckpoints(target.id); assert.equal(rows.length,1);
+    assert.equal((await readCommittedBytes(roomId,rows[0].snapshotSha,"unfinished.txt")).toString(),"available offline");
+    await saveCheckpoint(job,device,captured); assert.equal((await listCheckpoints(target.id)).length,1);
+    await assert.rejects(saveCheckpoint({...job,turnId:randomUUID()},device,captured));
+    assert.equal(await getCheckpoint(captured.id,randomUUID()),null);
+    await failTurn(job.turnId,"Laptop switched off");
+  });
+  await test("cold Git archives restore every ref and pinned repositories cannot be evicted", async () => {
+    process.env.STORAGE_COLD_GIT="1";
+    try {
+      const before=await objectText(barePath(roomId),["for-each-ref","--format=%(refname) %(objectname)"]);
+      await withStoredRepo(barePath(roomId),async () => assert.equal(await archiveStoredRepo(barePath(roomId)),false));
+      assert.equal(await archiveStoredRepo(barePath(roomId)),true);
+      await assert.rejects(stat(barePath(roomId)),{code:"ENOENT"});
+      const restored=await headSha(roomId); assert.ok(restored);
+      assert.equal(await objectText(barePath(roomId),["for-each-ref","--format=%(refname) %(objectname)"]),before);
+      assert.ok((await listCommittedTree(roomId,"repo",restored)).children.length);
+    } finally { delete process.env.STORAGE_COLD_GIT; }
   });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");

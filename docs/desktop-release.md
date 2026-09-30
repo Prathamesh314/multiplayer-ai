@@ -12,7 +12,7 @@ Implementation phases:
 
 1. Restrict navigation, permissions, external URLs, and privileged IPC. Add a
    single-instance lock and an actionable local connection/recovery screen.
-2. Bundle the runner with Electron's Node runtime, add native pairing consent,
+2. Bundle the runner with Electron's Node runtime, connect after sign-in,
    persistent pause controls, and graceful shutdown.
 3. Stage only explicitly allowed desktop assets, configure installers and
    opt-in signed updates, and fail closed on missing release configuration.
@@ -37,9 +37,11 @@ acceptance are mandatory external release inputs. Backend risks in
   workspace addresses are rejected. TLS verification is never bypassed.
 - First-run connection UI, bounded readiness checks, offline/render-crash
   recovery, single-instance behavior, menu/tray access and persistent sessions.
-- Native pairing with explicit execution consent, a bundled utility-process
-  runner, filtered environment, private per-profile configuration and persistent
-  pause. A pending claim is drained rather than abandoned; quitting waits for the
+- Automatic connection after sign-in, a bundled utility-process runner, filtered
+  environment, private per-account connection profiles and persistent pause.
+  Signing out stops new claims; returning to the same account reuses its saved
+  connection. Revoked devices require explicit reconnection through the existing
+  native pairing dialog. A pending claim is drained rather than abandoned; quitting waits for the
   current/already-requested task and its completion report. Normal Git/API calls
   have timeouts. Forced OS termination can still interrupt work.
 - Explicit asset allowlist, post-package archive verification, bundled dependency
@@ -81,6 +83,12 @@ scripts use `--setup`, which clears any workspace/update URL inherited from the
 build environment. Preview filenames include `-preview` and are not published.
 The website's placeholder download links remain placeholders until distribution
 is ready.
+
+After signing in, the desktop app connects this computer automatically; users
+do not need a pairing command. Install Git and install/authenticate the chosen AI
+CLI first. The desktop menu can pause or resume execution; a manual pause survives
+relaunches. Signing out stops new work and drains any already claimed task. The
+server needs Redis and local runners enabled to dispatch jobs to the desktop.
 
 Build one platform/architecture at a time, for example
 `npm run desktop:dist -- --mac --x64 --setup`. Supported architectures are `x64`
@@ -158,14 +166,16 @@ Windows publicly. Linux AppImage remains a preview, not a signed release target.
 ## Operational behavior and limitations
 
 The desktop is a networked client, not an offline database or execution sandbox.
-The configured server is explicitly trusted to dispatch the user's jobs. Native
-consent is not protection against a compromised trusted server or malicious agent
+The configured server is explicitly trusted to dispatch the user's jobs. Pairing
+is not protection against a compromised trusted server or malicious agent
 commands. Backend authorization, execution isolation and recovery gates from the
 production plan remain prerequisites for a public service.
 
 Desktop settings and the private `runner.json` live under Electron's userData
-directory (macOS: `~/Library/Application Support/Multiplayer AI`). Checkouts/outbox
-live in its `runner-data` subdirectory. Runner tokens are mode-0600 files on POSIX,
+directory (macOS: `~/Library/Application Support/Multiplayer AI`). Saved connection
+profiles live in `connections`; each new account/server combination has a separate
+`runner-data/<profile hash>` directory for its outbox and repository cache. User
+worktrees use the configured workspace directory. Runner tokens are mode-0600 files on POSIX,
 not Keychain-encrypted; Windows relies on the user's profile ACLs. The desktop does
 not silently reuse the CLI's older `~/.config/multiplayer-ai/runner.json` identity.
 Revoke unused devices in **Your computers**. Uninstall preserves user data.

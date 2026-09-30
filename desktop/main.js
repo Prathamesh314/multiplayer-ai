@@ -4,7 +4,9 @@ const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 const { spawn } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { workspaceUrl, sameOrigin, externalUrl, waitForServer, runnerEnvironment } = require("./policy");
+const { createAutoConnection } = require("./connection");
 
 app.setName("Multiplayer AI");
 const setupUrl = pathToFileURL(path.join(__dirname, "setup.html")).href;
@@ -12,7 +14,7 @@ const settingsPath = path.join(app.getPath("userData"), "desktop.json");
 const runnerPath = path.join(app.getPath("userData"), "runner.json");
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, "release.json"), "utf8"));
 const defaultWorkspacesDir = path.join(os.homedir(), "multiplayer-ai", "workspaces");
-let settings = { url: "", runnerEnabled: false, workspacesDir: defaultWorkspacesDir };
+let settings = { url: "", runnerEnabled: true, workspacesDir: defaultWorkspacesDir };
 let mainWindow = null;
 let setupWindow = null;
 let tray = null;
@@ -27,10 +29,30 @@ let updater = null;
 let updateTimer = null;
 let updateReady = false;
 let updateBusy = false;
+let workspaceSession = null;
+let connectionTimer = null;
+
+function readRunnerConfig(file = runnerPath) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+const connectionKey = (server, userId) => createHash("sha256").update(server + "\0" + userId).digest("hex");
+const savedConnectionPath = (server, userId) => path.join(app.getPath("userData"), "connections", connectionKey(server, userId) + ".json");
+function writePrivateConfig(file, config) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file + ".tmp", JSON.stringify(config), { mode: 0o600, flush: true });
+  fs.renameSync(file + ".tmp", file);
+}
+function rememberConnection(config) {
+  if (config.userId) writePrivateConfig(savedConnectionPath(config.server, config.userId), config);
+}
+function saveRunnerConfig(config) {
+  rememberConnection(config);
+  writePrivateConfig(runnerPath, config);
+}
 
 try {
   const saved = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-  settings = { url: workspaceUrl(saved.url, !app.isPackaged), runnerEnabled: saved.runnerEnabled === true,
+  settings = { url: workspaceUrl(saved.url, !app.isPackaged), runnerEnabled: saved.runnerEnabled !== false || !readRunnerConfig(),
     workspacesDir: typeof saved.workspacesDir === "string" && path.isAbsolute(saved.workspacesDir) ? saved.workspacesDir : defaultWorkspacesDir };
 } catch {
   try { settings.url = workspaceUrl(release.workspaceUrl, !app.isPackaged); } catch {}
@@ -39,6 +61,23 @@ if (!app.isPackaged && process.env.APP_URL) {
   try { settings.url = workspaceUrl(process.env.APP_URL, true); }
   catch { message = "APP_URL is invalid. Enter a valid workspace address."; settings.url = ""; }
 }
+
+const autoConnection = createAutoConnection({
+  context: () => settings.url && workspaceSession ? { origin: settings.url, session: workspaceSession } : null,
+  readConfig: readRunnerConfig,
+  readSaved: (server, userId) => readRunnerConfig(savedConnectionPath(server, userId)),
+  remember: rememberConnection,
+  saveConfig: saveRunnerConfig,
+  newConfig: (server, userId, deviceId, token) => ({ server, userId, deviceId, token, name: os.hostname(),
+    dataDir: path.join(app.getPath("userData"), "runner-data", connectionKey(server, userId)), workspacesDir: settings.workspacesDir }),
+  deviceInfo: () => ({ name: os.hostname().slice(0, 100), platform: process.platform, version: app.getVersion() }),
+  enabled: () => settings.runnerEnabled,
+  running: () => !!runnerProcess,
+  pairing: () => pairing,
+  quitting: () => quitting,
+  disabled: () => process.env.DESKTOP_RUNNER === "0",
+  start: startRunner, stop: stopRunner, report, fetch: (...args) => fetch(...args),
+});
 
 function saveSettings() {
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -131,6 +170,15 @@ function createWorkspace() {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false },
   });
   security(mainWindow);
+  if (workspaceSession !== mainWindow.webContents.session) {
+    workspaceSession = mainWindow.webContents.session;
+    workspaceSession.cookies.on("changed", (_event, cookie) => {
+      if (cookie.name !== "ma_auth" || !settings.url) return;
+      const host = new URL(settings.url).hostname, domain = cookie.domain.replace(/^\./, "");
+      if (host === domain || host.endsWith("." + domain)) autoConnection.invalidate();
+    });
+  }
+  mainWindow.webContents.on("did-finish-load", () => { void autoConnection.sync(); });
   mainWindow.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) {
       report("The workspace could not load. Check your connection and reopen it.");
@@ -161,7 +209,7 @@ async function connect() {
     window.focus();
     report("Connected to " + settings.url);
     setupWindow?.hide();
-    startRunner();
+    void autoConnection.sync();
   } catch (error) {
     if (!controller.signal.aborted && !quitting) {
       report(error.message);
@@ -200,6 +248,7 @@ function setRunnerState(value) {
 
 function startRunner() {
   if (quitting || runnerProcess || !settings.runnerEnabled || !paired() || process.env.DESKTOP_RUNNER === "0") return;
+  if (!autoConnection.canStart(readRunnerConfig())) { void autoConnection.sync(); return; }
   try {
     const entry = app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", "runner.cjs") : path.join(__dirname, "runner.cjs");
     const child = utilityProcess.fork(entry, ["start"], {
@@ -225,15 +274,12 @@ function startRunner() {
       runnerProcess = null;
       setRunnerState("paused");
       if (code !== 0) {
-        settings.runnerEnabled = false;
-        saveSettings();
-        report("Runner stopped. Check Git, your AI CLI, and device pairing, then resume.");
+        report("Computer connection interrupted. Retrying automatically; check that Git and your AI tools are installed.");
       }
       if (quitting) app.quit();
+      else if (code === 0 && settings.runnerEnabled) void autoConnection.sync();
     });
   } catch {
-    settings.runnerEnabled = false;
-    saveSettings();
     setRunnerState("paused");
     report("Runner could not start. Reinstall the desktop app or contact your administrator.");
   }
@@ -273,35 +319,33 @@ function registerIpc() {
   setupHandler("desktop:status", () => ({ url: settings.url, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion(), workspacesDir: workspacesDir(), workspacesLocked: !!runnerProcess || pairing }));
   setupHandler("desktop:open-workspaces", openWorkspacesFolder);
   setupHandler("desktop:choose-workspaces", async () => {
-    if (runnerProcess || pairing) throw new Error("Pause the runner and wait for it to stop before changing the worktrees folder.");
+    if (runnerProcess || pairing || autoConnection.busy()) throw new Error("Pause the runner and wait for it to stop connecting before changing the worktrees folder.");
     const choice = await dialog.showOpenDialog(setupWindow, {
       title: "Choose the folder for local worktrees", defaultPath: workspacesDir(),
       properties: ["openDirectory", "createDirectory"], buttonLabel: "Use this folder",
     });
     if (choice.canceled || !choice.filePaths[0]) return;
-    if (runnerProcess || pairing || quitting) throw new Error("Runner state changed. Pause it and choose the folder again.");
+    if (runnerProcess || pairing || autoConnection.busy() || quitting) throw new Error("Runner state changed. Pause it and choose the folder again.");
     const directory = path.resolve(choice.filePaths[0]);
     let config;
     try { config = JSON.parse(fs.readFileSync(runnerPath, "utf8")); }
     catch (error) { if (error.code !== "ENOENT") throw new Error("Runner configuration needs recovery before changing its folder."); }
     if (config) {
-      const temporary = runnerPath + ".tmp";
-      fs.writeFileSync(temporary, JSON.stringify({ ...config, workspacesDir: directory }), { mode: 0o600 });
-      fs.renameSync(temporary, runnerPath);
+      saveRunnerConfig({ ...config, workspacesDir: directory });
     }
     settings.workspacesDir = directory;
     saveSettings();
     report("New worktrees will use this folder. Existing worktrees keep their saved locations.");
   });
   setupHandler("desktop:connect", async value => {
-    if (runnerProcess || pairing) throw new Error("Pause the runner and wait for it to stop before changing workspaces.");
+    if (runnerProcess || pairing || autoConnection.busy()) throw new Error("Pause the runner and wait for it to stop connecting before changing workspaces.");
     const url = workspaceUrl(value, !app.isPackaged);
     if (url !== settings.url) {
-      settings.runnerEnabled = false;
       mainWindow?.destroy();
       mainWindow = null;
     }
     settings.url = url;
+    autoConnection.invalidate();
     saveSettings();
     setRunnerState(paired() ? "paused" : "not paired");
     await connect();
@@ -311,7 +355,7 @@ function registerIpc() {
   setupHandler("desktop:updates", checkUpdates);
   ipcMain.handle("desktop:pair", async (event, code) => {
     if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || !sameOrigin(event.senderFrame.url, settings.url)) throw new Error("Not allowed.");
-    if (pairing || runnerProcess || quitting) return { ok: false, error: "Pause the runner and wait for it to stop before pairing again." };
+    if (pairing || runnerProcess || autoConnection.busy() || quitting) return { ok: false, error: "Pause the runner and wait for it to stop connecting before pairing again." };
     if (typeof code !== "string" || !/^RN-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return { ok: false, error: "Invalid pairing code." };
     pairing = true;
     const origin = settings.url;
@@ -330,9 +374,10 @@ function registerIpc() {
       if (!response.ok) throw new Error("Pairing failed. Create a new code and try again.");
       const data = await response.json();
       if (typeof data.token !== "string" || !data.token || data.token.length > 4096) throw new Error("Invalid pairing response.");
-      const temporary = runnerPath + ".tmp";
-      fs.writeFileSync(temporary, JSON.stringify({ server: origin, token: data.token, name: os.hostname(), dataDir: path.join(app.getPath("userData"), "runner-data"), workspacesDir: workspacesDir() }), { mode: 0o600 });
-      fs.renameSync(temporary, runnerPath);
+      const config = { server: origin, token: data.token, userId: data.device?.userId, deviceId: data.device?.id, name: os.hostname(),
+        dataDir: path.join(app.getPath("userData"), "runner-data", ...(data.device?.userId ? [connectionKey(origin, data.device.userId)] : [])), workspacesDir: workspacesDir() };
+      saveRunnerConfig(config);
+      autoConnection.approveManual(config);
       settings.runnerEnabled = true;
       saveSettings();
       startRunner();
@@ -401,6 +446,8 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     app.setAppUserModelId("ai.multiplayer.desktop");
     registerIpc();
+    connectionTimer = setInterval(() => { void autoConnection.sync(); }, 15000);
+    connectionTimer.unref();
     const icon = nativeImage.createFromPath(path.join(__dirname, "icon.png")).resize({ width: 22, height: 22 });
     tray = new Tray(icon);
     setRunnerState(paired() ? "paused" : "not paired");
@@ -423,6 +470,7 @@ app.on("before-quit", event => {
   quitting = true;
   connecting?.abort();
   if (updateTimer) clearInterval(updateTimer);
+  if (connectionTimer) clearInterval(connectionTimer);
   if (pairing) {
     event.preventDefault();
     report("Finishing device pairing before quitting…");

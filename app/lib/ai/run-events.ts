@@ -1,3 +1,4 @@
+import type { Checkpoint } from "../runner/checkpoint-types";
 /**
  * The live wire format of one agent run — the newline-delimited JSON the run
  * endpoint streams to the driver's browser.
@@ -8,10 +9,10 @@
  * shared definition keeps those two from drifting.
  *
  *  - `start`  the agent process began; carries what and where.
- *  - `out`    a chunk of the reply. The only durable output — accumulated and
+ *  - `out`    a chunk of the reply. Also saved in activity batches; accumulated and
  *             stored as one consolidated turn at the end.
  *  - `think`  a chunk of the model's thinking. Live-only, never stored.
- *  - `act`    a chunk of tool activity. Live-only, never stored.
+ *  - `act`    a chunk of tool activity, saved for shared history.
  *  - `err`    a chunk of stderr / an error message.
  *  - `notice` an out-of-band message to show the runner (limits, timeouts).
  *  - `exit`   terminal: the exit code, elapsed time, and the commit it produced.
@@ -60,6 +61,7 @@ export type AgentRunJob = {
   /** Repository identity for local cache sharing; never inferred from projectId. */
   projectRepositoryId?: string | null;
   /** Display labels only; the runner sanitizes and pins local folder names. */
+  restoreCheckpoint?: Checkpoint;
   workspaceNames?: { repository: string; room: string };
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;

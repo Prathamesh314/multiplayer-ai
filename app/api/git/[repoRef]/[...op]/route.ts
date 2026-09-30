@@ -1,9 +1,10 @@
+import { acquireStoredRepo } from "../../../../lib/storage/git-cache";
 import { candidatePush } from "../../../../lib/runner/push";
-import { claimedJob } from "../../../../lib/runner/jobs";
+import { artifactJob, claimedJob } from "../../../../lib/runner/jobs";
 import { isUuid } from "../../../../lib/ai/turns";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createGunzip } from "node:zlib";
 import { bearerToken, deviceFromToken } from "../../../../lib/runner/devices";
@@ -61,27 +62,32 @@ async function gate(request: Request, repoRef: string, write: boolean) {
 
   if (write) {
     const turnId = request.headers.get("x-turn-id");
-    const job = isUuid(turnId) ? await claimedJob(turnId, device.id) : null;
+    const snapshot = request.headers.get("x-checkpoint-sequence");
+    if (snapshot !== null && !/^(?:[1-9]|[1-9][0-9]|1[01][0-9]|120)$/.test(snapshot)) return { error: refuse(400, "Invalid checkpoint sequence.") };
+    const job = isUuid(turnId) ? await (snapshot === null ? claimedJob : artifactJob)(turnId, device.id) : null;
     if (!job || (job.repoId ?? job.sessionId) !== repoRef) return { error: refuse(403, "An active protocol-2 turn is required to push.") };
   }
   const access = await resolveGitAccess(repoRef, device.userId, write);
   if (!access) return { error: refuse(404, "Not found.") };
 
+  const release = await acquireStoredRepo(access.bare);
   const bareExists = await stat(access.bare).then((s) => s.isDirectory()).catch(() => false);
-  if (!bareExists) return { error: refuse(404, "Not found.") };
-  return { bare: access.bare };
+  if (!bareExists) { await release(); return { error: refuse(404, "Not found.") }; }
+  return { bare: access.bare, release };
 }
 
 /** Spawn the git service and hand its stdout back as a streaming response body. */
 function streamGit(
   args: string[],
-  options: { stdin?: Readable; gitProtocol?: string | null },
+  options: { stdin?: Readable; gitProtocol?: string | null; release: () => Promise<void> },
   prefix?: string,
 ): ReadableStream<Uint8Array> {
   const child = spawn("git", args, {
     env: { ...process.env, ...GIT_ENV, ...(options.gitProtocol ? { GIT_PROTOCOL: options.gitProtocol } : {}) },
     windowsHide: true,
   });
+  child.once("close", () => { void options.release(); });
+  child.once("error", () => { void options.release(); });
   if (options.stdin) {
     options.stdin.on("error", () => child.kill("SIGKILL"));
     options.stdin.pipe(child.stdin);
@@ -91,29 +97,14 @@ function streamGit(
   // is the place operators will actually debug a broken clone from.
   child.stderr.on("data", (chunk: Buffer) => console.error(`git ${args[0]}: ${chunk}`));
 
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      if (prefix) controller.enqueue(encoder.encode(prefix));
-      child.stdout.on("data", (chunk: Buffer) => {
-        try {
-          controller.enqueue(new Uint8Array(chunk));
-        } catch {
-          child.kill("SIGKILL"); // reader gone
-        }
-      });
-      child.stdout.on("end", () => {
-        try {
-          controller.close();
-        } catch {
-          // Already closed.
-        }
-      });
-      child.on("error", (cause) => controller.error(cause));
-    },
-    cancel() {
-      child.kill("SIGKILL");
-    },
-  });
+  // Node's stream adapter propagates downstream backpressure to Git. A slow
+  // download must not buffer an entire pack in the application process.
+  const output = new PassThrough({ highWaterMark: 64 * 1024 });
+  if (prefix) output.write(encoder.encode(prefix));
+  child.stdout.pipe(output);
+  child.on("error", cause => output.destroy(cause));
+  output.on("close", () => { if (child.exitCode === null) child.kill("SIGKILL"); });
+  return Readable.toWeb(output) as ReadableStream<Uint8Array>;
 }
 
 /** The request body as a Node stream, transparently gunzipped (git gzips pushes). */
@@ -141,7 +132,7 @@ export async function GET(request: Request, context: RouteContext<"/api/git/[rep
 
   const body = streamGit(
     [service.slice(4), "--stateless-rpc", "--advertise-refs", gated.bare],
-    { gitProtocol: request.headers.get("git-protocol") },
+    { gitProtocol: request.headers.get("git-protocol"), release: gated.release },
     pkt(`# service=${service}\n`) + "0000",
   );
   return new Response(body, {
@@ -173,11 +164,12 @@ export async function POST(request: Request, context: RouteContext<"/api/git/[re
 
   let stdin = bodyStream(request);
   if (write) {
-    try { stdin = await candidatePush(stdin, request.headers.get("x-turn-id")!); }
-    catch (cause) { return refuse(403, cause instanceof Error ? cause.message : "Push refused."); }
+    try { stdin = await candidatePush(stdin, request.headers.get("x-turn-id")!, request.headers.has("x-checkpoint-sequence") ? Number(request.headers.get("x-checkpoint-sequence")) : undefined); }
+    catch (cause) { await gated.release(); return refuse(403, cause instanceof Error ? cause.message : "Push refused."); }
   }
   const body = streamGit(args, {
     stdin,
+    release: gated.release,
     gitProtocol: request.headers.get("git-protocol"),
   });
   return new Response(body, {

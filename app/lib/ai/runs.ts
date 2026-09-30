@@ -24,6 +24,7 @@ export type AgentRun = {
   driverUserId: string;
   driverName: string;
   controlVersion: number;
+  restoreSnapshotId?: string | null;
   agentId: string;
   title: string | null;
   status: RunStatus;
@@ -65,6 +66,7 @@ type RunRow = {
   driver_user_id: string;
   driver_name: string;
   control_version: number;
+  restore_snapshot_id: string | null;
   agent_id: string;
   title: string | null;
   status: RunStatus;
@@ -89,6 +91,7 @@ const toRun = (row: RunRow): AgentRun => ({
   driverUserId: row.driver_user_id,
   driverName: row.driver_name,
   controlVersion: row.control_version,
+  restoreSnapshotId: row.restore_snapshot_id,
   agentId: row.agent_id,
   title: row.title,
   status: row.status,
@@ -105,7 +108,7 @@ const toRun = (row: RunRow): AgentRun => ({
 });
 
 const RUN_COLUMNS = `
-  r.id, r.session_id, r.repo_id, r.driver_user_id, r.control_version,
+  r.id, r.session_id, r.repo_id, r.driver_user_id, r.control_version, r.restore_snapshot_id,
   (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
   r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at

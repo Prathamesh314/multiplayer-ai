@@ -1,14 +1,16 @@
+import { persistActivity, validateActivity } from "../../../../../lib/runner/activity";
+import { limitedJson } from "../../../../../lib/http/body";
 import { events } from "../../../../../lib/events";
 import { publishRunEvent } from "../../../../../lib/ai/run-stream";
 import { appendMessage } from "../../../../../lib/ai/runs";
 import type { AiRunEvent } from "../../../../../lib/ai/run-events";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
-import { claimedJob, renewLease } from "../../../../../lib/runner/jobs";
+import { artifactJob, claimedJob, renewLease } from "../../../../../lib/runner/jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export type RunnerEventsRequest = { events: AiRunEvent[] };
+export type RunnerEventsRequest = { events: AiRunEvent[]; sequence?: number };
 
 /**
  * The runner's up-stream: batched live output from a run executing on the
@@ -31,20 +33,28 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   }
 
   const { runId } = await context.params;
-  const job = await claimedJob(runId, device.id);
+  const job = await artifactJob(runId, device.id);
   if (!job) return Response.json({ error: "Not your claimed run." }, { status: 404 });
 
   let body: RunnerEventsRequest;
   try {
-    body = (await request.json()) as RunnerEventsRequest;
+    body = (await limitedJson(request)) as RunnerEventsRequest;
   } catch {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
-  const batch = Array.isArray(body.events) ? body.events : [];
+  if (!validateActivity(body.events)) return Response.json({ error: "Invalid activity events." }, { status: 400 });
+  const batch = body.events;
   if (batch.length > MAX_EVENTS_PER_BATCH) {
     return Response.json({ error: "Too many events in one batch." }, { status: 413 });
   }
 
+  let fresh = true;
+  if (body.sequence !== undefined) {
+    try { fresh = await persistActivity(runId, body.sequence, batch); }
+    catch (cause) { return Response.json({ error: cause instanceof Error ? cause.message : "Activity was not saved." }, { status: 409 }); }
+  }
+  const active = await claimedJob(runId, device.id);
+  if (!fresh || !active) return Response.json({ ok: true, acknowledged: body.sequence ?? null });
   const bus = await events();
   for (const event of batch) {
     if (typeof event?.t !== "string" || !ALLOWED.has(event.t)) continue;
@@ -75,5 +85,5 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   }
 
   await renewLease(runId, device.id);
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, acknowledged: body.sequence ?? null });
 }

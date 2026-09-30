@@ -85,6 +85,7 @@ export function MessageList({
 export type MentionChat = { runId: string; title: string };
 /** A room and its chats, offered by the composer's @-mention picker. */
 export type MentionRoom = { sessionId: string; name: string; chats: MentionChat[] };
+export type MentionPerson = { userId: string; handle: string; displayName: string };
 
 /** A run id anywhere in the draft — the parseable half of an `@room/<run-id>` token. */
 const RUN_ID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -126,6 +127,8 @@ export function Composer({
   footer,
   /** Rooms whose chats can be referenced by typing "@"; omit to disable mentions. */
   mentions,
+  people = [],
+  onAssignTask,
 }: {
   inputRef?: Ref<ComposerHandle>;
   placeholder: string;
@@ -135,6 +138,8 @@ export function Composer({
   narrow?: boolean;
   footer?: React.ReactNode;
   mentions?: MentionRoom[];
+  people?: MentionPerson[];
+  onAssignTask?: (person: MentionPerson, body: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [mention, setMention] = useState<MentionState | null>(null);
@@ -142,6 +147,13 @@ export function Composer({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<MentionPerson | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const [taskMessage, setTaskMessage] = useState("");
+  const [taskError, setTaskError] = useState("");
+  const assignmentBusy = useRef(false);
+  const assignee = onAssignTask && selectedPerson && draft.split(/\s+/).includes(`@${selectedPerson.handle}`) ? selectedPerson : null;
+  const taskBody = assignee ? draft.split(/(\s+)/).filter(part => part !== `@${assignee.handle}`).join("").trim() : "";
 
   useImperativeHandle(inputRef, () => ({
     insertPrompt(text) {
@@ -152,8 +164,8 @@ export function Composer({
     },
   }), [draft]);
 
-  const rooms = mentions ?? [];
-  const mentionsOn = rooms.length > 0;
+  const rooms = useMemo(() => mentions ?? [], [mentions]);
+  const mentionsOn = rooms.length > 0 || (!!onAssignTask && people.length > 0);
 
   // Restore the caret after a programmatic insert (React reset it on re-render).
   useEffect(() => {
@@ -168,15 +180,16 @@ export function Composer({
     if (!mention) return [];
     const q = mention.query.trim().toLowerCase();
     if (mention.stage === "room") {
-      return rooms
+      return [...(onAssignTask ? people.filter(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(q))
+        .map(person => ({ id: `person:${person.userId}`, label: `@${person.handle} · ${person.displayName}`, sub: "Assign task" })) : []), ...rooms
         .filter((room) => room.name.toLowerCase().includes(q))
-        .map((room) => ({ id: room.sessionId, label: room.name, sub: `${room.chats.length} chats` }));
+        .map((room) => ({ id: room.sessionId, label: room.name, sub: `Chat reference · ${room.chats.length}` }))];
     }
     const room = rooms.find((r) => r.sessionId === mention.roomId);
     return (room?.chats ?? [])
       .filter((chat) => chat.title.toLowerCase().includes(q))
       .map((chat) => ({ id: chat.runId, label: chat.title }));
-  }, [mention, rooms]);
+  }, [mention, rooms, people, onAssignTask]);
 
   // Show the popover whenever there's a live mention with something to show —
   // and in chat stage even with zero chats, so an empty room reads "No chats
@@ -209,7 +222,8 @@ export function Composer({
     }
     // Only stay open in room stage while something still matches, so an ordinary
     // "@handle" elsewhere doesn't trap the popover.
-    const anyMatch = rooms.some((r) => r.name.toLowerCase().includes(m.frag.toLowerCase()));
+    const anyMatch = rooms.some((r) => r.name.toLowerCase().includes(m.frag.toLowerCase())) ||
+      (!!onAssignTask && people.some(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(m.frag.toLowerCase())));
     setMention(m.frag.length > 0 && !anyMatch ? null : { stage: "room", at: m.at, query: m.frag });
     setHighlight(0);
   }
@@ -235,6 +249,13 @@ export function Composer({
 
   function pick(id: string) {
     if (!mention) return;
+    if (id.startsWith("person:")) {
+      const person = people.find(person => `person:${person.userId}` === id);
+      if (!person || !onAssignTask) return;
+      applyInsert(`@${person.handle} `);
+      setSelectedPerson(person); setMention(null); setTaskMessage(""); setTaskError("");
+      return;
+    }
     if (mention.stage === "room") {
       const room = rooms.find((r) => r.sessionId === id);
       if (!room) return;
@@ -251,7 +272,19 @@ export function Composer({
     setMention(null);
   }
 
-  function send() {
+  async function send() {
+    if (assignmentBusy.current) return;
+    if (assignee && onAssignTask) {
+      if (!taskBody) return;
+      assignmentBusy.current = true; setAssigning(true); setTaskError(""); setTaskMessage("");
+      try {
+        await onAssignTask(assignee, taskBody);
+        setTaskMessage(`Task assigned to ${assignee.displayName}.`);
+        setDraft(""); setSelectedPerson(null); setMention(null);
+      } catch (cause) { setTaskError(cause instanceof Error ? cause.message : "Could not assign task. Your message is saved here; try again."); }
+      finally { assignmentBusy.current = false; setAssigning(false); }
+      return;
+    }
     if (disabled) return;
     const text = draft.trim();
     if (!text) return;
@@ -299,7 +332,7 @@ export function Composer({
   const popover = popoverOpen && (
     <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
-        {mention?.stage === "room" ? "Reference a room" : "Pick a chat"}
+        {mention?.stage === "room" ? (onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
         <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
@@ -311,8 +344,8 @@ export function Composer({
               type="button"
               onMouseDown={(event) => {
                 event.preventDefault();
-                pick(item.id);
               }}
+              onClick={() => pick(item.id)}
               onMouseEnter={() => setHighlight(index)}
               className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
                 index === highlight ? "bg-vs-hover text-vs-fg" : "text-vs-fg/90"
@@ -339,6 +372,7 @@ export function Composer({
         syncMention(draft, caretRef.current);
       }}
       onKeyDown={onKeyDown}
+      disabled={assigning}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
       className={`vs-scroll flex-1 resize-none bg-transparent text-[14px] text-vs-fg outline-none placeholder:text-vs-muted ${
@@ -351,17 +385,20 @@ export function Composer({
     <button
       type="button"
       onClick={send}
-      disabled={disabled || draft.trim().length === 0}
-      aria-label="Send message"
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30"
+      disabled={assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
+      aria-label={assignee ? "Assign task" : "Send message"}
+      className={`flex h-7 shrink-0 items-center justify-center rounded-full bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-7"}`}
     >
-      <SendIcon className="h-3.5 w-3.5" />
+      {assignee ? (assigning ? "Assigning…" : "Assign task") : <SendIcon className="h-3.5 w-3.5" />}
     </button>
   );
 
   return (
     <div className="shrink-0 border-t border-vs-border p-2">
       <div className={`relative ${narrow ? "mx-auto w-full max-w-4xl" : ""}`}>
+        {assignee && <div className="mb-2 flex items-center gap-2 text-xs text-vs-muted"><span>Task for <strong className="text-vs-fg">@{assignee.handle}</strong> · appears in their task inbox</span><button type="button" disabled={assigning} className="ml-auto underline" onClick={() => setSelectedPerson(null)}>Cancel assignment</button></div>}
+        {taskMessage && <p role="status" className="mb-2 text-xs text-vs-success">{taskMessage}</p>}
+        {taskError && <p role="alert" className="mb-2 text-xs text-vs-danger">{taskError}</p>}
         {popover}
         {footer ? (
           <div className="rounded-2xl border border-vs-border bg-vs-panel px-3 py-2.5 shadow-sm focus-within:border-vs-muted">

@@ -140,10 +140,10 @@ on each execution machine.
   automatic local pruning in this change; do not treat these directories as
   disposable while they contain unfinished work or pending results.
 
-This change only organizes user-machine storage. Server bare repositories and
-server working directories still exist; server storage optimization and sharing
-uncommitted snapshots are separate work. Teammates receive accepted commits,
-not unsaved local edits.
+Activity and unpublished checkpoints now synchronize independently of the
+runner's lifetime. Server imports, edits and merges operate on Git objects,
+without permanent extracted checkouts. See [workspace synchronization](workspace-sync.md)
+for offline review, snapshot restore, optional S3 storage and cold-cache settings.
 
 ## Validation
 

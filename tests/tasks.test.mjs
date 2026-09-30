@@ -78,6 +78,45 @@ try {
     assert.equal(first.length,51); assert.equal(next.length,4);
     assert.equal(new Set([...first.slice(0,50),...next].map(t => t.id)).size,54);
   });
+  await test("a fresh composer creates one source chat and task atomically without an AI turn",async () => {
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review the new design",newChat:{repoId:null,agentId:"codex"}};
+    const [first,retry] = await Promise.all([createTask(f.alice,draft),createTask(f.alice,draft)]);
+    assert.deepEqual(first,{id:draft.id,runId:draft.id}); assert.deepEqual(retry,first);
+    const chat = await getRun(first.runId);
+    assert.equal(chat.driverUserId,f.alice); assert.equal(chat.status,"completed");
+    assert.equal(chat.title,draft.body); assert.equal(chat.repoId,null);
+    assert.equal((await listTasks(f.alice,{sessionId:f.room,runId:chat.id})).length,1);
+    assert.equal((await listRunMessages(chat.id)).length,0);
+    assert.equal((await f.db.query('SELECT count(*)::int AS n FROM agent_turns WHERE run_id=$1',[chat.id])).rows[0].n,0);
+    await rejects(() => createTask(f.alice,{...draft,body:"Changed task"}),409);
+    await rejects(() => createTask(f.alice,{...draft,newChat:{...draft.newChat,agentId:"claude"}}),409);
+  });
+  await test("fresh task chats preserve the selected repository and reject foreign or incomplete imports",async () => {
+    for (const [id,scope,ready] of [["taskrepoaaaa",f.room,true],["taskrepobbbb",f.other,true],["taskrepocccc",f.room,false]]) {
+      await f.db.query(`INSERT INTO room_repos(id,session_id,root_name,created_by,head_sha,seeded_at)
+        VALUES ($1,$2,$1,$3,$4,$5)`,[id,scope,f.alice,ready ? "c".repeat(40) : null,ready ? new Date() : null]);
+    }
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review this repository",newChat:{repoId:"taskrepoaaaa",agentId:"claude"}};
+    const created = await createTask(f.alice,draft), chat = await getRun(created.runId);
+    assert.equal(chat.repoId,"taskrepoaaaa"); assert.equal(chat.baseSha,"c".repeat(40));
+    for (const repoId of ["taskrepobbbb","taskrepocccc","missingrepo"]) {
+      const id=randomUUID();
+      await rejects(() => createTask(f.alice,{...draft,id,newChat:{...draft.newChat,repoId}}),409);
+      assert.equal(await getRun(id),null);
+    }
+  });
+  await test("invalid fresh-chat assignments never leave an empty chat behind",async () => {
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review",newChat:{repoId:null,agentId:"codex"}};
+    await rejects(() => createTask(f.bob,draft),403);
+    assert.equal(await getRun(draft.id),null);
+    await rejects(() => createTask(f.alice,{...draft,sessionId:f.secret}),403);
+    await rejects(() => createTask(f.alice,{...draft,runId:run.id}),400);
+    await rejects(() => createTask(f.alice,{...draft,newChat:{repoId:null,agentId:"unknown"}}),400);
+    await rejects(() => createTask(f.alice,{...draft,newChat:null}),400);
+    // Reusing an existing task ID must roll back the attempted new chat, too.
+    await rejects(() => createTask(f.alice,{...draft,id:input.id}),409);
+    assert.equal(await getRun(input.id),null);
+  });
   await test("soft-deleted rooms disappear from the dashboard",async () => {
     await f.db.query(`UPDATE sessions SET deleted_at=now() WHERE id=$1`,[f.room]);
     assert.deepEqual(await listTasks(f.bob),[]);

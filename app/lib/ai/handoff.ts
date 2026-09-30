@@ -94,7 +94,10 @@ export async function changeHandoff(runId: string, sessionId: string, actorId: s
         throw new ControlError("This legacy execution must be stopped by the server operator before recovery.");
       } else {
         const { rows: [driver] } = await tx.query(`SELECT room_access_role($1, $2) AS role`, [sessionId, run.driver_user_id]);
-        if (["owner", "editor"].includes(driver?.role)) throw new ControlError("The driver still has access. Ask them to offer a handoff.");
+        if (["owner", "editor"].includes(driver?.role)) {
+          const { rows: [online] } = await tx.query(`SELECT id FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND last_seen_at > now() - interval '2 minutes' LIMIT 1`, [run.driver_user_id]);
+          if (online) throw new ControlError("The driver is still online. Ask them to offer a handoff.");
+        }
       }
       await tx.query(`UPDATE run_handoffs SET status = 'cancelled', resolved_at = now() WHERE run_id = $1 AND status = 'pending'`, [runId]);
       await tx.query(`UPDATE agent_runs SET driver_user_id = $2, control_version = control_version + 1,

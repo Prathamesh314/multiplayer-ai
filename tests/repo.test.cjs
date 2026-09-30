@@ -23,7 +23,7 @@ const DATA = mkdtempSync(join(tmpdir(), "mp-repo-test-"));
 process.env.MULTIPLAYER_AI_DATA = DATA;
 
 const repo = require("../.test-build/session/repo.js");
-const { workPath, sharedRepositoryBarePath } = require("../.test-build/session/paths.js");
+const { workPath, barePath, sharedRepositoryBarePath } = require("../.test-build/session/paths.js");
 
 let passed = 0;
 let failed = 0;
@@ -54,8 +54,7 @@ function put(roomId, rel, contents) {
 
 /** Read a file from a room's working copy, or null if absent. */
 function readWork(roomId, rel) {
-  const abs = join(workPath(roomId), rel);
-  return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  try { return execFileSync("git", ["--git-dir", barePath(roomId), "show", `refs/heads/session/${roomId}:${rel}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; }
 }
 
 /** Read a path at the project's canonical `main`, or null if absent there. */
@@ -71,10 +70,9 @@ function readProjectMain(projectId, rel) {
 
 /** Edit a file in a room, commit it as `who`, and return nothing. */
 async function editAndCommit(roomId, rel, contents, who) {
-  put(roomId, rel, contents);
   const [name, email] = author(who);
-  const sha = await repo.commitWork(roomId, `${who}: ${rel}`, name, email);
-  assert.ok(sha, `commitWork should return a sha for ${roomId}/${rel}`);
+  const saved = await repo.mergeSave(roomId, rel, readWork(roomId, rel) ?? "", contents, await repo.headSha(roomId), { name, email });
+  assert.equal(saved.status, "clean");
 }
 
 // --- scenarios -------------------------------------------------------------
@@ -183,10 +181,9 @@ async function run() {
     const base = await repo.headSha("p5-ra");
 
     // Two files changed: one brand new, one replacing seeded content.
-    put("p5-ra", "fresh.txt", "one\ntwo\nthree\n");
-    put("p5-ra", "root/hello.txt", "rewritten\n");
-    const [name, email] = author("Eve");
-    const sha = await repo.commitWork("p5-ra", "Eve: two files", name, email);
+    await editAndCommit("p5-ra", "fresh.txt", "one\ntwo\nthree\n", "Eve");
+    await editAndCommit("p5-ra", "root/hello.txt", "rewritten\n", "Eve");
+    const sha = await repo.headSha("p5-ra");
     assert.ok(sha);
 
     const files = await repo.diffFilesBare("p5-ra", base, sha);

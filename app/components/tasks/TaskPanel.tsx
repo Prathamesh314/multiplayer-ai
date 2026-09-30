@@ -13,8 +13,8 @@ async function request<T>(url:string, init?:RequestInit):Promise<T> {
 }
 
 /** Same durable assignments in their source chat and the assignee's inbox. */
-export function TaskPanel({userId,sessionId,runId,canAssign=false}: {
-  userId:string; sessionId?:string; runId?:string; canAssign?:boolean;
+export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion=0}: {
+  userId:string; sessionId?:string; runId?:string; canAssign?:boolean; refreshVersion?:number;
 }) {
   const [tasks,setTasks] = useState<RoomTask[]>([]);
   const [members,setMembers] = useState<TaskMember[]>([]);
@@ -50,7 +50,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false}: {
     const timer = setInterval(poll,5000);
     window.addEventListener("focus",poll);
     return () => { counter.current++; clearInterval(timer); window.removeEventListener("focus",poll); };
-  },[refresh]);
+  },[refresh,refreshVersion]);
 
   async function assign(event:React.FormEvent) {
     event.preventDefault();

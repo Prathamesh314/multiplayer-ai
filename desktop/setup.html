@@ -11,7 +11,7 @@
   <main>
     <header><img src="icon.png" alt="" width="48" height="48"><span>Multiplayer AI <small>DESKTOP</small></span></header>
     <h1>Your team’s AI workspace.<br>Connected to your computer.</h1>
-    <p>Open your team’s workspace, then connect this computer to run AI tasks using your own tools.</p>
+    <p>Open your team’s workspace and sign in. This computer connects automatically to run your AI tasks.</p>
     <section aria-labelledby="workspace-heading">
       <h2 id="workspace-heading">1. Open your workspace</h2>
       <form id="connect-form">
@@ -22,8 +22,9 @@
       <button id="retry" class="secondary" type="button">Reopen workspace</button>
     </section>
     <section aria-labelledby="runner-heading">
-      <h2 id="runner-heading">2. Connect your AI tools</h2>
-      <p>In your workspace, open <strong>Your computers → Connect a computer → Pair this desktop</strong>. Install Git and your preferred AI CLI first, and sign in to that CLI.</p>
+      <h2 id="runner-heading">2. Your computer connects automatically</h2>
+      <p>After you sign in, the app connects this computer and starts its runner. No pairing command is needed. Install Git and your preferred AI CLI, and sign in to that CLI.</p>
+      <p class="hint">The connection is reused when you reopen the app. You can pause it below; signing out stops new tasks after any accepted task finishes.</p>
       <p class="hint">Only enable execution for a server you trust. Agents can run commands and access files with your user permissions. Provider requests may leave your computer.</p>
       <div class="row"><span id="runner" role="status">Runner: not connected</span><button id="toggle" class="secondary" type="button">Resume runner</button></div>
     </section>

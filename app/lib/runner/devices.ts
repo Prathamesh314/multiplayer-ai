@@ -132,6 +132,12 @@ export async function deviceFromToken(token: string | null): Promise<RunnerDevic
   return row ? toDevice(row) : null;
 }
 
+export async function inspectDeviceToken(token: string | null): Promise<RunnerDevice | null> {
+  if (!token) return null;
+  const row = await queryOne<DeviceRow>(`SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL`, [digest(token)]);
+  return row ? toDevice(row) : null;
+}
+
 /** The bearer token out of a runner request, or null. */
 export function bearerToken(request: Request): string | null {
   const header = request.headers.get("authorization") ?? "";

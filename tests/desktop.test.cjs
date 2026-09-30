@@ -71,7 +71,7 @@ function harness() {
     throw Object.assign(new Error("missing"), { code: "ENOENT" });
   }, mkdirSync() {}, writeFileSync: (file, value, options) => writes.set(file, { value, options }), renameSync: (from, to) => { writes.set(to, writes.get(from)); writes.delete(from); } };
   const requests = [];
-  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
+  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : name === "./connection" ? require("../desktop/connection") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
   const source = fs.readFileSync("desktop/main.js", "utf8");
   vm.runInContext(source + "\nglobalThis.api = { security, registerIpc, requireSetup, toggleRunner, setWindows: (workspace, setup) => { mainWindow = workspace; setupWindow = setup; }, setupUrl };", context);
   context.api.registerIpc();
@@ -210,4 +210,79 @@ test("worktree folder controls are setup-only and choosing a location preserves 
   assert.equal(updated.token, config.token);
   assert.equal(updated.dataDir, config.dataDir);
   assert.equal(updated.server, config.server);
+});
+
+function automaticConnectionFixture(initial = null) {
+  const { createAutoConnection } = require('../desktop/connection');
+  let config = initial;
+  const saved = new Map();
+  const state = { user: 'alice', enabled: true, running: false, starts: 0, stops: 0, pairs: 0, revoked: false, messages: [], requests: [], held: null };
+  const reply = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const session = { fetch: async (url, options) => {
+    state.requests.push({url,options});
+    if (url.endsWith('/api/auth/me')) return reply({user:state.user ? {id:state.user} : null});
+    if (url.endsWith('/api/runner/pairing')) { if (state.held) await state.held; return reply({code:'RN-ABCD-EFGH'}); }
+    throw new Error('Unexpected URL');
+  } };
+  const connection = createAutoConnection({
+    context: () => ({origin:'https://team.example',session}),
+    readConfig: () => config,
+    readSaved: (origin,user) => saved.get(origin + user) ?? null,
+    remember: value => saved.set(value.server + value.userId,value),
+    saveConfig: value => { config=value; saved.set(value.server + value.userId,value); },
+    newConfig: (server,userId,deviceId,token) => ({server,userId,deviceId,token,dataDir:'/private/' + userId}),
+    deviceInfo: () => ({name:'Test desktop',platform:'test',version:'1'}),
+    enabled: () => state.enabled, running: () => state.running, pairing: () => false, quitting: () => false, disabled: () => false,
+    start: () => { if (!state.running) {state.running=true;state.starts++;} },
+    stop: () => { if (state.running) {state.running=false;state.stops++;} },
+    report: message => state.messages.push(message),
+    fetch: async (url,options) => {
+      state.requests.push({url,options});
+      if (url.endsWith('/api/runner/me')) return state.revoked ? reply({},401) : reply({device:{id:config.deviceId ?? 'device-alice',userId:options.headers.authorization.includes('bob') ? 'bob' : 'alice'}});
+      if (url.endsWith('/api/runner/pair')) {state.pairs++;return reply({token:'token-' + state.user,device:{id:'device-' + state.user,userId:state.user}});}
+      throw new Error('Unexpected URL');
+    },
+  });
+  return {connection,state,config:()=>config};
+}
+
+test('desktop automatically pairs once after sign-in and reuses the connection across launches', async () => {
+  const f=automaticConnectionFixture();
+  await Promise.all([f.connection.sync(),f.connection.sync()]);
+  assert.equal(f.state.pairs,1); assert.equal(f.state.starts,1);
+  assert.equal(f.config().userId,'alice'); assert.equal(f.connection.canStart(f.config()),true);
+  assert.equal(f.state.requests[0].options.credentials,'include');
+  assert.ok(f.state.requests.every(request=>request.options.redirect==='error'));
+  await f.connection.sync(); assert.equal(f.state.pairs,1); assert.equal(f.state.starts,1);
+  const restarted=automaticConnectionFixture(f.config());
+  await restarted.connection.sync(); assert.equal(restarted.state.pairs,0); assert.equal(restarted.state.starts,1);
+});
+
+test('sign-out drains the runner, account switches use separate connections, and a manual pause persists', async () => {
+  const f=automaticConnectionFixture(); await f.connection.sync(); const alice=f.config();
+  f.state.user=null; f.connection.invalidate(); await f.connection.sync();
+  assert.equal(f.state.running,false); assert.equal(f.connection.canStart(alice),false);
+  f.state.user='bob'; f.connection.invalidate(); await f.connection.sync();
+  assert.equal(f.config().userId,'bob'); assert.notEqual(f.config().dataDir,alice.dataDir); assert.equal(f.state.pairs,2);
+  f.state.user='alice'; f.connection.invalidate(); await f.connection.sync();
+  assert.equal(f.config().token,alice.token); assert.equal(f.state.pairs,2);
+  f.state.enabled=false;f.state.running=false;
+  await f.connection.sync();assert.equal(f.state.running,false);
+});
+
+test('revoked device connections are not silently recreated', async () => {
+  const f=automaticConnectionFixture(); await f.connection.sync();
+  f.state.revoked=true; await f.connection.sync();
+  assert.equal(f.state.running,false); assert.equal(f.state.pairs,1);
+  assert.match(f.state.messages.at(-1),/revoked/);
+  await f.connection.sync(); assert.equal(f.state.pairs,1);
+});
+
+test('sign-out during automatic pairing cannot start or save a stale connection', async () => {
+  const f=automaticConnectionFixture(); let release;
+  f.state.held=new Promise(resolve=>{release=resolve;});
+  const pending=f.connection.sync();
+  while (!f.state.requests.some(request=>request.url.endsWith('/pairing'))) await new Promise(resolve=>setImmediate(resolve));
+  f.state.user=null; f.connection.invalidate(); release(); await pending; await f.connection.sync();
+  assert.equal(f.state.starts,0); assert.equal(f.config(),null); assert.equal(f.state.pairs,0);
 });

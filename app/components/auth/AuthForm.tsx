@@ -197,7 +197,7 @@ function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => v
       aria-pressed={shown}
       // Keeps focus in the field, so toggling mid-typing does not move the caret.
       onMouseDown={(event) => event.preventDefault()}
-      className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-vs-accent"
+      className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
     >
       <EyeIcon off={shown} className="h-4 w-4" />
     </button>

@@ -1,3 +1,4 @@
+import type { Checkpoint } from "../app/lib/runner/checkpoint-types";
 import { detectAgents } from "../app/lib/ai/detect";
 /*
  * The runner's half of the protocol (docs/local-execution.md §3.3): five
@@ -50,8 +51,14 @@ export class RunnerApi {
     return body.job;
   }
 
-  async postEvents(runId: string, events: AiRunEvent[]): Promise<void> {
-    await this.post(`/api/runner/runs/${encodeURIComponent(runId)}/events`, { events });
+  async postEvents(runId: string, events: AiRunEvent[], sequence?: number): Promise<void> {
+    const result = await this.post<{ acknowledged?: number }>(`/api/runner/runs/${encodeURIComponent(runId)}/events`, { events, sequence });
+    if (sequence !== undefined && result.acknowledged !== sequence) throw new Error("Server did not durably acknowledge the activity batch. Update the server.");
+  }
+
+  async checkpoint(snapshot: Checkpoint): Promise<void> {
+    const result = await this.post<{ acknowledged: string }>(`/api/runner/runs/${snapshot.turnId}/checkpoints`, snapshot);
+    if (result.acknowledged !== snapshot.snapshotSha) throw new Error("Checkpoint was not acknowledged.");
   }
 
   async complete(runId: string, report: RunnerCompleteRequest): Promise<void> {
