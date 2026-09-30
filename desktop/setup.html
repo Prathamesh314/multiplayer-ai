@@ -27,6 +27,13 @@
       <p class="hint">Only enable execution for a server you trust. Agents can run commands and access files with your user permissions. Provider requests may leave your computer.</p>
       <div class="row"><span id="runner" role="status">Runner: not connected</span><button id="toggle" class="secondary" type="button">Resume runner</button></div>
     </section>
+    <section aria-labelledby="worktrees-heading">
+      <h2 id="worktrees-heading">3. Local worktrees</h2>
+      <p>Each repository in a room has its own local worktree. Chats in that room share it, and the files stay on this computer between tasks.</p>
+      <code id="workspaces-path"></code>
+      <div class="row"><button id="open-workspaces" class="secondary" type="button">Open folder</button><button id="choose-workspaces" class="secondary" type="button">Change location</button></div>
+      <p class="hint">Organized by repository, then room. Worktrees are created on first use. Pause the runner to change location; existing worktrees keep their saved paths.</p>
+    </section>
     <p id="status" role="status" aria-live="polite"></p>
     <footer><span id="version"></span><button id="updates" class="secondary" type="button">Check for updates</button></footer>
   </main>

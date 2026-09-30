@@ -175,3 +175,39 @@ test("approved native pairing stores a private token, starts the bundled runner,
   assert.equal(state.runner, "paused");
   assert.equal(state.enabled, false);
 });
+
+
+test("worktree folder controls are setup-only and choosing a location preserves pairing", async () => {
+  const instance = harness();
+  const workspace = mockWindow("https://team.example/workspace"), setup = mockWindow(instance.setupUrl);
+  instance.setWindows(workspace, setup);
+  const local = { sender: setup.webContents, senderFrame: setup.webContents.mainFrame };
+  const remote = { sender: workspace.webContents, senderFrame: workspace.webContents.mainFrame };
+  for (const channel of ["desktop:open-workspaces", "desktop:choose-workspaces"]) await assert.rejects(instance.handlers.get(channel)(remote), /Not allowed/);
+  instance.electron.dialog.showOpenDialog = async () => ({ canceled:false,filePaths:[path.resolve("local-worktrees")] });
+  await instance.handlers.get("desktop:choose-workspaces")(local);
+  let state = await instance.handlers.get("desktop:status")(local);
+  assert.equal(state.workspacesDir,path.resolve("local-worktrees"));
+  let opened;
+  instance.electron.shell.openPath = async directory => { opened=directory; return ""; };
+  await instance.handlers.get("desktop:open-workspaces")(local);
+  assert.equal(opened,state.workspacesDir);
+  instance.electron.dialog.showMessageBox = async () => ({response:1});
+  await instance.handlers.get("desktop:pair")(remote,"RN-ABCD-1234");
+  const config = JSON.parse([...instance.writes.entries()].find(([file])=>file.endsWith("runner.json"))[1].value);
+  assert.equal(config.workspacesDir,state.workspacesDir);
+  assert.equal(config.token,"private-device-token");
+  state = await instance.handlers.get("desktop:status")(local);
+  assert.equal(state.workspacesLocked,true);
+  assert.equal((await instance.handlers.get("desktop:choose-workspaces")(local)).ok,false);
+  assert.equal((await instance.handlers.get("desktop:status")(local)).workspacesDir,config.workspacesDir);
+  instance.toggleRunner();
+  instance.children[0].emit("exit", 0);
+  instance.electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path.resolve("new-worktrees")] });
+  await instance.handlers.get("desktop:choose-workspaces")(local);
+  const updated = JSON.parse([...instance.writes.entries()].find(([file]) => file.endsWith("runner.json"))[1].value);
+  assert.equal(updated.workspacesDir, path.resolve("new-worktrees"));
+  assert.equal(updated.token, config.token);
+  assert.equal(updated.dataDir, config.dataDir);
+  assert.equal(updated.server, config.server);
+});

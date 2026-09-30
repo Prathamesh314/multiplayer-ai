@@ -11,7 +11,8 @@ const setupUrl = pathToFileURL(path.join(__dirname, "setup.html")).href;
 const settingsPath = path.join(app.getPath("userData"), "desktop.json");
 const runnerPath = path.join(app.getPath("userData"), "runner.json");
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, "release.json"), "utf8"));
-let settings = { url: "", runnerEnabled: false };
+const defaultWorkspacesDir = path.join(os.homedir(), "multiplayer-ai", "workspaces");
+let settings = { url: "", runnerEnabled: false, workspacesDir: defaultWorkspacesDir };
 let mainWindow = null;
 let setupWindow = null;
 let tray = null;
@@ -29,7 +30,8 @@ let updateBusy = false;
 
 try {
   const saved = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-  settings = { url: workspaceUrl(saved.url, !app.isPackaged), runnerEnabled: saved.runnerEnabled === true };
+  settings = { url: workspaceUrl(saved.url, !app.isPackaged), runnerEnabled: saved.runnerEnabled === true,
+    workspacesDir: typeof saved.workspacesDir === "string" && path.isAbsolute(saved.workspacesDir) ? saved.workspacesDir : defaultWorkspacesDir };
 } catch {
   try { settings.url = workspaceUrl(release.workspaceUrl, !app.isPackaged); } catch {}
 }
@@ -43,6 +45,21 @@ function saveSettings() {
   const temporary = settingsPath + ".tmp";
   fs.writeFileSync(temporary, JSON.stringify(settings), { mode: 0o600 });
   fs.renameSync(temporary, settingsPath);
+}
+
+function workspacesDir() {
+  try {
+    const config = JSON.parse(fs.readFileSync(runnerPath, "utf8"));
+    if (typeof config.workspacesDir === "string" && path.isAbsolute(config.workspacesDir)) return config.workspacesDir;
+  } catch {}
+  return settings.workspacesDir;
+}
+
+async function openWorkspacesFolder() {
+  const directory = workspacesDir();
+  fs.mkdirSync(directory, { recursive: true });
+  const error = await shell.openPath(directory);
+  if (error) throw new Error("Could not open the workspaces folder: " + error);
 }
 
 function paired() {
@@ -168,6 +185,7 @@ function updateTray() {
     { label: "Runner: " + runnerState, enabled: false },
     { label: "Open workspace", click: showWorkspace },
     { label: "Desktop settings", click: showSetup },
+    { label: "Open local worktrees", click: () => void openWorkspacesFolder().catch(error => report(error.message)) },
     { type: "separator" },
     { label: settings.runnerEnabled ? "Pause after current task" : "Resume runner", enabled: paired() && runnerState !== "stopping", click: toggleRunner },
     { type: "separator" },
@@ -252,7 +270,29 @@ function setupHandler(channel, handler) {
 }
 
 function registerIpc() {
-  setupHandler("desktop:status", () => ({ url: settings.url, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion() }));
+  setupHandler("desktop:status", () => ({ url: settings.url, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion(), workspacesDir: workspacesDir(), workspacesLocked: !!runnerProcess || pairing }));
+  setupHandler("desktop:open-workspaces", openWorkspacesFolder);
+  setupHandler("desktop:choose-workspaces", async () => {
+    if (runnerProcess || pairing) throw new Error("Pause the runner and wait for it to stop before changing the worktrees folder.");
+    const choice = await dialog.showOpenDialog(setupWindow, {
+      title: "Choose the folder for local worktrees", defaultPath: workspacesDir(),
+      properties: ["openDirectory", "createDirectory"], buttonLabel: "Use this folder",
+    });
+    if (choice.canceled || !choice.filePaths[0]) return;
+    if (runnerProcess || pairing || quitting) throw new Error("Runner state changed. Pause it and choose the folder again.");
+    const directory = path.resolve(choice.filePaths[0]);
+    let config;
+    try { config = JSON.parse(fs.readFileSync(runnerPath, "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw new Error("Runner configuration needs recovery before changing its folder."); }
+    if (config) {
+      const temporary = runnerPath + ".tmp";
+      fs.writeFileSync(temporary, JSON.stringify({ ...config, workspacesDir: directory }), { mode: 0o600 });
+      fs.renameSync(temporary, runnerPath);
+    }
+    settings.workspacesDir = directory;
+    saveSettings();
+    report("New worktrees will use this folder. Existing worktrees keep their saved locations.");
+  });
   setupHandler("desktop:connect", async value => {
     if (runnerProcess || pairing) throw new Error("Pause the runner and wait for it to stop before changing workspaces.");
     const url = workspaceUrl(value, !app.isPackaged);
@@ -291,7 +331,7 @@ function registerIpc() {
       const data = await response.json();
       if (typeof data.token !== "string" || !data.token || data.token.length > 4096) throw new Error("Invalid pairing response.");
       const temporary = runnerPath + ".tmp";
-      fs.writeFileSync(temporary, JSON.stringify({ server: origin, token: data.token, name: os.hostname(), dataDir: path.join(app.getPath("userData"), "runner-data") }), { mode: 0o600 });
+      fs.writeFileSync(temporary, JSON.stringify({ server: origin, token: data.token, name: os.hostname(), dataDir: path.join(app.getPath("userData"), "runner-data"), workspacesDir: workspacesDir() }), { mode: 0o600 });
       fs.renameSync(temporary, runnerPath);
       settings.runnerEnabled = true;
       saveSettings();

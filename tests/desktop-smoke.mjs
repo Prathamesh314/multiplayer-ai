@@ -81,6 +81,9 @@ try {
   await eventually(() => setup.evaluate("document.body.innerText.includes('Workspace address')"), "setup page rendered");
   assert.equal(await setup.evaluate("typeof require"), "undefined");
   assert.equal(await setup.evaluate("typeof window.desktopSetup.status"), "function");
+  await eventually(() => setup.evaluate("document.getElementById('workspaces-path').textContent.length > 0"), "local worktree folder displayed");
+  assert.equal(await setup.evaluate("document.getElementById('workspaces-path').textContent"), (await setup.evaluate("window.desktopSetup.status()")).workspacesDir);
+  assert.equal(await setup.evaluate("typeof window.desktopSetup.chooseWorkspaces"), "function");
   await setup.evaluate("window.desktopSetup.connect('http://untrusted.example')");
   assert.match((await setup.evaluate("window.desktopSetup.status()")).message, /HTTPS/);
   console.log("ok setup, sandbox, and insecure-server rejection");

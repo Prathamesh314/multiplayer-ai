@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
+import { listLocalWorkspaces, locationPath } from "../runner/workspace-layout.ts";
+import { defaultWorkspacesDir, resolveWorkspacesDir } from "../runner/config.ts";
+import { homedir } from "node:os";
 import { RunnerGit } from "../runner/git.ts";
 
 const exec = promisify(execFile);
@@ -16,7 +19,7 @@ const job = (baseSha, extra = {}) => ({ userId: "alice", sessionId: "room-a", re
 const common = work => git(work, "rev-parse", "--path-format=absolute", "--git-common-dir");
 
 async function fixture(t) {
-  const root = await mkdtemp(join(tmpdir(), "runner-workspaces-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "runner-workspaces-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   const seed = join(root, "seed");
   await mkdir(seed);
@@ -247,4 +250,116 @@ test("different repositories in one project never share a new cache", async t =>
   await f.runner().withWorkspace(job(f.base, { sessionId: "room-b", projectRepositoryId: "repository-b" }), async w => {
     assert.notEqual(await common(w.path), first);
   });
+});
+
+test("multiple repositories in the same room keep separate worktrees and reuse each independently", async t => {
+  const f = await fixture(t);
+  let primary, secondary;
+  const first = { workspaceNames: { repository: "frontend", room: "Alice" } };
+  const second = { repoId: "room-b", projectRepositoryId: "repository-b", workspaceNames: { repository: "backend", room: "Alice" } };
+  await f.runner().withWorkspace(job(f.base, first), async w => { primary = w.path; });
+  await f.runner().withWorkspace(job(f.base, second), async w => { secondary = w.path; });
+  assert.notEqual(dirname(primary), dirname(secondary));
+  assert.notEqual(await common(primary), await common(secondary));
+  await writeFile(join(primary, "notes.txt"), "unfinished frontend work");
+  await f.runner().withWorkspace(job(f.base, second), async w => assert.equal(w.path, secondary));
+  await assert.rejects(f.runner().withWorkspace(job(f.base, first), async () => assert.fail("dirty primary executed")), /unfinished edits/);
+  assert.equal(await readFile(join(primary, "notes.txt"), "utf8"), "unfinished frontend work");
+});
+
+
+test("named worktrees group by repository then room; all chats reuse the room checkout", async t => {
+  const f = await fixture(t);
+  const visible = join(f.root, "Visible workspaces");
+  const runner = new RunnerGit(f.server, "token", f.data, visible);
+  const names = { repository: "Multiplayer AI", room: "Alice's room" };
+  let first, second;
+  await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => { first = w.path; });
+  await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => assert.equal(w.path, first));
+  await runner.withWorkspace(job(f.base, { sessionId: "room-b", workspaceNames: { ...names, room: "Bob" } }), async w => { second = w.path; });
+  assert.match(relative(visible, first).replaceAll("\\", "/"), /^multiplayer-ai--[a-f0-9]{12}\/alice-s-room--[a-f0-9]{12}$/);
+  assert.equal(dirname(first), dirname(second));
+  assert.notEqual(first, second);
+  assert.equal(await common(first), await common(second));
+  const workspaces = await listLocalWorkspaces(f.data);
+  assert.equal(workspaces.length, 2);
+  assert.equal(workspaces.find(w => w.path === first).repository, "Multiplayer AI");
+});
+
+test("renames and changing the root do not strand an existing worktree", async t => {
+  const f = await fixture(t);
+  const initialRoot = join(f.root, "first"), nextRoot = join(f.root, "second");
+  let original;
+  await new RunnerGit(f.server,"token",f.data,initialRoot).withWorkspace(job(f.base, { workspaceNames: { repository: "backend", room: "old-name" } }), async w => { original = w.path; });
+  const runner = new RunnerGit(f.server,"token",f.data,nextRoot);
+  await runner.withWorkspace(job(f.base, { workspaceNames: { repository: "renamed", room: "new-name" } }), async w => assert.equal(w.path, original));
+  await runner.withWorkspace(job(f.base, { sessionId: "room-b", workspaceNames: { repository: "renamed", room: "second-room" } }), async w => {
+    assert.ok(w.path.startsWith(nextRoot));
+    assert.equal(dirname(relative(nextRoot, w.path)), dirname(relative(initialRoot, original)));
+  });
+});
+
+async function legacyWorkspace(f) {
+  let work;
+  const oldTurn = job(f.base);
+  await f.runner().withWorkspace(oldTurn, async w => { work = w.path; });
+  const [scope] = await readdir(join(f.data, "workspaces-v1"));
+  const root = join(f.data, "workspaces-v1", scope);
+  const [file] = await readdir(join(root, "bindings"));
+  const bindingPath = join(root, "bindings", file);
+  const binding = JSON.parse(await readFile(bindingPath, "utf8"));
+  const cache = await common(work), legacy = join(root, "work", file.slice(0, -5));
+  await mkdir(dirname(legacy), { recursive: true });
+  await git(cache, "worktree", "move", work, legacy);
+  await writeFile(bindingPath, JSON.stringify({ version: 1, repoRef: binding.repoRef, cacheKey: binding.cacheKey }));
+  await rm(join(root, "layouts"), { recursive: true, force: true });
+  return { legacy, cache, bindingPath, oldTurn };
+}
+
+test("upgrading a v1 worktree moves it with Git and preserves ignored files and replay markers", async t => {
+  const f = await fixture(t), old = await legacyWorkspace(f);
+  await writeFile(join(old.legacy, ".env.local"), "PRIVATE=kept\n");
+  let migrated;
+  await f.runner().withWorkspace(job(f.base, { workspaceNames: { repository: "frontend", room: "Alice" } }), async w => {
+    migrated = w.path;
+    assert.equal(await common(w.path), old.cache);
+    assert.equal(await readFile(join(w.path, ".env.local"), "utf8"), "PRIVATE=kept\n");
+    assert.equal((await lstat(join(w.path, ".git"))).isFile(), true);
+  });
+  assert.notEqual(migrated, old.legacy);
+  await assert.rejects(lstat(old.legacy), { code: "ENOENT" });
+  await assert.rejects(f.runner().withWorkspace(old.oldTurn, async () => assert.fail("replayed")), /already started locally/);
+});
+
+test("upgrade preserves staged, unstaged, untracked and ignored work and refuses agent execution", async t => {
+  const f = await fixture(t), old = await legacyWorkspace(f);
+  await writeFile(join(old.legacy, "code.txt"), "staged change\n");
+  await git(old.legacy,"add","code.txt");
+  await writeFile(join(old.legacy, "code.txt"), "unstaged change\n");
+  await writeFile(join(old.legacy, "notes.txt"), "untracked notes\n");
+  await writeFile(join(old.legacy, ".env.local"), "LOCAL=secret\n");
+  await assert.rejects(f.runner().withWorkspace(job(f.base), async () => assert.fail("dirty workspace executed")), /unfinished edits/);
+  const [workspace] = await listLocalWorkspaces(f.data);
+  assert.equal(await git(workspace.path,"show",":code.txt"), "staged change");
+  assert.equal(await readFile(join(workspace.path,"code.txt"),"utf8"),"unstaged change\n");
+  assert.equal(await readFile(join(workspace.path,"notes.txt"),"utf8"),"untracked notes\n");
+  assert.equal(await readFile(join(workspace.path,".env.local"),"utf8"),"LOCAL=secret\n");
+  assert.equal(await git(workspace.path,"rev-parse","HEAD"),f.base);
+});
+
+test("hostile display names cannot choose filesystem paths and corrupt locations fail closed", async t => {
+  const f = await fixture(t);
+  const root = join(f.root,"visible");
+  await new RunnerGit(f.server,"token",f.data,root).withWorkspace(job(f.base, { workspaceNames: { repository: "../../CON:<backend>", room: "/tmp/../NUL" } }), async w => {
+    const parts = relative(root,w.path).split(/[\\/]/);
+    assert.equal(parts.length,2);
+    for (const part of parts) assert.match(part,/^[a-z0-9-]+--[a-f0-9]{12}$/);
+  });
+  assert.throws(()=>locationPath({workspaceRoot:root,relativePath:"../../outside"}),/Invalid workspace/);
+  assert.throws(()=>locationPath({workspaceRoot:"relative",relativePath:"repo--aaaaaaaaaaaa/room--bbbbbbbbbbbb"}),/Invalid workspace/);
+});
+
+test("CLI and desktop default to a visible directory under the user's home", () => {
+  assert.equal(defaultWorkspacesDir(),join(homedir(),"multiplayer-ai","workspaces"));
+  assert.equal(resolveWorkspacesDir("~/my-worktrees"),join(homedir(),"my-worktrees"));
 });

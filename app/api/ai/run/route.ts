@@ -391,6 +391,7 @@ export async function POST(request: Request) {
     runId: run.id,
     repoId,
     projectRepositoryId: await projectRepositoryForRoom(sessionId, repoId),
+    workspaceNames: { repository: repository.rootName, room: result.session.name },
     baseSha: headSha,
     agentId: agent.id,
     agentPrompt,

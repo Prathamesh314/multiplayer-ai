@@ -1,21 +1,22 @@
 /*
  * One persistent branch/worktree per room repository, backed by a bare cache
- * shared by rooms of the same project on this user's device. The cloud owns
+ * shared by rooms of the same repository on this user's device. The cloud owns
  * accepted heads; turns still push candidates through server verification.
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
 import { withWorkspaceLock } from "./workspace-lock";
+import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, writeWorkspaceMetadata, type WorkspaceLocation } from "./workspace-layout";
 
 const run = promisify(execFile);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const CONFIG = ["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
-type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId">;
-type Binding = { version: 1; repoRef: string; cacheKey: string };
+type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId" | "workspaceNames">;
+type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string };
 
 export type RunnerWorkspace = {
   path: string;
@@ -30,7 +31,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export class RunnerGit {
-  constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string) {}
+  constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string, private readonly workspacesDir = join(dataDir, "workspaces")) {}
 
   private async git(cwd: string, args: string[], turnId?: string): Promise<string> {
     // A runner launched from another worktree must not inherit its Git paths.
@@ -65,7 +66,8 @@ export class RunnerGit {
     const scope = digest(`${this.server.replace(/\/$/, "")}\0${job.userId}`);
     const root = resolve(this.dataDir, "workspaces-v1", scope);
     const key = digest(repoRef);
-    const work = join(root, "work", key);
+    const legacyWork = join(root, "work", key);
+    let work: string;
     const branch = `workspace/${key}`;
     return withWorkspaceLock(join(root, "locks", `workspace-${key}`), job.turnId, async () => {
       // Pin the cache choice so old queued jobs without repository metadata keep their
@@ -80,9 +82,7 @@ export class RunnerGit {
       } else {
         binding = { version: 1, repoRef, cacheKey: digest(job.projectRepositoryId ? `repository:${job.projectRepositoryId}` : `repo:${repoRef}`) };
         await mkdir(dirname(bindingPath), { recursive: true, mode: 0o700 });
-        const temp = `${bindingPath}.${randomUUID()}.tmp`;
-        await writeFile(temp, JSON.stringify(binding), { mode: 0o600 });
-        await rename(temp, bindingPath);
+        await writeWorkspaceMetadata(bindingPath, binding);
       }
       const cache = join(root, "repos", `${binding.cacheKey}.git`);
       const cacheLock = join(root, "locks", `cache-${binding.cacheKey}`);
@@ -90,6 +90,25 @@ export class RunnerGit {
       const attempt = `refs/runner-attempts/${job.turnId}`;
 
       await lockedGit(async () => {
+        if (!binding.location) {
+          binding.location = await allocateWorkspaceLocation({ workspacesDir: this.workspacesDir, metadataRoot: root,
+            cacheKey: binding.cacheKey, repoRef, repositoryName: job.workspaceNames?.repository, roomName: job.workspaceNames?.room });
+          binding.repositoryName = job.workspaceNames?.repository;
+          binding.roomName = job.workspaceNames?.room;
+          binding.sessionId = job.sessionId;
+          // Pin the destination before moving, so an interrupted upgrade can
+          // find either the old path or the verified destination on restart.
+          await writeWorkspaceMetadata(bindingPath, binding);
+        }
+        work = locationPath(binding.location);
+        await prepareWorkspaceParent(binding.location);
+        if (await exists(legacyWork)) {
+          if (await exists(work)) throw new Error(`Both old and new workspace paths exist. Recover ${legacyWork} and ${work}; neither was overwritten.`);
+          await this.checkWorktree(legacyWork, cache, branch);
+          // Git updates both ends of the linked worktree, including its index.
+          // Dirty, untracked and ignored files travel together; no reset/copy.
+          await this.git(cache, ["worktree", "move", legacyWork, work]);
+        }
         if (!await exists(cache)) {
           await mkdir(dirname(cache), { recursive: true, mode: 0o700 });
           const temp = `${cache}.${randomUUID()}.tmp`;
@@ -108,11 +127,7 @@ export class RunnerGit {
           // Never force: a leftover branch/registration may hold undelivered work.
           await this.git(cache, ["worktree", "add", "-b", branch, work, job.baseSha]);
         } else {
-          if (!(await lstat(join(work, ".git"))).isFile() ||
-              await realpath((await this.git(work, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim()) !== await realpath(cache)) {
-            throw new Error(`Workspace does not belong to its repository cache: ${work}. Files were preserved.`);
-          }
-          await this.checkBranch(work, branch);
+          await this.checkWorktree(work, cache, branch);
           if ((await this.git(work, ["status", "--porcelain", "--untracked-files=all"])).trim()) {
             throw new Error(`Workspace has unfinished edits: ${work}. Review and save or move them before starting another turn; nothing was reset or cleaned.`);
           }
@@ -131,7 +146,7 @@ export class RunnerGit {
       let active = true;
       let committed = false;
       const workspace: RunnerWorkspace = {
-        path: work, branch,
+        path: work!, branch,
         commitAndPush: async (message, author) => {
           if (!active || committed) throw new Error("This workspace turn is no longer available for committing.");
           committed = true;
@@ -154,6 +169,15 @@ export class RunnerGit {
       try { return await task(workspace); }
       finally { active = false; }
     });
+  }
+
+  private async checkWorktree(work: string, cache: string, branch: string): Promise<void> {
+    const info = await lstat(work);
+    if (info.isSymbolicLink() || !info.isDirectory() || !(await lstat(join(work, ".git"))).isFile() ||
+        await realpath((await this.git(work, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim()) !== await realpath(cache)) {
+      throw new Error(`Workspace does not belong to its repository cache: ${work}. Files were preserved.`);
+    }
+    await this.checkBranch(work, branch);
   }
 
   private async hasRef(cache: string, ref: string): Promise<boolean> {

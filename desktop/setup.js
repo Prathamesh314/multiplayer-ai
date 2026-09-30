@@ -9,6 +9,8 @@ async function refresh() {
   document.getElementById("runner").textContent = `Runner: ${state.runner}`;
   document.getElementById("toggle").textContent = state.enabled ? "Pause after current task" : "Resume runner";
   document.getElementById("toggle").disabled = busy || !state.paired || state.runner === "stopping";
+  document.getElementById("workspaces-path").textContent = state.workspacesDir;
+  document.getElementById("choose-workspaces").disabled = busy || state.workspacesLocked;
   document.getElementById("version").textContent = `Version ${state.version}`;
   document.getElementById("retry").disabled = busy || !state.url;
   if (!busy) statusElement.textContent = state.message || "";
@@ -39,3 +41,6 @@ document.getElementById("toggle").addEventListener("click", () => void run(() =>
 document.getElementById("updates").addEventListener("click", () => void run(() => api.checkUpdates()));
 void refresh();
 setInterval(() => { if (!busy) void refresh().catch(() => {}); }, 2000);
+
+document.getElementById("open-workspaces").addEventListener("click", () => void run(() => api.openWorkspaces()));
+document.getElementById("choose-workspaces").addEventListener("click", () => void run(() => api.chooseWorkspaces()));

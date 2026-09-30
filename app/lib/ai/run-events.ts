@@ -55,10 +55,12 @@ export type AgentRunJob = {
    * session id), so an imported repo reuses the whole git layer unchanged.
    */
   repoId: string | null;
-  /** Optional for old queued jobs. Only primary room forks share this cache. */
+  /** Project grouping only; never used as the repository/cache identity. */
   projectId?: string | null;
   /** Repository identity for local cache sharing; never inferred from projectId. */
   projectRepositoryId?: string | null;
+  /** Display labels only; the runner sanitizes and pins local folder names. */
+  workspaceNames?: { repository: string; room: string };
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;
   agentId: string;

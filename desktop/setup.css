@@ -21,3 +21,5 @@ button.secondary { background: #292929; color: #eee; border-color: #555; }
 #status { min-height: 24px; color: #c8dbff; overflow-wrap: anywhere; }
 footer { display: flex; justify-content: space-between; align-items: center; }
 @media (max-width: 540px) { main { padding: 24px 18px; } section { padding: 18px; } .row { flex-wrap: wrap; } input { flex-basis: 100%; } }
+
+#workspaces-path { display: block; padding: 12px; margin: 0 0 16px; border-radius: 8px; background: #151515; color: #cfbfff; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }

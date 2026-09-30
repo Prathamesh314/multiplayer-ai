@@ -19,8 +19,9 @@ import { hostname } from "node:os";
 import { agentById } from "../app/lib/ai/catalog";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
 import { pairDevice, RunnerApi } from "./api";
-import { defaultDataDir, loadConfig, saveConfig, configPath } from "./config";
+import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDir } from "./config";
 import { runAgentLocally } from "./execute";
+import { listLocalWorkspaces } from "./workspace-layout";
 import { RunnerGit } from "./git";
 
 const HEARTBEAT_MS = 15_000;
@@ -51,7 +52,7 @@ async function pair(): Promise<void> {
   }
   const name = flag("name") ?? hostname();
   const paired = await pairDevice({ server, code, name });
-  saveConfig({ server, token: paired.token, name, dataDir: flag("data") ?? defaultDataDir() });
+  saveConfig({ server, token: paired.token, name, dataDir: flag("data") ?? defaultDataDir(), workspacesDir: resolveWorkspacesDir(flag("workspaces")) });
   log(`paired as "${name}" (device ${paired.deviceId})`);
   log(`config written to ${configPath()}`);
 }
@@ -147,7 +148,9 @@ async function start(): Promise<void> {
   }
 
   const api = new RunnerApi(config.server, config.token);
-  const git = new RunnerGit(config.server, config.token, config.dataDir);
+  const workspacesDir = resolveWorkspacesDir(flag("workspaces") ?? ("workspacesDir" in config ? config.workspacesDir : undefined));
+  const git = new RunnerGit(config.server, config.token, config.dataDir, workspacesDir);
+  log(`worktrees: ${workspacesDir}`);
   const once = process.argv.includes("--once");
 
   await api.heartbeat(); // fail fast on a revoked token
@@ -183,7 +186,13 @@ async function start(): Promise<void> {
 }
 
 const command = process.argv[2];
-if (command === "pair") {
+if (command === "workspaces") {
+  void listLocalWorkspaces(flag("data") ?? loadConfig()?.dataDir ?? defaultDataDir()).then(workspaces => {
+    if (process.argv.includes("--json")) console.log(JSON.stringify(workspaces, null, 2));
+    else if (workspaces.length) console.table(workspaces);
+    else log("No local worktrees yet. They are created when a repository first runs on this computer.");
+  }).catch(cause => { console.error(cause instanceof Error ? cause.message : String(cause)); process.exitCode = 1; });
+} else if (command === "pair") {
   void pair().catch((cause) => {
     console.error(`[runner] ${cause instanceof Error ? cause.message : String(cause)}`);
     process.exit(1);
@@ -194,6 +203,6 @@ if (command === "pair") {
     process.exit(1);
   });
 } else {
-  console.error("Usage: runner <pair|start> [flags]");
+  console.error("Usage: runner <pair|start|workspaces> [--workspaces <directory>] [flags]");
   process.exit(1);
 }
