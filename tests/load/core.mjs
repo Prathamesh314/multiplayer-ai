@@ -6,12 +6,12 @@ export function options(args) {
     values[key] = inline ?? args[++index];
     if (values[key] === undefined || values[key].startsWith('--')) throw new Error(`Missing value for --${key}`);
   }
-  const profiles = { smoke: { users: 10, duration: 20, ramp: 3 }, '100': { users: 100, duration: 60, ramp: 20 }, '1000': { users: 1000, duration: 120, ramp: 60 } };
+  const profiles = { smoke: { users: 10, duration: 20, ramp: 3 }, '100': { users: 100, duration: 60, ramp: 20 }, '1000': { users: 1000, duration: 120, ramp: 60 }, '10000': { users: 10000, duration: 120, ramp: 120 } };
   const profile = values.profile ?? 'smoke';
-  if (!profiles[profile]) throw new Error('Profile must be smoke, 100, or 1000.');
+  if (!profiles[profile]) throw new Error('Profile must be smoke, 100, 1000, or 10000.');
   const result = { ...profiles[profile], 'room-size': 10, 'poll-ms': 5000, 'write-ms': 30000,
     'timeout-ms': 10000, 'p95-ms': 1500, 'error-rate': 0.01, sse: 1, port: 0, profile };
-  const limits = { users: [1,5000], duration: [5,3600], ramp: [0,600], 'room-size': [1,1000],
+  const limits = { users: [1,10000], duration: [5,3600], ramp: [0,600], 'room-size': [1,1000],
     'poll-ms': [100,60000], 'write-ms': [1000,600000], 'timeout-ms': [100,60000], 'p95-ms': [1,60000],
     'error-rate': [0,1], sse: [0,1], port: [0,65535] };
   for (const [key,value] of Object.entries(values)) {

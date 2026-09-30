@@ -37,6 +37,7 @@ export async function fixture(databaseUrl,config,dataDirectory) {
       await pool.query(`INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '3 hours')`,[user.id,hash(token)]);
       await pool.query(`INSERT INTO runner_devices(id,user_id,name,token_hash,version) VALUES ($1,$2,'Load fixture',$3,'2')`,[user.deviceId,user.id,hash(deviceToken)]);
       users.push(user);
+      if (users.length%1000===0) console.log(`Prepared ${users.length}/${config.users} accounts.`);
     }
     await pool.query(`INSERT INTO orgs(id,slug,name,created_by) VALUES ($1,'load-test','Load test',$2)`,[orgId,users[0].id]);
     for (const user of users) await pool.query(`INSERT INTO org_members(org_id,user_id,role) VALUES ($1,$2,$3)`,[orgId,user.id,user.index===0?'owner':'member']);
@@ -55,6 +56,7 @@ export async function fixture(databaseUrl,config,dataDirectory) {
         await pool.query(`INSERT INTO agent_run_participants(run_id,user_id,role) VALUES ($1,$2,'owner')`,[user.runId,user.id]);
       }
       rooms.push(room);
+      if (rooms.length%100===0) console.log(`Prepared ${rooms.length}/${Math.ceil(config.users/config['room-size'])} rooms and repositories.`);
     }
     return {schema,databaseUrl:scoped.toString(),pool,users,rooms,orgId,close,
       bytes:async()=>Number((await pool.query(`SELECT COALESCE(sum(pg_total_relation_size(c.oid)),0)::text AS bytes FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relkind IN ('r','m')`,[schema])).rows[0].bytes),

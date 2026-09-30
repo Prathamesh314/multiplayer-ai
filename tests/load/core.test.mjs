@@ -6,7 +6,10 @@ test('profiles require explicit large-load selection and reject misspelled or un
   assert.equal(options([]).users,10);
   assert.equal(options(['--profile','1000','--duration=30']).users,1000);
   assert.equal(options(['--profile=1000','--users=20']).users,20);
-  for (const args of [['--users=0'],['--users'],['--users=1.5'],['--duration=Infinity'],['--profile=oops'],['--user=1000'],['--sse=2']]) assert.throws(()=>options(args));
+  assert.equal(options(['--profile=10000']).users,10000);
+  assert.equal(options(['--profile=10000']).ramp,120);
+  assert.equal(options(['--users=10000']).users,10000);
+  for (const args of [['--users=0'],['--users=10001'],['--users'],['--users=1.5'],['--duration=Infinity'],['--profile=oops'],['--user=1000'],['--sse=2']]) assert.throws(()=>options(args));
 });
 test('percentiles are bounded approximations and do not retain individual samples',()=>{
   const h=new Histogram(); assert.equal(h.summary().p95Ms,null);

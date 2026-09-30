@@ -19,7 +19,7 @@ import { workload } from './workload.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 process.chdir(root);
 if (process.argv.includes('--help')) {
-  console.log(`Usage: npm run test:load -- [--profile smoke|100|1000] [--users N] [--duration SECONDS] [--ramp SECONDS]
+  console.log(`Usage: npm run test:load -- [--profile smoke|100|1000|10000] [--users N] [--duration SECONDS] [--ramp SECONDS]
   --room-size 10 --poll-ms 5000 --write-ms 30000 --timeout-ms 10000
   --p95-ms 1500 --error-rate 0.01 --sse 1 --port 0
 Requires a production build, PostgreSQL and Redis. Starts its own loopback server.
