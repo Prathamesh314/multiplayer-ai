@@ -1,7 +1,12 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "dom.asynciterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "dom.asynciterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,7 +24,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     }
   },
   "include": [
@@ -30,7 +37,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".next-handoff-test/types/**/*.ts",
-    ".next-handoff-test/dev/types/**/*.ts"
+    ".next-handoff-test/dev/types/**/*.ts",
+    ".next/dev/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

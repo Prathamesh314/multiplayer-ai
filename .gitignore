@@ -57,3 +57,6 @@ PROJECT_GUIDE.md
 *.mp3
 *.mp4
 artifacts/*
+
+# Private local drafts
+/docs/*.local.md

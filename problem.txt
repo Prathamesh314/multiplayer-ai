@@ -13,7 +13,6 @@ This duplicates working files, consumes disk space, and stores readable source
 code on the server host. Separate workspaces are useful for parallel agents,
 but they do not need to live permanently on the server. Agents running on the
 same machine should be able to use temporary, isolated local Git worktrees.
-
 The complication is multiplayer handoff: another user's machine needs the
 exact code and conversation state where the previous user stopped. A server
 cannot directly read a laptop's filesystem. If the latest changes exist only
@@ -24,7 +23,6 @@ there may be unreviewed changes, untracked task files, failed uploads, or an
 unfinished task that the user expects to resume.
 
 CURRENT IMPLEMENTATION OBSERVATIONS
-
 - .multiplayer-ai/projects and repos hold durable Git repositories; work holds
   checked-out files. During inspection, the directory used about 26 MB, with
   about 19 MB in working copies. These figures are a snapshot, not a limit.
