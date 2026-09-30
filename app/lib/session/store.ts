@@ -294,21 +294,16 @@ export async function setVisibility(
 }
 
 export async function getSession(id: string, viewerId?: string): Promise<Session | null> {
-  const row = await queryOne<SessionRow>(
-    `${SELECT_SESSION} WHERE s.id = $1 AND s.deleted_at IS NULL`,
-    [id],
+  const row = await queryOne<SessionRow & { my_role?: SessionRole | null }>(
+    `${viewerId ? SELECT_SESSION.replace("SELECT ", "SELECT room_access_role(s.id,$2) AS my_role, ") : SELECT_SESSION}
+      WHERE s.id = $1 AND s.deleted_at IS NULL`,
+    viewerId ? [id, viewerId] : [id],
   );
   if (!row) return null;
   // The caller's own role travels with the session so the UI knows what to
   // enable without a second request. For an org project room it is derived from
   // the project roster; a personal room falls back to session_members.
-  let role: SessionRole | null = null;
-  if (viewerId) {
-    role = (await queryOne<{ role: SessionRole | null }>(
-      `SELECT room_access_role($1, $2) AS role`, [id, viewerId],
-    ))?.role ?? null;
-  }
-  return toSession(row, role);
+  return toSession(row, row.my_role ?? null);
 }
 
 /** Sessions this user may open, most recently active first. */

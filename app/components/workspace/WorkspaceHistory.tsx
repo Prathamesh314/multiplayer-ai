@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
 import type { SavedCheckpoint } from "../../lib/runner/checkpoints";
 import type { AiRunEvent } from "../../lib/ai/run-events";
@@ -13,12 +13,27 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   const [snapshot, setSnapshot] = useState<SavedCheckpoint | null>(null), [changes, setChanges] = useState<{ path: string; status: string }[]>([]), [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const endpoint = `/api/sessions/${run.sessionId}/runs/${run.id}/history`;
+  const requestsInFlight = useRef(0);
+  const generation = useRef(0);
   const load = useCallback(async (suffix = "", options?: RequestInit) => {
+    requestsInFlight.current++;
+    try {
     const response = await fetch(endpoint + suffix, { cache: "no-store", ...options }); const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not load synchronized history."); return body;
+    } finally { requestsInFlight.current--; }
   }, [endpoint]);
-  const refresh = useCallback(() => load().then(setData).catch(cause => setError(cause.message)), [load]);
-  useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 15000); return () => clearInterval(timer); }, [refresh]);
+  const refresh = useCallback(async () => {
+    const version = ++generation.current;
+    try { const body = await load(); if (version === generation.current) { setData(body); setError(""); } }
+    catch (cause) { if (version === generation.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+  }, [load]);
+  useEffect(() => {
+    const counter = generation;
+    const poll = () => { if (!document.hidden && !requestsInFlight.current) void refresh(); };
+    const initial = setTimeout(() => void refresh(), 0), timer = setInterval(poll, 15000);
+    document.addEventListener("visibilitychange", poll);
+    return () => { counter.current++; clearTimeout(initial); clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
+  }, [refresh]);
   async function showActivity(id: string, cursor = 0) {
     setBusy(true); setError("");
     try { const body = await load(`?turn=${id}&after=${cursor}`); const events = body.batches.flatMap((b: { events: AiRunEvent[] }) => b.events);

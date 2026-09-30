@@ -10,10 +10,10 @@ export function options(args) {
   const profile = values.profile ?? 'smoke';
   if (!profiles[profile]) throw new Error('Profile must be smoke, 100, 1000, or 10000.');
   const result = { ...profiles[profile], 'room-size': 10, 'poll-ms': 5000, 'write-ms': 30000,
-    'timeout-ms': 10000, 'p95-ms': 1500, 'error-rate': 0.01, sse: 1, port: 0, profile };
+    'timeout-ms': 10000, 'p95-ms': 1500, 'error-rate': 0.01, 'http-connections': 256, 'keep-alive-ms': 70000, workers: 1, sse: 1, port: 0, profile };
   const limits = { users: [1,10000], duration: [5,3600], ramp: [0,600], 'room-size': [1,1000],
     'poll-ms': [100,60000], 'write-ms': [1000,600000], 'timeout-ms': [100,60000], 'p95-ms': [1,60000],
-    'error-rate': [0,1], sse: [0,1], port: [0,65535] };
+    'error-rate': [0,1], 'http-connections': [1,4096], 'keep-alive-ms': [1000,120000], workers: [1,8], sse: [0,1], port: [0,65535] };
   for (const [key,value] of Object.entries(values)) {
     if (key === 'profile') continue;
     if (!limits[key]) throw new Error(`Unknown option --${key}`);
@@ -50,12 +50,19 @@ export class Metrics {
   entries=new Map(); failures=[];
   record(phase,operation,ms,ok,status) {
     const key=phase+':'+operation;
-    if (!this.entries.has(key)) this.entries.set(key,{phase,operation,latency:new Histogram(),failed:0,statuses:{}});
+    if (!this.entries.has(key)) this.entries.set(key,{phase,operation,latency:new Histogram(),successfulLatency:new Histogram(),failed:0,statuses:{}});
     const entry=this.entries.get(key); entry.latency.add(ms); if (!ok) entry.failed++;
+    if (ok) entry.successfulLatency.add(ms);
     entry.statuses[status]=(entry.statuses[status]??0)+1;
     if (!ok && this.failures.length<30) this.failures.push({phase,operation,status});
   }
-  summary() { return [...this.entries.values()].map(({latency,...entry})=>({...entry,...latency.summary(),errorRate:entry.failed/latency.count})); }
+  summary() { return [...this.entries.values()].map(({latency,successfulLatency,...entry})=>({...entry,...latency.summary(),successfulLatency:successfulLatency.summary(),errorRate:entry.failed/latency.count})); }
+}
+
+/** Retain actionable transport codes without logging URLs, credentials or arbitrary error text. */
+export function networkFailure(error) {
+  const code=error?.cause?.code ?? error?.code ?? error?.name;
+  return typeof code==='string' && /^[A-Za-z0-9_]{1,64}$/.test(code) ? `network:${code}` : 'network:unknown';
 }
 
 export function failuresFor(report,config) {

@@ -45,6 +45,7 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY next.config.ts ./
 COPY db ./db
+COPY scripts/serve.mjs scripts/server-config.mjs ./scripts/
 
 ENV NODE_ENV=production
 EXPOSE 3000
@@ -52,4 +53,4 @@ EXPOSE 3000
 # Apply migrations, then serve on all interfaces (so the published port reaches
 # it) at 3000. Migrations here are fine for a single web instance; a multi-
 # replica deploy would run them as a separate one-shot step instead.
-CMD ["sh", "-c", "node db/migrate.mjs && node_modules/.bin/next start -H 0.0.0.0 -p 3000"]
+CMD ["sh", "-c", "node db/migrate.mjs && exec node scripts/serve.mjs -H 0.0.0.0 -p 3000"]

@@ -1,4 +1,5 @@
 import { withStoredRepo } from "../storage/git-cache";
+import { cachedGitRead } from "../git/read-cache";
 import { filterImportIndex } from "../git/import-index";
 import { objectGit, objectText, withTemporaryIndex, putBlob, commitTree } from "../git/objects";
 import { execFile } from "node:child_process";
@@ -865,7 +866,9 @@ async function safeWorkFile(id: string, relative: string): Promise<string | null
 }
 
 async function stored_listCommittedTree(id: string, rootName: string, sha: string): Promise<TreeNode> {
-  const output = await git(barePath(id), ["ls-tree", "-rzl", "--full-tree", sha]);
+  const bare = barePath(id);
+  const output = (await cachedGitRead(bare, sha, "tree", async () =>
+    Buffer.from(await git(bare, ["ls-tree", "-rzl", "--full-tree", sha]))))!.toString("utf8");
   const entries: TreeEntry[] = [];
   for (const record of output.split("\0")) {
     const tab = record.indexOf("\t");
@@ -879,6 +882,7 @@ async function stored_listCommittedTree(id: string, rootName: string, sha: strin
 async function stored_readCommittedBytes(id: string, sha: string, relative: string): Promise<Buffer | null> {
   if (!safeRelativePath(relative)) return null;
   const bare = barePath(id);
+  return cachedGitRead(bare, sha, `file:${relative}`, async () => {
   const entry = await git(bare, ["ls-tree", "-z", sha, "--", relative]);
   if (!entry.startsWith("100") || entry.split("\t")[1]?.replace(/\0$/, "") !== relative) return null;
   const object = `${sha}:${relative}`;
@@ -888,6 +892,7 @@ async function stored_readCommittedBytes(id: string, sha: string, relative: stri
     cwd: bare, env: { ...process.env, ...GIT_ENV }, encoding: "buffer", maxBuffer: MAX_SEED_FILE_BYTES + 1024,
   });
   return stdout;
+  });
 }
 
 async function stored_committedChanges(id: string, base: string, head: string): Promise<ChangedFile[]> {

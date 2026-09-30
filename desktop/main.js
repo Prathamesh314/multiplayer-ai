@@ -429,7 +429,8 @@ function startDevelopmentServer() {
   if (process.env.APP_URL) return;
   settings.url = "http://127.0.0.1:3000";
   const entry = require.resolve("next/dist/bin/next", { paths: [path.resolve(__dirname, "../..")] });
-  serverProcess = spawn(process.execPath, [entry, process.env.NODE_ENV === "production" ? "start" : "dev", "--hostname", "127.0.0.1"], {
+  const production = process.env.NODE_ENV === "production";
+  serverProcess = spawn(process.execPath, [entry, production ? "start" : "dev", "--hostname", "127.0.0.1", ...(production ? ["--keepAliveTimeout", "70000"] : [])], {
     cwd: path.resolve(__dirname, "../.."), env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: "inherit",
   });
   serverProcess.on("error", () => { report("Could not start the development server."); showSetup(); });

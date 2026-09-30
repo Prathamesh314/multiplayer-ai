@@ -11,6 +11,26 @@ const rejects = (fn,status) => assert.rejects(fn,error => error.status === statu
 try {
   const run = await createRun({sessionId:f.room,startedBy:f.alice,agentId:"codex",baseSha:"a".repeat(40),title:"Review retry logic"});
   const input = {id:randomUUID(),sessionId:f.room,runId:run.id,assigneeId:f.bob,body:"Please review the retry logic."};
+  await test("optimized rosters match authoritative permissions through membership and visibility changes",async () => {
+    const check=async room => {
+      for(const actor of [f.alice,f.bob,f.outsider]) {
+        const allowed=(await f.db.query('SELECT room_access_role($1,$2) AS role',[room,actor])).rows[0].role;
+        const expected=allowed ? (await f.db.query('SELECT id FROM users WHERE room_access_role($1,id) IS NOT NULL',[room])).rows.map(r=>r.id).sort() : [];
+        assert.deepEqual((await taskMembers(room,actor)).map(m=>m.userId).sort(),expected);
+      }
+    };
+    for(const change of [
+      async()=>{},
+      ()=>f.db.query("UPDATE org_members SET role='admin' WHERE user_id=$1",[f.outsider]),
+      ()=>f.db.query("UPDATE org_members SET status='suspended' WHERE user_id=$1",[f.alice]),
+      ()=>f.db.query("UPDATE project_members SET removed_at=now() WHERE user_id=$1",[f.alice]),
+      ()=>f.db.query("UPDATE project_members SET role='viewer' WHERE user_id=$1",[f.alice]),
+      ()=>f.db.query("UPDATE users SET deleted_at=now() WHERE id=$1",[f.bob]),
+    ]) {
+      await f.db.exec('BEGIN');
+      try {await change();await check(f.room);await check(f.secret);} finally {await f.db.exec('ROLLBACK');}
+    }
+  });
   await test("assignments reach the assignee's inbox with source and authorship",async () => {
     await createTask(f.alice,input);
     const [task] = await listTasks(f.bob);

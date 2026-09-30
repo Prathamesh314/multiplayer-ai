@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
-import { query, queryOne } from "../db/client";
+import { query } from "../db/client";
+import { userFromSessionToken } from "./session-token";
 import type { CurrentUser } from "./types";
 
 const COOKIE_NAME = "ma_auth";
@@ -41,40 +42,12 @@ export async function issueToken(
   });
 }
 
-/** Resolves the cookie to a user, or null. Also refreshes `last_used_at`. */
+/** Resolves the cookie with live revocation checks and throttled usage tracking. */
 export async function currentUser(): Promise<CurrentUser | null> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
 
-  const row = await queryOne<{
-    id: string;
-    handle: string;
-    email: string;
-    display_name: string;
-    avatar_url: string | null;
-    token_id: string;
-  }>(
-    `UPDATE auth_tokens t
-        SET last_used_at = now()
-       FROM users u
-      WHERE t.token_hash = $1
-        AND t.user_id = u.id
-        AND t.revoked_at IS NULL
-        AND t.expires_at > now()
-        AND u.deleted_at IS NULL
-  RETURNING u.id, u.handle, u.email, u.display_name, u.avatar_url, t.id AS token_id`,
-    [digest(token)],
-  );
-
-  if (!row) return null;
-
-  return {
-    id: row.id,
-    handle: row.handle,
-    email: row.email,
-    displayName: row.display_name,
-    avatarUrl: row.avatar_url,
-  };
+  return userFromSessionToken(token);
 }
 
 /** Revokes the current token and clears the cookie. */

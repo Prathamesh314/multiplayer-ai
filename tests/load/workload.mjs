@@ -1,34 +1,47 @@
 import { randomUUID } from 'node:crypto';
-import { setMaxListeners } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Histogram, Metrics } from './core.mjs';
+import { request as httpRequest } from 'undici';
+import { Histogram, Metrics, networkFailure } from './core.mjs';
+import { requestCancellation, subscribeCancellation, cancellableDelay } from './cancellation.mjs';
+import { dispatchers } from './transport.mjs';
 
 export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
+  // SSE occupies its connection for the whole run. Keep it out of the HTTP
+  // dispatch pool so each request does not scan thousands of occupied sockets.
+  // Queue time still counts toward latency and timeout; failed attempts are not retried.
+  const httpAgent=dispatchers(config['http-connections']);
+  const streamAgent=dispatchers(config.users);
   const metrics=new Metrics(), delivery=new Histogram(), readyLatency=new Histogram();
   const started=performance.now(), steadyStart=started+config.ramp*1000, end=steadyStart+config.duration*1000;
   let active=0,peak=0,activatedUsers=0,inflight=0,peakInflight=0,unexpectedDisconnects=0,received=0,acknowledgedTasks=0,completedTasks=0,steadyCompletions=0;
   const pendingOwn=new Set(), streams=[], streamController=new AbortController();
   const liveRooms=new Map(), pendingDelivery=new Map();
-  const streamSignal=AbortSignal.any([signal,streamController.signal]);
-  setMaxListeners(0,streamSignal);
+  const streamSignal=streamController.signal;
+  const abortStreams=()=>streamController.abort(signal.reason);
+  const detachStreams=subscribeCancellation(signal,abortStreams);
   const phase=()=>performance.now()<steadyStart?'ramp':'steady';
   const marker=`load-${randomUUID()}`;
   async function request(user,operation,path,{method='GET',body,device=false,status=200,check=()=>true}={}) {
     if (signal.aborted || performance.now()>=end) return null;
     const start=performance.now(), stage=phase(); inflight++; peakInflight=Math.max(peakInflight,inflight);
+    const cancellation=requestCancellation(signal,config['timeout-ms']);
     let code='network',ok=false;
     try {
-      const response=await fetch(base+path,{method,redirect:'error',headers:{'content-type':'application/json',
+      const response=await httpRequest(base+path,{dispatcher:httpAgent.forUser(user.index),method,maxRedirections:0,headersTimeout:config['timeout-ms'],bodyTimeout:config['timeout-ms'],headers:{'content-type':'application/json',
         ...(device?{authorization:`Bearer ${user.deviceToken}`}:{cookie:`ma_auth=${user.token}`})},
-        ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.any([signal,AbortSignal.timeout(config['timeout-ms'])])});
-      code=String(response.status); let data;
-      try { data=await response.json(); } catch { code+=' invalid-json'; return null; }
-      try { ok=response.status===status && check(data); } catch { ok=false; }
-      if (!ok && response.status===status) code+=' invalid-body';
+        ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:cancellation.signal});
+      code=String(response.statusCode); let data;
+      try { data=await response.body.json(); } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        code+=' invalid-json'; return null;
+      }
+      try { ok=response.statusCode===status && check(data); } catch { ok=false; }
+      if (!ok && response.statusCode===status) code+=' invalid-body';
       return ok?data:null;
-    } catch (error) { code=error.name==='TimeoutError'?'timeout':signal.aborted?'interrupted':'network'; return null; }
+    } catch (error) { code=cancellation.timedOut()?'timeout':signal.aborted?'interrupted':networkFailure(error); return null; }
     finally {
+      cancellation.dispose();
       const finished=performance.now();
       if (finished>=steadyStart && finished<end) steadyCompletions++;
       inflight--; metrics.record(stage,operation,finished-start,ok,code);
@@ -38,12 +51,12 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
     let resolveReady,rejectReady;
     const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
     const controller=new AbortController(), start=performance.now(); let opened=false,reader;
-    const cancel=()=>{void reader?.cancel().catch(()=>{});};
-    streamSignal.addEventListener('abort',cancel,{once:true});
+    const cancel=()=>{controller.abort();void reader?.cancel().catch(()=>{});};
+    const detach=subscribeCancellation(streamSignal,cancel);
     const timeout=setTimeout(()=>{controller.abort();cancel();rejectReady(new Error('Stream readiness timed out'));},config['timeout-ms']);
     const run=(async()=>{
       try {
-        const response=await fetch(`${base}/api/sessions/${user.roomId}/events`,{headers:{cookie:`ma_auth=${user.token}`},redirect:'error',signal:AbortSignal.any([streamSignal,controller.signal])});
+        const response=await fetch(`${base}/api/sessions/${user.roomId}/events`,{dispatcher:streamAgent.forUser(user.index),headers:{cookie:`ma_auth=${user.token}`},redirect:'error',signal:controller.signal});
         if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Invalid event stream');
         reader=response.body.getReader();
         if (streamSignal.aborted || controller.signal.aborted) cancel();
@@ -78,7 +91,7 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
       } catch (error) {
         if (!streamSignal.aborted) unexpectedDisconnects++;
         if (!opened) rejectReady(error);
-      } finally { clearTimeout(timeout); streamSignal.removeEventListener('abort',cancel); if (opened) { active--; liveRooms.get(user.roomId)?.delete(user.id); } else rejectReady(new Error('Stream did not become ready')); }
+      } finally { clearTimeout(timeout); detach(); if (opened) { active--; liveRooms.get(user.roomId)?.delete(user.id); } else rejectReady(new Error('Stream did not become ready')); }
     })();
     streams.push(run);
     return ready;
@@ -87,7 +100,7 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
   try {
     const outcomes=await Promise.allSettled(fixture.users.map(async user=>{
       try {
-        await delay(config.ramp*1000*user.index/config.users,undefined,{signal});
+        await cancellableDelay(config.ramp*1000*user.index/config.users,signal);
         if (!await request(user,'auth','/api/auth/me',{check:data=>data.user?.id===user.id})) return;
         if (config.sse) { try { await openStream(user); } catch { return; } }
         activatedUsers++;
@@ -138,7 +151,9 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
               if (!await request(user,'send-message',room+'/messages',{method:'POST',body:{body:message},status:201,check:data=>data.body===message})) { pendingOwn.delete(message); pendingDelivery.delete(message); }
             }
           }
-          await delay(100,undefined,{signal});
+          // Sleep until this user's next operation, instead of waking every
+          // 100 ms even when every deadline is several seconds away.
+          await cancellableDelay(Math.max(100,Math.min(poll,roster,presence,desktop,files,write,end)-performance.now()),signal);
         }
       } catch (error) { if (!signal.aborted) throw error; }
     }));
@@ -147,6 +162,8 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
     if (!signal.aborted && config.sse) await delay(2000); // drain deliveries already published
   } finally {
     clearInterval(progress); streamController.abort();
+    detachStreams();
+    await Promise.all([httpAgent.destroy(),streamAgent.destroy()]);
     const closed=await Promise.race([Promise.allSettled(streams).then(()=>true),delay(5000,false,{ref:false})]);
     if (!closed) throw new Error('Event streams did not close within five seconds.');
   }

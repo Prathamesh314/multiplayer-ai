@@ -12,7 +12,7 @@
     "worker:dev": "tsx watch worker/index.ts",
     "runner": "tsx runner/index.ts",
     "start": "npm run desktop:prepare && electron .desktop-build/app --local-server",
-    "next:start": "next start",
+    "next:start": "node scripts/serve.mjs",
     "desktop:prepare": "node desktop/prepare.mjs",
     "desktop:attach": "npm run desktop:prepare && electron .desktop-build/app",
     "desktop:prod": "npm run desktop:attach",
@@ -23,6 +23,7 @@
     "desktop:dist:linux": "node desktop/package.mjs --linux --x64 --setup",
     "desktop:release": "node desktop/package.mjs --release",
     "test:desktop": "node --test tests/desktop.test.cjs",
+    "test:server": "node --test tests/server-lifecycle.test.mjs",
     "test:desktop:smoke": "npm run desktop:prepare && node tests/desktop-smoke.mjs",
     "lint": "eslint",
     "db:migrate": "node db/migrate.mjs",
@@ -39,7 +40,7 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
     "test:runner-workspaces": "node --import tsx --test tests/runner-workspaces.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit",
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit && npm run test:performance",
     "test:memory": "node --import tsx tests/memory.test.mjs",
     "eval:memory": "node --import tsx scripts/eval-memory.mjs",
     "memory:reindex": "node scripts/reindex-memory.mjs",
@@ -49,7 +50,8 @@
     "storage:maintain": "node --import tsx scripts/storage-maintenance.ts",
     "test:storage": "node --import tsx --test tests/storage.test.mjs",
     "test:load": "node --import tsx tests/load/run.mjs",
-    "test:load:unit": "node --test tests/load/core.test.mjs"
+    "test:load:unit": "node --test tests/load/core.test.mjs tests/load/cancellation.test.mjs tests/load/resources.test.mjs",
+    "test:performance": "node --import tsx tests/session-token.test.mjs && node --import tsx tests/room-access-parity.test.mjs && node --import tsx --test tests/git-read-cache.test.mjs tests/server-config.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",
@@ -90,6 +92,7 @@
     "sharp": "0.35.4",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "undici": "^7.29.0"
   }
 }

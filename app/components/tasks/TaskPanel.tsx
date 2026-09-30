@@ -29,24 +29,26 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
   const [hasMore,setHasMore] = useState(false);
   const generation = useRef(0);
   const mutation = useRef(false);
+  const requestsInFlight = useRef(0);
   const pending = useRef<{payload:string;id:string}|null>(null);
   const pickerId = useId();
   const url = `/api/tasks?offset=${offset}&members=${assigning ? "1" : "0"}${sessionId && runId ? `&sessionId=${encodeURIComponent(sessionId)}&runId=${encodeURIComponent(runId)}` : ""}`;
   const refresh = useCallback(async () => {
     const version = ++generation.current;
-    await request<{tasks:RoomTask[];members:TaskMember[];hasMore:boolean}>(url).then(data => {
+    requestsInFlight.current++;
+    try { await request<{tasks:RoomTask[];members:TaskMember[];hasMore:boolean}>(url).then(data => {
       if (version !== generation.current) return;
       setTasks(data.tasks); setMembers(data.members); setHasMore(data.hasMore); setError(null);
       setLoading(false);
     },cause => {
       if (version === generation.current) { setTasks([]); setMembers([]); setError(cause instanceof Error ? cause.message : "Could not load tasks."); }
       if (version === generation.current) setLoading(false);
-    });
+    }); } finally { requestsInFlight.current--; }
   },[url]);
   useEffect(() => {
     const counter = generation;
     void refresh();
-    const poll = () => { if (!document.hidden && !mutation.current) void refresh(); };
+    const poll = () => { if (!document.hidden && !mutation.current && !requestsInFlight.current) void refresh(); };
     const timer = setInterval(poll,5000);
     window.addEventListener("focus",poll);
     return () => { counter.current++; clearInterval(timer); window.removeEventListener("focus",poll); };

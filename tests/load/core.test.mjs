@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { options, Histogram, Metrics, failuresFor } from './core.mjs';
+import { options, Histogram, Metrics, failuresFor, networkFailure } from './core.mjs';
+import { connectionShards } from './transport.mjs';
+
+test('connection shards retain the exact socket budget and fit every SSE user',()=>{
+  for(const total of [1,10,64,65,1000,4096,10000]){
+    const shards=connectionShards(total),assigned=shards.map(()=>0);
+    for(let user=0;user<total;user++)assigned[user%shards.length]++;
+    assert.deepEqual(shards,assigned);
+    assert.equal(shards.reduce((a,b)=>a+b,0),total);
+    assert.ok(shards.every(size=>size>0&&size<=64));
+  }
+});
 
 test('profiles require explicit large-load selection and reject misspelled or unbounded settings',()=>{
   assert.equal(options([]).users,10);
@@ -9,6 +20,12 @@ test('profiles require explicit large-load selection and reject misspelled or un
   assert.equal(options(['--profile=10000']).users,10000);
   assert.equal(options(['--profile=10000']).ramp,120);
   assert.equal(options(['--users=10000']).users,10000);
+  assert.equal(options(['--http-connections=1000'])['http-connections'],1000);
+  assert.equal(options(['--workers=4']).workers,4);
+  assert.throws(()=>options(['--workers=0']));
+  assert.throws(()=>options(['--workers=9']));
+  assert.throws(()=>options(['--http-connections=0']));
+  assert.throws(()=>options(['--http-connections=4097']));
   for (const args of [['--users=0'],['--users=10001'],['--users'],['--users=1.5'],['--duration=Infinity'],['--profile=oops'],['--user=1000'],['--sse=2']]) assert.throws(()=>options(args));
 });
 test('percentiles are bounded approximations and do not retain individual samples',()=>{
@@ -22,9 +39,17 @@ test('percentiles are bounded approximations and do not retain individual sample
 test('errors include failed status and semantic checks, separately from latency',()=>{
   const metrics=new Metrics();metrics.record('steady','tasks',10,true,'200');metrics.record('steady','tasks',20,false,'200 invalid-body');
   assert.equal(metrics.summary()[0].errorRate,.5);
+  assert.equal(metrics.summary()[0].successfulLatency.count,1);
+  assert.equal(metrics.summary()[0].successfulLatency.maxMs,10);
   const report={requests:metrics.summary(),activatedUsers:10,streams:{peak:10,unexpectedDisconnects:0,missingOwnMessages:0},invariants:[{ok:true}]};
   assert.match(failuresFor(report,options([])).join(' '),/error rate/);
   report.requests=[];assert.match(failuresFor(report,options([])).join(' '),/No steady-state/);
+});
+
+test('transport diagnostics retain codes without recording error messages or credentials',()=>{
+  assert.equal(networkFailure({cause:{code:'ECONNRESET'}}),'network:ECONNRESET');
+  assert.equal(networkFailure({cause:{code:'https://secret@example.test'}}),'network:unknown');
+  assert.equal(networkFailure({message:'token secret'}),'network:unknown');
 });
 test('missing users, missing live deliveries, failed invariants and interrupts fail the run',()=>{
   const report={requests:[{phase:'steady',operation:'tasks',errorRate:0,p95Ms:10}],activatedUsers:9,

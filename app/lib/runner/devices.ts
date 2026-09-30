@@ -124,9 +124,17 @@ export async function exchangePairingCode(input: {
 export async function deviceFromToken(token: string | null): Promise<RunnerDevice | null> {
   if (!token) return null;
   const row = await queryOne<DeviceRow>(
-    `UPDATE runner_devices SET last_seen_at = now()
-      WHERE token_hash = $1 AND revoked_at IS NULL
-      RETURNING ${COLUMNS}`,
+    `WITH valid AS MATERIALIZED (
+      SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL
+    ), touched AS (
+      UPDATE runner_devices d SET last_seen_at=now() FROM valid v
+      WHERE d.id=v.id AND d.revoked_at IS NULL
+        -- Leave headroom between the runner's 15s heartbeat and 30s online TTL.
+        AND (d.last_seen_at IS NULL OR d.last_seen_at<now()-interval '10 seconds')
+      RETURNING d.id, d.last_seen_at
+    ) SELECT v.id, v.user_id, v.name, v.platform, v.version,
+      COALESCE(t.last_seen_at,v.last_seen_at) AS last_seen_at, v.created_at, v.revoked_at
+      FROM valid v LEFT JOIN touched t ON t.id=v.id`,
     [digest(token)],
   );
   return row ? toDevice(row) : null;

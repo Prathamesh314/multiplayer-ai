@@ -16,12 +16,23 @@ const joins = `FROM room_tasks t JOIN agent_runs r ON r.id=t.run_id
   JOIN users assignee ON assignee.id=t.assignee_id`;
 
 export async function taskMembers(sessionId: string, actor: string): Promise<TaskMember[]> {
-  return query<TaskMember>(`SELECT u.id AS "userId", u.handle, u.display_name AS "displayName"
-    FROM users u WHERE u.id IN (
-      SELECT user_id FROM session_members WHERE session_id=$1
-      UNION SELECT user_id FROM project_members WHERE project_id=(SELECT project_id FROM sessions WHERE id=$1)
-      UNION SELECT user_id FROM org_members WHERE org_id=(SELECT org_id FROM sessions WHERE id=$1)
-    ) AND room_access_role($1,$2) IS NOT NULL AND room_access_role($1,u.id) IS NOT NULL
+  // Resolve the actor once, then check only people who could inherit access.
+  // Ordinary organization members do not inherit room access. Including all of
+  // them here made every small room's picker scale with the whole organization.
+  // Keep the authoritative role check for revocation and viewer precedence.
+  return query<TaskMember>(`WITH room AS MATERIALIZED (
+      SELECT id, project_id, org_id, visibility FROM sessions
+      WHERE id=$1 AND deleted_at IS NULL AND room_access_role(id,$2) IS NOT NULL
+    ), candidates AS MATERIALIZED (
+      SELECT m.user_id FROM room r JOIN session_members m ON m.session_id=r.id
+        WHERE m.removed_at IS NULL
+      UNION SELECT m.user_id FROM room r JOIN project_members m ON m.project_id=r.project_id
+        WHERE r.visibility='public' AND m.removed_at IS NULL
+      UNION SELECT m.user_id FROM room r JOIN org_members m ON m.org_id=r.org_id
+        WHERE r.visibility='public' AND m.status='active' AND m.role IN ('owner','admin')
+    ) SELECT u.id AS "userId", u.handle, u.display_name AS "displayName"
+    FROM candidates c JOIN users u ON u.id=c.user_id
+    WHERE room_access_role($1,u.id) IS NOT NULL
     ORDER BY u.display_name, u.handle`, [sessionId,actor]);
 }
 
