@@ -144,7 +144,9 @@ After repository operations, a throttled sweep evicts least-recently-used Git
 repositories toward that byte budget. It creates a Git bundle containing all
 refs, uploads it, verifies the stored checksum, commits its location to
 PostgreSQL, and only then evicts the local bare directory. The next operation
-hydrates a verified copy. Reads, writes and streamed Git transfers pin their
+hydrates a verified copy. New archives also record the symbolic default branch
+or detached HEAD, so restoration does not assume the branch is named `main`
+(migration `034_archive_head.sql`). Reads, writes and streamed Git transfers pin their
 repositories for their full operation. Imports and pinned repositories are never
 evicted. The byte budget is a target for idle storage: active repositories and
 archive scratch space may temporarily exceed it. Application replicas sharing

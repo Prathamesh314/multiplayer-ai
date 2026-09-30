@@ -40,12 +40,27 @@ export async function captureCheckpoint(work: string, cache: string, turnId: str
   return { id: randomUUID(), turnId, sequence, baseSha, headSha, indexSha, snapshotSha, capturedAt: new Date().toISOString() };
 }
 
+/** File/directory collisions, without comparing every ignored file to every source file. */
+export function checkpointOverwritesIgnored(existing: string[], incoming: string[]): boolean {
+  const files = new Set(incoming), directories = new Set<string>();
+  for (const file of incoming) {
+    for (let slash = file.indexOf("/"); slash !== -1; slash = file.indexOf("/", slash + 1)) directories.add(file.slice(0, slash));
+  }
+  return existing.some(path => {
+    if (files.has(path) || directories.has(path)) return true;
+    for (let slash = path.indexOf("/"); slash !== -1; slash = path.indexOf("/", slash + 1)) {
+      if (files.has(path.slice(0, slash))) return true;
+    }
+    return false;
+  });
+}
+
 /** Restore only into a verified clean checkout; protect ignored files too. */
 export async function restoreCheckpoint(work: string, snapshot: Checkpoint): Promise<void> {
   if ((await objectText(work, ["status", "--porcelain", "--untracked-files=all"])).trim()) throw new Error("Local edits must be saved or moved before restoring a checkpoint.");
   const existing = (await objectGit(work, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean);
   const incoming = (await objectGit(work, ["ls-tree", "-r", "--name-only", "-z", snapshot.snapshotSha])).toString().split("\0").filter(Boolean);
-  if (existing.some(path => incoming.some(file => file === path || file.startsWith(path + "/") || path.startsWith(file + "/")))) throw new Error("An ignored local file would be overwritten by this checkpoint. Move it before restoring.");
+  if (checkpointOverwritesIgnored(existing, incoming)) throw new Error("An ignored local file would be overwritten by this checkpoint. Move it before restoring.");
   await objectGit(work, ["merge", "--ff-only", "--no-autostash", "--no-overwrite-ignore", snapshot.headSha]);
   await objectGit(work, ["read-tree", "-m", "-u", "HEAD", snapshot.snapshotSha]);
   await objectGit(work, ["read-tree", snapshot.indexSha]);

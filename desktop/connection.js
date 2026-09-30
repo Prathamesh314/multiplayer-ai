@@ -28,7 +28,10 @@ function createAutoConnection(options) {
       config = options.readSaved(context.origin, userId);
     }
     if (!config) config = options.readSaved(context.origin, userId);
-    if (config) {
+    const checkedTokens = new Set();
+    while (config) {
+      if (checkedTokens.has(config.token)) throw new Error("Saved computer connection does not match this account. Reconnect it from Your computers.");
+      checkedTokens.add(config.token);
       const response = await options.fetch(context.origin + "/api/runner/me", {
         headers: { authorization: `Bearer ${config.token}` }, redirect: "error", signal: AbortSignal.timeout(15000),
       });
@@ -41,13 +44,13 @@ function createAutoConnection(options) {
       if (!response.ok) throw new Error("Could not verify this computer. Connection will retry automatically.");
       const { device } = await response.json();
       if (!current(context, version)) return;
+      if (typeof device?.userId !== "string" || typeof device?.id !== "string") throw new Error("Invalid device identity.");
       if (device?.userId !== userId) {
         authorized = null;
         // Preserve a legacy connection under its actual owner before switching.
         if (options.running()) { options.stop(); return; }
-        if (typeof device?.userId !== "string" || typeof device?.id !== "string") throw new Error("Invalid device identity.");
         options.remember({ ...config, userId: device.userId, deviceId: device.id });
-        config = null;
+        config = options.readSaved(context.origin, userId);
       } else {
         const saved = { ...config, userId, deviceId: device.id };
         if (!options.running()) options.saveConfig(saved);

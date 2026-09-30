@@ -238,12 +238,15 @@ function automaticConnectionFixture(initial = null) {
     report: message => state.messages.push(message),
     fetch: async (url,options) => {
       state.requests.push({url,options});
-      if (url.endsWith('/api/runner/me')) return state.revoked ? reply({},401) : reply({device:{id:config.deviceId ?? 'device-alice',userId:options.headers.authorization.includes('bob') ? 'bob' : 'alice'}});
+      if (url.endsWith('/api/runner/me')) {
+        const owner=options.headers.authorization.includes('bob') ? 'bob' : 'alice';
+        return state.revoked ? reply({},401) : reply({device:{id:'device-'+owner,userId:owner}});
+      }
       if (url.endsWith('/api/runner/pair')) {state.pairs++;return reply({token:'token-' + state.user,device:{id:'device-' + state.user,userId:state.user}});}
       throw new Error('Unexpected URL');
     },
   });
-  return {connection,state,config:()=>config};
+  return {connection,state,saved,config:()=>config};
 }
 
 test('desktop automatically pairs once after sign-in and reuses the connection across launches', async () => {
@@ -256,6 +259,20 @@ test('desktop automatically pairs once after sign-in and reuses the connection a
   await f.connection.sync(); assert.equal(f.state.pairs,1); assert.equal(f.state.starts,1);
   const restarted=automaticConnectionFixture(f.config());
   await restarted.connection.sync(); assert.equal(restarted.state.pairs,0); assert.equal(restarted.state.starts,1);
+});
+
+test('legacy connection migration reuses the signed-in account profile instead of pairing another device', async () => {
+  const origin='https://team.example';
+  const f=automaticConnectionFixture({server:origin,token:'token-alice',dataDir:'/legacy'});
+  f.saved.set(origin+'bob',{server:origin,userId:'bob',deviceId:'device-bob',token:'token-bob',dataDir:'/private/bob'});
+  f.state.user='bob';
+  await f.connection.sync();
+  assert.equal(f.state.pairs,0);
+  assert.equal(f.config().token,'token-bob');
+  assert.equal(f.config().deviceId,'device-bob');
+  assert.equal(f.config().dataDir,'/private/bob');
+  assert.equal(f.saved.get(origin+'alice').token,'token-alice');
+  assert.equal(f.state.starts,1);
 });
 
 test('sign-out drains the runner, account switches use separate connections, and a manual pause persists', async () => {

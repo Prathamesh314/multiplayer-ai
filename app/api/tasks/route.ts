@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   try {
     const scope = sessionId && runId ? {sessionId,runId} : undefined;
     const tasks = sessionId && !runId ? [] : await listTasks(user.id,scope,offset);
-    const members = sessionId ? await taskMembers(sessionId,user.id) : [];
+    const members = sessionId && params.get("members") !== "0" ? await taskMembers(sessionId,user.id) : [];
     return Response.json({ tasks:tasks.slice(0,50), hasMore:tasks.length > 50, members }, { headers:{ "cache-control":"no-store" } });
   } catch (error) {
     if (error instanceof TaskError) return Response.json({error:error.message}, {status:error.status});

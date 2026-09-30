@@ -11,6 +11,7 @@ import { listLocalWorkspaces, locationPath } from "../runner/workspace-layout.ts
 import { defaultWorkspacesDir, resolveWorkspacesDir } from "../runner/config.ts";
 import { homedir } from "node:os";
 import { RunnerGit } from "../runner/git.ts";
+import { checkpointOverwritesIgnored } from "../runner/checkpoints.ts";
 
 const exec = promisify(execFile);
 const author = { name: "Workspace test", email: "workspace@example.test" };
@@ -362,6 +363,18 @@ test("hostile display names cannot choose filesystem paths and corrupt locations
 test("CLI and desktop default to a visible directory under the user's home", () => {
   assert.equal(defaultWorkspacesDir(),join(homedir(),"multiplayer-ai","workspaces"));
   assert.equal(resolveWorkspacesDir("~/my-worktrees"),join(homedir(),"my-worktrees"));
+});
+
+test("restore collision checks protect ignored files and directories in large projects", () => {
+  for (const [local,incoming] of [["config","config"],["config","config/key"],["config/key","config"]]) {
+    assert.equal(checkpointOverwritesIgnored([local],[incoming]),true);
+  }
+  assert.equal(checkpointOverwritesIgnored(["config/local"],["config/source"]),false);
+  assert.equal(checkpointOverwritesIgnored(["config-extra"],["config/key"]),false);
+  const ignored=Array.from({length:30000},(_,n)=>`node_modules/package-${n}/index.js`);
+  const incoming=Array.from({length:10000},(_,n)=>`src/module-${n}/index.ts`);
+  assert.equal(checkpointOverwritesIgnored(ignored,incoming),false);
+  assert.equal(checkpointOverwritesIgnored(ignored,[...incoming,"node_modules"]),true);
 });
 
 test("checkpoints survive restart and restore staged, unstaged and untracked state on another device", async t => {

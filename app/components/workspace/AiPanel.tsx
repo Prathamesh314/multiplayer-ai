@@ -158,7 +158,10 @@ export function AiPanel({
 
   useEffect(() => {
     const controller = new AbortController();
+    let loading = false;
     const load = async () => {
+      if (loading || document.hidden) return;
+      loading = true;
       try {
         const response = await fetch(`/api/tasks?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal, cache: "no-store" });
         if (response.ok) {
@@ -166,10 +169,12 @@ export function AiPanel({
           if (!controller.signal.aborted) setTaskPeople(data.members);
         }
       } catch { /* A later refresh retries the room roster. */ }
+      finally { loading = false; }
     };
     void load();
     const timer = setInterval(() => void load(), 15000);
-    return () => { controller.abort(); clearInterval(timer); };
+    document.addEventListener("visibilitychange", load);
+    return () => { controller.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", load); };
   }, [sessionId]);
 
   const [turns, setTurns] = useState<Turn[]>([]);

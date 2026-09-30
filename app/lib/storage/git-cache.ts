@@ -28,7 +28,7 @@ export async function acquireStoredRepo(path: string): Promise<() => Promise<voi
   const pin = join(pins(key), randomUUID());
   await lock.withLock(`git-storage:${key}`, async () => {
     if (!await present(path)) {
-      const archive = await queryOne<{ object_key: string; content_hash: string }>(`SELECT object_key, content_hash FROM git_archives WHERE repository_key = $1`, [key]);
+      const archive = await queryOne<{ object_key: string; content_hash: string; head_ref: string | null; head_sha: string | null }>(`SELECT object_key, content_hash, head_ref, head_sha FROM git_archives WHERE repository_key = $1`, [key]);
       if (archive) {
         await mkdir(dirname(path), { recursive: true });
         const scratch = await mkdtemp(join(dirname(path), ".hydrate-"));
@@ -39,7 +39,12 @@ export async function acquireStoredRepo(path: string): Promise<() => Promise<voi
           const bare = join(scratch, "repository.git");
           await objectGit(scratch, ["init", "--bare", bare]);
           await objectGit(bare, ["fetch", bundle, "+refs/*:refs/*"]);
-          await objectGit(bare, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+          if (archive.head_ref) await objectGit(bare, ["symbolic-ref", "HEAD", archive.head_ref]);
+          else if (archive.head_sha) {
+            // Detached HEAD can point to a commit unreachable from every named ref.
+            await objectGit(bare, ["fetch", bundle, "HEAD"]);
+            await objectGit(bare, ["update-ref", "--no-deref", "HEAD", archive.head_sha]);
+          } else await objectGit(bare, ["symbolic-ref", "HEAD", "refs/heads/main"]);
           await rename(bare, path);
         } finally { await rm(scratch, { recursive: true, force: true }); }
       }
@@ -73,6 +78,14 @@ export async function archiveStoredRepo(path: string): Promise<boolean> {
     const scratch = await mkdtemp(join(dataRoot(), ".archive-"));
     try {
       const bundle = join(scratch, "repository.bundle");
+      const headRef = await objectText(path, ["symbolic-ref", "-q", "HEAD"]).catch((error: { code?: number }) => {
+        if (error.code === 1) return null;
+        throw error;
+      });
+      const headSha = await objectText(path, ["rev-parse", "--verify", "HEAD"]).catch((error: { code?: number }) => {
+        if (headRef && error.code === 128) return null; // unborn symbolic branch
+        throw error;
+      });
       await objectGit(path, ["bundle", "create", bundle, "--all"]);
       await objectGit(path, ["bundle", "verify", bundle]);
       const hash = await hashFile(bundle), bytes = (await stat(bundle)).size;
@@ -82,8 +95,9 @@ export async function archiveStoredRepo(path: string): Promise<boolean> {
       const verify = createHash("sha256"); for await (const chunk of await readFileObject(objectKey)) verify.update(chunk);
       if (verify.digest("hex") !== hash) throw new Error("Repository archive verification failed.");
       const previous = await queryOne<{ object_key: string }>(`SELECT object_key FROM git_archives WHERE repository_key=$1`, [key]);
-      await query(`INSERT INTO git_archives(repository_key,object_key,content_hash,bytes) VALUES ($1,$2,$3,$4)
-        ON CONFLICT(repository_key) DO UPDATE SET object_key=EXCLUDED.object_key, content_hash=EXCLUDED.content_hash, bytes=EXCLUDED.bytes, updated_at=now()`, [key, objectKey, hash, bytes]);
+      await query(`INSERT INTO git_archives(repository_key,object_key,content_hash,bytes,head_ref,head_sha) VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT(repository_key) DO UPDATE SET object_key=EXCLUDED.object_key, content_hash=EXCLUDED.content_hash, bytes=EXCLUDED.bytes,
+          head_ref=EXCLUDED.head_ref, head_sha=EXCLUDED.head_sha, updated_at=now()`, [key, objectKey, hash, bytes, headRef, headSha]);
       // Every live Git endpoint and repository helper pins this directory.
       await rename(path, join(scratch, "evicted.git"));
       if (previous && previous.object_key !== objectKey) await removeFileObject(previous.object_key).catch(error => console.warn("Old Git archive cleanup deferred", error.message));

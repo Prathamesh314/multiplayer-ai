@@ -31,7 +31,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
   const mutation = useRef(false);
   const pending = useRef<{payload:string;id:string}|null>(null);
   const pickerId = useId();
-  const url = `/api/tasks?offset=${offset}${sessionId && runId ? `&sessionId=${encodeURIComponent(sessionId)}&runId=${encodeURIComponent(runId)}` : ""}`;
+  const url = `/api/tasks?offset=${offset}&members=${assigning ? "1" : "0"}${sessionId && runId ? `&sessionId=${encodeURIComponent(sessionId)}&runId=${encodeURIComponent(runId)}` : ""}`;
   const refresh = useCallback(async () => {
     const version = ++generation.current;
     await request<{tasks:RoomTask[];members:TaskMember[];hasMore:boolean}>(url).then(data => {

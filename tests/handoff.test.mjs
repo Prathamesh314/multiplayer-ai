@@ -486,6 +486,23 @@ try {
       const restored=await headSha(roomId); assert.ok(restored);
       assert.equal(await objectText(barePath(roomId),["for-each-ref","--format=%(refname) %(objectname)"]),before);
       assert.ok((await listCommittedTree(roomId,"repo",restored)).children.length);
+      const bare=barePath(roomId);
+      await objectText(bare,["update-ref","refs/heads/release",restored]);
+      await objectText(bare,["symbolic-ref","HEAD","refs/heads/release"]);
+      assert.equal(await archiveStoredRepo(bare),true);
+      await withStoredRepo(bare,async()=>{
+        assert.equal(await objectText(bare,["symbolic-ref","HEAD"]),"refs/heads/release");
+        assert.equal(await objectText(bare,["rev-parse","HEAD"]),restored);
+      });
+      const tree=await objectText(bare,["rev-parse",`${restored}^{tree}`]);
+      const detached=await objectText(bare,["commit-tree",tree,"-p",restored,"-m","Detached archive test"]);
+      await objectText(bare,["update-ref","--no-deref","HEAD",detached]);
+      assert.equal(await archiveStoredRepo(bare),true);
+      await withStoredRepo(bare,async()=>{
+        assert.equal(await objectText(bare,["rev-parse","HEAD"]),detached);
+        await assert.rejects(objectText(bare,["symbolic-ref","-q","HEAD"]));
+        await objectText(bare,["symbolic-ref","HEAD","refs/heads/main"]);
+      });
     } finally { delete process.env.STORAGE_COLD_GIT; }
   });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {

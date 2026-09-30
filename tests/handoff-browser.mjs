@@ -154,6 +154,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const stored = (await sql(`SELECT * FROM room_tasks WHERE run_id=$1`,[chat.id])).rows;
     assert.equal(stored.length,1);
     assert.equal(stored[0].assignee_id,alice);
+    const withoutRoster=await (await request(tokens[1],`/api/tasks?sessionId=${roomId}&runId=${chat.id}&members=0`)).json();
+    assert.equal(withoutRoster.tasks.length,1);
+    assert.deepEqual(withoutRoster.members,[]);
+    const rosterOnly=await (await request(tokens[1],`/api/tasks?sessionId=${roomId}`)).json();
+    assert.equal(rosterOnly.tasks.length,0);
+    assert.ok(rosterOnly.members.some(member=>member.userId===alice));
     assert.equal((await sql(`SELECT driver_user_id FROM agent_runs WHERE id=$1`,[chat.id])).rows[0].driver_user_id,alice);
     assert.equal((await fetch(`${server}/api/tasks`)).status,401);
     assert.equal((await request(tokens[1],"/api/tasks","POST",null)).status,400);
