@@ -59,6 +59,14 @@ It now uses the same composite order as the index, including PostgreSQL's UUIDv4
 fallback and messages sharing timestamps. Cross-conversation cursors reveal no
 messages.
 
+**Fixed during Linux CI validation:** typing `@` before the teammate roster
+arrived cleared the active mention. Later roster delivery did not reopen the
+picker until another keystroke. The composer now retains the typed fragment
+while choices load and derives visibility from the matching options. A browser
+regression deliberately holds the roster response until after typing, then
+requires suggestions to appear without changing the draft. Test artifacts also
+use the operating system's temporary directory instead of macOS-only paths.
+
 ## Stage 2 — Durable data and admission limits
 
 **Fixed:** GET `/api/sessions` triggered a background sweep that could permanently

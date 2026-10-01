@@ -153,12 +153,14 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
-    async function tab(token, targetRoom = roomId, readySelector = 'select[aria-label="Active repository"]') {
+    async function tab(token, targetRoom = roomId, readySelector = 'select[aria-label="Active repository"]', initScript) {
       const { browserContextId } = await send("Target.createBrowserContext");
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
       const command = (method, params) => send(method, params, sessionId);
       await command("Page.enable"); await command("Runtime.enable"); await command("Network.enable");
+      await command("Page.bringToFront");
+      if (initScript) await command("Page.addScriptToEvaluateOnNewDocument", { source: initScript });
       await command("Network.setCookie", { name: "ma_auth", value: token, url: server, httpOnly: true, sameSite: "Lax" });
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
       const evaluate = async expression => {
@@ -287,7 +289,19 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     // Regression: the screenshot reported by the user was the fresh composer,
     // before a run exists, with an imported repository selected.
     {
-    const fresh = await tab(tokens[0]);
+    const fresh = await tab(tokens[0], roomId, undefined, `(() => {
+      const originalFetch=window.fetch.bind(window);
+      const gate=new Promise(resolve=>{window.__releaseTaskRoster=resolve;});
+      window.__pendingTaskRosters=0;
+      window.fetch=async(input,init)=>{
+        const url=new URL(typeof input==='string'?input:input.url,location.origin);
+        const response=await originalFetch(input,init);
+        if(url.pathname==='/api/tasks' && url.searchParams.has('sessionId') && !url.searchParams.has('runId')) {
+          window.__pendingTaskRosters++;await gate;
+        }
+        return response;
+      };
+    })()`);
     await fresh.evaluate(`(() => {
       const select=document.querySelector('select[aria-label="Active repository"]');
       select.value=${JSON.stringify(imported.id)};select.dispatchEvent(new Event('change',{bubbles:true}));
@@ -300,11 +314,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       textarea.dispatchEvent(new Event('input',{bubbles:true}));
     })()`);
     await eventually(()=>fresh.evaluate(`!!document.querySelector(${JSON.stringify(freshSelector)}) && !document.querySelector('section[aria-label="Chat tasks"]')`),"fresh chat task composer");
+    await eventually(()=>fresh.evaluate('window.__pendingTaskRosters>0'),'delayed task roster requested');
     const bobHandle=(await sql('SELECT handle FROM users WHERE id=$1',[bob])).rows[0].handle;
-    await eventually(async()=>{
-      await writeFresh('@');
-      return fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`);
-    },"people in fresh composer mention picker");
+    await writeFresh('@');
+    assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
+    await fresh.evaluate('window.__releaseTaskRoster()');
+    await eventually(()=>fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`),"people arrive after typing without another keystroke");
     assert.ok(await fresh.evaluate('document.body.textContent.includes("People & chat references")'));
     assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     const preview=await fresh.command("Page.captureScreenshot",{format:"png"});

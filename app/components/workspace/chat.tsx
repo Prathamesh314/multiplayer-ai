@@ -202,7 +202,6 @@ export function Composer({
 
   /** Recompute the mention state from the textarea's current text + caret. */
   function syncMention(text: string, caret: number) {
-    if (!mentionsOn) return setMention(null);
     const m = activeMention(text, caret);
     if (!m) return setMention(null);
     const slash = m.frag.indexOf("/");
@@ -223,11 +222,10 @@ export function Composer({
       }
       return;
     }
-    // Only stay open in room stage while something still matches, so an ordinary
-    // "@handle" elsewhere doesn't trap the popover.
-    const anyMatch = rooms.some((r) => r.name.toLowerCase().includes(m.frag.toLowerCase())) ||
-      (!!onAssignTask && people.some(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(m.frag.toLowerCase())));
-    setMention(m.frag.length > 0 && !anyMatch ? null : { stage: "room", at: m.at, query: m.frag });
+    // Keep the typed fragment while recipients are still loading. The derived
+    // item list controls visibility, so late results can open the picker without
+    // another keystroke, and unmatched text still leaves the popover closed.
+    setMention({ stage: "room", at: m.at, query: m.frag });
     setHighlight(0);
   }
 
