@@ -1,5 +1,9 @@
 # Production readiness and scaling plan
 
+> Historical review. Several findings below have since been fixed or changed.
+> Use the [1 October implementation review](architecture-review-2026-10-01.md)
+> for the current single-server beta scope and verified results.
+
 Reviewed: 11 September 2026. Baseline: `2475af3`, with a clean working tree before this report. Scope: current application, runner, worker, database migrations, deployment files, and existing test coverage. This is a code/configuration audit and implementation plan, not a penetration test, production capacity measurement, or certification. No application or infrastructure changes were made for this report.
 
 ## 1. Verdict

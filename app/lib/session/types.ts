@@ -75,7 +75,7 @@ export type Session = {
   createdAt: number;
   /** Null until the creator has seeded a folder into it. */
   repo: SessionRepo | null;
-  /** Last time anyone read or wrote the repo. Drives retention. */
+  /** Last time anyone read or wrote the repo. */
   lastActiveAt: number;
   /** Promoted to "keep": exempt from archiving and deletion. */
   pinned: boolean;

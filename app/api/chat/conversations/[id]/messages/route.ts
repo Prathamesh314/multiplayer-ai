@@ -1,5 +1,6 @@
 import { conversationAccess, conversationDenied } from "../../../../../lib/chat/auth";
-import { createMessage, ensureMember, listMessages } from "../../../../../lib/chat/store";
+import { ChatAccessError, createMessage, listMessages } from "../../../../../lib/chat/store";
+import { isUuid } from "../../../../../lib/ai/turns";
 import type { MessagesResponse, SendMessageRequest } from "../../../../../lib/chat/types";
 import { events } from "../../../../../lib/events";
 
@@ -18,7 +19,8 @@ export async function GET(
   if (refusal || !result) return refusal!;
 
   const before = new URL(request.url).searchParams.get("before") ?? undefined;
-  const page = await listMessages(id, before);
+  if (before !== undefined && !isUuid(before)) return Response.json({ error: "Invalid message cursor." }, { status: 400 });
+  const page = await listMessages(id, result.user.id, before);
 
   return Response.json(page satisfies MessagesResponse, {
     headers: { "cache-control": "no-store" },
@@ -41,7 +43,7 @@ export async function POST(
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const body = typeof payload.body === "string" ? payload.body.trim() : "";
+  const body = typeof payload?.body === "string" ? payload.body.trim() : "";
   if (body.length === 0) {
     return Response.json({ error: "Write something first." }, { status: 400 });
   }
@@ -52,11 +54,13 @@ export async function POST(
     );
   }
 
-  // Posting to a public channel joins it, so the sender is on the roster and
-  // their own message doesn't count as unread.
-  await ensureMember(result.conversation.id, result.conversation.orgId, result.user.id);
-
-  const message = await createMessage(id, result.user.id, body);
+  // Joining, checking current access and writing the message commit together.
+  let message;
+  try { message = await createMessage(id, result.user.id, body); }
+  catch (cause) {
+    if (cause instanceof ChatAccessError) return conversationDenied(false)!;
+    throw cause;
+  }
 
   // Stored first, then announced — so anyone who reloads after seeing the
   // broadcast finds it in history rather than watching it disappear.

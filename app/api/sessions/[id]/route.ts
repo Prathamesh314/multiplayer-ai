@@ -40,8 +40,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/sessio
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  // Pinning is the documented escape hatch from retention, so it is settable on
-  // its own — renaming must not be a precondition for keeping a session.
+  // The pinned preference can be updated independently of the room name.
   let updated =
     typeof body.pinned === "boolean" ? await setPinned(id, body.pinned) : null;
 

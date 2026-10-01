@@ -16,7 +16,7 @@ export async function GET(
   const refusal = conversationDenied(result);
   if (refusal || !result) return refusal!;
 
-  await ensureMember(result.conversation.id, result.conversation.orgId, result.user.id);
+  if (!await ensureMember(result.conversation.id, result.conversation.orgId, result.user.id)) return conversationDenied(false)!;
   await markRead(id, result.user.id);
 
   const conversation = await loadConversation(id, result.user.id);

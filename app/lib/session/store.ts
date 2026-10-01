@@ -195,7 +195,7 @@ export type CreateSessionOptions = {
   projectId?: string | null;
   /** 'private' makes the room invite-only; defaults to 'public'. */
   visibility?: "public" | "private";
-  /** Pinned rooms are exempt from the retention sweep. */
+  /** Whether this room is pinned in its metadata. */
   pinned?: boolean;
 };
 
@@ -381,35 +381,6 @@ export async function touchSession(id: string, userId?: string): Promise<void> {
       [id, userId],
     );
   }
-}
-
-export async function deleteSession(id: string): Promise<void> {
-  await query(`DELETE FROM sessions WHERE id = $1`, [id]);
-}
-
-export async function markArchived(id: string): Promise<void> {
-  await query(`UPDATE sessions SET archived_at = now() WHERE id = $1`, [id]);
-}
-
-/** Retention sweep input: everything not already deleted. */
-export async function reapableSessions(): Promise<
-  { id: string; lastActiveAt: number; pinned: boolean; archivedAt: number | null }[]
-> {
-  const rows = await query<{
-    id: string;
-    last_active_at: Date;
-    pinned: boolean;
-    archived_at: Date | null;
-  }>(
-    `SELECT id, last_active_at, pinned, archived_at
-       FROM sessions WHERE deleted_at IS NULL`,
-  );
-  return rows.map((row) => ({
-    id: row.id,
-    lastActiveAt: row.last_active_at.getTime(),
-    pinned: row.pinned,
-    archivedAt: row.archived_at ? row.archived_at.getTime() : null,
-  }));
 }
 
 // ---------------------------------------------------------------------------

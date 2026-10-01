@@ -66,6 +66,56 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   try {
     await eventually(async () => (await fetch(`${server}/login`)).ok, "test server", 180);
     console.log("  ok actual Next.js API server started against isolated PostgreSQL schema");
+    // Exercise authorization through real cookies/routes and an already-open
+    // stream, not just a mocked guard or the database helper.
+    const conversations=[];
+    for (const input of [
+      {kind:'channel',name:'Public review',visibility:'public'},
+      {kind:'channel',name:'Private review',visibility:'private',memberIds:[bob]},
+      {kind:'dm',userId:bob},
+    ]) {
+      const response=await request(tokens[0],'/api/chat/conversations','POST',{orgSlug:'handoff-org',...input});
+      assert.equal(response.status,201);
+      conversations.push((await response.json()).conversation.id);
+    }
+    const readers=[];
+    try {
+      for(const id of conversations) {
+        assert.equal((await request(tokens[1],`/api/chat/conversations/${id}`)).status,200);
+        const response=await request(tokens[1],`/api/chat/conversations/${id}/events`);
+        assert.equal(response.status,200);
+        const reader=response.body.getReader();readers.push(reader);
+        assert.match(new TextDecoder().decode((await reader.read()).value),/event: ready/);
+      }
+      assert.equal((await request(tokens[0],`/api/orgs/handoff-org/members/${bob}`,'PATCH',{status:'suspended'})).status,200);
+      for(const [index,id] of conversations.entries()) {
+        for(const suffix of ['', '/messages', '/events']) assert.equal((await request(tokens[1],`/api/chat/conversations/${id}${suffix}`)).status,404);
+        assert.equal((await request(tokens[1],`/api/chat/conversations/${id}/messages`,'POST',{body:'Forbidden'})).status,404);
+        assert.equal((await request(tokens[0],`/api/chat/conversations/${id}/messages`,'POST',{body:'After suspension'})).status,201);
+        const frame=await Promise.race([readers[index].read(),delay(5000).then(()=>{throw new Error('Revoked chat stream did not close');})]);
+        assert.equal(frame.done,true,'revoked streams receive no message body');
+      }
+    } finally { await Promise.all(readers.map(reader=>reader.cancel().catch(()=>{}))); }
+    assert.equal((await request(tokens[0],`/api/orgs/handoff-org/members/${bob}`,'PATCH',{status:'active'})).status,200);
+    const probeToken=randomBytes(32).toString('base64url');
+    const probeHash=createHash('sha256').update(probeToken).digest();
+    await sql(`INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '1 hour')`,[bob,probeHash]);
+    const tokenStream=await request(probeToken,`/api/chat/conversations/${conversations[0]}/events`);
+    const tokenReader=tokenStream.body.getReader();await tokenReader.read();
+    try {
+      await sql('UPDATE auth_tokens SET revoked_at=now() WHERE token_hash=$1',[probeHash]);
+      assert.equal((await request(tokens[0],`/api/chat/conversations/${conversations[0]}/messages`,'POST',{body:'After logout'})).status,201);
+      const frame=await Promise.race([tokenReader.read(),delay(5000).then(()=>{throw new Error('Logged-out chat stream did not close');})]);
+      assert.equal(frame.done,true);
+    } finally { await tokenReader.cancel().catch(()=>{}); }
+    assert.equal((await request(tokens[0],'/api/chat/conversations/invalid')).status,404);
+    assert.equal((await request(tokens[0],`/api/chat/conversations/${conversations[0]}/messages?before=invalid`)).status,400);
+    assert.equal((await request(tokens[0],`/api/chat/conversations/${conversations[0]}/messages`,'POST',null)).status,400);
+    await sql("UPDATE sessions SET last_active_at=now()-interval '60 days',pinned=false WHERE id=$1",[roomId]);
+    assert.equal((await request(tokens[0],'/api/sessions')).status,200);
+    await delay(100);
+    assert.equal((await sql('SELECT count(*)::int AS n FROM sessions WHERE id=$1',[roomId])).rows[0].n,1);
+    console.log('  ok actual chat HTTP/SSE: public/private/DM suspension, token revocation, malformed input and non-destructive room listing');
     const endpoint = `/api/sessions/${roomId}/runs/${chat.id}/handoff`;
     assert.equal((await request(tokens[0], endpoint, "POST", { action: "wat", version: 0 })).status, 400);
     const created = await request(tokens[0], `/api/sessions/${roomId}/repos`, "POST", { name: "Imported storefront" });

@@ -65,6 +65,32 @@ test('SSE cancellation while subscription is connecting still unsubscribes', asy
   assert.equal((await response.body.getReader().read()).done,true);
 });
 
+test('content-bearing SSE rechecks permission before delivery and fails closed', async () => {
+  let send, allowed=true, off=0;
+  const response=eventResponse(new Request('http://test/events'),async listener=>{
+    send=listener;return async()=>{off++;};
+  },{validateEvents:true,validate:async()=>allowed});
+  const reader=response.body.getReader();
+  await reader.read(); // ready
+  send({type:'chat.message',conversationId:'x',message:{body:'allowed'},at:0});
+  assert.match(new TextDecoder().decode((await reader.read()).value),/allowed/);
+  allowed=false;
+  send({type:'chat.message',conversationId:'x',message:{body:'secret after revocation'},at:0});
+  assert.equal((await reader.read()).done,true);
+  assert.equal(off,1);
+});
+
+test('authorization backlog is bounded when a chat client cannot keep up', async () => {
+  let send, off=0;
+  const response=eventResponse(new Request('http://test/events'),async listener=>{
+    send=listener;return async()=>{off++;};
+  },{validateEvents:true,validate:async()=>true});
+  const reader=response.body.getReader();await reader.read();
+  for(let i=0;i<100;i++)send({type:'resync',at:i});
+  assert.equal((await reader.read()).done,true);
+  assert.equal(off,1);
+});
+
 async function fixture(t, mode) {
   const directory=await mkdtemp(join(tmpdir(),'mp-codex-live-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const bin=join(directory,'fake-codex');

@@ -11,11 +11,13 @@ docker compose --profile app up --build
 ```
 
 Open http://localhost:3000, sign in, and pair a runner through Settings → Devices.
-On the user's machine, install and sign into a supported coding CLI, then:
+The desktop app pairs its bundled runner automatically. For a standalone runner,
+install and sign into a supported coding CLI, then run these commands from any folder:
 
 ```bash
-npm run runner -- pair --server http://localhost:3000 --code YOUR_PAIRING_CODE
-npm run runner -- start
+npm install --global http://localhost:3000/downloads/multiplayer-ai-runner.tgz
+multiplayer-ai-runner pair --server http://localhost:3000 --code YOUR_PAIRING_CODE
+multiplayer-ai-runner start
 ```
 
 For a remote deployment, pair against its HTTPS URL instead of localhost.

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { PoolClient } from "pg";
 import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 import type { Org, OrgMember, OrgRole, PendingInvitation } from "./types";
 
@@ -181,6 +182,22 @@ export async function getOrgMembership(
 const KEEP_OWNER_ERROR = "An organisation must always keep at least one active owner.";
 const isCheckViolation = (cause: unknown) => (cause as { code?: string }).code === "23514";
 
+/** Authorization and the write share the org lock; a stale HTTP guard grants nothing. */
+async function membershipChangeDenied(tx: PoolClient, orgId: string, actorId: string, targetId: string, nextRole?: OrgRole) {
+  const { rows: orgs } = await tx.query(`SELECT id FROM orgs WHERE id=$1 AND deleted_at IS NULL FOR NO KEY UPDATE`, [orgId]);
+  if (!orgs.length) return "This organisation is unavailable.";
+  if (actorId === targetId) return "You can't change your own membership here.";
+  const { rows } = await tx.query<{ user_id: string; role: OrgRole; status: string }>(
+    `SELECT om.user_id, om.role, om.status FROM org_members om JOIN users u ON u.id=om.user_id
+      WHERE om.org_id=$1 AND om.user_id=ANY($2::uuid[]) AND u.deleted_at IS NULL`, [orgId, [actorId, targetId]]);
+  const actor = rows.find(row => row.user_id === actorId);
+  const target = rows.find(row => row.user_id === targetId);
+  if (!actor || actor.status !== "active" || !["owner", "admin"].includes(actor.role)) return "Only an active org admin can manage members.";
+  if (!target) return "That person is not in this organisation.";
+  if (actor.role !== "owner" && (target.role === "owner" || nextRole === "owner")) return "Only an owner can manage the owner role.";
+  return null;
+}
+
 /**
  * Change a member's role and/or active status. The last-active-owner guard is
  * enforced by the database trigger; we translate its violation into a friendly
@@ -190,6 +207,7 @@ export async function updateOrgMember(
   orgId: string,
   userId: string,
   changes: { role?: OrgRole; status?: "active" | "suspended" },
+  actorId: string,
 ): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
   const sets: string[] = [];
   const params: unknown[] = [orgId, userId];
@@ -204,13 +222,17 @@ export async function updateOrgMember(
   if (sets.length === 0) return { ok: true, updated: false };
 
   try {
-    const rows = await query<{ user_id: string }>(
-      `UPDATE org_members SET ${sets.join(", ")}
-        WHERE org_id = $1 AND user_id = $2
-        RETURNING user_id`,
-      params,
-    );
-    return { ok: true, updated: rows.length > 0 };
+    return await transaction(async tx => {
+      const denied = await membershipChangeDenied(tx, orgId, actorId, userId, changes.role);
+      if (denied) return { ok: false as const, error: denied };
+      const { rows } = await tx.query<{ user_id: string }>(
+        `UPDATE org_members SET ${sets.join(", ")}
+          WHERE org_id = $1 AND user_id = $2
+          RETURNING user_id`,
+        params,
+      );
+      return { ok: true as const, updated: rows.length > 0 };
+    });
   } catch (cause) {
     if (isCheckViolation(cause)) return { ok: false, error: KEEP_OWNER_ERROR };
     throw cause;
@@ -225,10 +247,15 @@ export async function updateOrgMember(
 export async function removeOrgMember(
   orgId: string,
   userId: string,
+  actorId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await query(`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, [orgId, userId]);
-    return { ok: true };
+    return await transaction(async tx => {
+      const denied = await membershipChangeDenied(tx, orgId, actorId, userId);
+      if (denied) return { ok: false as const, error: denied };
+      await tx.query(`DELETE FROM org_members WHERE org_id = $1 AND user_id = $2`, [orgId, userId]);
+      return { ok: true as const };
+    });
   } catch (cause) {
     if (isCheckViolation(cause)) return { ok: false, error: KEEP_OWNER_ERROR };
     throw cause;

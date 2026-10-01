@@ -6,7 +6,7 @@ import type { Session } from "./types";
 /**
  * Every project member gets exactly one room, and this is the only place that
  * makes one: named after their handle (renameable later), public, and pinned
- * so the retention sweep never reaps a member's only room in a project.
+ * to distinguish a member's main room in project metadata.
  *
  * Viewers are the exception — a room is a writable workspace, and
  * a read-only role must not own one. They get theirs if they are promoted.

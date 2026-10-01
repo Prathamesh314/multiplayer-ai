@@ -46,8 +46,8 @@ export function OrgSettingsDialog({
         image: imagePreview,
       });
       onUpdated(updated);
-    } catch (err: any) {
-      setError(err.message || "Failed to update settings");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update settings");
     } finally {
       setLoading(false);
     }

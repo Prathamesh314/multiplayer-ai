@@ -1,4 +1,6 @@
+import { isUuid } from "../../../lib/ai/turns";
 import {
+  ChatAccessError,
   createChannel,
   getOrCreateDm,
   isActiveOrgMember,
@@ -51,43 +53,51 @@ export async function POST(request: Request) {
   const refusal = orgDenied(result);
   if (refusal || !result) return refusal!;
 
-  if (payload.kind === "channel") {
-    const name = typeof payload.name === "string" ? payload.name.trim() : "";
-    if (name.length === 0) {
-      return Response.json({ error: "Name the channel first." }, { status: 400 });
-    }
-    if (name.length > MAX_NAME) {
-      return Response.json(
-        { error: `Channel names are limited to ${MAX_NAME} characters.` },
-        { status: 400 },
-      );
-    }
-    const visibility = payload.visibility === "private" ? "private" : "public";
-    const memberIds = Array.isArray(payload.memberIds)
-      ? payload.memberIds.filter((m): m is string => typeof m === "string")
-      : [];
+  try {
+    if (payload.kind === "channel") {
+      const name = typeof payload.name === "string" ? payload.name.trim() : "";
+      if (name.length === 0) {
+        return Response.json({ error: "Name the channel first." }, { status: 400 });
+      }
+      if (name.length > MAX_NAME) {
+        return Response.json(
+          { error: `Channel names are limited to ${MAX_NAME} characters.` },
+          { status: 400 },
+        );
+      }
+      const visibility = payload.visibility === "private" ? "private" : "public";
+      const memberIds = Array.isArray(payload.memberIds)
+        ? payload.memberIds.filter((m): m is string => typeof m === "string")
+        : [];
 
-    const id = await createChannel(result.org.id, result.user.id, name, visibility, memberIds);
-    const conversation = await loadConversation(id, result.user.id);
-    return Response.json({ conversation } as ConversationResponse, { status: 201 });
+      if (memberIds.length > 100 || memberIds.some(id => !isUuid(id))) {
+        return Response.json({ error: "Choose up to 100 valid members." }, { status: 400 });
+      }
+      const id = await createChannel(result.org.id, result.user.id, name, visibility, memberIds);
+      const conversation = await loadConversation(id, result.user.id);
+      return Response.json({ conversation } as ConversationResponse, { status: 201 });
+    }
+
+    if (payload.kind === "dm") {
+      const otherUserId = typeof payload.userId === "string" ? payload.userId.toLowerCase() : "";
+      if (!isUuid(otherUserId) || otherUserId === result.user.id) {
+        return Response.json({ error: "Pick someone to message." }, { status: 400 });
+      }
+      if (!(await isActiveOrgMember(result.org.id, otherUserId))) {
+        return Response.json(
+          { error: "That person isn't in this organisation." },
+          { status: 400 },
+        );
+      }
+
+      const id = await getOrCreateDm(result.org.id, result.user.id, otherUserId);
+      const conversation = await loadConversation(id, result.user.id);
+      return Response.json({ conversation } as ConversationResponse, { status: 201 });
+    }
+
+    return Response.json({ error: "Unknown conversation kind." }, { status: 400 });
+  } catch (cause) {
+    if (cause instanceof ChatAccessError) return orgDenied(false)!;
+    throw cause;
   }
-
-  if (payload.kind === "dm") {
-    const otherUserId = typeof payload.userId === "string" ? payload.userId : "";
-    if (!otherUserId || otherUserId === result.user.id) {
-      return Response.json({ error: "Pick someone to message." }, { status: 400 });
-    }
-    if (!(await isActiveOrgMember(result.org.id, otherUserId))) {
-      return Response.json(
-        { error: "That person isn't in this organisation." },
-        { status: 400 },
-      );
-    }
-
-    const id = await getOrCreateDm(result.org.id, result.user.id, otherUserId);
-    const conversation = await loadConversation(id, result.user.id);
-    return Response.json({ conversation } as ConversationResponse, { status: 201 });
-  }
-
-  return Response.json({ error: "Unknown conversation kind." }, { status: 400 });
 }

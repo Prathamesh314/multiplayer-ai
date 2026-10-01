@@ -2,11 +2,12 @@ import { resolve, sep } from "node:path";
 
 /**
  * Session *metadata* lives in Postgres (the `sessions` table, migration 005);
- * this root holds only the git state each record points at:
+ * this root holds Git state and the default local object store:
  *
  *   <root>/repos/<id>.git    bare repo — the durable record for a session
  *   <root>/projects/<id>.git bare repo — a shared repository's canonical `main`
- *   <root>/work/<id>         checked-out copy — a cache, safe to delete
+ *   <root>/work/<id>         legacy/development checkout; inspect before removal
+ *   <root>/objects/          durable compressed activity and optional Git archives
  *
  * A legacy `<root>/sessions.json` may still exist from before the Postgres
  * migration; it is read once by `db/import-sessions.mjs` and is not a store.
@@ -21,8 +22,8 @@ export function barePath(id: string): string {
 }
 
 /**
- * The project's canonical repo — the single source of truth its rooms fork from
- * and publish back to. A room is a branch; this holds the `main` they share.
+ * One shared repository's canonical Git history. A project can own many such
+ * repositories; repositoryId is independent of projectId for new repositories.
  */
 export function sharedRepositoryBarePath(repositoryId: string): string {
   return resolve(dataRoot(), "projects", `${repositoryId}.git`);

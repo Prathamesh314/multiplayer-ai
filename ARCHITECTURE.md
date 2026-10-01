@@ -4,62 +4,108 @@ A short map of the load-bearing decisions. It documents *why* the system is
 shaped the way it is and where its current boundaries are — read it before
 changing the session, repo, or run-execution layers.
 
-## Sessions are git, not snapshots
+## Deployment and durable state
 
-The whole persistent state of a session is a set of git coordinates —
-`repo_url · session_branch · head_sha` (plus base branch, fork point, and a few
-cache-validity hashes) — **not** a filesystem or container snapshot. Git is the
-source of truth for accepted code. Working copies may also contain unfinished
-or undelivered changes; those must be preserved during recovery.
+The supported beta target is one repository-owning server with a persistent
+volume, PostgreSQL, Redis, a Next.js web process, and an indexing worker.
+Desktop runners execute coding agents on members' computers. Keep
+`LOCAL_RUNNERS=1`, `AGENT_WORKER=0`, and `MULTIPLAYER_AI_TERMINAL=0` on the hosted
+service. This is a modular application with separate execution processes; adding
+independent web hosts is not yet a supported storage topology.
 
-- **Invariant: never uncommitted.** Agent turns auto-commit at turn boundaries
-  (`app/api/ai/run/route.ts`); human editor edits get a debounced WIP commit.
-  If the design ever starts storing a working-tree *blob*, it has drifted back
-  to snapshotting — that is the failure mode to watch for.
-- **Resume = `clone + checkout <sha>`.** `<root>/work/<id>` is rebuildable from
-  the bare repo on demand (`ensureWork`) for accepted commits. Local runners
-  reuse persistent worktrees and never discard uncommitted or undelivered work.
-- Session *metadata* lives in Postgres (`sessions` table, migration 005). The
-  data root (`MULTIPLAYER_AI_DATA`) holds only git state — see
-  `app/lib/session/paths.ts`.
+```mermaid
+flowchart LR
+  Desktop[Desktop / browser] --> Web[Next.js API and streams]
+  Web --> DB[(PostgreSQL)]
+  Web <--> Redis[Redis notifications and coordination]
+  Web --> Git[(Bare Git repositories)]
+  Web --> Objects[(Activity / archive objects)]
+  Runner[Member's local runner] <--> Web
+  Runner --> Worktree[Local worktree and coding CLI]
+  Worker[Indexing worker] --> DB
+  Worker --> Git
+```
 
-## Project = canonical repo, room = branch
+PostgreSQL owns accounts, access, project/repository relationships, messages,
+turns, runner jobs, queued chat inputs, checkpoint metadata and indexing jobs.
+Git owns accepted code and checkpoint trees. The object store owns compressed
+activity batches and optional cold Git archives. Redis carries notifications
+and coordination; it is not the durable record of a local runner's job.
 
-Multiplayer collaboration is modeled as a fork/merge graph, not a shared
-checkout:
+`MULTIPLAYER_AI_DATA` defaults to `./.multiplayer-ai`:
 
-- Each **project** has one canonical bare repo (`<root>/projects/<id>.git`)
-  holding the `main` everyone shares (`ensureProjectRepo`).
-- Each **room/session** is a *fork* of it: its own bare repo + working copy that
-  keeps the project repo as a `project` remote (`forkRoomFromProject`). A room
-  works on its `session/<id>` branch.
-- `publishRoom` merges the room back onto the project's `main` (fetch → merge →
-  fast-forward push; a conflict aborts cleanly and is reported, leaving both
-  sides untouched). `syncRoom` is the reverse — pull `main` into a room.
-- Rooms are not opened by hand: each project member has exactly **one** room
-  (migration 017, `ensureMemberRoom`), created for them, named after their
-  handle, renameable. AI sessions (`agent_runs`) multiply *inside* a room, not
-  rooms inside a project. Viewers, being read-only, own no room until promoted.
+- `repos/<room-repository-id>.git`: room repository history.
+- `projects/<repository-id>.git`: shared project repository history.
+- `objects/`: default local object store, including compressed activity.
+- `work/`: legacy/development checkouts; inspect before removing them.
 
-**Why not a single shared repo everyone branches inside?** A working tree has
-exactly one HEAD and serializes on `index.lock` (hence `withRepoLock`), so
-concurrent agents *require* per-actor working copies regardless. Separate
-per-room repos also give the isolation boundary that makes retention
-(archive/delete per room) and public/private room access control tractable —
-git has no per-ref ACLs within one repo.
+Back up PostgreSQL, Git and object data together. Switching `STORAGE_PROVIDER`
+to S3-compatible storage changes the object adapter; it does not move all
+active Git operations to that provider or enable multiple repository owners.
 
-**A room is not bound to its project's codebase.** Beyond its fork, a room can
-hold any number of *imported* repos (`room_repos`, migration 020;
-`app/lib/session/roomRepos.ts`): a member picks a folder in the composer's
-repo dropdown and chats about it right there. Each import mints an id from the
-session alphabet, so the whole git layer — `barePath`/`workPath`, seeding,
-locking, `ensureWork`, `commitWork` — operates on it unchanged; the id *is*
-the repo handle. Every chat (`agent_runs.repo_id`) is bound to the repo it
-works on (null = the fork), a thread never switches codebases midway, and the
-sidebar sub-groups each person's chats per repo. Imported repos are
-standalone: no project remote, so publish/sync never touch them, and — having
-no publish step to approve their work — their exchanges skip the
-approval-gated memory staging and ingest directly.
+## Projects contain repositories; rooms contain chats
+
+A project is a collaboration space with membership, rooms, and zero or more
+shared repositories. Creating a project or member room does not create a repo.
+An editor/manager has one member room per project. A viewer does not receive an
+editable room until promoted. Each room can import multiple repositories, and
+each AI chat (`agent_runs`) targets one selected repository in that room.
+Multiple turns belong to the same chat (`agent_turns`); they are distinct
+execution attempts, with one current driver and a versioned handoff state.
+
+An imported folder is filtered and streamed into Git objects and a private
+import index on the server. Finalization creates a tree and commit. Ordinary
+uploads do not leave a full extracted working directory on the server. Git
+stores compressed content addressed by hashes; hashes identify content and are
+not encrypted files. This saves checkout space, but Git history, checkpoints,
+indexes and compressed activity still consume persistent disk space.
+
+An import initially belongs to its room. **Share repository** explicitly adds a
+shared repository to the project. Other project members can **Add to room** to
+create independent room branches. **Publish** and **Get latest** merge only the
+selected repository through Git objects. These operations target app-managed
+repositories, not GitHub. Legacy primary repositories remain explicitly mapped
+for existing chats; a null `repo_id` is a compatibility path, not a project-wide
+implicit default. See [projects and repositories](docs/project-repositories.md).
+
+Room access derives from active organization membership, project permissions,
+visibility, and explicit room membership. An invitation to one room does not
+make every project repository visible. Organization channels/DMs use a separate
+`conversation_access_role` rule: public channels require active org membership;
+private channels and DMs additionally require explicit conversation membership.
+Explicit membership never overrides suspension. Org roster changes serialize
+at the org row and recheck the actor inside the write transaction.
+
+## A turn, from submission to offline review
+
+1. The server authorizes the current driver and control version, then atomically
+   reserves a turn under the organization's admission lock. Concurrency, project
+   hourly limits and org monthly limits apply to continuations as well as new
+   chats. Period usage counts accepted turns, including failed executions;
+   queued instructions within a turn remain part of that turn. These limits
+   are not a dollar/token billing meter.
+2. A PostgreSQL runner job routes work to the user's compatible paired device.
+   The runner receives a push wakeup, claims work with a lease, fetches missing
+   Git objects and prepares the repository's persistent local worktree.
+3. The CLI executes locally. A filesystem lock serializes chats sharing that
+   worktree. The runner durably queues activity and checkpoints for upload;
+   acknowledgements follow server persistence and validation.
+4. Additional chat instructions are stored in `agent_run_inputs`, ordered per
+   active turn and protected by driver/version/lease checks. Codex can accept
+   native steering; one-shot CLI providers consume them after the current
+   response. Delivery uncertainty is shown rather than silently replayed.
+5. Candidate commits upload to turn-specific refs. The server verifies ownership,
+   ancestry and expected base before promoting accepted code and recording the
+   transcript, result, diffs and memory work. Local completion outboxes retry
+   reports after disconnects without rerunning an already completed agent.
+6. Teammates read acknowledged messages, code, activity and checkpoints from the
+   server while the author's laptop is off. They cannot see unsynchronized
+   local edits or unsaved buffers. A handoff/recovery changes the driver and
+   control version; selecting a checkpoint prepares restoration on the next
+   driver's machine. Recovery protects local dirty worktrees from overwrite.
+
+See [workspace synchronization](docs/workspace-sync.md) for checkpoint contents,
+limits, storage adapters and offline recovery.
 
 ## Persistent worktrees on each runner
 
@@ -84,7 +130,7 @@ online compatible runner. Local development can explicitly allow server
 execution. One job shape (`AgentRunJob`), three transports, one browser contract:
 
 1. **Local:** the run route parks the job in `runner_jobs`; the user's runner
-   claims it (atomic `SKIP LOCKED`, long-poll `/api/runner/claim`), fetches
+   wakes through `/api/runner/events` and claims it (atomic `SKIP LOCKED`), then fetches
    the repo over the device-authenticated git smart-HTTP endpoint
    (`/api/git/[repoRef]/…` — deny non-fast-forward, deny deletes), executes,
    streams events up (`/api/runner/runs/[id]/events` → the per-run Redis
@@ -102,6 +148,27 @@ itself stays dumb: it states facts and never writes the database.
 Legacy server-side execution still uses a local data root and isolated turn
 clones. It is disabled in the hosted profile; local runner worktrees do not
 change that development-only execution path.
+
+## Notifications, retention and recovery limits
+
+The client shares room/account SSE connections and refreshes authoritative state
+on reconnect. Team chat rechecks the captured login token and conversation
+permission before sending text; stream queues are bounded. Room streams recheck
+access on role changes and periodically. Callbacks use the original stream's
+token rather than reading cookies from a shared Redis callback's request context.
+Pub/Sub itself is not a replay log; durable transcripts and activity are separate.
+
+Listing rooms never deletes user data. The old request-triggered 7/30-day
+archive/delete sweep was removed. `npm run storage:maintain` is a dry-run
+inspection; applying it only removes verified recoverable legacy checkouts and
+prunes eligible checkpoints while retaining the latest and referenced ones.
+Cold Git cache eviction is separately configured and verifies durable archives.
+Neither mechanism authorizes deleting a user's local worktree.
+
+This design still needs operational hardening: repository lock-loss fencing,
+automatic reconciliation of abandoned turns, coordinated backup/restore drills,
+and sustained capacity measurements. See the [current review](docs/architecture-review-2026-10-01.md)
+for verified fixes, remaining risks and the next stages.
 
 ## Graceful degradation
 

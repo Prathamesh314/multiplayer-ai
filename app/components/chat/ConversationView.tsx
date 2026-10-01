@@ -84,7 +84,7 @@ export function ConversationView({
         ]);
         if (cancelled) return;
         setConversation(conv);
-        setMessages(page.messages);
+        setMessages(prev => prev.reduce(withMessage, page.messages));
         setHasMore(page.hasMore);
         pinnedRef.current = true;
         onRead?.();
@@ -102,8 +102,29 @@ export function ConversationView({
   // Live delivery. The sender's own message arrives here too and is reconciled
   // by id, so the optimistic copy is never duplicated.
   useEffect(() => {
+    let cancelled = false;
+    let refreshing = false;
+    let again = false;
+    // Streams are notifications, not durable history. Recover missed messages
+    // after reconnect, and collapse repeated reconnect signals into one read.
+    const refresh = async () => {
+      if (refreshing) { again = true; return; }
+      refreshing = true;
+      try {
+        do {
+          again = false;
+          const page = await fetchChatMessages(conversationId);
+          if (cancelled) return;
+          setMessages(prev => prev.filter(message => message.id.startsWith("pending-") ||
+            message.createdAt >= (page.messages[0]?.createdAt ?? Infinity)).reduce(withMessage, page.messages));
+          setHasMore(page.hasMore);
+        } while (again && !cancelled);
+      } catch { /* A disconnected stream retries; keep already loaded history. */ }
+      finally { refreshing = false; }
+    };
     const stream = openChatStream(conversationId, {
       onStatus: setLive,
+      onResync: () => { void refresh(); },
       onMessage: (event) => {
         if (event.conversationId !== conversationId) return;
         setMessages((prev) => withMessage(prev, event.message));
@@ -113,7 +134,7 @@ export function ConversationView({
         }
       },
     });
-    return () => stream.close();
+    return () => { cancelled = true; stream.close(); };
   }, [conversationId, me.id, onRead]);
 
   // Keep the view pinned to the newest message unless the reader scrolled up.

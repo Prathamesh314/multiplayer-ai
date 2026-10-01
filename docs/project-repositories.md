@@ -50,8 +50,9 @@ are not moved or deleted. New repository IDs are independent of project IDs.
 
 The existing storage strategy remains: managed bare repositories under
 `projects/<repository-id>.git`, room bare repositories under `repos/<room-repo-id>.git`,
-and server working directories under `work/<room-repo-id>`. Storage optimization,
-local-only repositories, and transferable snapshots are separate future work.
+and local runner worktrees on the user's computer. Imports and file edits use Git
+objects without a persistent server checkout. See [workspace synchronization](workspace-sync.md)
+for durable activity, transferable checkpoints, and storage configuration.
 
 Run `npm run db:migrate` before starting the updated app. The migration should
 be deployed together with the application change; older application versions

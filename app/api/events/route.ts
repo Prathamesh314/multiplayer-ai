@@ -1,11 +1,12 @@
-import { currentUser } from "../../lib/auth/tokens";
+import { sessionUserResolver } from "../../lib/auth/tokens";
 import { events } from "../../lib/events";
 import { eventResponse } from "../../lib/events/response";
 import { query } from "../../lib/db/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
-  const user = await currentUser();
+  const resolveUser = await sessionUserResolver();
+  const user = await resolveUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
   const orgs = await query<{ org_id: string }>("SELECT org_id FROM org_members WHERE user_id=$1 AND status='active'", [user.id]);
   const bus = await events();
@@ -19,5 +20,5 @@ export async function GET(request: Request) {
       }));
     } catch (error) { await Promise.all(off.map(fn => fn())); throw error; }
     return async () => { await Promise.all(off.map(fn => fn())); };
-  }, { validate: async () => (await currentUser())?.id === user.id });
+  }, { validate: async () => (await resolveUser())?.id === user.id });
 }

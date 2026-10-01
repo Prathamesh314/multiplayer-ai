@@ -118,6 +118,10 @@ try {
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="#product-design")'),"channels");
   await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="#product-design").click()');
   await eventually(()=>evaluate('!!document.querySelector("textarea") && document.body.innerText.includes("Thanks, everyone!")'),"conversation");
+  await evaluate(`window.__chatFixture.messages.push({...window.__chatFixture.messages[0],id:'missed-during-disconnect',body:'Recovered after reconnect',createdAt:Date.now()});`);
+  assert.equal(await evaluate('document.body.innerText.includes("Recovered after reconnect")'),false);
+  await evaluate(`for(const source of window.__chatFixture.streams)source.dispatchEvent(new MessageEvent('ready',{data:'{}'}));`);
+  await eventually(()=>evaluate('document.body.innerText.includes("Recovered after reconnect")'),'reconnect history recovery');
   await evaluate("document.fonts.ready");await delay(200);
   assert.ok(await evaluate('document.querySelector("#conversation-members").innerText.includes("Priya Shah")'));
   await writeFile(process.env.CHAT_UI_SCREENSHOT ?? join(tmpdir(),"multiplayer-team-chat.png"),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
@@ -167,6 +171,6 @@ try {
   await eventually(()=>evaluate('document.body.innerText.includes("This is the start of your conversation with Priya Shah.")'),"direct messages");
   assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
   assert.deepEqual(errors,[]);
-  console.log("PASS: real chat UI, members, search, empty results, send failure/draft recovery, SSE deduplication, double-send prevention, history, DMs, and responsive layouts.");
+  console.log("PASS: real chat UI, reconnect recovery, members, search, empty results, send failure/draft recovery, SSE deduplication, double-send prevention, history, DMs, and responsive layouts.");
   console.log("Screenshots: "+(process.env.CHAT_UI_SCREENSHOT ?? join(tmpdir(),"multiplayer-team-chat.png"))+" and "+join(tmpdir(),"multiplayer-team-chat-mobile.png"));
 } finally {socket?.close();chrome.kill();}

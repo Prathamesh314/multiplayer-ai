@@ -1,12 +1,7 @@
 import { currentUser } from "../auth/tokens";
 import type { CurrentUser } from "../auth/types";
 import { notFound, unauthenticated } from "../org/auth";
-import {
-  conversationMembership,
-  getConversationLite,
-  isActiveOrgMember,
-  type ConversationLite,
-} from "./store";
+import { conversationForUser, type ConversationLite } from "./store";
 import type { ConversationRole } from "./types";
 
 /**
@@ -24,25 +19,13 @@ export type ConversationAccess = {
 
 export async function conversationAccess(
   id: string,
+  resolveUser: () => Promise<CurrentUser | null> = currentUser,
 ): Promise<ConversationAccess | null | false> {
-  const user = await currentUser();
+  const user = await resolveUser();
   if (!user) return null;
 
-  const conversation = await getConversationLite(id);
-  if (!conversation) return false;
-
-  const membership = await conversationMembership(id, user.id);
-  if (membership) return { user, conversation, role: membership.role };
-
-  // A public channel is open to every active member of its org, even before
-  // they have explicitly joined it.
-  if (conversation.kind === "channel" && conversation.visibility === "public") {
-    if (await isActiveOrgMember(conversation.orgId, user.id)) {
-      return { user, conversation, role: null };
-    }
-  }
-
-  return false;
+  const access = await conversationForUser(id, user.id);
+  return access ? { user, ...access } : false;
 }
 
 /** Turns the three-way result into the right response, or null to proceed. */

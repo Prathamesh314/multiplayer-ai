@@ -475,7 +475,7 @@ export function OrgAdminDialog({
           </p>
         </div>
         <div className="rounded-lg border border-vs-border px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wider text-vs-muted">Runs this month</p>
+          <p className="text-[10px] uppercase tracking-wider text-vs-muted">AI turns this month</p>
           <p className="mt-0.5 text-[15px] font-semibold">
             {usage
               ? usage.monthly.limit != null

@@ -1,3 +1,5 @@
+import type { PoolClient } from "pg";
+import { isUuid } from "../ai/turns";
 import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 import type {
   ChatMessage,
@@ -49,43 +51,39 @@ const toMessage = (row: MessageRow): ChatMessage => ({
 // Access primitives (used by the auth guard)
 // ---------------------------------------------------------------------------
 
-export async function getConversationLite(id: string): Promise<ConversationLite | null> {
-  const row = await queryOne<{
-    id: string;
-    org_id: string;
-    kind: ConversationKind;
-    visibility: ConversationVisibility;
-  }>(
-    `SELECT id, org_id, kind, visibility
-       FROM conversations
-      WHERE id = $1 AND deleted_at IS NULL`,
-    [id],
-  );
-  if (!row) return null;
-  return { id: row.id, orgId: row.org_id, kind: row.kind, visibility: row.visibility };
+export class ChatAccessError extends Error {
+  constructor() { super("You no longer have access to this conversation."); }
 }
 
-export async function conversationMembership(
-  conversationId: string,
-  userId: string,
-): Promise<{ role: ConversationRole } | null> {
-  const row = await queryOne<{ role: ConversationRole }>(
-    `SELECT role FROM conversation_members
-      WHERE conversation_id = $1 AND user_id = $2 AND removed_at IS NULL`,
-    [conversationId, userId],
-  );
-  return row ? { role: row.role } : null;
+export async function conversationForUser(id: string, userId: string): Promise<{
+  conversation: ConversationLite; role: ConversationRole | null;
+} | null> {
+  if (!isUuid(id) || !isUuid(userId)) return null;
+  const row = await queryOne<{ id: string; org_id: string; kind: ConversationKind;
+    visibility: ConversationVisibility; role: ConversationRole | "public" }>(
+    `SELECT id, org_id, kind, visibility, conversation_access_role(id, $2) AS role
+       FROM conversations WHERE id = $1 AND conversation_access_role(id, $2) IS NOT NULL`, [id, userId]);
+  return row ? { conversation: { id: row.id, orgId: row.org_id, kind: row.kind, visibility: row.visibility },
+    role: row.role === "public" ? null : row.role } : null;
 }
 
-/** True when the account is an active member of the org — an admin can't manage
- *  a suspended member into a conversation, and a suspended one can't read one. */
 export async function isActiveOrgMember(orgId: string, userId: string): Promise<boolean> {
-  const row = await queryOne<{ ok: number }>(
-    `SELECT 1 AS ok FROM org_members
-      WHERE org_id = $1 AND user_id = $2 AND status = 'active'`,
-    [orgId, userId],
-  );
-  return row !== null;
+  if (!isUuid(userId)) return false;
+  return !!await queryOne(`SELECT 1 FROM org_members om
+    JOIN orgs o ON o.id = om.org_id AND o.deleted_at IS NULL
+    JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
+    WHERE om.org_id = $1 AND om.user_id = $2 AND om.status = 'active'`, [orgId, userId]);
+}
+
+/** Hold authorization stable until the write commits, including concurrent suspension. */
+async function lockActiveMembers(tx: PoolClient, orgId: string, users: string[]) {
+  const ids = [...new Set(users)].sort();
+  const { rows } = await tx.query(`SELECT om.user_id FROM org_members om
+    JOIN orgs o ON o.id = om.org_id AND o.deleted_at IS NULL
+    JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
+    WHERE om.org_id = $1 AND om.user_id = ANY($2::uuid[]) AND om.status = 'active'
+    ORDER BY om.user_id FOR SHARE OF om, u`, [orgId, ids]);
+  if (rows.length !== ids.length) throw new ChatAccessError();
 }
 
 // ---------------------------------------------------------------------------
@@ -102,19 +100,33 @@ export async function ensureMember(
   orgId: string,
   userId: string,
   role: ConversationRole = "member",
-): Promise<void> {
-  await query(
-    `INSERT INTO conversation_members (conversation_id, org_id, user_id, role, added_by)
-     VALUES ($1, $2, $3, $4, $3)
-     ON CONFLICT (conversation_id, user_id) DO UPDATE SET removed_at = NULL`,
-    [conversationId, orgId, userId, role],
-  );
+): Promise<boolean> {
+  try {
+    return await transaction(async tx => {
+      const { rows: [conversation] } = await tx.query(`SELECT org_id FROM conversations WHERE id=$1 FOR SHARE`, [conversationId]);
+      if (!conversation || conversation.org_id !== orgId) return false;
+      await lockActiveMembers(tx, orgId, [userId]);
+      // Hold the membership through the upsert: a concurrently revoked private
+      // membership must not be revived using an earlier statement's snapshot.
+      await tx.query(`SELECT user_id FROM conversation_members WHERE conversation_id=$1 AND user_id=$2 FOR UPDATE`, [conversationId, userId]);
+      const { rows } = await tx.query(
+        `INSERT INTO conversation_members (conversation_id, org_id, user_id, role, added_by)
+         SELECT $1, $2, $3, $4, $3 WHERE conversation_access_role($1, $3) IS NOT NULL
+         ON CONFLICT (conversation_id, user_id) DO UPDATE SET removed_at = NULL
+         RETURNING user_id`, [conversationId, orgId, userId, role]);
+      return rows.length > 0;
+    });
+  } catch (cause) {
+    if (cause instanceof ChatAccessError) return false;
+    throw cause;
+  }
 }
 
 export async function markRead(conversationId: string, userId: string): Promise<void> {
   await query(
     `UPDATE conversation_members SET last_read_at = now()
-      WHERE conversation_id = $1 AND user_id = $2`,
+      WHERE conversation_id = $1 AND user_id = $2
+        AND conversation_access_role($1, $2) IS NOT NULL`,
     [conversationId, userId],
   );
 }
@@ -194,7 +206,7 @@ export async function listConversations(
           LIMIT 1
        ) other ON c.kind = 'dm'
       WHERE c.org_id = $1 AND c.deleted_at IS NULL
-        AND ((c.kind = 'channel' AND c.visibility = 'public') OR cm.user_id IS NOT NULL)
+        AND conversation_access_role(c.id, $2) IS NOT NULL
       ORDER BY COALESCE(c.last_message_at, '-infinity'::timestamptz) DESC, c.name ASC`,
     [orgId, userId],
   );
@@ -222,8 +234,8 @@ export async function loadConversation(
   const row = await queryOne<ConversationRow>(
     `SELECT id, org_id, kind, name, topic, visibility, dm_key
        FROM conversations
-      WHERE id = $1 AND deleted_at IS NULL`,
-    [conversationId],
+      WHERE id = $1 AND conversation_access_role(id, $2) IS NOT NULL`,
+    [conversationId, userId],
   );
   if (!row) return null;
 
@@ -255,11 +267,12 @@ export const MESSAGE_PAGE = 50;
 
 /**
  * A page of history, newest-first from the index then reversed for display.
- * `before` is a message id (uuidv7, so it sorts by creation), which is why
- * paging can't skip or repeat a message when two land in the same millisecond.
+ * The cursor uses the same (created_at, id) order as the index, including on
+ * PostgreSQL versions where new_id() uses random UUIDs.
  */
 export async function listMessages(
   conversationId: string,
+  userId: string,
   before?: string,
 ): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
   const rows = await query<MessageRow>(
@@ -268,10 +281,13 @@ export async function listMessages(
        JOIN users u ON u.id = m.user_id
       WHERE m.conversation_id = $1
         AND m.deleted_at IS NULL
-        AND ($2::uuid IS NULL OR m.id < $2::uuid)
+        AND conversation_access_role($1, $4) IS NOT NULL
+        AND ($2::uuid IS NULL OR (m.created_at, m.id) < (
+          SELECT created_at, id FROM chat_messages WHERE id = $2 AND conversation_id = $1
+        ))
       ORDER BY m.created_at DESC, m.id DESC
       LIMIT $3`,
-    [conversationId, before ?? null, MESSAGE_PAGE + 1],
+    [conversationId, before ?? null, MESSAGE_PAGE + 1, userId],
   );
 
   const hasMore = rows.length > MESSAGE_PAGE;
@@ -291,16 +307,26 @@ export async function createMessage(
   body: string,
 ): Promise<ChatMessage> {
   return transaction(async (tx) => {
+    const { rows: [conversation] } = await tx.query(`SELECT org_id FROM conversations WHERE id = $1 FOR UPDATE`, [conversationId]);
+    if (!conversation) throw new ChatAccessError();
+    await lockActiveMembers(tx, conversation.org_id, [userId]);
+    await tx.query(`SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 FOR SHARE`, [conversationId, userId]);
     const inserted = await tx.query<MessageRow>(
       `WITH inserted AS (
          INSERT INTO chat_messages (conversation_id, user_id, body)
-         VALUES ($1, $2, $3)
+         SELECT $1, $2, $3 WHERE conversation_access_role($1, $2) IS NOT NULL
          RETURNING id, user_id, body, created_at
        )
        SELECT i.id, i.user_id, u.display_name, u.handle, i.body, i.created_at
          FROM inserted i JOIN users u ON u.id = i.user_id`,
       [conversationId, userId, body],
     );
+    if (!inserted.rows.length) throw new ChatAccessError();
+    // Posting joins a public channel in the same authorized transaction. Keep
+    // an existing owner role intact and start the sender's read tracking.
+    await tx.query(`INSERT INTO conversation_members(conversation_id,org_id,user_id,role,added_by)
+      VALUES ($1,$2,$3,'member',$3)
+      ON CONFLICT(conversation_id,user_id) DO UPDATE SET removed_at=NULL`, [conversationId,conversation.org_id,userId]);
     // The sidebar orders by most-recent activity; sending is reading up to now.
     await tx.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [
       conversationId,
@@ -324,6 +350,7 @@ export async function createChannel(
   memberIds: string[] = [],
 ): Promise<string> {
   return transaction(async (tx) => {
+    await lockActiveMembers(tx, orgId, [userId]);
     const created = await tx.query<{ id: string }>(
       `INSERT INTO conversations (org_id, kind, name, visibility, created_by)
        VALUES ($1, 'channel', $2, $3, $4)
@@ -366,20 +393,20 @@ export async function getOrCreateDm(
 ): Promise<string> {
   const key = [userId, otherUserId].sort().join(":");
 
-  const existing = await queryOne<{ id: string }>(
-    `SELECT id FROM conversations
-      WHERE org_id = $1 AND kind = 'dm' AND dm_key = $2 AND deleted_at IS NULL`,
-    [orgId, key],
-  );
-  if (existing) {
-    // Revive either side if they had left, so reopening a DM brings it back.
-    await ensureMember(existing.id, orgId, userId);
-    await ensureMember(existing.id, orgId, otherUserId);
-    return existing.id;
-  }
-
   try {
     return await transaction(async (tx) => {
+      await lockActiveMembers(tx, orgId, [userId, otherUserId]);
+      const { rows: [existing] } = await tx.query<{ id: string }>(
+        `SELECT id FROM conversations WHERE org_id = $1 AND kind = 'dm' AND dm_key = $2 AND deleted_at IS NULL`, [orgId, key]);
+      if (existing) {
+        // Org removal cascades memberships. Rejoining the org and explicitly
+        // reopening a DM must recreate the missing rows as well as revive them.
+        await tx.query(`INSERT INTO conversation_members(conversation_id,org_id,user_id,role,added_by)
+          SELECT $1,$2,member,'member',$3 FROM unnest($4::uuid[]) AS member
+          ON CONFLICT(conversation_id,user_id) DO UPDATE SET removed_at=NULL`,
+        [existing.id, orgId, userId, [userId, otherUserId]]);
+        return existing.id;
+      }
       const created = await tx.query<{ id: string }>(
         `INSERT INTO conversations (org_id, kind, visibility, dm_key, created_by)
          VALUES ($1, 'dm', 'private', $2, $3)

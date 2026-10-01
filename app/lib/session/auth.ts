@@ -37,8 +37,8 @@ export type Access = { user: CurrentUser; session: Session; role: SessionRole };
  * the two need different responses, because one is fixable by logging in and
  * the other is not.
  */
-export async function access(sessionId: string): Promise<Access | null | false> {
-  const user = await currentUser();
+export async function access(sessionId: string, resolveUser: () => Promise<CurrentUser | null> = currentUser): Promise<Access | null | false> {
+  const user = await resolveUser();
   if (!user) return null;
 
   // Resolved with the caller, so `session.myRole` is populated for whatever

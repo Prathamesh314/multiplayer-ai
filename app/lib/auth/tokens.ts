@@ -44,10 +44,15 @@ export async function issueToken(
 
 /** Resolves the cookie with live revocation checks and throttled usage tracking. */
 export async function currentUser(): Promise<CurrentUser | null> {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
-  if (!token) return null;
+  return (await sessionUserResolver())();
+}
 
-  return userFromSessionToken(token);
+/** Capture the cookie inside the request, then revalidate that exact token.
+ * Redis callbacks run outside the subscriber's Next request context. Reading
+ * cookies there can resolve another request's identity or throw entirely. */
+export async function sessionUserResolver(): Promise<() => Promise<CurrentUser | null>> {
+  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  return () => token ? userFromSessionToken(token) : Promise.resolve(null);
 }
 
 /** Revokes the current token and clears the cookie. */

@@ -3,6 +3,7 @@ import { forbidden, orgAccess, orgDenied } from "../../../../../lib/org/auth";
 import { getOrgMembership, removeOrgMember, updateOrgMember } from "../../../../../lib/org/store";
 import { canManageOrg, type OrgRole, type UpdateOrgMemberRequest } from "../../../../../lib/org/types";
 import { visibleRoomIdsInOrg } from "../../../../../lib/project/store";
+import { isUuid } from "../../../../../lib/ai/turns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,10 +24,11 @@ async function guard(
   slug: string,
   userId: string,
   nextRole?: OrgRole,
-): Promise<{ orgId: string } | Response> {
+): Promise<{ orgId: string; actorId: string } | Response> {
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
   if (refusal || !result) return refusal!;
+  if (!isUuid(userId)) return Response.json({ error: "Invalid member." }, { status: 400 });
 
   if (!canManageOrg(result.role)) return forbidden("Only an org admin can manage members.");
   if (userId === result.user.id) return forbidden("You can't change your own membership here.");
@@ -42,7 +44,7 @@ async function guard(
     return forbidden("Only an owner can grant the owner role.");
   }
 
-  return { orgId: result.org.id };
+  return { orgId: result.org.id, actorId: result.user.id };
 }
 
 /** Change a member's role and/or active (suspended) status. Org admins only. */
@@ -59,6 +61,7 @@ export async function PATCH(
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object") return Response.json({ error: "Expected a JSON object." }, { status: 400 });
   if (body.role !== undefined && !ROLES.includes(body.role)) {
     return Response.json({ error: "Pick a valid role." }, { status: 400 });
   }
@@ -78,7 +81,7 @@ export async function PATCH(
   const outcome = await updateOrgMember(gate.orgId, userId, {
     role: body.role,
     status: body.status,
-  });
+  }, gate.actorId);
   if (!outcome.ok) return forbidden(outcome.error);
   if (!outcome.updated) {
     return Response.json({ error: "That person is not in this organisation." }, { status: 404 });
@@ -99,7 +102,7 @@ export async function DELETE(
   if (gate instanceof Response) return gate;
 
   const rooms = await visibleRoomIdsInOrg(gate.orgId, userId);
-  const outcome = await removeOrgMember(gate.orgId, userId);
+  const outcome = await removeOrgMember(gate.orgId, userId, gate.actorId);
   if (!outcome.ok) return forbidden(outcome.error);
 
   await publishRoleChanged(rooms, userId);

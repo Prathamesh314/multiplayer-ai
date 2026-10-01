@@ -25,8 +25,9 @@ async function count(sql: string, params: unknown[]): Promise<number> {
 
 /**
  * Decides whether a run may start. Concurrency guards apply to every run (a live
- * process is a live process); the period/rate quotas apply only to a *new* run,
- * since continuing an existing conversation is the same unit of work.
+ * process is a live process). Period limits count accepted execution turns,
+ * including continuations. This is a preflight for friendly errors; reserveTurn
+ * repeats the checks atomically before admitting work.
  */
 export async function checkRunAllowed(params: {
   orgId: string | null;
@@ -103,20 +104,19 @@ export async function checkRunAllowed(params: {
     };
   }
 
-  if (!isNewRun) return { ok: true };
-
   // Project hourly rate.
   if (project?.run_hourly_limit != null && projectId) {
     const lastHour = await count(
-      `SELECT count(*)::int AS n FROM agent_runs r JOIN sessions s ON s.id = r.session_id
-        WHERE s.project_id = $1 AND r.created_at >= now() - interval '1 hour'`,
+      `SELECT count(*)::int AS n FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+        JOIN sessions s ON s.id = r.session_id
+        WHERE s.project_id = $1 AND t.created_at >= now() - interval '1 hour'`,
       [projectId],
     );
     if (lastHour >= project.run_hourly_limit) {
       return {
         ok: false,
         limit: "project_hourly",
-        error: `This project has used its ${project.run_hourly_limit} run(s) for the hour. Try again later.`,
+        error: `This project has used its ${project.run_hourly_limit} AI turn(s) for the hour. Try again later.`,
       };
     }
   }
@@ -124,15 +124,16 @@ export async function checkRunAllowed(params: {
   // Org monthly quota.
   if (org.run_monthly_quota != null) {
     const thisMonth = await count(
-      `SELECT count(*)::int AS n FROM agent_runs r JOIN sessions s ON s.id = r.session_id
-        WHERE s.org_id = $1 AND r.created_at >= date_trunc('month', now())`,
+      `SELECT count(*)::int AS n FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+        JOIN sessions s ON s.id = r.session_id
+        WHERE s.org_id = $1 AND t.created_at >= date_trunc('month', now())`,
       [orgId],
     );
     if (thisMonth >= org.run_monthly_quota) {
       return {
         ok: false,
         limit: "org_monthly",
-        error: `Your organisation has used its ${org.run_monthly_quota} run(s) for this month.`,
+        error: `Your organisation has used its ${org.run_monthly_quota} AI turn(s) for this month.`,
       };
     }
   }
@@ -158,8 +159,9 @@ export async function orgUsage(orgId: string): Promise<OrgUsage> {
     [orgId],
   );
   const monthly = await count(
-    `SELECT count(*)::int AS n FROM agent_runs r JOIN sessions s ON s.id = r.session_id
-      WHERE s.org_id = $1 AND r.created_at >= date_trunc('month', now())`,
+    `SELECT count(*)::int AS n FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+      JOIN sessions s ON s.id = r.session_id
+      WHERE s.org_id = $1 AND t.created_at >= date_trunc('month', now())`,
     [orgId],
   );
   return {

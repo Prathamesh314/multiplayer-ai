@@ -1,6 +1,5 @@
 import { currentUser } from "../../lib/auth/tokens";
 import { createRepo, gitAvailable } from "../../lib/session/repo";
-import { sweepInBackground } from "../../lib/session/retention";
 import { createSession, listSessionsForUser } from "../../lib/session/store";
 import type { CreateSessionRequest, SessionListResponse } from "../../lib/session/types";
 
@@ -11,10 +10,6 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
-
-  // No scheduler exists in this app, so the session list is what drives
-  // retention. It is throttled and never awaited.
-  sweepInBackground();
 
   const sessions = await listSessionsForUser(user.id);
   return Response.json({ sessions } satisfies SessionListResponse, {

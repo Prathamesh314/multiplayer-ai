@@ -15,7 +15,7 @@ export async function POST(
   const refusal = conversationDenied(result);
   if (refusal || !result) return refusal!;
 
-  await ensureMember(result.conversation.id, result.conversation.orgId, result.user.id);
+  if (!await ensureMember(result.conversation.id, result.conversation.orgId, result.user.id)) return conversationDenied(false)!;
   await markRead(id, result.user.id);
 
   return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });

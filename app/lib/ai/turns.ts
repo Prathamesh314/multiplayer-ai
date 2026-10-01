@@ -28,11 +28,28 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
         (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.org_id = $3 AND r.status = 'running') AS org_running,
         (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.project_id = $4 AND r.status = 'running') AS project_running,
         (SELECT run_concurrency_limit FROM orgs WHERE id = $3) AS org_limit,
-        (SELECT run_concurrency_limit FROM projects WHERE id = $4) AS project_limit`, [run.session_id, userId, room.org_id, room.project_id],
+        (SELECT run_concurrency_limit FROM projects WHERE id = $4) AS project_limit,
+        (SELECT run_monthly_quota FROM orgs WHERE id = $3) AS monthly_limit,
+        (SELECT run_hourly_limit FROM projects WHERE id = $4) AS hourly_limit,
+        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+          JOIN sessions s ON s.id = r.session_id
+          WHERE s.org_id = $3 AND t.created_at >= date_trunc('month', now())) AS monthly_used,
+        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+          JOIN sessions s ON s.id = r.session_id
+          WHERE s.project_id = $4 AND t.created_at >= now() - interval '1 hour') AS hourly_used`,
+      [run.session_id, userId, room.org_id, room.project_id],
     );
     if (quota.personal > 0 || (quota.org_limit != null && quota.org_running >= quota.org_limit) ||
         (quota.project_limit != null && quota.project_running >= quota.project_limit)) {
       throw new ControlError("The execution limit is reached. Wait for the active turn to finish.", 429);
+    }
+    // Check and reserve under the same org lock. Every accepted execution turn
+    // counts, including continuations of an existing conversation.
+    if (quota.hourly_limit != null && quota.hourly_used >= quota.hourly_limit) {
+      throw new ControlError("This project has reached its hourly AI turn limit. Try again later.", 429);
+    }
+    if (quota.monthly_limit != null && quota.monthly_used >= quota.monthly_limit) {
+      throw new ControlError("Your organisation has reached its monthly AI turn limit.", 429);
     }
     const { rows: [existing] } = await tx.query(`SELECT id FROM agent_turns WHERE id = $1`, [turnId]);
     if (existing) throw new ControlError("This prompt has already been submitted. Reload the chat to see its result.");

@@ -95,14 +95,15 @@ export function openChatStream(
   options: {
     onMessage?: (event: ChatMessageEvent) => void;
     onStatus?: (connected: boolean) => void;
+    onResync?: () => void;
   },
 ): ChatStream {
   const source = new EventSource(
     `/api/chat/conversations/${encodeURIComponent(conversationId)}/events`,
   );
 
-  source.addEventListener("ready", () => options.onStatus?.(true));
-  source.onopen = () => options.onStatus?.(true);
+  source.addEventListener("ready", () => { options.onStatus?.(true); options.onResync?.(); });
+  source.addEventListener("resync", () => options.onResync?.());
   source.onerror = () => options.onStatus?.(false);
 
   source.addEventListener("chat.message", (message) => {
