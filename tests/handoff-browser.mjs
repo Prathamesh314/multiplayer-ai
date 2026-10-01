@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { once } from "node:events";
 import { createRun } from "../app/lib/ai/runs.ts";
 import { createRepo, finishSeed, writeSeedBatch } from "../app/lib/session/repo.ts";
@@ -307,7 +308,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.ok(await fresh.evaluate('document.body.textContent.includes("People & chat references")'));
     assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     const preview=await fresh.command("Page.captureScreenshot",{format:"png"});
-    await writeFile("/private/tmp/new-chat-task-picker.png",Buffer.from(preview.data,"base64"));
+    await writeFile(join(tmpdir(), "new-chat-task-picker.png"),Buffer.from(preview.data,"base64"));
     await fresh.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
     const freshBody='Please review the imported storefront before we begin.';
     await writeFresh('@'+bobHandle+' '+freshBody);
@@ -378,7 +379,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value.includes("Explain what this project does\\n\\nReview this project")'), "starter preserves existing draft");
     assert.equal((await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count, beforeStarter, "Starter prompts never submit a model turn");
     const chatScreenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
-    await writeFile("/tmp/ux-room-chat.png", Buffer.from(chatScreenshot.data, "base64"));
+    await writeFile(join(tmpdir(), "ux-room-chat.png"), Buffer.from(chatScreenshot.data, "base64"));
     await recipient.click("Room guide");
     await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("Review before sharing changes")'), "room guide explains workflow");
     await recipient.click("Open AI chat");
@@ -436,7 +437,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.equal(await recipient.evaluate('document.querySelector("dialog").getBoundingClientRect().width <= innerWidth'), true, `${name} guide fits viewport`);
       if (name === "desktop") {
         const guideScreenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
-        await writeFile("/tmp/ux-room-guide.png", Buffer.from(guideScreenshot.data, "base64"));
+        await writeFile(join(tmpdir(), "ux-room-guide.png"), Buffer.from(guideScreenshot.data, "base64"));
       }
       await recipient.evaluate('document.querySelector(\'button[aria-label="Close Room guide"]\').click()');
       const screenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
@@ -582,7 +583,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await recipient.click("A unfinished.txt");
     await eventually(()=>recipient.evaluate('document.querySelector("dialog pre")?.textContent.includes("Available after laptop shutdown")'),"checkpoint diff displayed");
     const historyScreenshot=await recipient.command("Page.captureScreenshot",{format:"png"});
-    await writeFile("/tmp/workspace-history.png",Buffer.from(historyScreenshot.data,"base64"));
+    await writeFile(join(tmpdir(), "workspace-history.png"),Buffer.from(historyScreenshot.data,"base64"));
     await recipient.evaluate(`document.querySelector('button[aria-label="Close Synchronized workspace history"]').click()`);
     console.log("  ok real checkpoint push/report, durable activity retry/replay, offline diff browsing, driver-only restore selection, and history UI");
     assert.deepEqual(runtimeErrors, []);
@@ -633,7 +634,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await delay(300);
       assert.equal(await sender.evaluate("document.documentElement.scrollWidth <= innerWidth"), true, `${name} onboarding has no horizontal overflow`);
       const screenshot = await sender.command("Page.captureScreenshot", { format: "png" });
-      await writeFile(`/tmp/ux-projects-${name}.png`, Buffer.from(screenshot.data, "base64"));
+      await writeFile(join(tmpdir(), `ux-projects-${name}.png`), Buffer.from(screenshot.data, "base64"));
     }
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok non-interrupting onboarding, honest GitHub setup, AI-to-device setup, and responsive project overview");
@@ -644,7 +645,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     throw cause;
   } finally {
-    await writeFile("/tmp/handoff-browser-server.log", output);
+    await writeFile(join(tmpdir(), "handoff-browser-server.log"), output);
     socket?.close();
     for (const child of [chrome, next]) {
       if (!child || child.exitCode !== null) continue;
