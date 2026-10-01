@@ -23,13 +23,16 @@ RUN apt-get update \
 WORKDIR /app
 
 # Dependencies first, for layer caching. --include=dev because the worker runs
-# through tsx, which is a devDependency.
+# through tsx, which is a devDependency. Node 24 requires C++20 when compiling
+# older tree-sitter bindings on platforms without a matching prebuilt binary.
 COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+RUN --mount=type=cache,target=/root/.npm \
+    CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --include=dev
 
 # The agent CLIs the worker spawns. Keep this in step with the agents enabled in
 # app/lib/ai/catalog.ts; pin versions for reproducible images.
-RUN npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
+RUN --mount=type=cache,target=/root/.npm \
+    npm_package_config_node_gyp_nodedir=/usr/local npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
 
 COPY . .
 

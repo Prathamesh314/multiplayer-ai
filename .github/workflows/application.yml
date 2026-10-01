@@ -58,3 +58,7 @@ jobs:
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
           CHROME_BIN: /usr/bin/google-chrome
+      - name: Build production web image
+        run: docker build -f docker/web/Dockerfile -t multiplayer-web:ci .
+      - name: Verify production container runtime
+        run: node tests/container-smoke.mjs

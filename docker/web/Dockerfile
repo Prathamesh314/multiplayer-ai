@@ -19,7 +19,11 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The Node image includes matching native-module headers. No desktop binary is
+# needed to build the hosted web app. Cache package downloads across rebuilds.
+# Older tree-sitter bindings select C++17, but Node 24 headers require C++20.
+RUN --mount=type=cache,target=/root/.npm \
+    CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY . .
 ARG DESKTOP_DOWNLOAD_MAC_URL
 ARG DESKTOP_DOWNLOAD_WINDOWS_URL
@@ -37,11 +41,13 @@ WORKDIR /app
 
 # Production dependencies only; `next` itself is a runtime dependency.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN --mount=type=cache,target=/root/.npm \
+    CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local npm ci --omit=dev
 
 # The agent CLIs the composer probes for installed/login state. Keep in step
 # with app/lib/ai/catalog.ts; pin versions for reproducible images.
-RUN npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
+RUN --mount=type=cache,target=/root/.npm \
+    npm_package_config_node_gyp_nodedir=/usr/local npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
 
 # The built app and the bits `next start` and the migration runner need.
 COPY --from=build /app/.next ./.next

@@ -167,6 +167,11 @@ The load balancer does not remove those risks. See the architecture review.
   health routing, SSE delivery, a 12 MiB upload and no replay after an uncertain
   write. Requires Docker and DATABASE_URL; no existing application rows are used.
 - Existing application, desktop and HTTP/browser regressions remain in CI.
+- CI also builds the actual production web image and runs
+  `node tests/container-smoke.mjs` to check native dependencies, startup and
+  protected API/readiness responses when dependencies are absent. Server builds
+  use the Node image's bundled headers, compile native addons with C++20 for
+  Node 24, and skip the unused Electron binary.
 
 References: [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy),
 [Redis token buckets](https://redis.io/docs/latest/develop/use-cases/rate-limiter/nodejs/),
