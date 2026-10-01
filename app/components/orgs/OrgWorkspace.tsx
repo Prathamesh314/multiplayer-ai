@@ -1,4 +1,5 @@
 "use client";
+import { openUserStream } from "../../lib/events/shared-client";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -856,11 +857,10 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   useEffect(() => {
     let cancelled = false;
     const load = () => void fetchOrgUsage(orgSlug).then((u) => !cancelled && setUsage(u));
-    load();
-    const timer = setInterval(load, 15000);
+    const stream = openUserStream(type => { if (type === "usage.changed") load(); }, load);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stream.close();
     };
   }, [orgSlug]);
 

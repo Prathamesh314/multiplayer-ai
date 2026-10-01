@@ -1,3 +1,4 @@
+import { notifyUsage } from "../../../../../../lib/events/notifications";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
 import { changeHandoff, handoffState, type HandoffAction } from "../../../../../../lib/ai/handoff";
@@ -39,6 +40,7 @@ export async function POST(request: Request, context: Context) {
   }
   try {
     await changeHandoff(runId, id, result.user.id, body as HandoffAction);
+    if (body.action === "recover") void notifyUsage(id);
     await events().then(bus => bus.publish(id, { type: "run.control", runId, at: Date.now() })).catch(() => {});
     return GET(request, context);
   } catch (cause) {

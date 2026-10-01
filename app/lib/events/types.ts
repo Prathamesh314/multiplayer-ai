@@ -116,6 +116,7 @@ export type RunOutputEvent = {
 /** A stored turn was appended to a run's conversation (prompt, or final output). */
 export type RunTurnEvent = {
   type: "run.turn";
+  inputId?: string;
   runId: string;
   seq: number;
   role: "user" | "agent" | "system" | "tool";
@@ -134,6 +135,8 @@ export type RunFinishedEvent = {
 };
 
 export type SessionEvent =
+  | { type: "devices.changed" | "tasks.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
+  | { type: "run.inputs" | "run.activity"; runId: string; at: number }
   | { type: "run.control"; runId: string; at: number }
   | FileSavedEvent
   | FileEditingEvent

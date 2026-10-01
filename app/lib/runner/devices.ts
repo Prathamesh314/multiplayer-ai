@@ -14,6 +14,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import { events } from "../events";
 import { query, queryOne } from "../db/client";
 
 export type RunnerDevice = {
@@ -113,6 +114,7 @@ export async function exchangePairingCode(input: {
      RETURNING ${COLUMNS}`,
     [claimed.user_id, input.name, digest(token), input.platform ?? null, input.version ?? null],
   );
+  await (await events()).publish(`user:${claimed.user_id}`,{type:'devices.changed',at:Date.now()}).catch(()=>{});
   return { device: toDevice(row!), token };
 }
 
@@ -170,6 +172,7 @@ export async function revokeDevice(deviceId: string, userId: string): Promise<bo
       RETURNING id`,
     [deviceId, userId],
   );
+  if(row)await (await events()).publish(`user:${userId}`,{type:'devices.changed',at:Date.now()}).catch(()=>{});
   return row !== null;
 }
 

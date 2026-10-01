@@ -43,19 +43,23 @@ async function build(): Promise<EventBus> {
   try {
     const { createClient } = (await import("redis")) as {
       createClient: (options: { url: string }) => {
+        on(event: "error", listener: (cause: Error) => void): unknown;
         connect(): Promise<unknown>;
         duplicate(): {
+          on(event: "error", listener: (cause: Error) => void): unknown;
           connect(): Promise<unknown>;
         } & RedisSubscriber;
       } & RedisPublisher;
     };
 
     const publisher = createClient({ url });
+    publisher.on("error", cause => console.error("Event publisher disconnected:", cause.message));
     await publisher.connect();
 
     // A duplicate rather than a second createClient: it inherits the same
     // options, so the two halves can never drift apart in configuration.
     const subscriber = publisher.duplicate();
+    subscriber.on("error", cause => console.error("Event subscriber disconnected:", cause.message));
     await subscriber.connect();
 
     return createRedisBus(publisher, subscriber);

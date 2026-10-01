@@ -46,7 +46,7 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
     "test:runner-workspaces": "npm run test:runner-package && node --import tsx --test tests/runner-workspaces.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit && npm run test:performance",
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit && npm run test:performance && npm run test:live-chat",
     "test:memory": "node --import tsx tests/memory.test.mjs",
     "eval:memory": "node --import tsx scripts/eval-memory.mjs",
     "memory:reindex": "node scripts/reindex-memory.mjs",
@@ -60,7 +60,8 @@
     "test:performance": "node --import tsx tests/session-token.test.mjs && node --import tsx tests/room-access-parity.test.mjs && node --import tsx --test tests/git-read-cache.test.mjs tests/server-config.test.mjs",
     "bench:runtime:build": "node benchmarks/runtime/build.mjs",
     "bench:runtime:test": "node --import tsx --test benchmarks/runtime/compute.test.mjs && cd benchmarks/runtime/go && go test -race ./...",
-    "bench:runtime": "node --import tsx benchmarks/runtime/compare.mjs"
+    "bench:runtime": "node --import tsx benchmarks/runtime/compare.mjs",
+    "test:live-chat": "node --import tsx --test tests/live-chat.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",

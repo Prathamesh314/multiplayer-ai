@@ -1,4 +1,5 @@
 import { currentTabId } from "../tab-id";
+import { sharedStream } from "./shared-client";
 import type {
   FileEditingEvent,
   FileSavedEvent,
@@ -13,6 +14,9 @@ import type {
 
 export type SessionStreamOptions = {
   onRunControl?: () => void;
+  onRunInputs?: (event: { runId: string }) => void;
+  onRunActivity?: (event: { runId: string }) => void;
+  onTasksChanged?: () => void;
   /** Fires for changes made by any *other* tab. */
   onFileSaved?: (event: FileSavedEvent) => void;
   /** Fires while another person types, not when they save. */
@@ -47,81 +51,27 @@ export function openSessionStream(
   sessionId: string,
   options: SessionStreamOptions,
 ): SessionStream {
-  const source = new EventSource(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
   const tab = currentTabId();
-
-  source.addEventListener("ready", () => options.onStatus?.(true));
-
-  source.addEventListener("file.saved", (message) => {
-    const event = parse(message);
-    if (event?.type !== "file.saved") return;
-    // Skip our own echo: this tab already has the text it just sent.
-    if (event.originId && event.originId === tab) return;
-    options.onFileSaved?.(event);
-  });
-
-  source.addEventListener("file.editing", (message) => {
-    const event = parse(message);
-    if (event?.type !== "file.editing") return;
-    if (event.originId && event.originId === tab) return;
-    options.onFileEditing?.(event);
-  });
-
-  // Not filtered by tab: your own message should still land in your other
-  // windows, and the sender reconciles by id rather than by suppressing it.
-  source.addEventListener("message.created", (message) => {
-    const event = parse(message);
-    if (event?.type !== "message.created") return;
-    options.onMessage?.(event);
-  });
-
-  source.addEventListener("members.changed", () => options.onMembersChanged?.());
-
-  source.addEventListener("role.changed", (message) => {
-    const event = parse(message);
-    if (event?.type === "role.changed") options.onRoleChanged?.(event);
-  });
-
-  source.addEventListener("run.control", () => options.onRunControl?.());
-
-  source.addEventListener("run.started", (message) => {
-    const event = parse(message);
-    if (event?.type === "run.started") options.onRunStarted?.(event);
-  });
-
-  source.addEventListener("run.output", (message) => {
-    const event = parse(message);
-    if (event?.type === "run.output") options.onRunOutput?.(event);
-  });
-
-  source.addEventListener("run.turn", (message) => {
-    const event = parse(message);
-    if (event?.type === "run.turn") options.onRunTurn?.(event);
-  });
-
-  source.addEventListener("run.finished", (message) => {
-    const event = parse(message);
-    if (event?.type === "run.finished") options.onRunFinished?.(event);
-  });
-
-  source.onopen = () => options.onStatus?.(true);
-  source.onerror = () => {
-    // EventSource reconnects on its own; this only reports the gap.
-    options.onStatus?.(false);
-  };
-
-  return {
-    close() {
-      source.close();
-      options.onStatus?.(false);
+  return sharedStream(`/api/sessions/${encodeURIComponent(sessionId)}/events`, {
+    status: options.onStatus,
+    event: (_type, data) => {
+      const event = data as SessionEvent;
+      if (!event || typeof event !== "object") return;
+      switch (event.type) {
+        case "file.saved": if (!event.originId || event.originId !== tab) options.onFileSaved?.(event); break;
+        case "file.editing": if (!event.originId || event.originId !== tab) options.onFileEditing?.(event); break;
+        case "message.created": options.onMessage?.(event); break;
+        case "members.changed": options.onMembersChanged?.(); break;
+        case "role.changed": options.onRoleChanged?.(event); break;
+        case "run.control": options.onRunControl?.(); break;
+        case "run.started": options.onRunStarted?.(event); break;
+        case "run.output": options.onRunOutput?.(event); break;
+        case "run.turn": options.onRunTurn?.(event); break;
+        case "run.finished": options.onRunFinished?.(event); break;
+        case "run.inputs": options.onRunInputs?.(event); break;
+        case "run.activity": options.onRunActivity?.(event); break;
+        case "tasks.changed": options.onTasksChanged?.(); break;
+      }
     },
-  };
-}
-
-function parse(message: MessageEvent): SessionEvent | null {
-  try {
-    return JSON.parse(message.data as string) as SessionEvent;
-  } catch {
-    return null;
-  }
+  });
 }

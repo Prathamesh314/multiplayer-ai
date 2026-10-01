@@ -1,3 +1,4 @@
+import { enqueueChatInput, cancelChatInput, consumeChatInput, listChatInputs } from "../app/lib/ai/input-queue.ts";
 import { persistActivity, activityPage } from "../app/lib/runner/activity.ts";
 import { saveCheckpoint, listCheckpoints, getCheckpoint } from "../app/lib/runner/checkpoints.ts";
 import { archiveStoredRepo, withStoredRepo } from "../app/lib/storage/git-cache.ts";
@@ -127,6 +128,35 @@ try {
     await prepareTurn(first);
     assert.equal(await startTurn(first), true);
     assert.equal(await startTurn(first), false);
+  });
+  await test("chat inputs are durable, FIFO, driver-fenced, idempotent and sealed atomically", async () => {
+    const input = { id: randomUUID(), body: "Add keyboard navigation", controlVersion: 0 };
+    await assert.rejects(enqueueChatInput(run.id, bob, input), /driver/);
+    await assert.rejects(enqueueChatInput(run.id, viewer, input), /access/);
+    await assert.rejects(enqueueChatInput(run.id, alice, { ...input, controlVersion: 1 }), /driver/);
+    await Promise.all([enqueueChatInput(run.id, alice, input), enqueueChatInput(run.id, alice, input)]);
+    assert.equal((await listChatInputs(run.id)).length, 1);
+    await assert.rejects(enqueueChatInput(run.id, alice, { ...input, body: "conflicting retry" }), /already/);
+    const secondInput = { ...input, id: randomUUID(), body: "Also test it" };
+    await enqueueChatInput(run.id, alice, secondInput);
+    const cancelled = { ...input, id: randomUUID(), body: "Remove this instruction" };
+    await enqueueChatInput(run.id, alice, cancelled);
+    await cancelChatInput(run.id, alice, cancelled.id);
+    const claimId = randomUUID();
+    const claimed = await consumeChatInput(first, { kind: "claim", claimId });
+    assert.equal(claimed.id, input.id);
+    assert.deepEqual(await consumeChatInput(first, { kind: "claim", claimId }), claimed);
+    await assert.rejects(consumeChatInput(first, { kind: "claim", claimId: randomUUID() }), /acknowledgement/);
+    await assert.rejects(cancelChatInput(run.id, alice, input.id), /claimed/);
+    const before = (await listRunMessages(run.id)).length;
+    await consumeChatInput(first, { kind: "ack", id: input.id });
+    await consumeChatInput(first, { kind: "ack", id: input.id });
+    assert.equal((await listRunMessages(run.id)).length, before + 1);
+    assert.equal((await consumeChatInput(first, { kind: "claim", claimId: randomUUID() })).id, secondInput.id);
+    await consumeChatInput(first, { kind: "uncertain", id: secondInput.id, error: "Lost acknowledgement" });
+    assert.equal(await consumeChatInput(first, { kind: "claim", claimId: randomUUID(), closeIfEmpty: true }), null);
+    await assert.rejects(enqueueChatInput(run.id, alice, { ...input, id: randomUUID() }), /finishing/);
+    assert.deepEqual((await listChatInputs(run.id)).map(item => item.status), ["delivered", "unconfirmed", "cancelled"]);
   });
   await test("offers wait for the current durable turn boundary", async () => {
     await changeHandoff(run.id, roomId, alice, { action: "offer", toUserId: bob, note: "Finish the red button", version: 0 });
@@ -504,6 +534,19 @@ try {
         await objectText(bare,["symbolic-ref","HEAD","refs/heads/main"]);
       });
     } finally { delete process.env.STORAGE_COLD_GIT; }
+  });
+  await test("failed executions close pending input and preserve uncertain deliveries without replay", async () => {
+    const target = await createRun({sessionId:roomId,startedBy:alice,agentId:"codex",baseSha:seed.headSha});
+    const job={...makeJob(randomUUID(),alice,0),runId:target.id};
+    await reserveTurn(target.id,alice,job.turnId,0);await prepareTurn(job);await startTurn(job);
+    const firstInput={id:randomUUID(),body:"Possibly received",controlVersion:0};
+    await enqueueChatInput(target.id,alice,firstInput);
+    await enqueueChatInput(target.id,alice,{id:randomUUID(),body:"Never delivered",controlVersion:0});
+    await consumeChatInput(job,{kind:"claim",claimId:randomUUID()});
+    await failTurn(job.turnId,"Runner disconnected");
+    assert.deepEqual((await listChatInputs(target.id)).map(i=>i.status),["unconfirmed","failed"]);
+    await assert.rejects(consumeChatInput(job,{kind:"ack",id:firstInput.id}),/controls/);
+    await assert.rejects(enqueueChatInput(target.id,alice,{id:randomUUID(),body:"Too late",controlVersion:0}),/finishing/);
   });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");

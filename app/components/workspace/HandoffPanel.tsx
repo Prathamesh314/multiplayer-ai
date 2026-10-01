@@ -43,12 +43,20 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, childre
     reload();
     const stream = openSessionStream(run.sessionId, {
       onRunControl: reload,
+      onMembersChanged: reload,
+      onRoleChanged: reload,
       onRunFinished: reload,
       onStatus: connected => { if (connected) reload(); },
     });
-    const timer = setInterval(reload, 10_000);
-    return () => { controller.abort(); clearInterval(timer); stream.close(); };
+    return () => { controller.abort(); stream.close(); };
   }, [refresh, run.sessionId]);
+
+  const expiresAt = state?.offers.find(offer => offer.status === "pending")?.expiresAt;
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = setTimeout(() => void refresh().catch(() => {}), Math.max(0, new Date(expiresAt).getTime() - Date.now() + 100));
+    return () => clearTimeout(timer);
+  }, [expiresAt, refresh]);
 
   async function act(input: HandoffAction) {
     if (busy) return;

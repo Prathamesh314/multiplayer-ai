@@ -1,4 +1,5 @@
 "use client";
+import { openUserStream } from "../../lib/events/shared-client";
 
 import { ModelPicker } from "./ModelPicker";
 
@@ -30,6 +31,7 @@ import {
   SpinnerIcon,
   TerminalIcon,
 } from "../icons";
+import { QueuedMessages } from "./QueuedMessages";
 import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
@@ -159,9 +161,11 @@ export function AiPanel({
 
   useEffect(() => {
     const controller = new AbortController();
-    let loading = false;
+    let loading = false, dirty = false;
     const load = async () => {
-      if (loading || document.hidden) return;
+      if (document.hidden || controller.signal.aborted) return;
+      if (loading) { dirty = true; return; }
+      dirty = false;
       loading = true;
       try {
         const response = await fetch(`/api/tasks?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal, cache: "no-store" });
@@ -170,12 +174,11 @@ export function AiPanel({
           if (!controller.signal.aborted) setTaskRoster({ sessionId, people: data.members });
         } else if (!controller.signal.aborted) setTaskRoster({ sessionId, people: [] });
       } catch { /* A later refresh retries the room roster. */ }
-      finally { loading = false; }
+      finally { loading = false; if (dirty && !controller.signal.aborted) void load(); }
     };
-    void load();
-    const timer = setInterval(() => void load(), 15000);
+    const stream = openSessionStream(sessionId, { onMembersChanged: () => void load(), onRoleChanged: () => void load(), onStatus: connected => { if (connected) void load(); } });
     document.addEventListener("visibilitychange", load);
-    return () => { controller.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", load); };
+    return () => { controller.abort(); stream.close(); document.removeEventListener("visibilitychange", load); };
   }, [sessionId]);
 
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -312,7 +315,7 @@ export function AiPanel({
         appendFollowChunk(event.chunk);
       },
       onRunTurn: (event) => {
-        if (event.runId === localRunIdRef.current) return;
+        if (event.runId === localRunIdRef.current && !event.inputId) return;
         if (enteredRef.current?.id !== event.runId) return;
         // A prompt from the runner shows immediately; agent output arrives via
         // run.output and is reconciled on finish, so it is not appended here.
@@ -358,12 +361,11 @@ export function AiPanel({
         return codex?.id ?? installed[0]?.id ?? null;
       });
     }).catch(() => {}); };
-    refresh();
-    const timer = setInterval(refresh, 30_000);
+    const stream = openUserStream(type => { if (type === "devices.changed") refresh(); }, refresh);
     window.addEventListener("focus", refresh);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stream.close();
       window.removeEventListener("focus", refresh);
     };
   }, []);
@@ -889,7 +891,7 @@ export function AiPanel({
         {canRun && <Composer key={`tasks-${entered.id}`} placeholder="Type @ to assign a task to a teammate…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />}
         </>
       ) : entered && ["running", "queued"].includes(entered.status) ? (
-        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">A turn is already in progress. You can continue when it finishes.</div>
+        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">The agent is working. You can queue another instruction below.</div>
       ) : (
         <Composer
           inputRef={composer}
@@ -911,6 +913,7 @@ export function AiPanel({
           onSend={ask}
         />
       )}
+      {entered && <QueuedMessages key={entered.id} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId} startedAt={entered.startedAt} moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
   );
 }

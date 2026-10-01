@@ -1,3 +1,4 @@
+import { closeTurnInputs } from "./close-inputs";
 import { query, transaction } from "../db/client";
 import { ControlError } from "./turns";
 
@@ -88,6 +89,7 @@ export async function changeHandoff(runId: string, sessionId: string, actorId: s
         if (active.completion || (!active.timed_out && !active.lease_expired)) {
           throw new ControlError("Execution is still active or finalizing. Wait before recovering control.");
         }
+        await closeTurnInputs(tx, active.id);
         await tx.query(`UPDATE agent_turns SET status = 'cancelled', ended_at = now() WHERE id = $1`, [active.id]);
         await tx.query(`UPDATE runner_jobs SET status = 'failed' WHERE turn_id = $1`, [active.id]);
       } else if (["running", "queued"].includes(run.status)) {

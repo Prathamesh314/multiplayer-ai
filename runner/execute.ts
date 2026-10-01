@@ -12,6 +12,8 @@
  */
 
 import { assertAvailableModel } from "../app/lib/ai/model-discovery";
+import type { InputSource } from "./input-types";
+import { runCodexSession } from "./codex-session";
 import { spawn } from "node:child_process";
 import type { AgentSpec } from "../app/lib/ai/catalog";
 import { agentEnv } from "../app/lib/ai/env";
@@ -31,7 +33,8 @@ export type LocalRunResult = {
 /** Targets the process group so a helper the agent spawned dies with it. */
 function kill(child: ReturnType<typeof spawn>): void {
   try {
-    process.kill(-(child.pid ?? 0), "SIGKILL");
+    if (!child.pid || process.platform === "win32") { child.kill("SIGKILL"); return; }
+    process.kill(-child.pid, "SIGKILL");
   } catch {
     try {
       child.kill("SIGKILL");
@@ -41,15 +44,64 @@ function kill(child: ReturnType<typeof spawn>): void {
   }
 }
 
-export async function runAgentLocally(input: {
+export type RunInput = {
   spec: AgentSpec;
   prompt: string;
   model?: string;
   effort?: string;
   cwd: string;
   onEvent: (event: AiRunEvent) => void;
-}): Promise<LocalRunResult> {
+  inputs?: InputSource;
+  signal?: AbortSignal;
+};
+
+export async function runAgentLocally(input: RunInput): Promise<LocalRunResult> {
   await assertAvailableModel(input.spec, input.model, input.effort);
+  if (input.spec.id === "codex" && input.inputs) return runCodexSession(input);
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), MAX_RUN_MS);
+  const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal;
+  let bytes = 0;
+  const limited = { ...input, signal, onEvent: (event: AiRunEvent) => {
+    if (event.t === "out" || event.t === "err") {
+      bytes += Buffer.byteLength(event.d);
+      if (bytes > MAX_OUTPUT_BYTES) controller.abort();
+    }
+    input.onEvent(event);
+  } };
+  try { return await runSequence(limited); } finally { clearTimeout(deadline); }
+}
+
+async function runSequence(input: RunInput): Promise<LocalRunResult> {
+  const started = Date.now();
+  let result = await runOnce(input);
+  let history = `Agent: ${result.output}`;
+  try {
+  while (result.code === 0 && input.inputs) {
+    const next = await input.inputs.claim(true);
+    if (!next) break;
+    if (Date.now() - started >= MAX_RUN_MS || Buffer.byteLength(result.output) >= MAX_OUTPUT_BYTES) {
+      await input.inputs.uncertain(next.id, "Execution limit reached before delivery.");
+      return { ...result, code: 1, errOutput: "Execution limit reached." };
+    }
+    let acknowledged = false;
+    const followup = await runOnce({ ...input, prompt: `${input.prompt}\n\nPrevious conversation:\n${history.slice(-64000)}\n\nAdditional user instruction (continue in the current workspace):\n${next.body}` }, async () => {
+      await input.inputs!.acknowledge(next.id); acknowledged = true;
+    });
+    if (!acknowledged) await input.inputs.uncertain(next.id, "Delivery could not be confirmed; inspect the output before sending again.").catch(() => {});
+    history += `\nUser: ${next.body}\nAgent: ${followup.output}`;
+    history = history.slice(-64000);
+    result = { code: followup.code, output: result.output + "\n\n" + followup.output, errOutput: result.errOutput + followup.errOutput, ms: Date.now() - started };
+  }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    input.onEvent({ t: "err", d: message });
+    result = { ...result, code: 1, errOutput: `${result.errOutput}\n${message}`, ms: Date.now() - started };
+  }
+  return result;
+}
+
+async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise<LocalRunResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const args = input.spec.promptArgs(input.prompt, {
@@ -73,6 +125,11 @@ export async function runAgentLocally(input: {
       return;
     }
 
+    let receipt = Promise.resolve();
+    child.once("spawn", () => { receipt = accepted?.().catch(cause => { input.onEvent({ t: "err", d: String(cause) }); kill(child); throw cause; }) ?? Promise.resolve(); void receipt.catch(() => {}); });
+    const abort = () => kill(child);
+    input.signal?.addEventListener("abort", abort, { once: true });
+    if (input.signal?.aborted) abort();
     let parserFailed = false;
     let bytes = 0;
     let thinkBytes = 0;
@@ -146,7 +203,9 @@ export async function runAgentLocally(input: {
     }
 
     child.on("error", (cause) => emitErr(`${cause.message}\n`));
-    child.on("close", (code) => {
+    child.on("close", async (code) => {
+      input.signal?.removeEventListener("abort", abort);
+      try { await receipt; } catch { code = 1; }
       if (parserFailed) code = 1;
       clearTimeout(deadline);
       resolve({ code, output: outBuf, errOutput: errBuf, ms: Date.now() - startedAt });

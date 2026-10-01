@@ -2,6 +2,7 @@ import { sanitizeCatalog } from "../../../lib/ai/model-discovery";
 import { query } from "../../../lib/db/client";
 import { agentById } from "../../../lib/ai/catalog";
 import { bearerToken, deviceFromToken } from "../../../lib/runner/devices";
+import { events } from "../../../lib/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +25,9 @@ export async function POST(request: Request) {
   if (body?.version !== "2" || !Array.isArray(body.agentIds)) return Response.json({ error: "Update your runner to protocol 2 and restart it." }, { status: 426 });
   const agentIds = body.agentIds.filter((id: unknown): id is string => typeof id === "string" && !!agentById(id));
   const catalog = sanitizeCatalog(body.modelCatalog);
-  await query(`UPDATE runner_devices SET version = $2, agent_ids = $3, model_catalog = $4 WHERE id = $1
-    AND (version IS DISTINCT FROM $2 OR agent_ids IS DISTINCT FROM $3 OR model_catalog IS DISTINCT FROM $4::jsonb)`, [device.id, "2", agentIds, JSON.stringify(catalog)]);
+  const changed = await query(`UPDATE runner_devices SET version = $2, agent_ids = $3, model_catalog = $4, supports_inputs=$5 WHERE id = $1
+    AND (version IS DISTINCT FROM $2 OR agent_ids IS DISTINCT FROM $3 OR model_catalog IS DISTINCT FROM $4::jsonb OR supports_inputs IS DISTINCT FROM $5) RETURNING id`, [device.id, "2", agentIds, JSON.stringify(catalog),body.supportsInputs===true]);
+  if(changed.length)await (await events()).publish(`user:${device.userId}`,{type:'devices.changed',at:Date.now()}).catch(()=>{});
   return Response.json(
     { ok: true, deviceId: device.id, serverTime: Date.now() } satisfies HeartbeatResponse,
     { headers: { "cache-control": "no-store" } },

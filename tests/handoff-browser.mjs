@@ -51,6 +51,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   const pending = new Map();
   let sequence = 0;
   const runtimeErrors = [];
+  const networkRequests = [];
   let lastSessionId;
   const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -98,6 +99,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         if (message.error) operation?.reject(new Error(JSON.stringify(message.error)));
         else operation?.resolve(message.result);
       }
+      if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
     async function tab(token, targetRoom = roomId, readySelector = 'select[aria-label="Active repository"]') {
@@ -105,7 +107,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
       const command = (method, params) => send(method, params, sessionId);
-      await command("Page.enable"); await command("Runtime.enable");
+      await command("Page.enable"); await command("Runtime.enable"); await command("Network.enable");
       await command("Network.setCookie", { name: "ma_auth", value: token, url: server, httpOnly: true, sameSite: "Lax" });
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
       const evaluate = async expression => {
@@ -122,10 +124,17 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         console.error(await evaluate("document.body.innerText.slice(0, 5000)"), runtimeErrors);
         throw cause;
       }
-      return { command, evaluate, click, targetId };
+      return { command, evaluate, click, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
+    await delay(2000);
+    const baseline = networkRequests.length;
+    await delay(16000);
+    const idleReads = networkRequests.slice(baseline).filter(r => r.sessionId === sender.sessionId && r.method === "GET" && /\/api\/(tasks|ai\/agents|runner\/devices)|\/(members|handoffs|history)(?:\?|$)/.test(r.url));
+    assert.deepEqual(idleReads, [], "Idle room does not poll tasks, providers, devices, members, handoffs or history");
+    assert.equal(networkRequests.filter(r => r.sessionId === sender.sessionId && r.url === `${server}/api/sessions/${roomId}/events`).length, 1, "Room components share one SSE connection");
+    console.log("  ok idle room: zero refresh GETs over 16 seconds; one shared room stream");
     // A human assignment from another person's chat must work independently
     // of AI provider availability and without transferring chat control.
     const assigner = await tab(tokens[1], `${roomId}?run=${chat.id}`);
@@ -448,7 +457,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     console.log("  ok fresh-room uploads, second import, switching back, and recovery from real blocked file/tree requests");
 
     const deviceToken = randomBytes(32).toString("base64url");
-    await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,last_seen_at) VALUES ($1,'Simulated Bob runner',$2,'2',ARRAY['codex'],now())`, [bob, createHash("sha256").update(deviceToken).digest()]);
+    await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,last_seen_at,supports_inputs) VALUES ($1,'Simulated Bob runner',$2,'2',ARRAY['codex'],now(),true)`, [bob, createHash("sha256").update(deviceToken).digest()]);
     const runnerRequest = (path, body) => fetch(`${server}${path}`, { method: "POST", headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" }, body: JSON.stringify(body) });
     const denied = await request(tokens[0], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 0, prompt: "Stale driver" });
     assert.equal(denied.status, 409);
@@ -461,6 +470,22 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.ok(job);
       assert.equal(job.runId, chat.id);
       assert.match(job.agentPrompt, /Continue the accessible checkout/);
+      if (index === 0) {
+        await recipient.command("Page.navigate", {url:`${server}/s/${roomId}?run=${chat.id}`});
+        await eventually(() => recipient.evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`), "working agent queue composer");
+        const message = "Also verify keyboard navigation while working";
+        await recipient.evaluate(`(() => { const input=document.querySelector('textarea[aria-label="Message working agent"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(message)}); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+        await recipient.click("Queue message");
+        await eventually(() => recipient.evaluate(`document.querySelector('[aria-label="Chat message queue"]')?.textContent.includes(${JSON.stringify(message)})`), "queued instruction appears immediately");
+        const inputEndpoint=`/api/sessions/${roomId}/runs/${chat.id}/inputs`;
+        assert.equal((await request(tokens[0], inputEndpoint, "POST", {id:randomUUID(),body:"Unauthorized",controlVersion:1})).status,409);
+        const claimed = await (await runnerRequest(`/api/runner/runs/${job.turnId}/inputs`,{kind:"claim",claimId:randomUUID()})).json();
+        assert.equal(claimed.input.body,message);
+        assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/inputs`,{kind:"ack",id:claimed.input.id})).status,200);
+        await eventually(() => recipient.evaluate(`document.querySelector('[aria-label="Chat message queue"]')?.textContent.includes("accepted by the agent")`), "provider acknowledgement arrives over live stream");
+        assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/inputs`,{kind:"claim",claimId:randomUUID(),closeIfEmpty:true})).status,200);
+        console.log("  ok working-chat composer, durable queue, driver permissions and live acknowledgement through real APIs");
+      }
       const runnerGit = new RunnerGit(server, deviceToken, join(directory, "simulated-runner"));
       const resultSha = await runnerGit.withWorkspace(job, async workspace => {
         await writeFile(join(workspace.path, `step-${index}.txt`), `Deterministic runner output ${index}\n`);
@@ -488,6 +513,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/events`,activityBody)).status,200);
     assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/complete`,{code:1,resultSha:null,output:"Disconnected",errOutput:"Interrupted",ms:10})).status,200);
     await interruptedOutput;
+    assert.equal((await runnerRequest(`/api/runner/runs/${pendingJob.turnId}/events`,{events:[]})).status,403,"An ended execution cannot renew its lease");
     const historyUrl=`/api/sessions/${roomId}/runs/${chat.id}/history`;
     const history=await (await request(tokens[0],historyUrl)).json(); assert.ok(history.snapshots.length);
     const checkpoint=history.snapshots[0];

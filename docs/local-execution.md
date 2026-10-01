@@ -1,5 +1,8 @@
 # Local execution: running agents on the user's machine
 
+> Live updates and queued follow-up messages are implemented; see
+> [live chat queues](live-chat-queues.md) for the current push protocol and provider limits.
+>
 > Implementation update: hosted Compose now requires users' own runners and
 > disables server fallback. Runners use persistent room/repository worktrees,
 > at `~/multiplayer-ai/workspaces/<repository>/<room>`, sharing a local cache

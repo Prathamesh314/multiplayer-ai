@@ -1,4 +1,5 @@
 "use client";
+import { openUserStream } from "../../lib/events/shared-client";
 
 /*
  * Your computers: the machines that run your agents (docs/local-execution.md).
@@ -20,8 +21,6 @@ import { SpinnerIcon } from "../icons";
 import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
 import { desktopBridge } from "../../lib/desktop";
 
-/** Refresh cadence while the dialog is open; pairing completion shows itself. */
-const POLL_MS = 5_000;
 
 export function DevicesDialog({ onClose }: { onClose: () => void }) {
   const [devices, setDevices] = useState<RunnerDevice[] | null>(null);
@@ -43,11 +42,10 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
       }).catch(() => {
         if (!cancelled) setError("Could not load your computers. Check your connection and try again.");
       });
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
+    const stream = openUserStream(type => { if (type === "devices.changed") void load(); }, () => void load());
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stream.close();
     };
   }, [reloadVersion]);
 

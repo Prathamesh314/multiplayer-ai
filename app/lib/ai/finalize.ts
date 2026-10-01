@@ -1,3 +1,5 @@
+import { notifyUsage } from "../events/notifications";
+import { closeTurnInputs } from "./close-inputs";
 import { projectRepositoryForRoom } from "../project/repositories";
 import { queryOne, transaction } from "../db/client";
 import { events } from "../events";
@@ -56,6 +58,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     if (!["owner", "editor"].includes(role?.role)) throw new ControlError("Execution access was revoked.", 403);
     const { rows: [job] } = await tx.query(`SELECT *, lease_expires_at > now() AS live FROM runner_jobs WHERE turn_id = $1`, [input.turnId]);
     if (job && !turn.completion && (job.status !== "claimed" || !job.live)) throw new ControlError("The runner lease expired. Recover control before retrying.");
+    await closeTurnInputs(tx, input.turnId);
     const saved = turn.completion ?? { ...input, onError: undefined };
     await tx.query(`UPDATE agent_turns SET completion = $2 WHERE id = $1`, [input.turnId, JSON.stringify(saved)]);
     return { input: saved as FinalizeInput };
@@ -98,6 +101,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
         SELECT $1, message_seq, $2, $3 FROM allocated RETURNING id`, [saved.runId, message.role, message.body]);
       if (message.role === "agent") agentMessageId = storedMessage.id;
     }
+    await closeTurnInputs(tx, saved.turnId);
     const result: FinalizeResult = { status, changes, headSha: sha };
     await tx.query(`UPDATE agent_turns SET status = $2, result = $3, ended_at = now() WHERE id = $1`, [saved.turnId, status, JSON.stringify(result)]);
     await tx.query(`UPDATE agent_runs SET status = $2, result_sha = $3, exit_code = $4, error = $5,
@@ -111,6 +115,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     }
     return { result, fresh: true };
   }));
+  void notifyUsage(saved.sessionId);
   const result = committed.result;
   const bus = await events();
   if (result.headSha) await bus.publish(saved.sessionId, {

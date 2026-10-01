@@ -67,12 +67,45 @@ test('downloaded runner installs without a checkout and pairs/starts from unrela
       return true;
     });
     assert.equal(requests[0].body.code,'RN-TEST-CODE');
-    assert.deepEqual(requests.map(r=>r.path),['/api/runner/pair','/api/runner/heartbeat','/api/runner/claim']);
+    assert.deepEqual(requests.slice(0,2).map(r=>r.path),['/api/runner/pair','/api/runner/heartbeat']);
+    assert.ok(requests.some(r=>r.path==='/api/runner/events'));
+    assert.ok(requests.slice(2).every(r=>['/api/runner/events','/api/runner/claim'].includes(r.path)));
+    assert.equal(requests[1].body.supportsInputs,true);
     assert.equal(requests[1].authorization,'Bearer test-only-device-token');
     assert.equal(requests[2].authorization,'Bearer test-only-device-token');
     assert.deepEqual(await readdir(first),[],'no package.json or checkout created in the working folder');
     assert.deepEqual(await readdir(second),[]);
   } finally {
+    server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+    await rm(directory,{recursive:true,force:true});
+  }
+});
+
+test('idle packaged runner waits for push and claims immediately on a work signal', {timeout:15000}, async () => {
+  const {spawn}=await import('node:child_process');
+  const directory=await mkdtemp(join(tmpdir(),'mp-runner-push-'));let source,claims=0,child;
+  const server=createServer(async(req,res)=>{
+    for await(const _chunk of req){} // consume request so keep-alive remains usable
+    if(req.url==='/api/runner/events'){
+      source=res;res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: ready\ndata: {}\n\n');return;
+    }
+    res.setHeader('content-type','application/json');
+    if(req.url==='/api/runner/claim'){claims++;res.end('{"job":null,"leaseMs":null}');}
+    else res.end('{}');
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const wait=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,25));}throw Error('Runner did not receive the signal');};
+  try {
+    child=spawn(process.execPath,[join(root,'.runner-build/package/runner.cjs'),'start','--server',`http://127.0.0.1:${server.address().port}`,'--token','isolated-test-token','--data',join(directory,'data'),'--workspaces',join(directory,'workspaces')],{env:{...process.env,PATH:directory},stdio:'pipe'});
+    let error='';child.stderr.on('data',part=>{error+=part;});child.stdout.resume();
+    await wait(()=>!!source&&claims>0);await new Promise(r=>setTimeout(r,100));
+    const idle=claims;await new Promise(r=>setTimeout(r,1700));assert.equal(claims,idle,'No periodic idle claims');
+    source.write('event: runner.work\ndata: {"type":"runner.work"}\n\n');
+    await wait(()=>claims>idle);assert.equal(claims,idle+1);
+    const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exited;
+    assert.equal(child.exitCode,0,error);
+  } finally {
+    if(child&&child.exitCode===null)child.kill('SIGKILL');
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     await rm(directory,{recursive:true,force:true});
   }

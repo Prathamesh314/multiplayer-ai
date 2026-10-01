@@ -150,16 +150,21 @@ export function Workspace({
   const [handoffInbox, setHandoffInbox] = useState<{ id: string; runId: string; title: string | null; sender: string }[]>([]);
   useEffect(() => {
     const controller = new AbortController();
+    let expiry: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => void fetch(`/api/sessions/${session.id}/handoffs`, { cache: "no-store", signal: controller.signal })
       .then(async response => {
         if (!response.ok) return;
         const body = await response.json();
-        if (!controller.signal.aborted) setHandoffInbox(body.offers);
+        if (!controller.signal.aborted) {
+          setHandoffInbox(body.offers);
+          clearTimeout(expiry);
+          const deadlines = body.offers.map((offer: { expiresAt: string }) => new Date(offer.expiresAt).getTime()).filter(Number.isFinite);
+          if (deadlines.length) expiry = setTimeout(refresh, Math.max(0, Math.min(...deadlines) - Date.now() + 100));
+        }
       }).catch(() => {});
     refresh();
-    const stream = openSessionStream(session.id, { onRunControl: refresh, onStatus: connected => { if (connected) refresh(); } });
-    const timer = setInterval(refresh, 15_000);
-    return () => { controller.abort(); clearInterval(timer); stream.close(); };
+    const stream = openSessionStream(session.id, { onRunControl: refresh, onRoleChanged: refresh, onStatus: connected => { if (connected) refresh(); } });
+    return () => { controller.abort(); clearTimeout(expiry); stream.close(); };
   }, [session.id]);
   // The chat whose context the next new run will import into its memory, if any.
   // Shared so the sidebar/header "Fork" actions and the composer picker agree.
@@ -412,9 +417,9 @@ export function Workspace({
   // One heartbeat per open tab, for as long as this session is open. The tab
   // being open is what "online" means, so it starts and stops with the mount.
   useEffect(() => {
-    const beat = startHeartbeat({ sessionId: session.id, orgId: session.orgId });
+    const beat = startHeartbeat({ sessionId: session.id, orgId: session.orgId, onOnline: people.onOnline });
     return () => beat.stop();
-  }, [session.id, session.orgId]);
+  }, [session.id, session.orgId, people.onOnline]);
 
   // Ctrl+Shift+Z toggles the terminal; Ctrl+` also works, as in VS Code.
   useEffect(() => {

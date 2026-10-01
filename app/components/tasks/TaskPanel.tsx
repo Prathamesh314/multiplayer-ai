@@ -1,5 +1,7 @@
 "use client";
+import { openUserStream } from "../../lib/events/shared-client";
 
+import { openSessionStream } from "../../lib/events/client";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { isSelfAssignment, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "../../lib/tasks/types";
@@ -49,11 +51,11 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
   useEffect(() => {
     const counter = generation;
     void refresh();
-    const poll = () => { if (!document.hidden && !mutation.current && !requestsInFlight.current) void refresh(); };
-    const timer = setInterval(poll,5000);
+    const poll = () => { if (!document.hidden && !mutation.current) void refresh(); };
+    const stream = sessionId ? openSessionStream(sessionId, { onTasksChanged: poll, onMembersChanged: poll, onRoleChanged: poll, onStatus: connected => { if (connected) poll(); } }) : openUserStream(type => { if (type === "tasks.changed") poll(); }, poll);
     window.addEventListener("focus",poll);
-    return () => { counter.current++; clearInterval(timer); window.removeEventListener("focus",poll); };
-  },[refresh,refreshVersion]);
+    return () => { counter.current++; stream.close(); window.removeEventListener("focus",poll); };
+  },[refresh,refreshVersion,sessionId]);
 
   async function assign(event:React.FormEvent) {
     event.preventDefault();

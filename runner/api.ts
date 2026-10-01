@@ -1,5 +1,7 @@
 import type { Checkpoint } from "../app/lib/runner/checkpoint-types";
 import { detectAgents } from "../app/lib/ai/detect";
+import { readSignals } from "./signals";
+import type { QueuedInput } from "./input-types";
 /*
  * The runner's half of the protocol (docs/local-execution.md §3.3): five
  * plain HTTP calls against the control plane, authenticated by the device
@@ -12,7 +14,12 @@ import type { ClaimResponse } from "../app/api/runner/claim/route";
 import type { PairResponse } from "../app/api/runner/pair/route";
 import type { RunnerCompleteRequest } from "../app/api/runner/runs/[runId]/complete/route";
 
+export class RunnerHttpError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 export class RunnerApi {
+  private inventory = "";
   constructor(
     private readonly server: string,
     private readonly token: string,
@@ -34,15 +41,42 @@ export class RunnerApi {
     }
     if (!response.ok) {
       const parsed = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(parsed?.error ?? `${path} failed with ${response.status}`);
+      throw new RunnerHttpError(parsed?.error ?? `${path} failed with ${response.status}`, response.status);
     }
     return (await response.json()) as T;
   }
 
-  async heartbeat(): Promise<void> {
+  async heartbeat(onlyChanged = false): Promise<void> {
     const agents = await detectAgents();
     const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
-    await this.post("/api/runner/heartbeat", { version: "2", agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) });
+    const body = { version: "2", supportsInputs: true, agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
+    // Timestamps change when the CLI cache is refreshed; they are not inventory changes.
+    const signature = JSON.stringify(body, (key, value) => ["checkedAt", "refreshedAt"].includes(key) ? undefined : value);
+    if (onlyChanged && this.inventory === signature) return;
+    await this.post("/api/runner/heartbeat", body);
+    this.inventory = signature;
+  }
+
+  async signals(signal: AbortSignal, onEvent: (type: string, data: unknown) => void): Promise<void> {
+    const response = await fetch(`${this.server}/api/runner/events`, { headers: { authorization: `Bearer ${this.token}` }, signal, redirect: "error" });
+    if (response.status === 401) throw new Error("This device was revoked — re-pair with multiplayer-ai-runner pair.");
+    if (!response.ok) throw new Error(`Runner live connection failed (${response.status}). Update the server and runner together.`);
+    await readSignals(response, onEvent);
+  }
+
+  async input(turnId: string, action: { kind: "claim"; claimId: string; closeIfEmpty?: boolean } | { kind:"ack"|"uncertain"; id:string; error?:string }): Promise<QueuedInput | null> {
+    // Every action has a stable identity. Retrying a lost acknowledgement never
+    // resends text to the agent, and retrying a claim returns the same input.
+    let failure: unknown;
+    for(let attempt=0;attempt<3;attempt++) {
+      try { return (await this.post<{input:QueuedInput|null}>(`/api/runner/runs/${encodeURIComponent(turnId)}/inputs`,action)).input; }
+      catch(error) {
+        failure=error;
+        if (error instanceof RunnerHttpError && error.status < 500 || error instanceof Error && error.message.includes('re-pair')) throw error;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    throw failure;
   }
 
   /** Long-poll for the next job addressed to this device's user. */

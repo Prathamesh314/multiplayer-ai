@@ -1,5 +1,7 @@
+import { notifyUsage } from "../events/notifications";
 import { query, queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "../ai/run-events";
+import { events } from "../events";
 
 export const JOB_LEASE_MS = 60_000;
 export const CLAIM_FALLBACK_MS = 20_000;
@@ -8,6 +10,8 @@ export async function enqueueLocalJob(job: AgentRunJob, userId: string): Promise
   await query(`INSERT INTO runner_jobs (run_id, turn_id, user_id, payload) VALUES ($1, $2, $3, $4)
     ON CONFLICT (turn_id) DO NOTHING`, [job.runId, job.turnId, userId, JSON.stringify(job)]);
   await query(`UPDATE agent_runs SET execution = 'local' WHERE id = $1`, [job.runId]);
+  void notifyUsage(job.sessionId);
+  await (await events()).publish(`user:${userId}`, { type: "runner.work", at: Date.now() }).catch(() => {});
 }
 
 export async function claimNextJob(input: { userId: string; deviceId: string }): Promise<{ job: AgentRunJob; leaseMs: number } | null> {
@@ -20,6 +24,7 @@ export async function claimNextJob(input: { userId: string; deviceId: string }):
          JOIN agent_runs r ON r.id = j.run_id JOIN runner_devices d ON d.id = $2
          WHERE j.user_id = $1 AND j.status = 'queued' AND t.status = 'queued'
            AND d.user_id = $1 AND d.revoked_at IS NULL AND d.version = '2'
+           AND (d.supports_inputs OR NOT EXISTS (SELECT 1 FROM agent_run_inputs i WHERE i.turn_id=t.id AND i.status='queued'))
            AND j.payload->>'agentId' = ANY(d.agent_ids)
            AND runner_supports_model(d.model_catalog, j.payload->>'agentId', j.payload->>'model', j.payload->>'effort')
            AND r.driver_user_id = $1 AND r.control_version = t.control_version

@@ -11,7 +11,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (refusal || !result) return refusal!;
   if (!canWrite(result.role)) return Response.json({ offers: [] });
   const offers = await query(
-    `SELECT h.id, h.run_id AS "runId", r.title, u.display_name AS sender, h.note
+    `SELECT h.id, h.run_id AS "runId", r.title, u.display_name AS sender, h.note, h.expires_at AS "expiresAt"
      FROM run_handoffs h JOIN agent_runs r ON r.id = h.run_id
      JOIN users u ON u.id = h.from_user_id
      WHERE r.session_id = $1 AND h.status = 'pending' AND h.expires_at > now()

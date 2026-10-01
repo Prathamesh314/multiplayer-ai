@@ -1,290 +1,49 @@
-import { assertAvailableModel } from "./model-discovery";
 import { startTurn, failTurn } from "./turns";
-import { spawn } from "node:child_process";
 import { events } from "../events";
 import { commitTurnWork, prepareTurnWork } from "../session/repo";
 import { agentById } from "./catalog";
-import { agentEnv } from "./env";
 import { finalizeAgentRun } from "./finalize";
 import { appendMessage } from "./runs";
+import { serverInputSource } from "./input-queue";
+import { runAgentLocally } from "../../../runner/execute";
 import type { AgentRunJob, AiRunEvent } from "./run-events";
 
-/**
- * Runs one agent turn end to end, against the session's working copy.
- *
- * This is the execution core lifted out of the run route so that the two ways a
- * turn can run — inline in the web process (no Redis) and inside a worker
- * (Redis) — share *exactly* the same code. Nothing about spawning, committing,
- * or persisting differs between them; only where the live events go, which is
- * the injected `onEvent`. The route feeds them to the driver's response; the
- * worker publishes them to Redis for the route to forward. Everything else —
- * the durable turn, the auto-commit, the watcher broadcasts, the memory ingest
- * — happens here, once.
- *
- * The caller has already created the run row and stored the user's prompt turn;
- * this picks up from there and always ends by calling `finishRun`.
- *
- * This is remote code execution with an LLM at the keyboard, gated upstream
- * exactly like the terminal. The prompt reaches the CLI only as an argv value
- * (never a shell string), so no quoting inside it can become a second command.
- */
-const MAX_RUN_MS = 10 * 60 * 1000;
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-/** Thinking is streamed for feedback but never stored, and capped separately so
- * a long chain of thought cannot crowd out the reply's budget. */
-const MAX_THINK_BYTES = 256 * 1024;
-
-export function executeAgentRun(
-  job: AgentRunJob,
-  onEvent: (event: AiRunEvent) => void,
-): Promise<void> {
+/** Server workers and desktop runners share the provider protocol and limits. */
+export async function executeAgentRun(job: AgentRunJob, onEvent: (event: AiRunEvent) => void): Promise<void> {
   const { sessionId, runId, baseSha, author, userPrompt } = job;
-  // The id every git operation keys on. A chat on an imported repo works in
-  // that repo's bare/work pair; the default chat works in the room's own —
-  // same helpers either way, because the id is the repo handle.
   const repoRef = job.repoId ?? sessionId;
-
   const broadcast = (event: Parameters<Awaited<ReturnType<typeof events>>["publish"]>[1]) => {
-    void events().then((bus) => bus.publish(sessionId, event)).catch(() => {});
+    void events().then(bus => bus.publish(sessionId, event)).catch(() => {});
   };
-
-  const failFast = async (message: string): Promise<void> => {
-    onEvent({ t: "err", d: message });
-    onEvent({ t: "exit", code: null, ms: 0, headSha: null, committed: false });
+  const send = (event: AiRunEvent) => {
+    onEvent(event);
+    if (event.t === "out" || event.t === "err") broadcast({ type: "run.output", runId, stream: event.t, chunk: event.d, at: Date.now() });
+    if (event.t === "notice") void appendMessage({ runId, role: "system", body: event.message }).then(turn =>
+      broadcast({ type: "run.turn", runId, seq: turn.seq, role: "system", authorName: null, body: turn.body, at: Date.now() })).catch(() => {});
+  };
+  if (!await startTurn(job)) { send({ t: "notice", message: "This turn was already claimed or is no longer eligible to execute." }); return; }
+  let inputs: Awaited<ReturnType<typeof serverInputSource>> | undefined;
+  try {
+    const agent = agentById(job.agentId);
+    if (!agent) throw new Error("Unknown agent.");
+    const cwd = await prepareTurnWork(repoRef, job.turnId, baseSha);
+    inputs = await serverInputSource(job);
+    send({ t: "start", agent: agent.bin, cwd, runId });
+    const result = await runAgentLocally({ spec: agent, prompt: job.agentPrompt, model: job.model, effort: job.effort, cwd, inputs, onEvent: send });
+    let sha: string | null = null;
+    try { sha = await commitTurnWork(repoRef, job.turnId, baseSha, author); }
+    catch (cause) { result.code = 1; result.errOutput += `Could not commit the changes: ${String(cause)}\n`; send({ t: "err", d: result.errOutput }); }
+    const finalized = await finalizeAgentRun({ turnId: job.turnId, sessionId, runId, repoId: job.repoId, baseSha, userPrompt,
+      binName: agent.bin, author, sha, code: result.code, output: result.output, errOutput: result.errOutput,
+      onError: message => send({ t: "err", d: message }),
+    });
+    send({ t: "exit", code: finalized.status === "failed" ? 1 : result.code, ms: result.ms,
+      headSha: finalized.headSha, committed: finalized.headSha != null, changes: finalized.changes.length ? finalized.changes : undefined });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    send({ t: "err", d: message });
     await failTurn(job.turnId, message).catch(() => {});
     broadcast({ type: "run.finished", runId, status: "failed", headSha: null, at: Date.now() });
-  };
-
-  return new Promise<void>((resolve) => {
-    void (async () => {
-      if (!await startTurn(job)) {
-        onEvent({ t: "notice", message: "This turn was already claimed or is no longer eligible to execute." });
-        resolve();
-        return;
-      }
-      const agent = agentById(job.agentId);
-      if (!agent) {
-        await failFast("Unknown agent.");
-        resolve();
-        return;
-      }
-
-      const bin = agent.bin;
-      let args: string[];
-      try {
-        await assertAvailableModel(agent, job.model, job.effort);
-        args = agent.promptArgs(job.agentPrompt, { model: job.model, effort: job.effort });
-      } catch (cause) {
-        await failFast(cause instanceof Error ? cause.message : "Model unavailable.");
-        resolve();
-        return;
-      }
-      const parser = agent.createStreamParser?.() ?? null;
-
-      // Materialize the working copy at the run's base before spawning. A cold
-      // clone would otherwise stall the first event, so it happens here rather
-      // than upstream, and a failure fails the run cleanly.
-      let cwd: string;
-      try {
-        cwd = await prepareTurnWork(repoRef, job.turnId, baseSha);
-      } catch (cause) {
-        await failFast(
-          `Could not prepare the workspace: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
-        resolve();
-        return;
-      }
-
-      const startedAt = Date.now();
-      let closed = false;
-      let parserFailed = false;
-      let bytes = 0;
-      let thinkBytes = 0;
-      let outBuf = "";
-      let errBuf = "";
-
-      const send = (event: AiRunEvent) => {
-        if (closed) return;
-        onEvent(event);
-        // Warnings ("stopped after N minutes", "output limit reached") must
-        // outlive the live stream: everyone reading the chat later should see
-        // why the run ended the way it did. Fire-and-forget, like all
-        // best-effort persistence here.
-        if (event.t === "notice") {
-          void appendMessage({ runId, role: "system", body: event.message })
-            .then((turn) =>
-              broadcast({
-                type: "run.turn", runId, seq: turn.seq, role: "system",
-                authorName: null, body: turn.body, at: Date.now(),
-              }),
-            )
-            .catch(() => {});
-        }
-      };
-
-      let child: ReturnType<typeof spawn>;
-      try {
-        child = spawn(bin, args, {
-          cwd,
-          detached: process.platform !== "win32",
-          env: { ...agentEnv(agent.id), CI: "1", NO_COLOR: "1" },
-          // stdin closed: these run one-shot and must never sit waiting on
-          // input nobody can supply.
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-      } catch (cause) {
-        await failFast(cause instanceof Error ? cause.message : String(cause));
-        resolve();
-        return;
-      }
-
-      send({ t: "start", agent: bin, cwd, runId });
-
-      const deadline = setTimeout(() => {
-        send({ t: "notice", message: `Stopped after ${MAX_RUN_MS / 60_000} minutes.` });
-        kill(child);
-      }, MAX_RUN_MS);
-      deadline.unref?.();
-
-      // The reply: shown live, accumulated for storage, and broadcast to
-      // watchers. The only durable output.
-      const emitReply = (text: string) => {
-        if (bytes >= MAX_OUTPUT_BYTES) return;
-        bytes += Buffer.byteLength(text);
-        send({ t: "out", d: text });
-        outBuf += text;
-        broadcast({ type: "run.output", runId, stream: "out", chunk: text, at: Date.now() });
-        if (bytes >= MAX_OUTPUT_BYTES) {
-          send({ t: "notice", message: "Output limit reached — the run was stopped." });
-          kill(child);
-        }
-      };
-
-      // Thinking and tool activity: live "it's working" feedback, never stored,
-      // sharing one budget so a long chain of thought cannot starve the reply's.
-      const emitThinking = (text: string) => {
-        if (thinkBytes >= MAX_THINK_BYTES) return;
-        thinkBytes += Buffer.byteLength(text);
-        send({ t: "think", d: text });
-      };
-      const emitActivity = (text: string) => {
-        if (thinkBytes >= MAX_THINK_BYTES) return;
-        thinkBytes += Buffer.byteLength(text);
-        send({ t: "act", d: text });
-      };
-
-      const emitErr = (chunk: string) => {
-        if (bytes >= MAX_OUTPUT_BYTES) return;
-        bytes += Buffer.byteLength(chunk);
-        send({ t: "err", d: chunk });
-        errBuf += chunk;
-        broadcast({ type: "run.output", runId, stream: "err", chunk, at: Date.now() });
-        if (bytes >= MAX_OUTPUT_BYTES) {
-          send({ t: "notice", message: "Output limit reached — the run was stopped." });
-          kill(child);
-        }
-      };
-
-      // stdout is either JSON events to decode (parser set) or the reply
-      // verbatim. JSON is newline-delimited, so it is buffered into whole lines;
-      // a trailing partial line is left for the next chunk.
-      let lineBuf = "";
-      const onStdout = (chunk: string) => {
-        if (!parser) {
-          emitReply(chunk);
-          return;
-        }
-        lineBuf += chunk;
-        let newline;
-        while ((newline = lineBuf.indexOf("\n")) >= 0) {
-          const line = lineBuf.slice(0, newline);
-          lineBuf = lineBuf.slice(newline + 1);
-          for (const piece of parser.push(line)) {
-            if (piece.kind === "reply") emitReply(piece.text);
-            else if (piece.kind === "thinking") emitThinking(piece.text);
-            else if (piece.kind === "error") { parserFailed = true; emitErr(piece.text); kill(child); }
-            else emitActivity(piece.text);
-          }
-        }
-      };
-
-      if (child.stdout) {
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", onStdout);
-      }
-      if (child.stderr) {
-        child.stderr.setEncoding("utf8");
-        child.stderr.on("data", emitErr);
-      }
-
-      child.on("close", async (code) => {
-        if (parserFailed) code = 1;
-        clearTimeout(deadline);
-
-        // Whatever it changed is committed here, keeping the session's "never
-        // uncommitted" invariant and letting everyone else see the result.
-        let sha: string | null = null;
-        try {
-          sha = await commitTurnWork(repoRef, job.turnId, baseSha, author);
-        } catch (cause) {
-          code = 1;
-          errBuf += `Could not commit the changes: ${String(cause)}\n`;
-          send({ t: "err", d: errBuf });
-        }
-
-        // Everything from here — head advance, transcript, diff stats, room
-        // events, memory ingest — is the shared close-out the runner protocol's
-        // /complete route also runs, so cloud and local runs end identically.
-        const finalized = await finalizeAgentRun({
-          turnId: job.turnId,
-          sessionId,
-          runId,
-          repoId: job.repoId,
-          baseSha,
-          userPrompt,
-          binName: bin,
-          author,
-          sha,
-          code,
-          output: outBuf,
-          errOutput: errBuf,
-          onError: (message) => send({ t: "err", d: message }),
-        }).catch((cause) => {
-          code = 1;
-          send({ t: "err", d: `Finalization needs recovery: ${String(cause)}` });
-          return null;
-        });
-        if (finalized?.status === "failed") code = 1;
-        // The run record is best-effort; the live stream already succeeded.
-
-        send({
-          t: "exit",
-          code,
-          ms: Date.now() - startedAt,
-          headSha: finalized?.headSha ?? null,
-          committed: finalized?.headSha != null,
-          // The driver's stream builds its "changed files" line from this;
-          // watchers and later readers get the durable system turn instead.
-          changes: finalized && finalized.changes.length > 0 ? finalized.changes : undefined,
-        });
-        closed = true;
-        resolve();
-      });
-
-      child.on("error", (cause) => send({ t: "err", d: `${cause.message}\n` }));
-    })();
-  });
-}
-
-/** Targets the process group so a helper the agent spawned dies with it. */
-function kill(child: ReturnType<typeof spawn>): void {
-  try {
-    process.kill(-(child.pid ?? 0), "SIGKILL");
-  } catch {
-    try {
-      child.kill("SIGKILL");
-    } catch {
-      // Already gone.
-    }
-  }
+    send({ t: "exit", code: null, ms: 0, headSha: null, committed: false });
+  } finally { await inputs?.close(); }
 }

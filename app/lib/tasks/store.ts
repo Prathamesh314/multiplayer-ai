@@ -1,3 +1,4 @@
+import { events } from "../events";
 import { query, queryOne, transaction } from "../db/client";
 import { agentById } from "../ai/catalog";
 import { isUUID, isSelfAssignment, SELF_ASSIGNMENT_ERROR, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "./types";
@@ -62,7 +63,7 @@ export async function createTask(actor: string, input: unknown): Promise<{ id: s
   // Validate before creating either record: a rejected assignment must not
   // leave an empty source chat or consume its retry ID.
   if (isSelfAssignment(actor, assigneeId)) throw new TaskError(SELF_ASSIGNMENT_ERROR);
-  return transaction(async tx => {
+  const result = await transaction(async tx => {
     if (chat) {
       const access = await tx.query(`SELECT id FROM sessions WHERE id=$1
         AND room_access_role(id,$2) IN ('owner','editor') AND room_access_role(id,$3) IS NOT NULL`,
@@ -98,6 +99,8 @@ export async function createTask(actor: string, input: unknown): Promise<{ id: s
     }
     return { id, runId };
   });
+  await notifyTask(sessionId, actor, assigneeId);
+  return result;
 }
 
 export async function updateTask(actor: string, id: string, status: unknown) {
@@ -106,6 +109,12 @@ export async function updateTask(actor: string, id: string, status: unknown) {
     FROM agent_runs r WHERE t.id=$1 AND r.id=t.run_id
     AND room_access_role(r.session_id,$2) IS NOT NULL
     AND (t.assignee_id=$2 OR (t.created_by=$2 AND room_access_role(r.session_id,$2) IN ('owner','editor')))
-    RETURNING t.id`, [id,actor,status]);
+    RETURNING t.id,r.session_id,t.created_by,t.assignee_id`, [id,actor,status]);
   if (!row) throw new TaskError("Task unavailable, or you cannot update it.",403);
+  await notifyTask(row.session_id as string, row.created_by as string, row.assignee_id as string);
+}
+
+async function notifyTask(room: string, creator: string, assignee: string) {
+  const bus = await events();
+  await Promise.all([room, `user:${creator}`, `user:${assignee}`].map(scope => bus.publish(scope, { type: "tasks.changed", at: Date.now() }))).catch(() => {});
 }

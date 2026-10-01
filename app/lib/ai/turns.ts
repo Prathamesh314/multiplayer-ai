@@ -1,3 +1,5 @@
+import { notifyUsage } from "../events/notifications";
+import { closeTurnInputs } from "./close-inputs";
 import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
 
@@ -61,21 +63,26 @@ export async function startTurn(job: AgentRunJob): Promise<boolean> {
        AND room_access_role(r.session_id, t.driver_user_id) IN ('owner', 'editor') RETURNING t.id`,
     [job.turnId],
   );
+  if (row) void notifyUsage(job.sessionId);
   return !!row;
 }
 
 export async function failTurn(turnId: string, message: string) {
+  let sessionId: string | undefined;
   await transaction(async (tx) => {
     const { rows: [turn] } = await tx.query(`SELECT run_id FROM agent_turns WHERE id = $1`, [turnId]);
     if (!turn) return;
-    await tx.query(`SELECT id FROM agent_runs WHERE id = $1 FOR UPDATE`, [turn.run_id]);
+    const { rows: [run] } = await tx.query(`SELECT id,session_id FROM agent_runs WHERE id = $1 FOR UPDATE`, [turn.run_id]);
+    sessionId = run?.session_id;
     const result = await tx.query(
       `UPDATE agent_turns SET status = 'failed', ended_at = now(), result = $2
        WHERE id = $1 AND status IN ('preparing', 'queued', 'running') AND completion IS NULL RETURNING id`,
       [turnId, JSON.stringify({ error: message })],
     );
+    if (result.rowCount) await closeTurnInputs(tx, turnId);
     if (result.rowCount) await tx.query(
       `UPDATE agent_runs SET status = 'failed', error = $2, ended_at = now() WHERE id = $1`, [turn.run_id, message],
     );
   });
+  if (sessionId) void notifyUsage(sessionId);
 }

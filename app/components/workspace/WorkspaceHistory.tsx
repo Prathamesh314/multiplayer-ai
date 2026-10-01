@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
 import type { SavedCheckpoint } from "../../lib/runner/checkpoints";
 import type { AiRunEvent } from "../../lib/ai/run-events";
+import { openSessionStream } from "../../lib/events/client";
 import { Modal } from "../ui/Modal";
 type Turn = { id: string; status: string; syncedAt: string | null; sequence: number };
 type History = { turns: Turn[]; snapshots: SavedCheckpoint[]; selectedSnapshotId: string | null };
@@ -30,10 +31,12 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   useEffect(() => {
     const counter = generation;
     const poll = () => { if (!document.hidden && !requestsInFlight.current) void refresh(); };
-    const initial = setTimeout(() => void refresh(), 0), timer = setInterval(poll, 15000);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => { if (open && !timer) timer = setTimeout(() => { timer = undefined; poll(); }, 500); };
+    const stream = openSessionStream(run.sessionId, { onRunActivity: event => { if (event.runId === run.id) changed(); }, onRunFinished: changed, onRunControl: changed, onStatus: connected => { if (connected) poll(); } });
     document.addEventListener("visibilitychange", poll);
-    return () => { counter.current++; clearTimeout(initial); clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
-  }, [refresh]);
+    return () => { counter.current++; clearTimeout(timer); stream.close(); document.removeEventListener("visibilitychange", poll); };
+  }, [refresh, open, run.sessionId, run.id]);
   async function showActivity(id: string, cursor = 0) {
     setBusy(true); setError("");
     try { const body = await load(`?turn=${id}&after=${cursor}`); const events = body.batches.flatMap((b: { events: AiRunEvent[] }) => b.events);

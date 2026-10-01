@@ -53,7 +53,9 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     try { fresh = await persistActivity(runId, body.sequence, batch); }
     catch (cause) { return Response.json({ error: cause instanceof Error ? cause.message : "Activity was not saved." }, { status: 409 }); }
   }
+  if (fresh && body.sequence !== undefined) await (await events()).publish(job.sessionId, { type: "run.activity", runId: job.runId, at: Date.now() }).catch(() => {});
   const active = await claimedJob(runId, device.id);
+  if (!active && batch.length === 0 && body.sequence === undefined) return Response.json({ error: "Execution lease expired or control changed." }, { status: 403 });
   if (!fresh || !active) return Response.json({ ok: true, acknowledged: body.sequence ?? null });
   const bus = await events();
   for (const event of batch) {

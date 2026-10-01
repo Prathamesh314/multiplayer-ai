@@ -1,3 +1,4 @@
+import { events } from "../../../../../lib/events";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
 import { artifactJob } from "../../../../../lib/runner/jobs";
 import { saveCheckpoint, validCheckpoint } from "../../../../../lib/runner/checkpoints";
@@ -14,6 +15,7 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     const body = await limitedJson(request, 8192);
     if (!validCheckpoint(body)) return Response.json({ error: "Invalid checkpoint." }, { status: 400 });
     await saveCheckpoint(job, device.id, body);
+    await (await events()).publish(job.sessionId, { type: "run.activity", runId: job.runId, at: Date.now() }).catch(() => {});
     return Response.json({ acknowledged: body.snapshotSha });
   } catch (cause) { return Response.json({ error: cause instanceof Error ? cause.message : "Checkpoint not saved." }, { status: 409 }); }
 }

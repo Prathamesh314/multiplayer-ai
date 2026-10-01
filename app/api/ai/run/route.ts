@@ -241,6 +241,7 @@ export async function POST(request: Request) {
 
   try {
     await reserveTurn(run.id, result.user.id, turnId, run.controlVersion);
+    await (await events()).publish(sessionId, { type: "run.control", runId: run.id, at: Date.now() }).catch(() => {});
   } catch (cause) {
     if (cause instanceof ControlError) return Response.json({ error: cause.message }, { status: cause.status });
     throw cause;

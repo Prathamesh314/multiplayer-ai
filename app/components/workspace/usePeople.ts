@@ -27,6 +27,7 @@ export type People = {
   onEditing: (event: FileEditingEvent) => void;
   onSaved: (event: FileSavedEvent) => void;
   refresh: () => void;
+  onOnline: (ids: string[]) => void;
 };
 
 /**
@@ -50,14 +51,6 @@ export function usePeople(sessionId: string, enabled: boolean): People {
       cancelled = true;
     };
   }, [sessionId, enabled, version]);
-
-  // Presence changes without any event of its own — someone closing a tab just
-  // stops heartbeating — so the roster is re-read on a slow timer.
-  useEffect(() => {
-    if (!enabled) return;
-    const timer = setInterval(() => setVersion((n) => n + 1), 15_000);
-    return () => clearInterval(timer);
-  }, [enabled]);
 
   const onEditing = useCallback((event: FileEditingEvent) => {
     setEditing((previous) => {
@@ -114,10 +107,12 @@ export function usePeople(sessionId: string, enabled: boolean): People {
     return () => clearInterval(timer);
   }, [enabled]);
 
+  const onOnline = useCallback((ids: string[]) => { const online = new Set(ids); setMembers(previous => previous.map(member => ({ ...member, online: online.has(member.userId) }))); }, []);
+
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
 
   return useMemo(
-    () => ({ members, editing, onEditing, onSaved, refresh }),
-    [members, editing, onEditing, onSaved, refresh],
+    () => ({ members, editing, onEditing, onSaved, refresh, onOnline }),
+    [members, editing, onEditing, onSaved, refresh, onOnline],
   );
 }

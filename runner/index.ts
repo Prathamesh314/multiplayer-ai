@@ -16,27 +16,34 @@ import { ActivityOutbox } from "./activity-outbox";
  */
 
 import { storeCompletion, deliverCompletions } from "./outbox";
+import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { agentById } from "../app/lib/ai/catalog";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
-import { pairDevice, RunnerApi } from "./api";
+import { pairDevice, RunnerApi, RunnerHttpError } from "./api";
 import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDir } from "./config";
 import { runAgentLocally } from "./execute";
 import { listLocalWorkspaces } from "./workspace-layout";
 import { RunnerGit } from "./git";
+import { WakeSignal } from "./signals";
 
 const HEARTBEAT_MS = 15_000;
-const CLAIM_WAIT_MS = 20_000;
 /** Events buffer briefly so a chatty agent becomes a few requests per second. */
 const FLUSH_MS = 1000;
 
 const log = (message: string) => console.log(`[runner] ${message}`);
 let stopping = false;
+const stopSignal = new AbortController();
+const jobsReady = new WakeSignal();
+const inputsReady = new WakeSignal();
+const stop = () => { stopping = true; stopSignal.abort(); jobsReady.wake(); inputsReady.wake(); };
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
 const desktopPort = (process as NodeJS.Process & {
   parentPort?: { on: (event: string, listener: (event: { data?: { type?: string } }) => void) => void };
 }).parentPort;
 desktopPort?.on("message", event => {
-  if (event.data?.type === "shutdown") stopping = true;
+  if (event.data?.type === "shutdown") stop();
 });
 
 function flag(name: string): string | null {
@@ -83,7 +90,20 @@ async function processJob(
     void activity.deliver(api);
   };
   const timer = setInterval(flush, FLUSH_MS);
-  const lease = setInterval(() => { void api.postEvents(job.turnId, []).catch(() => {}); }, 15_000);
+  // Renew only the execution owned by this process. Reconnecting a restarted
+  // daemon must never keep an abandoned execution's lease alive.
+  const execution = new AbortController();
+  const abortExecution = () => execution.abort();
+  stopSignal.signal.addEventListener("abort", abortExecution, { once: true });
+  if (stopSignal.signal.aborted) abortExecution();
+  let renewedAt = Date.now(), renewing = false;
+  const leaseTimer = setInterval(() => {
+    if (renewing) return;
+    renewing = true;
+    void api.postEvents(job.turnId, []).then(() => { renewedAt = Date.now(); }).catch(cause => {
+      if (Date.now() - renewedAt > 40_000 || cause instanceof RunnerHttpError && cause.status < 500 || /re-pair/.test(String(cause))) execution.abort();
+    }).finally(() => { renewing = false; });
+  }, 15_000);
   const emit = (event: AiRunEvent) => {
     // Bound a batch even when a CLI emits a large chunk in one callback.
     if ("d" in event && event.d.length > 16000) {
@@ -117,6 +137,13 @@ async function processJob(
         effort: job.effort,
         cwd: workspace.path,
         onEvent: emit,
+        signal: execution.signal,
+        inputs: {
+          claim: closeIfEmpty => api.input(job.turnId, { kind: "claim", claimId: randomUUID(), closeIfEmpty }),
+          acknowledge: async id => { await api.input(job.turnId, { kind: "ack", id }); },
+          uncertain: async (id, error) => { await api.input(job.turnId, { kind: "uncertain", id, error }); },
+          subscribe: listener => inputsReady.subscribe(listener),
+        },
       }); } finally { clearInterval(snapshotTimer); checkpoint(); await checkpointing; }
       code = result.code;
       output = result.output;
@@ -132,7 +159,8 @@ async function processJob(
     code = 1;
   } finally {
     clearInterval(timer);
-    clearInterval(lease);
+    clearInterval(leaseTimer);
+    stopSignal.signal.removeEventListener("abort", abortExecution);
     flush();
     await activity.deliver(api);
   }
@@ -168,17 +196,50 @@ async function start(): Promise<void> {
   await api.heartbeat(); // fail fast on a revoked token
   log(`online as "${config.name}" against ${config.server}${once ? " (single job)" : ""}`);
 
-  const heartbeat = setInterval(() => void api.heartbeat().catch(() => {}), HEARTBEAT_MS);
+  const heartbeat = setInterval(() => void api.heartbeat(true).catch(() => {}), HEARTBEAT_MS);
   heartbeat.unref?.();
 
+  let fatal: Error | null = null;
+  const signals = (async () => {
+    while (!stopping) {
+      try {
+        await api.signals(stopSignal.signal, type => {
+          if (type === "ready" || type === "runner.work" || type === "resync" || type === "devices.changed") jobsReady.wake();
+          if (type === "ready" || type === "run.inputs" || type === "resync") inputsReady.wake();
+        });
+      } catch (cause) {
+        if (stopSignal.signal.aborted) break;
+        if (cause instanceof Error && cause.message.includes("re-pair")) { fatal = cause; stop(); break; }
+      }
+      if (!stopping) await new Promise<void>(resolve => {
+        const done = () => { clearTimeout(timer); stopSignal.signal.removeEventListener("abort", done); resolve(); };
+        const timer = setTimeout(done, 3000);
+        stopSignal.signal.addEventListener("abort", done, { once: true });
+      });
+    }
+  })();
+
+  let maintenanceBusy = false;
+  const maintenance = setInterval(() => {
+    if (maintenanceBusy || stopping) return;
+    maintenanceBusy = true;
+    void (async () => {
+      await git.checkpointIdleWorkspaces();
+      await git.deliverCheckpoints(api);
+      await activity.deliver(api);
+      await deliverCompletions(config.dataDir, api);
+    })().catch(cause => log(`Sync pending: ${String(cause)}`)).finally(() => { maintenanceBusy = false; });
+  }, 30_000);
+
   while (!stopping) {
+    const revision = jobsReady.version();
     await git.checkpointIdleWorkspaces();
     await git.deliverCheckpoints(api);
     await activity.deliver(api);
     await deliverCompletions(config.dataDir, api);
     let job: Awaited<ReturnType<RunnerApi["claim"]>> = null;
     try {
-      job = await api.claim(CLAIM_WAIT_MS);
+      job = await api.claim(0);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (message.includes("re-pair")) {
@@ -189,14 +250,18 @@ async function start(): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 5_000));
       continue;
     }
-    if (!job) continue;
+    if (!job) { await jobsReady.wait(revision, stopSignal.signal); continue; }
 
     await processJob(api, config.dataDir, git, activity, job).catch((cause) =>
       console.error(`[runner] run ${job!.runId} failed to report: ${String(cause)}`),
     );
     if (once) break;
   }
+  clearInterval(maintenance);
   clearInterval(heartbeat);
+  stop();
+  await signals;
+  if (fatal) throw fatal;
   if (desktopPort) process.exit(0);
 }
 
