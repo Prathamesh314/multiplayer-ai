@@ -390,15 +390,27 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await recipient.command("Page.reload", {});
     await eventually(() => recipient.evaluate(`document.querySelector('select[aria-label="Active repository"]')?.value === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
     console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
+    const uploadStarted = performance.now();
     await recipient.evaluate(`(() => {
       const input = document.querySelectorAll('input[type="file"]')[1];
       const file = new File(["export const uploaded = true;\\n"], "uploaded.ts", { type: "text/plain" });
       Object.defineProperty(file, 'webkitRelativePath', { value: 'Browser upload/uploaded.ts' });
-      const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
+      const transfer = new DataTransfer(); transfer.items.add(file);
+      for (let i = 0; i < 1000; i++) {
+        const item = new File(['contents ' + i], 'file' + i + '.txt', { type: 'text/plain' });
+        Object.defineProperty(item, 'webkitRelativePath', { value: 'Browser upload/bulk/file' + i + '.txt' });
+        transfer.items.add(item);
+      }
+      input.files = transfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
     await eventually(() => recipient.evaluate("document.querySelector('select[aria-label=\"Active repository\"]').selectedOptions[0].textContent === 'Browser upload' && document.body.textContent.includes('uploaded.ts')"), "automatic file selection after folder upload");
-    console.log("  ok browser folder-upload flow automatically selects its imported repository and reveals its files");
+    const uploadMs = Math.round(performance.now() - uploadStarted);
+    const browserRepoId = await recipient.evaluate('document.querySelector(\'select[aria-label="Active repository"]\').value');
+    const teammateFile = await request(tokens[0], `/api/sessions/${roomId}/file?repoId=${browserRepoId}&path=bulk/file999.txt`);
+    assert.equal(teammateFile.status, 200);
+    assert.equal((await teammateFile.json()).text, 'contents 999');
+    console.log(`  ok browser uploads 1,001 files, selects the repository, and makes contents available to a teammate (${uploadMs} ms)`);
 
     const freshRoom = "freshbrowser";
     await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Fresh folder room','ABCD-RSTU',$2)`, [freshRoom, alice]);

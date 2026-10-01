@@ -33,6 +33,29 @@ export async function putBlob(bare: string, index: Partial<NodeJS.ProcessEnv>, p
   const sha = await objectText(bare, ["hash-object", "-w", "--stdin"], bytes);
   await objectGit(bare, ["update-index", "-z", "--index-info"], `${mode} ${sha}\t${path}\0`, index);
 }
+
+/** Import a bounded batch without a checkout or a Git process per file.
+ * Only blob bytes enter fast-import; paths go through NUL-delimited index-info.
+ * Await completion before publishing the index so every referenced object is
+ * durable and a failed import leaves the previous index available for retry.
+ */
+export async function putBlobs(bare: string, index: Partial<NodeJS.ProcessEnv>, files: { path: string; bytes: Buffer }[]) {
+  if (!files.length) return;
+  const input: Buffer[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const mark = i + 1;
+    const bytes = files[i].bytes;
+    input.push(Buffer.from(`blob\nmark :${mark}\ndata ${bytes.length}\n`), bytes, Buffer.from(`\nget-mark :${mark}\n`));
+  }
+  input.push(Buffer.from("done\n"));
+  const output = await objectText(bare, ["fast-import", "--quiet", "--done"], Buffer.concat(input));
+  const hashes = output.split("\n");
+  if (hashes.length !== files.length || hashes.some(hash => !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(hash))) {
+    throw new Error("Git returned an invalid import result.");
+  }
+  await objectGit(bare, ["update-index", "-z", "--index-info"],
+    files.map((file, i) => `100644 ${hashes[i]}\t${file.path}\0`).join(""), index);
+}
 export async function commitTree(bare: string, tree: string, parents: string[], message: string, author?: { name: string; email: string }) {
   return objectText(bare, ["commit-tree", tree, ...parents.flatMap(sha => ["-p", sha]), "-m", message], undefined,
     author ? { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email } : undefined);

@@ -1,7 +1,7 @@
 import { withStoredRepo } from "../storage/git-cache";
 import { cachedGitRead } from "../git/read-cache";
 import { filterImportIndex } from "../git/import-index";
-import { objectGit, objectText, withTemporaryIndex, putBlob, commitTree } from "../git/objects";
+import { objectGit, objectText, withTemporaryIndex, putBlob, putBlobs, commitTree } from "../git/objects";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile, lstat } from "node:fs/promises";
@@ -403,14 +403,24 @@ async function stored_writeSeedBatch(
   if (!await exists(index.GIT_INDEX_FILE)) await objectGit(bare, ["read-tree", "--empty"], undefined, index);
   const skipped: string[] = [];
   let written = 0;
+  let batch: { path: string; bytes: Buffer }[] = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    await putBlobs(bare, index, batch);
+    written += batch.length;
+    batch = [];
+    batchBytes = 0;
+  };
   for (const file of files) {
     const relative = safeRelativePath(file.path);
     if (!relative || /(^|\/)(node_modules|\.next|\.env(?:\.(?:local|development|production|test)(?:\.local)?)?)(\/|$)/.test(relative)) { skipped.push(String(file.path)); continue; }
     const bytes = Buffer.from(file.data, "base64");
     if (bytes.length > MAX_SEED_FILE_BYTES) { skipped.push(relative); continue; }
-    await putBlob(bare, index, relative, bytes);
-    written += 1;
+    if (batchBytes + bytes.length > MAX_SEED_FILE_BYTES || batch.length >= 200) await flush();
+    batch.push({ path: relative, bytes });
+    batchBytes += bytes.length;
   }
+  await flush();
 
   return { written, skipped };
 }

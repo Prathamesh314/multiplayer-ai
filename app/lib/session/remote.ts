@@ -34,7 +34,7 @@ async function readError(response: Response, fallback: string): Promise<string> 
 // Seeding
 // ---------------------------------------------------------------------------
 
-export type SeedProgress = { uploaded: number; total: number };
+export type SeedProgress = { uploaded: number; total: number; phase?: "uploading" | "finalizing" };
 
 /**
  * The shared batch uploader behind both seed targets: the session's own repo
@@ -50,11 +50,13 @@ async function uploadScan<T extends { skipped: string[] }>(
   const paths = filePathsOf(result.root);
   const skipped: string[] = [];
   let uploaded = 0;
+  onProgress?.({ uploaded, total: paths.length, phase: "uploading" });
 
   let batch: { path: string; data: string }[] = [];
   let batchBytes = 0;
 
   const flush = async (done: boolean): Promise<T> => {
+    if (done) onProgress?.({ uploaded, total: paths.length, phase: "finalizing" });
     const payload = {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -80,7 +82,7 @@ async function uploadScan<T extends { skipped: string[] }>(
     const body = (await response.json()) as T;
     skipped.push(...body.skipped);
     uploaded += batch.length;
-    onProgress?.({ uploaded, total: paths.length });
+    onProgress?.({ uploaded, total: paths.length, phase: done ? "finalizing" : "uploading" });
 
     batch = [];
     batchBytes = 0;
@@ -94,6 +96,9 @@ async function uploadScan<T extends { skipped: string[] }>(
       continue;
     }
 
+    // Flush before adding the next file, rather than retaining two large files
+    // in the same request. A single allowed file can exceed the batch target.
+    if (batch.length && batchBytes + bytes.byteLength > BYTES_PER_BATCH) await flush(false);
     batch.push({ path, data: toBase64(bytes) });
     batchBytes += bytes.byteLength;
 

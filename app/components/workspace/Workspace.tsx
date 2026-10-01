@@ -902,7 +902,7 @@ export function Workspace({
             {repoOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
-        {!readOnly && <button type="button" disabled={importingRepo} onClick={() => void openImportPicker()} className="rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50">{importingRepo ? importProgress ? `Uploading ${importProgress.uploaded}/${importProgress.total}` : "Scanning folder…" : "Import folder"}</button>}
+        {!readOnly && <button type="button" disabled={importingRepo} onClick={() => void openImportPicker()} className="rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50">{importingRepo ? importProgress ? importProgress.phase === "finalizing" ? "Finishing import…" : `Uploading ${importProgress.uploaded}/${importProgress.total}` : "Scanning folder…" : "Import folder"}</button>}
         {session.projectId && !readOnly && <ProjectRepositoryPicker sessionId={session.id}
           selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
           onAttached={async imported => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { humanCount } from "../../lib/format";
+import type { SeedProgress } from "../../lib/session/remote";
 import { AlertIcon, FolderUpIcon, SpinnerIcon } from "../icons";
 
 type WelcomeViewProps = {
@@ -17,7 +18,7 @@ type WelcomeViewProps = {
    */
   hasRepo: boolean;
   /** Set while the folder is being uploaded into the session repository. */
-  seeding: { uploaded: number; total: number } | null;
+  seeding: SeedProgress | null;
   onOpenPicker: () => void;
   onOpenInput: () => void;
 };
@@ -46,8 +47,8 @@ export function WelcomeView({
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
             <p className="text-base text-vs-fg">
-              Adding to the session…{" "}
-              {seeding.total > 0
+              {seeding.phase === "finalizing" ? "Finishing import…" : "Uploading files…"}{" "}
+              {seeding.phase === "finalizing" ? "Saving the room’s first version." : seeding.total > 0
                 ? `${humanCount(seeding.uploaded)} of ${humanCount(seeding.total)} files`
                 : `${humanCount(seeding.uploaded)} files`}
             </p>
