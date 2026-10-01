@@ -48,6 +48,9 @@ jobs:
       - run: npm run test:ui
         env:
           CHROME_BIN: /usr/bin/google-chrome
+      - run: npm run test:workspace-ui
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
       - run: npm run test:integration
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test

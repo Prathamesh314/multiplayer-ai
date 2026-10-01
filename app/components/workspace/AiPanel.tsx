@@ -811,7 +811,8 @@ export function AiPanel({
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
         </div>
       </header>
-      {entered && <HandoffPanel key={entered.id} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)}>
+      {/* These sibling panels reset per chat, but each needs its own identity. */}
+      {entered && <HandoffPanel key={`handoff-${entered.id}`} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)}>
         <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />
       </HandoffPanel>}
 
@@ -913,7 +914,7 @@ export function AiPanel({
           onSend={ask}
         />
       )}
-      {entered && <QueuedMessages key={entered.id} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId} startedAt={entered.startedAt} moveDraft={text => composer.current?.insertPrompt(text)} />}
+      {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId} startedAt={entered.startedAt} moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
   );
 }
