@@ -30,8 +30,8 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
   );
 
   return (
-    <main className="vs-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+    <main className="app-page vs-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12 lg:py-10">
         <header className="flex flex-wrap items-start justify-between gap-5">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Team workspace</p>
@@ -49,34 +49,6 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
         </header>
 
         {me && <TaskPanel key={me.id} userId={me.id} />}
-
-        <section className="workspace-welcome mt-8 rounded-2xl border border-vs-border p-6 sm:p-8" aria-labelledby="workflow-heading">
-          <div className="flex items-center gap-2 text-sm font-medium text-vs-muted">
-            <SparkleIcon className="h-4 w-4 text-vs-accent" /> From your first prompt to a team result
-          </div>
-          <h2 id="workflow-heading" className="font-display mt-3 text-2xl font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-vs-muted">A project organizes your team and repositories. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
-          <details open={projects?.length === 0} className="mt-4">
-            <summary className="cursor-pointer rounded-lg py-2 text-sm font-medium text-vs-fg">How this workspace works</summary>
-          <ol className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
-            {[
-              ["Bring your code", "Open a project’s room and import a folder. Files and chats share one tabbed workspace."],
-              ["Give AI a task", "Connect your AI, describe what you need, and review its changes before publishing."],
-              ["Continue together", "Invite a teammate. Hand off a chat so they can continue with its conversation context."],
-            ].map(([title, body], index) => (
-              <li key={title} className="flex gap-3 rounded-xl border border-vs-border bg-vs-editor/60 p-4">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-vs-border bg-vs-editor text-xs text-vs-muted">{index + 1}</span>
-                <div><p className="font-medium">{title}</p><p className="mt-1 leading-6 text-vs-muted">{body}</p></div>
-              </li>
-            ))}
-          </ol>
-          </details>
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-vs-border pt-5">
-            <span className="mr-auto text-sm text-vs-muted">New here? Set up once, then choose a project below.</span>
-            <GhostButton onClick={onConnectComputer}>Connect your computer</GhostButton>
-            <GhostButton onClick={onConnectAi}><SparkleIcon className="h-4 w-4" /> Set up AI</GhostButton>
-          </div>
-        </section>
 
         <section className="mt-10" aria-labelledby="projects-heading" aria-busy={projects === null && !error}>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -113,6 +85,35 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             </div>
           )}
         </section>
+
+        <section className="workspace-welcome mt-8 rounded-2xl border border-vs-border p-6 sm:p-8" aria-labelledby="workflow-heading">
+          <div className="flex items-center gap-2 text-sm font-medium text-vs-muted">
+            <SparkleIcon className="h-4 w-4 text-vs-accent" /> From your first prompt to a team result
+          </div>
+          <h2 id="workflow-heading" className="font-display mt-3 text-xl font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-vs-muted">A project organizes your team and repositories. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
+          <details open={projects?.length === 0} className="mt-4">
+            <summary className="cursor-pointer rounded-lg py-2 text-sm font-medium text-vs-fg">How this workspace works</summary>
+          <ol className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+            {[
+              ["Bring your code", "Open a project’s room and import a folder. Files and chats share one tabbed workspace."],
+              ["Give AI a task", "Connect your AI, describe what you need, and review its changes before publishing."],
+              ["Continue together", "Invite a teammate. Hand off a chat so they can continue with its conversation context."],
+            ].map(([title, body], index) => (
+              <li key={title} className="flex gap-3 rounded-xl border border-vs-border bg-vs-editor/60 p-4">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-vs-border bg-vs-editor text-xs text-vs-muted">{index + 1}</span>
+                <div><p className="font-medium">{title}</p><p className="mt-1 leading-6 text-vs-muted">{body}</p></div>
+              </li>
+            ))}
+          </ol>
+          </details>
+          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-vs-border pt-5">
+            <span className="mr-auto text-sm text-vs-muted">New here? Set up once, then open a project.</span>
+            <GhostButton onClick={onConnectComputer}>Connect your computer</GhostButton>
+            <GhostButton onClick={onConnectAi}><SparkleIcon className="h-4 w-4" /> Set up AI</GhostButton>
+          </div>
+        </section>
+
       </div>
     </main>
   );
@@ -139,13 +140,12 @@ function ProjectCard({ project, org, me, onManageMembers, onOpenRoom }: Pick<Pro
   }
 
   return (
-    <article className="flex min-w-0 flex-col rounded-xl border border-vs-border bg-vs-panel p-5 transition-colors hover:border-vs-muted/50">
+    <article className="flex min-w-0 flex-col rounded-2xl border border-vs-border bg-vs-panel p-5 transition-colors hover:border-vs-accent/50 sm:p-6">
       <div className="flex items-start gap-3">
         <span className="rounded-xl border border-vs-border bg-vs-editor p-3"><GitBranchIcon className="h-5 w-5 text-vs-muted" /></span>
-        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 truncate text-xs text-vs-muted" >Multiple repositories, one team workspace</p></div>
-        <span className="rounded-md border border-vs-border px-2 py-1 text-xs capitalize text-vs-muted">{project.myRole}</span>
+        <div className="min-w-0 flex-1"><h3 className="break-words text-base font-semibold" title={project.name}>{project.name}</h3><p className="mt-1 text-sm leading-6 text-vs-muted">Multiple repositories, one team workspace</p></div>
       </div>
-      <div className="mt-5 flex items-center gap-2 text-xs text-vs-muted"><GitBranchIcon className="h-3.5 w-3.5" /><span className="truncate">Repositories</span><span aria-hidden>·</span><span>Separate rooms, shared project</span></div>
+      <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-vs-muted"><span className="rounded-md border border-vs-border px-2 py-1 capitalize">{project.myRole}</span><span aria-hidden>·</span><span>Separate rooms, shared project</span></div>
       {error && <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
         <button type="button" onClick={onManageMembers} className="flex items-center gap-2 rounded-md py-2 text-sm text-vs-muted hover:text-vs-fg"><UsersIcon className="h-4 w-4" /> Members</button>

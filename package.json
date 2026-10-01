@@ -26,6 +26,7 @@
     "desktop:dist:win": "node desktop/package.mjs --win --x64 --setup",
     "desktop:dist:linux": "node desktop/package.mjs --linux --x64 --setup",
     "desktop:release": "node desktop/package.mjs --release",
+    "test:ui": "node tests/chat-ui.browser.mjs --start-server",
     "test:desktop": "node --test tests/desktop.test.cjs",
     "test:server": "node --test tests/server-lifecycle.test.mjs",
     "test:desktop:smoke": "npm run desktop:prepare && node tests/desktop-smoke.mjs",

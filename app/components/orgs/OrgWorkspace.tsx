@@ -514,7 +514,7 @@ function OrgPanel({
         <span className="truncate text-sm font-semibold">{org.name}</span>
         <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & chat"}</button>
       </div>
-      <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r`}>
+      <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-[296px] lg:border-b-0 lg:border-r`}>
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
           <div className="flex min-w-0 items-center gap-2">
             {org.image && (
@@ -589,7 +589,8 @@ function OrgPanel({
                 type="button"
                 onClick={onNewProject}
                 title="New project"
-                className="rounded p-0.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                aria-label="New project"
+                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
               </button>
@@ -777,7 +778,7 @@ function ProjectRow({
                 <button
                   type="button"
                   onClick={() => onOpenRoom(room.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[14px]"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-[14px]"
                 >
                   {room.visibility === "private" ? (
                     <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
@@ -868,7 +869,7 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   const atCap = usage.concurrency.used >= usage.concurrency.limit && usage.concurrency.limit > 0;
 
   return (
-    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-1.5 text-[12px] text-vs-muted">
+    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-2.5 text-[12px] text-vs-muted">
       <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
         <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-vs-warn" : "bg-vs-success"}`} />
         {usage.concurrency.used}/{usage.concurrency.limit} running

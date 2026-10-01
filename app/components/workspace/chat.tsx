@@ -335,7 +335,7 @@ export function Composer({
   }
 
   const popover = popoverOpen && (
-    <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg">
+    <div className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
         {mention?.stage === "room" ? (onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
@@ -380,7 +380,7 @@ export function Composer({
       disabled={assigning}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
-      className={`vs-scroll flex-1 resize-none bg-transparent text-[14px] text-vs-fg outline-none placeholder:text-vs-muted ${
+      className={`vs-scroll flex-1 resize-none bg-transparent text-[15px] text-vs-fg outline-none placeholder:text-vs-muted ${
         tall ? "max-h-64 min-h-24" : "max-h-28 min-h-5"
       }`}
     />
@@ -392,29 +392,29 @@ export function Composer({
       onClick={send}
       disabled={assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
       aria-label={assignee ? "Assign task" : "Send message"}
-      className={`flex h-7 shrink-0 items-center justify-center rounded-full bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-7"}`}
+      className={`flex h-9 shrink-0 items-center justify-center rounded-xl bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-9"}`}
     >
       {assignee ? (assigning ? "Assigning…" : "Assign task") : <SendIcon className="h-3.5 w-3.5" />}
     </button>
   );
 
   return (
-    <div className="shrink-0 border-t border-vs-border p-2">
+    <div className="ai-composer shrink-0">
       <div className={`relative ${narrow ? "mx-auto w-full max-w-4xl" : ""}`}>
         {assignee && <div className="mb-2 flex items-center gap-2 text-xs text-vs-muted"><span>Task for <strong className="text-vs-fg">@{assignee.handle}</strong> · appears in their task inbox</span><button type="button" disabled={assigning} className="ml-auto underline" onClick={() => setSelectedPerson(null)}>Cancel assignment</button></div>}
         {taskMessage && <p role="status" className="mb-2 text-xs text-vs-success">{taskMessage}</p>}
         {taskError && <p role="alert" className="mb-2 text-xs text-vs-danger">{taskError}</p>}
         {popover}
         {footer ? (
-          <div className="rounded-2xl border border-vs-border bg-vs-panel px-3 py-2.5 shadow-sm focus-within:border-vs-muted">
+          <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
             <div className="flex">{textarea}</div>
-            <div className="mt-1.5 flex items-center gap-1">
+            <div className="ai-composer-footer mt-3 flex items-center gap-1 border-t border-vs-border pt-2">
               {footer}
               <div className="ml-auto shrink-0 self-end">{sendButton}</div>
             </div>
           </div>
         ) : (
-          <div className="flex items-end gap-1.5 rounded-2xl border border-vs-border bg-vs-panel px-2.5 py-2 shadow-sm focus-within:border-vs-muted">
+          <div className="flex items-end gap-3 rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
             {textarea}
             {sendButton}
           </div>

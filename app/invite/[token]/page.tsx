@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchMe } from "../../lib/auth/client";
 import { acceptInvitationToken } from "../../lib/org/client";
 import { SparkleIcon, SpinnerIcon } from "../../components/icons";
+import Link from "next/link";
 
 /**
  * Landing for an emailed invite link. If the visitor is signed out we send them
@@ -39,17 +40,18 @@ export default function InvitePage() {
   }, [params.token, router]);
 
   return (
-    <div className="grid min-h-dvh place-items-center bg-vs-editor text-vs-fg">
-      <div className="max-w-sm text-center">
-        <SparkleIcon className="mx-auto h-6 w-6 text-vs-accent" />
+    <main className="app-page grid min-h-dvh place-items-center p-6 text-vs-fg">
+      <div className="w-full max-w-md rounded-2xl border border-vs-border bg-vs-panel p-8 text-center shadow-xl">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-vs-accent/10"><SparkleIcon className="h-6 w-6 text-vs-accent" /></span>
+        <h1 className="font-display mt-5 text-2xl font-semibold">{error ? "Unable to join" : "Your team is waiting"}</h1>
         {error ? (
-          <p className="mt-4 text-base text-vs-danger">{error}</p>
+          <><p role="alert" className="mt-3 text-sm leading-6 text-vs-danger">{error}</p><Link href="/workspace" className="mt-6 inline-flex rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-semibold text-vs-accent-fg">Back to workspace</Link></>
         ) : (
-          <p className="mt-4 flex items-center justify-center gap-2 text-base text-vs-muted">
+          <p role="status" className="mt-3 flex items-center justify-center gap-2 text-sm text-vs-muted">
             <SpinnerIcon className="h-4 w-4" /> Joining the organisation…
           </p>
         )}
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,34 +1,30 @@
 @import "tailwindcss";
 
-/* Dark is the default look — this app is a native-feeling coding workspace,
-   not a document that should flip to a white page on a light OS. Light mode
-   is an explicit opt-in via the OS preference (see the media query below). */
+/* Shared workspace palette. Respect the OS light preference while keeping
+   the same hierarchy, readable contrast and violet accents in both modes. */
 :root {
   color-scheme: dark;
-  --background: #08080a;
-  --foreground: #eceef1;
+  --background: #111017;
+  --foreground: #eeedf4;
 
-  /* Workspace chrome — a near-black native-app surface, not VS Code Light+. */
-  --vs-editor: #08080a;
-  --vs-panel: #0d0d10;
-  --vs-chrome: #101013;
-  --vs-border: #222226;
-  --vs-fg: #e7e8ea;
-  --vs-muted: #85868c;
-  --vs-hover: rgb(255 255 255 / 0.055);
-  --vs-active: rgb(255 255 255 / 0.09);
-  /* Neutral, not blue: selection and primary actions read as a bright,
-     monochrome lift off the black chrome — colour is reserved for git status. */
-  --vs-accent: #f2f3f5;
-  --vs-accent-fg: #0a0a0c;
+  --vs-editor: #16151e;
+  --vs-panel: #1c1a26;
+  --vs-chrome: #111017;
+  --vs-border: #34303f;
+  --vs-fg: #eeedf4;
+  --vs-muted: #aba5ba;
+  --vs-hover: rgb(193 173 244 / 0.075);
+  --vs-active: rgb(193 173 244 / 0.14);
+  --vs-accent: #bfacf2;
+  --vs-accent-fg: #211733;
   --vs-gutter: #54555b;
   --vs-shadow: rgb(0 0 0 / 0.55);
 
-  /* Terminal surface — same near-black as the editor. */
-  --vs-terminal: #08080a;
-  --vs-terminal-head: #101013;
+  /* A quiet terminal surface with the same chrome as the workspace. */
+  --vs-terminal: #111017;
+  --vs-terminal-head: #1c1a26;
 
-  /* Git/diff/status language — the one place colour is meaningful. */
+  /* Git, diff and status colors stay distinct from the action accent. */
   --vs-success: #2fbf6f;
   --vs-success-fg: #06210f;
   --vs-danger: #f0554f;
@@ -52,19 +48,18 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --background: #ffffff;
-    --foreground: #171717;
+    --background: #f6f5f9;
+    --foreground: #252130;
 
-    /* Workspace chrome — modelled on VS Code Light+ */
     --vs-editor: #ffffff;
-    --vs-panel: #f8f8f8;
-    --vs-chrome: #f0f0f0;
-    --vs-border: #e2e2e2;
-    --vs-fg: #3b3b3b;
-    --vs-muted: #656565;
-    --vs-hover: rgb(0 0 0 / 0.045);
-    --vs-active: #e9e9ea;
-    --vs-accent: #171717;
+    --vs-panel: #f5f3f9;
+    --vs-chrome: #eeebf4;
+    --vs-border: #dcd6e7;
+    --vs-fg: #252130;
+    --vs-muted: #686075;
+    --vs-hover: rgb(105 72 166 / 0.06);
+    --vs-active: rgb(105 72 166 / 0.12);
+    --vs-accent: #7047b8;
     --vs-accent-fg: #ffffff;
     --vs-gutter: #6e7681;
     --vs-shadow: rgb(0 0 0 / 0.08);
@@ -143,6 +138,46 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+@layer base {
+  button, a, summary, input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 160ms;
+    transition-timing-function: ease;
+  }
+  button:not(:disabled), summary { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  ::selection { background: var(--vs-accent); color: var(--vs-accent-fg); }
+}
+
+.app-page {
+  background: radial-gradient(ellipse at 80% 0%, color-mix(in srgb, var(--vs-accent) 6%, transparent), transparent 55%), var(--vs-editor);
+}
+
+.ui-dialog[open] { display: flex; flex-direction: column; animation: dialog-enter 160ms ease-out; }
+.ui-dialog > header, .ui-dialog > footer { flex-shrink: 0; }
+.ui-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ui-dialog-body :where(input:not([type="checkbox"]):not([type="radio"]), select) { min-height: 40px; }
+.ui-dialog-body :where(p, label) { overflow-wrap: anywhere; }
+@keyframes dialog-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.room-toolbar { min-height: 64px; }
+.room-toolbar-actions > button, .room-toolbar-actions > div > button { min-height: 34px; border-radius: 8px; }
+.room-main { container-type: inline-size; }
+.ai-chat-header { padding: 16px 20px 10px; }
+.ai-composer { padding: 12px 20px 16px; }
+.ai-composer-footer { flex-wrap: wrap; row-gap: 8px; }
+.ai-composer textarea { min-width: 0; line-height: 1.65; }
+.room-explorer-panel { background: var(--vs-panel); }
+@container (max-width: 560px) {
+  .ai-chat-header { flex-wrap: wrap; padding: 12px; }
+  .ai-chat-header > div:first-child { flex-basis: 100%; }
+  .ai-composer { padding: 10px 12px; }
+}
+@media (max-width: 767px) {
+  .room-toolbar-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
+  .room-toolbar-actions > * { flex-shrink: 0; }
+}
+
 /* Fields use their existing border (or the wrapper's focus-within border),
    never a second rectangle around the editable text inside them. */
 :where(input, select, textarea):focus {
@@ -155,6 +190,8 @@ body {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--vs-accent);
 }
+
+.bg-vs-accent:focus-visible { box-shadow: inset 0 0 0 2px var(--vs-accent-fg); }
 
 .workspace-welcome {
   background: radial-gradient(ellipse at top right, var(--vs-active), transparent 70%), var(--vs-panel);
@@ -180,6 +217,7 @@ body {
 .vs-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--vs-fg) 22%, transparent) transparent;
+  overscroll-behavior: contain;
 }
 
 .vs-scroll::-webkit-scrollbar {
@@ -189,6 +227,9 @@ body {
 
 .vs-scroll::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--vs-fg) 20%, transparent);
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background-clip: padding-box;
 }
 
 .vs-scroll::-webkit-scrollbar-thumb:hover {

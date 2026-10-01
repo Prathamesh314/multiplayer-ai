@@ -8,14 +8,14 @@
  * different colours for each other.
  */
 const PALETTE = [
-  { chip: "bg-sky-600 text-white", ring: "ring-sky-500", dot: "bg-sky-500", text: "text-sky-500" },
-  { chip: "bg-violet-600 text-white", ring: "ring-violet-500", dot: "bg-violet-500", text: "text-violet-500" },
-  { chip: "bg-emerald-600 text-white", ring: "ring-emerald-500", dot: "bg-emerald-500", text: "text-emerald-500" },
-  { chip: "bg-amber-600 text-white", ring: "ring-amber-500", dot: "bg-amber-500", text: "text-amber-500" },
-  { chip: "bg-rose-600 text-white", ring: "ring-rose-500", dot: "bg-rose-500", text: "text-rose-500" },
-  { chip: "bg-cyan-600 text-white", ring: "ring-cyan-500", dot: "bg-cyan-500", text: "text-cyan-500" },
-  { chip: "bg-fuchsia-600 text-white", ring: "ring-fuchsia-500", dot: "bg-fuchsia-500", text: "text-fuchsia-500" },
-  { chip: "bg-lime-600 text-white", ring: "ring-lime-500", dot: "bg-lime-500", text: "text-lime-500" },
+  { chip: "bg-sky-500/15 text-sky-700 dark:text-sky-300", ring: "ring-sky-500", dot: "bg-sky-500", text: "text-sky-700 dark:text-sky-300" },
+  { chip: "bg-violet-500/15 text-violet-700 dark:text-violet-300", ring: "ring-violet-500", dot: "bg-violet-500", text: "text-violet-700 dark:text-violet-300" },
+  { chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300", ring: "ring-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" },
+  { chip: "bg-amber-500/15 text-amber-700 dark:text-amber-300", ring: "ring-amber-500", dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" },
+  { chip: "bg-rose-500/15 text-rose-700 dark:text-rose-300", ring: "ring-rose-500", dot: "bg-rose-500", text: "text-rose-700 dark:text-rose-300" },
+  { chip: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300", ring: "ring-cyan-500", dot: "bg-cyan-500", text: "text-cyan-700 dark:text-cyan-300" },
+  { chip: "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300", ring: "ring-fuchsia-500", dot: "bg-fuchsia-500", text: "text-fuchsia-700 dark:text-fuchsia-300" },
+  { chip: "bg-lime-500/15 text-lime-700 dark:text-lime-300", ring: "ring-lime-500", dot: "bg-lime-500", text: "text-lime-700 dark:text-lime-300" },
 ];
 
 export type PersonColor = (typeof PALETTE)[number];

@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import type { Org } from "../../lib/org/types";
 import { updateOrgSettings } from "../../lib/org/client";
 import { initials } from "./parts";
-import { GhostButton, PrimaryButton } from "../ui/Modal";
+import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { SpinnerIcon } from "../icons";
 
 export function OrgSettingsDialog({
@@ -54,13 +54,16 @@ export function OrgSettingsDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-vs-border bg-vs-panel p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-vs-fg">Organisation Settings</h2>
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+    <Modal title="Organisation settings" description="Manage how your organisation appears to your team." onClose={() => { if (!loading) onClose(); }} footer={<>
+      <GhostButton onClick={onClose} disabled={loading}>Cancel</GhostButton>
+      <PrimaryButton type="submit" form="organisation-settings" disabled={loading || !name.trim()}>
+        {loading && <SpinnerIcon className="h-4 w-4" />} Save changes
+      </PrimaryButton>
+    </>}>
+        <form id="organisation-settings" onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-vs-muted">
-              Org Logo / Image
+            <label htmlFor="organisation-logo" className="block text-sm font-medium text-vs-fg">
+              Organisation logo
             </label>
             <div className="mt-2 flex items-center gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-vs-border bg-vs-chrome text-lg font-semibold uppercase text-vs-fg">
@@ -70,18 +73,19 @@ export function OrgSettingsDialog({
                   initials(name || "Org")
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <input
+                  id="organisation-logo"
                   type="file"
                   accept="image/png, image/jpeg, image/webp"
                   onChange={handleImageChange}
-                  className="text-xs text-vs-muted file:mr-2 file:rounded-md file:border-0 file:bg-vs-accent file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-vs-accent-fg hover:file:opacity-90"
+                  className="w-full min-w-0 text-xs text-vs-muted file:mr-2 file:rounded-lg file:border-0 file:bg-vs-active file:px-3 file:py-2 file:text-sm file:font-medium file:text-vs-accent hover:file:opacity-90"
                 />
                 {imagePreview && (
                   <button
                     type="button"
                     onClick={() => setImagePreview(null)}
-                    className="self-start text-[11px] text-vs-danger hover:underline"
+                    className="self-start rounded px-1 py-1 text-xs text-vs-danger hover:underline"
                   >
                     Remove logo
                   </button>
@@ -90,32 +94,17 @@ export function OrgSettingsDialog({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-vs-muted">
-              Organisation Name
-            </label>
+          <Field label="Organisation name">
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1.5 w-full rounded-md border border-vs-border bg-vs-editor px-3 py-1.5 text-sm text-vs-fg focus:border-vs-accent focus:outline-none"
+              className={inputClass}
             />
-          </div>
-
-          {error && <p className="text-xs text-vs-danger">{error}</p>}
-
-          <div className="mt-6 flex justify-end gap-2">
-            <GhostButton type="button" onClick={onClose} disabled={loading}>
-              Cancel
-            </GhostButton>
-            <PrimaryButton type="submit" disabled={loading || !name.trim()}>
-              {loading && <SpinnerIcon className="mr-1.5 h-3.5 w-3.5" />}
-              Save Changes
-            </PrimaryButton>
-          </div>
+          </Field>
+          {error && <ErrorNote>{error}</ErrorNote>}
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

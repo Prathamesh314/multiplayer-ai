@@ -82,7 +82,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
     finally { mutation.current=false; setBusy(false); }
   }
 
-  return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-4 rounded-xl border border-vs-border bg-vs-panel p-4 text-sm">
+  return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-6 rounded-2xl border border-vs-border bg-vs-panel p-5 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="font-semibold">{runId ? "Chat tasks" : "My tasks"}</h2>
       {runId && canAssign && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-3 py-1 text-vs-accent">@ Assign task</button>}
@@ -102,7 +102,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
     {notice && <p role="status" className="mt-2 text-vs-accent">{notice}</p>}
     {error && <p role="alert" className="mt-2 text-vs-danger">{error} <button type="button" onClick={() => void refresh()} className="underline">Refresh</button></p>}
     {loading ? <p className="mt-3 text-vs-muted">Loading tasks…</p> : !error && tasks.length === 0 ? <p className="mt-3 text-vs-muted">{runId ? "No tasks in this chat yet." : "No tasks assigned to you yet."}</p> : null}
-    <ul className="mt-2 space-y-3">{tasks.map(task => <li key={task.id} className="rounded-lg border border-vs-border p-3">
+    <ul className="mt-2 space-y-3">{tasks.map(task => <li key={task.id} className="rounded-xl border border-vs-border bg-vs-editor/50 p-4">
       <p className="text-xs text-vs-muted">{task.creatorName} → <span className="text-vs-accent">@{task.assigneeHandle}</span> · {new Date(task.createdAt).toLocaleDateString()}</p>
       <p className="mt-2 whitespace-pre-wrap break-words">{task.body}</p>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

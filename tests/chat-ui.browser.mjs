@@ -1,5 +1,6 @@
 /** Browser checks of the real workspace UI with isolated, in-browser API fixtures.
- * Start a built app first. No fixture request reaches the app's database.
+ * npm run build -- --webpack && npm run test:ui
+ * No fixture request reaches the app's database. To use an existing server:
  * CHAT_UI_BASE_URL=http://localhost:3100 node tests/chat-ui.browser.mjs
  */
 import assert from "node:assert/strict";
@@ -9,7 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 
-const base = process.env.CHAT_UI_BASE_URL ?? "http://localhost:3100";
+const startServer = process.argv.includes("--start-server");
+const base = process.env.CHAT_UI_BASE_URL ?? "http://127.0.0.1:3107";
+let serverOutput = "";
+const server = startServer ? spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", new URL(base).port], {stdio:["ignore","pipe","pipe"]}) : null;
+server?.stdout.on("data", data => { serverOutput += data; });
+server?.stderr.on("data", data => { serverOutput += data; });
 const directory = await mkdtemp(join(tmpdir(), "multiplayer-chat-ui-"));
 const chrome = spawn(process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
   "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
@@ -64,6 +70,9 @@ function installFixtures() {
     const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: {"content-type":"application/json"} }));
     if (path === "/api/orgs") return json({ orgs: [org, {...org, id:"labs", slug:"labs", name:"Side Projects", myRole:"member"}] });
     if (path === "/api/auth/me") return json({user:{id:"alex",handle:"alex",displayName:"Alex Chen",email:"alex@example.test",avatarUrl:null},connectCode:null});
+    if (path === "/api/invitations/accept") return json({error:"This invitation has expired. Ask your administrator for a new invitation."},410);
+    if (path === "/api/sessions/locked-room") return json({error:"This room is private. Enter your access code to join."},403);
+    if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }
     if (path === "/api/invitations") return json({invitations:[]});
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
     if (path.endsWith("/projects")) return json({projects:[{id:"checkout",orgId:org.id,slug:"checkout",name:"Northstar Checkout",source:"local",githubRepo:null,defaultBranch:"main",upstreamUrl:null,myRole:"manager",createdAt:0,archivedAt:null}]});
@@ -96,6 +105,7 @@ function installFixtures() {
 
 let socket;
 try {
+  if (server) await eventually(async()=>{if(server.exitCode!==null) throw Error(serverOutput);try{return (await fetch(base+"/login")).ok;}catch{return false;}},"preview server");
   let targets;
   await eventually(async()=>{try {targets=await (await fetch("http://127.0.0.1:9336/json")).json();return targets.length;}catch{return false;}},"browser");
   socket = new WebSocket(targets.find(target=>target.type==="page").webSocketDebuggerUrl);
@@ -109,13 +119,45 @@ try {
   };
   const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error(`CDP timeout: ${method}`));},15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
   const evaluate=async expression=>{const result=await send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
-  const click=async selector=>{assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`),selector);await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);await delay(80);};
+  const click=async selector=>{assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(selector)})`),selector);await evaluate(`(()=>{const control=document.querySelector(${JSON.stringify(selector)});control.focus();control.click();})()`);await delay(80);};
   const type=async(selector,value)=>{await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(80);};
   await send("Page.enable");await send("Runtime.enable");
+  await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
+  const screenshot=async name=>writeFile(join(tmpdir(), `multiplayer-ui-${name}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  const viewport=async(width,height=900)=>{await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});await delay(200);};
+  const fits=async label=>assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"),label);
+  const escape=async()=>{await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});};
   await send("Page.addScriptToEvaluateOnNewDocument",{source:`(${installFixtures.toString()})()`});
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/workspace"});
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="#product-design")'),"channels");
+  await eventually(()=>evaluate('!!document.querySelector("#projects-heading") && !!document.querySelector("main article")'),"project overview");
+  assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
+  await evaluate("document.fonts.ready");await screenshot("projects");
+  await click('button[title="Organisation settings"]');
+  await eventually(()=>evaluate('!!document.querySelector("dialog[open] input[type=text]")'),"settings dialog");
+  await type('dialog input[type=text]',"Northstar Studio");
+  await viewport(390,620);
+  await fits("settings fit mobile");
+  assert.ok(await evaluate('(()=>{const d=document.querySelector("dialog");const f=d.querySelector("footer").getBoundingClientRect();const b=d.querySelector(".ui-dialog-body");return f.bottom<=innerHeight && f.top>0 && b.clientHeight>0 && b.scrollHeight>=b.clientHeight;})()'),"dialog scrolls independently with actions visible");
+  for(let i=0;i<12;i++)await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Tab",code:"Tab",windowsVirtualKeyCode:9});
+  assert.ok(await evaluate('document.querySelector("dialog").contains(document.activeElement)'),"keyboard focus stays in modal");
+  await screenshot("settings-mobile");
+  await viewport(320,400);
+  assert.ok(await evaluate('(()=>{const body=document.querySelector(".ui-dialog-body");const footer=document.querySelector("dialog footer");return body.scrollHeight>body.clientHeight && body.clientHeight>0 && body.scrollWidth<=body.clientWidth && footer.getBoundingClientRect().bottom<=innerHeight;})()'),"short dialogs keep actions visible and scroll the form");
+  await click('dialog button[type=submit]');
+  await eventually(()=>evaluate('!document.querySelector("dialog")'),"settings save preserved");
+  await viewport(1440);
+  await click('button[title="New project"]');
+  await eventually(()=>evaluate('!!document.querySelector("dialog[open] input")'),"new project dialog");
+  await escape();
+  await eventually(()=>evaluate('!document.querySelector("dialog")'),"Escape closes dialog");
+  await click('button[title="Organisation settings"]');
+  await escape();
+  assert.equal(await evaluate('document.activeElement.title'),"Organisation settings","modal restores focus");
+  await viewport(390);
+  await fits("project overview fits mobile");await screenshot("projects-mobile");
+  await viewport(1440);
   await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="#product-design").click()');
   await eventually(()=>evaluate('!!document.querySelector("textarea") && document.body.innerText.includes("Thanks, everyone!")'),"conversation");
   await evaluate(`window.__chatFixture.messages.push({...window.__chatFixture.messages[0],id:'missed-during-disconnect',body:'Recovered after reconnect',createdAt:Date.now()});`);
@@ -170,7 +212,35 @@ try {
   await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="PSPriya Shah").click()');
   await eventually(()=>evaluate('document.body.innerText.includes("This is the start of your conversation with Priya Shah.")'),"direct messages");
   assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
+  await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"light"},{name:"prefers-reduced-motion",value:"reduce"}]});
+  await delay(200);await screenshot("chat-light");
+  assert.ok(await evaluate('parseFloat(getComputedStyle(document.querySelector("textarea")).transitionDuration) <= 0.001'),"reduced motion respected");
+  await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
+  for(const [path,ready,name] of [["/login",'input[type="email"]',"login"],["/s/locked-room",'input',"locked-room"],["/invite/expired",'[role="alert"]',"invitation"]]) {
+    await send("Page.navigate",{url:base+path});
+    await eventually(()=>evaluate(`!!document.querySelector(${JSON.stringify(ready)})`),name);
+    for(const width of [1440,390,320]) {await viewport(width);await fits(`${name} at ${width}`);if(width!==320)await screenshot(`${name}-${width}`);}
+    if(path==="/login") {
+      await type('input[type="password"]',"example-password");await click('button[aria-label="Show password"]');
+      assert.equal(await evaluate('document.querySelector("input[autocomplete=current-password]").type'),"text");
+    }
+    assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
+  }
+  await send("Page.navigate",{url:base+"/"});
+  await eventually(()=>evaluate('!!document.querySelector("#download")'),"website");
+  for(const width of [1440,768,390,320]) {
+    await viewport(width);await fits(`website at ${width}`);
+    assert.ok(await evaluate('Array.from(document.querySelectorAll("header a, header summary")).filter(el=>el.checkVisibility()).every(el=>{const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth;})'),`website navigation reachable at ${width}`);
+    if(width===1440 || width===390)await screenshot(`website-${width}`);
+  }
+  await click('summary[aria-label="Open navigation"]');
+  assert.ok(await evaluate(`document.querySelector('nav[aria-label="Mobile navigation"]').checkVisibility()`));
+  await escape();
+  await click('button[aria-label^="Enlarge screenshot"]');
+  await eventually(()=>evaluate('!!document.querySelector("dialog[open]")'),"screenshot preview");
+  await escape();
+  assert.equal(await evaluate('!!document.querySelector("dialog[open]")'),false);
   assert.deepEqual(errors,[]);
-  console.log("PASS: real chat UI, reconnect recovery, members, search, empty results, send failure/draft recovery, SSE deduplication, double-send prevention, history, DMs, and responsive layouts.");
+  console.log("PASS: website, sign-in, invitations, locked rooms, project overview, settings save, modal focus/scrolling, light/dark, reduced motion, real chat UI, reconnect recovery, members, search, empty results, send failure/draft recovery, SSE deduplication, double-send prevention, history, DMs, and responsive layouts.");
   console.log("Screenshots: "+(process.env.CHAT_UI_SCREENSHOT ?? join(tmpdir(),"multiplayer-team-chat.png"))+" and "+join(tmpdir(),"multiplayer-team-chat-mobile.png"));
-} finally {socket?.close();chrome.kill();}
+} finally {socket?.close();chrome.kill();if(server && server.exitCode===null){server.kill();await once(server,"exit").catch(()=>{});}}

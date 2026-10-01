@@ -46,29 +46,29 @@ export function Modal({
           const bounds = event.currentTarget.getBoundingClientRect();
           if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
         }}
-        className={`vs-scroll fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-y-auto rounded-2xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)] backdrop:bg-black/60 backdrop:backdrop-blur-sm`}
+        className={`ui-dialog fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-hidden rounded-2xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)] backdrop:bg-black/60 backdrop:backdrop-blur-sm`}
       >
-        <header className="flex items-start gap-3 border-b border-vs-border px-5 py-4">
+        <header className="flex items-start gap-4 border-b border-vs-border px-5 py-5 sm:px-6">
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-[16px] font-semibold tracking-tight">{title}</h2>
+            <h2 className="font-display text-xl font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p id={descriptionId} className="mt-1 text-[14px] leading-5 text-vs-muted">{description}</p>
+              <p id={descriptionId} className="mt-2 text-sm leading-6 text-vs-muted">{description}</p>
             )}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={`Close ${title}`}
-            className="-mr-1 rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             <CloseIcon className="h-4 w-4" />
           </button>
         </header>
 
-        <div className="space-y-4 px-5 py-4">{children}</div>
+        <div className="ui-dialog-body vs-scroll space-y-5 px-5 py-5 sm:px-6">{children}</div>
 
         {footer && (
-          <footer className="flex items-center justify-end gap-2 border-t border-vs-border bg-vs-editor/40 px-5 py-3.5">
+          <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-vs-border bg-vs-editor/40 px-5 py-4 sm:px-6">
             {footer}
           </footer>
         )}
@@ -87,27 +87,28 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+      <span className="text-sm font-medium text-vs-fg">
         {label}
       </span>
       {children}
-      {hint && <span className="mt-1.5 block text-[12px] text-vs-muted">{hint}</span>}
+      {hint && <span className="mt-2 block text-xs leading-5 text-vs-muted">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
+  "mt-2 min-h-11 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
 
 export function PrimaryButton({
   children,
+  className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-semibold text-vs-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>
@@ -116,13 +117,14 @@ export function PrimaryButton({
 
 export function GhostButton({
   children,
+  className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
       {...props}
-      className="flex items-center justify-center gap-2 rounded-lg border border-vs-border px-4 py-2 text-sm transition hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-60"
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-vs-border px-4 py-2.5 text-sm font-medium transition hover:border-vs-muted/50 hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>

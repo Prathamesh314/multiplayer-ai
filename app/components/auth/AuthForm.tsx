@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { continueWithEmail, register } from "../../lib/auth/client";
-import { AlertIcon, EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -70,7 +72,7 @@ export function AuthForm() {
   }
 
   return (
-    <main className="vs-scroll h-dvh overflow-y-auto bg-vs-editor text-vs-fg">
+    <main className="app-page vs-scroll h-dvh overflow-y-auto bg-vs-editor text-vs-fg">
       <div className="mx-auto grid min-h-full max-w-6xl items-center gap-12 px-6 py-10 sm:px-10 lg:grid-cols-[1.2fr_1fr] lg:gap-20">
       <section className="hidden lg:block" aria-label="About multiplayer-ai">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-vs-muted">A workspace for humans and agents</p>
@@ -86,13 +88,13 @@ export function AuthForm() {
           ))}
         </div>
       </section>
-      <div className="mx-auto w-full max-w-md rounded-2xl border border-vs-border bg-vs-panel p-6 shadow-xl sm:p-8">
-        <span className="flex items-center gap-2 text-base font-semibold">
+      <div className="mx-auto w-full max-w-md rounded-3xl border border-vs-border bg-vs-panel p-6 shadow-[0_24px_80px_-24px_var(--vs-shadow)] sm:p-9">
+        <Link href="/" className="inline-flex items-center gap-2 rounded-lg text-base font-semibold" aria-label="Multiplayer AI home">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
             multiplayer<span className="text-vs-muted">-ai</span>
           </span>
-        </span>
+        </Link>
 
         {step === "email" ? (
           <>
@@ -104,7 +106,7 @@ export function AuthForm() {
               is your first time.
             </p>
 
-            <form onSubmit={submitEmail} className="mt-6 space-y-3">
+            <form onSubmit={submitEmail} className="mt-7 space-y-5">
               <Field label="Email">
                 <input
                   autoFocus
@@ -148,7 +150,7 @@ export function AuthForm() {
               you.
             </p>
 
-            <form onSubmit={submitUsername} className="mt-6 space-y-3">
+            <form onSubmit={submitUsername} className="mt-7 space-y-5">
               <Field label="Username" hint="Lowercase letters, numbers, dashes.">
                 <input
                   autoFocus
@@ -179,7 +181,7 @@ export function AuthForm() {
           </>
         )}
 
-        <p className="mt-5 text-center text-[12px] leading-5 text-vs-muted">
+        <p className="mt-6 text-center text-[13px] leading-5 text-vs-muted">
           New accounts need a password of at least {MIN_PASSWORD_LENGTH} characters.
         </p>
       </div>
@@ -214,37 +216,5 @@ function SubmitButton({ busy, children }: { busy: boolean; children: React.React
       {busy && <SpinnerIcon className="h-4 w-4" />}
       {children}
     </button>
-  );
-}
-
-function ErrorNote({ children }: { children: React.ReactNode }) {
-  return (
-    <p role="alert" className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
-      <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      {children}
-    </p>
-  );
-}
-
-const inputClass =
-  "mt-1.5 w-full rounded-lg border border-vs-border bg-vs-panel px-3 py-2 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
-        {label}
-      </span>
-      {children}
-      {hint && <span className="mt-1 block text-[12px] text-vs-muted">{hint}</span>}
-    </label>
   );
 }

@@ -152,7 +152,7 @@ function LockedScreen({
 
   return (
     <Centered>
-      <div className="w-full max-w-md rounded-xl border border-vs-border bg-vs-panel p-6">
+      <div className="w-full max-w-md rounded-2xl border border-vs-border bg-vs-panel p-6 shadow-xl sm:p-8">
         <span className="flex items-center gap-2 text-base font-semibold">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
@@ -213,7 +213,7 @@ function LockedScreen({
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-vs-editor px-6 text-vs-fg">
+    <div className="app-page flex h-dvh flex-col items-center justify-center gap-3 bg-vs-editor px-6 text-vs-fg">
       {children}
     </div>
   );

@@ -774,10 +774,10 @@ export function AiPanel({
     : "Tasks run on the machine hosting this app. Connect your computer to use its local worktrees instead.";
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <header className={`flex min-w-0 shrink-0 items-center gap-3 px-4 pb-2 pt-3 ${entered ? "" : "border-b border-vs-border"}`}>
+    <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
+      <header className={`ai-chat-header flex min-w-0 shrink-0 items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <h2 className="truncate text-base font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
             {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
@@ -1208,7 +1208,7 @@ function Conversation({ turns }: { turns: Turn[] }) {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-4">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-5 py-6">
       {visible.map((turn) =>
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />

@@ -45,12 +45,13 @@ export function TopBar({
   repoId, hasRepository, sharedRepository, beforePublish, onPublished,
 }: TopBarProps) {
   return (
-    <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 py-2 border-b border-vs-border bg-vs-chrome px-3">
+    <header className="room-toolbar flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-vs-border bg-vs-chrome px-4 py-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
       <button
         type="button"
         onClick={onLeave}
         title="Back to projects"
-        className="flex shrink-0 items-center gap-1.5 rounded px-1 text-[14px] font-semibold text-vs-fg transition hover:bg-vs-hover"
+        className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-vs-fg transition hover:bg-vs-hover"
       >
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
         <span className="whitespace-nowrap">
@@ -58,13 +59,16 @@ export function TopBar({
         </span>
       </button>
 
+      <span aria-hidden="true" className="text-vs-muted/50">/</span>
       <span
         title={`Session ${session.id}`}
-        className="max-w-36 min-w-0 truncate rounded bg-vs-hover px-2 py-0.5 text-sm text-vs-fg"
+        className="min-w-0 max-w-56 truncate text-sm font-medium text-vs-fg"
       >
         {session.name}
       </span>
 
+      </div>
+      <div className="room-toolbar-actions vs-scroll ml-auto flex max-w-full items-center gap-2">
       {canOpenFolder && (
         <button
           type="button"
@@ -75,7 +79,7 @@ export function TopBar({
         </button>
       )}
 
-      <div className="mx-auto hidden min-w-0 lg:flex items-center gap-2 rounded border border-vs-border bg-vs-panel px-3 py-1 text-sm text-vs-muted">
+      <div className="hidden min-w-0 max-w-48 items-center gap-2 rounded-lg bg-vs-panel px-3 py-2 text-xs text-vs-muted xl:flex">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -91,7 +95,7 @@ export function TopBar({
         <PublishControls key={repoId ?? "legacy"} sessionId={session.id} repoId={repoId} shared={sharedRepository} beforePublish={beforePublish} onPublished={onPublished} />
       )}
 
-      <div className="ml-auto hidden sm:block"><PeopleStack members={members} /></div>
+      <div className="hidden px-1 sm:block"><PeopleStack members={members} /></div>
 
       <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Room guide</button>
       <button type="button" onClick={onOpenMemory} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Memory</button>
@@ -105,7 +109,7 @@ export function TopBar({
         Invite
       </button>
 
-      <div className="hidden items-center gap-0.5 sm:flex">
+      <div className="flex items-center gap-0.5">
         <ToggleButton
           label="Toggle terminal (Ctrl+Shift+Z)"
           active={terminalOpen}
@@ -113,6 +117,7 @@ export function TopBar({
         >
           <TerminalIcon className="h-4 w-4" />
         </ToggleButton>
+      </div>
       </div>
     </header>
   );
