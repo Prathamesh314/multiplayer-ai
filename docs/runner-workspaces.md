@@ -68,16 +68,20 @@ their saved absolute paths. Open those older paths directly or list them with
 the CLI. No folders are automatically deleted or silently relocated by this
 setting.
 
-The standalone runner supports:
+The desktop app bundles its runner. Browser users can install the standalone
+runner from their workspace without cloning this application's source code:
 
 ```sh
-npm run runner -- pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multiplayer-ai/workspaces
-npm run runner -- start --workspaces /path/to/new/worktrees
-npm run runner -- workspaces
-npm run runner -- workspaces --json
+npm install --global https://workspace.example/downloads/multiplayer-ai-runner.tgz
+multiplayer-ai-runner pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multiplayer-ai/workspaces
+multiplayer-ai-runner start --workspaces /path/to/new/worktrees
+multiplayer-ai-runner workspaces
+multiplayer-ai-runner workspaces --json
 ```
 
 Pairing saves the location; `start --workspaces` overrides it for that process.
+These commands work from any directory after installation. Node.js 22+ and Git
+are prerequisites for the standalone CLI. See [runner installation](../runner/README.md).
 The listing reads the selected runner's private data directory (`--data` to
 override, or `RUNNER_CONFIG` to select a desktop runner configuration).
 

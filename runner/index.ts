@@ -48,7 +48,7 @@ async function pair(): Promise<void> {
   const server = (flag("server") ?? "").replace(/\/$/, "");
   const code = flag("code") ?? "";
   if (!server || !code) {
-    console.error("Usage: runner pair --server <url> --code <RN-XXXX-XXXX> [--name <name>]");
+    console.error("Usage: multiplayer-ai-runner pair --server <url> --code <RN-XXXX-XXXX> [--name <name>]");
     process.exit(1);
   }
   const name = flag("name") ?? hostname();
@@ -154,7 +154,7 @@ async function start(): Promise<void> {
         }
       : loadConfig();
   if (!config) {
-    console.error(`No config at ${configPath()} — run \`runner pair\` first.`);
+    console.error(`No config at ${configPath()} — run \`multiplayer-ai-runner pair\` first.`);
     process.exit(1);
   }
 
@@ -201,7 +201,17 @@ async function start(): Promise<void> {
 }
 
 const command = process.argv[2];
-if (command === "workspaces") {
+if (command === "--help" || command === "-h" || command === "help") {
+  console.log("Usage: multiplayer-ai-runner <pair|start|workspaces> [options]\n\n" +
+    "  pair --server <url> --code <RN-XXXX-XXXX>  Connect this computer\n" +
+    "  start                                    Run your AI tasks (Ctrl+C to stop)\n" +
+    "  workspaces [--json]                       List local worktrees\n" +
+    "  --version                                Print the runner version\n\n" +
+    "Options: --name <name>, --workspaces <directory>, --data <directory>\n" +
+    "Works from any directory. No application source checkout is needed.");
+} else if (command === "--version" || command === "-v") {
+  console.log(process.env.MULTIPLAYER_RUNNER_VERSION ?? "development");
+} else if (command === "workspaces") {
   void listLocalWorkspaces(flag("data") ?? loadConfig()?.dataDir ?? defaultDataDir()).then(workspaces => {
     if (process.argv.includes("--json")) console.log(JSON.stringify(workspaces, null, 2));
     else if (workspaces.length) console.table(workspaces);
@@ -218,6 +228,6 @@ if (command === "workspaces") {
     process.exit(1);
   });
 } else {
-  console.error("Usage: runner <pair|start|workspaces> [--workspaces <directory>] [flags]");
+  console.error("Usage: multiplayer-ai-runner <pair|start|workspaces> [--workspaces <directory>] [flags]");
   process.exit(1);
 }

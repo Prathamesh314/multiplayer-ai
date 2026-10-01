@@ -22,6 +22,8 @@
 # production
 /build
 /.desktop-build/
+/.runner-build/
+/public/downloads/multiplayer-ai-runner.tgz*
 /desktop-dist/
 
 # session repos and records (override with MULTIPLAYER_AI_DATA)

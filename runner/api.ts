@@ -30,7 +30,7 @@ export class RunnerApi {
       redirect: "error",
     });
     if (response.status === 401) {
-      throw new Error("This device was revoked or the token is stale — re-pair with `runner pair`.");
+      throw new Error("This device was revoked or the token is stale — re-pair with `multiplayer-ai-runner pair`.");
     }
     if (!response.ok) {
       const parsed = (await response.json().catch(() => null)) as { error?: string } | null;

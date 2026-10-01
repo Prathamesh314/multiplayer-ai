@@ -540,6 +540,16 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sender.command("Network.setBlockedURLs", { urls: [] });
     await sender.click("Try again");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a computer" && !button.disabled)'), "device loading retry recovers");
+    await sender.click("Connect a computer");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("multiplayer-ai-runner pair")'), "standalone runner pairing instructions");
+    const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
+    assert.ok(instructions.includes(`${server}/downloads/multiplayer-ai-runner.tgz`));
+    assert.ok(instructions.includes('multiplayer-ai-runner start'));
+    assert.ok(!instructions.includes('npm run runner'));
+    const download = await fetch(`${server}/downloads/multiplayer-ai-runner.tgz`);
+    assert.equal(download.status, 200);
+    const artifact = new Uint8Array(await download.arrayBuffer());
+    assert.deepEqual([...artifact.slice(0, 2)], [0x1f, 0x8b], 'download is the actual gzip package');
     await sender.click("Done");
     await eventually(() => sender.evaluate('!document.querySelector("dialog") && document.querySelector("main h1")?.textContent === "UX workshop"'), "return to project overview");
     for (const [width, height, name] of [[1440, 960, "desktop"], [390, 844, "mobile"]]) {
