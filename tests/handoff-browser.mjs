@@ -170,6 +170,18 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         return result.result.value;
       };
       const click = text => eventually(() => evaluate(`(() => { const scope = document.querySelector('dialog[open]') ?? document; const button = Array.from(scope.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)} && button.checkVisibility() && !button.disabled); if (!button) return false; button.click(); return true; })()`), `click ${text}`);
+      const selectOption = async (selector, value) => {
+        await command("Page.bringToFront");
+        await eventually(() => evaluate(`(() => {
+          const select=document.querySelector(${JSON.stringify(selector)});
+          return !!select && !select.disabled && Array.from(select.options).some(option=>option.value===${JSON.stringify(value)});
+        })()`), `option ${value} in ${selector}`);
+        await evaluate(`(() => {
+          const select=document.querySelector(${JSON.stringify(selector)});
+          select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));
+        })()`);
+        await eventually(() => evaluate(`document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(value)}`), `selected ${value}`);
+      };
       await command("Page.navigate", { url: `${server}/s/${targetRoom}` });
       try {
         await eventually(() => evaluate(`!!document.querySelector(${JSON.stringify(readySelector)})`), "room workspace");
@@ -177,7 +189,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         console.error(await evaluate("document.body.innerText.slice(0, 5000)"), runtimeErrors);
         throw cause;
       }
-      return { command, evaluate, click, targetId, sessionId };
+      return { command, evaluate, click, selectOption, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
@@ -302,10 +314,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         return response;
       };
     })()`);
-    await fresh.evaluate(`(() => {
-      const select=document.querySelector('select[aria-label="Active repository"]');
-      select.value=${JSON.stringify(imported.id)};select.dispatchEvent(new Event('change',{bubbles:true}));
-    })()`);
+    await fresh.selectOption('select[aria-label="Active repository"]', imported.id);
     const freshSelector='.room-main textarea[placeholder="Type @ to assign a task, or connect an agent…"]';
     const writeFresh = text => fresh.evaluate(`(() => {
       const textarea=document.querySelector(${JSON.stringify(freshSelector)});
@@ -369,7 +378,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await advertise("test-provider/release-one");
     await recipient.evaluate('window.dispatchEvent(new Event("focus"))');
     await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll(\'select[aria-label="Provider"] option\')).some(option => option.value === "opencode")'), "discovered multi-provider execution option");
-    await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Provider"]'); select.value = "opencode"; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await recipient.selectOption('select[aria-label="Provider"]', 'opencode');
     await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
     await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-one")'), "runner model discovery in picker");
     await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-one")).click()');
@@ -382,7 +391,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
     await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-two")'), "new release appears without a code update");
     await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-two")).click()');
-    await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Provider"]'); select.value = "codex"; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await recipient.selectOption('select[aria-label="Provider"]', 'codex');
     await sql(`UPDATE runner_devices SET revoked_at = now() WHERE id = $1`, [catalogDevice]);
     console.log("  ok live model-picker updates, new and retired models, per-user catalog isolation, and unavailable-model refusal");
     const beforeStarter = (await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count;
@@ -407,7 +416,8 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     }
     await sender.click("Hand off");
     await eventually(() => sender.evaluate("!!document.querySelector('dialog select')"), "handoff dialog");
-    await sender.evaluate(`(() => { const select = document.querySelector('dialog select'); select.value = ${JSON.stringify(bob)}; select.dispatchEvent(new Event('change', { bubbles: true })); const note = document.querySelector('dialog textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Continue the accessible checkout'); note.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await sender.selectOption('dialog select', bob);
+    await sender.evaluate(`(() => { const note = document.querySelector('dialog textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Continue the accessible checkout'); note.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await sender.evaluate("document.querySelector('dialog form').requestSubmit()");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('Open handoff')"), "recipient inbox");
     await recipient.click("Open handoff");
@@ -417,7 +427,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => sender.evaluate("document.body.textContent.includes('bob is driving')"), "sender control invalidation");
     console.log("  ok two independent browsers offer and accept a handoff using the real API and event bus");
 
-    await recipient.evaluate(`(() => { const select = document.querySelector('select[aria-label="Active repository"]'); select.value = ${JSON.stringify(imported.id)}; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await recipient.selectOption('select[aria-label="Active repository"]', imported.id);
     await eventually(() => recipient.evaluate("document.body.textContent.includes('checkout.ts')"), "imported file explorer");
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: .env.example"]\')?.checkVisibility()'), "imported dotfiles visible");
     await recipient.evaluate('document.querySelector(\'button[aria-label="Folder: src/components"]\').click()');
@@ -505,7 +515,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "initial project upload appears without reload");
     await upload(fresh, 1, "Second project", "lib/second.ts", "export const second = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: lib/second.ts"]\')?.checkVisibility()'), "additional import in freshly seeded room");
-    await fresh.evaluate(`(() => { const select = document.querySelector('select[aria-label="Active repository"]'); select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await fresh.selectOption('select[aria-label="Active repository"]', '');
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
     await fresh.command("Network.enable", {});
     await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/file?*`] });
@@ -593,7 +603,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
     await recipient.click("Activity & checkpoints");
     await eventually(()=>recipient.evaluate(`document.querySelector('select[aria-label="Code checkpoint"]')?.options.length > 1`),"uploaded checkpoint visible");
-    await recipient.evaluate(`(()=>{const select=document.querySelector('select[aria-label="Code checkpoint"]');select.value=${JSON.stringify(checkpoint.id)};select.dispatchEvent(new Event("change",{bubbles:true}));})()`);
+    await recipient.selectOption('select[aria-label="Code checkpoint"]', checkpoint.id);
     await eventually(()=>recipient.evaluate('document.querySelector("dialog")?.textContent.includes("unfinished.txt")'),"offline checkpoint files");
     await recipient.click("A unfinished.txt");
     await eventually(()=>recipient.evaluate('document.querySelector("dialog pre")?.textContent.includes("Available after laptop shutdown")'),"checkpoint diff displayed");
