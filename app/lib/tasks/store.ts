@@ -1,6 +1,6 @@
 import { query, queryOne, transaction } from "../db/client";
 import { agentById } from "../ai/catalog";
-import { isUUID, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "./types";
+import { isUUID, isSelfAssignment, SELF_ASSIGNMENT_ERROR, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "./types";
 
 export class TaskError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -32,7 +32,7 @@ export async function taskMembers(sessionId: string, actor: string): Promise<Tas
         WHERE r.visibility='public' AND m.status='active' AND m.role IN ('owner','admin')
     ) SELECT u.id AS "userId", u.handle, u.display_name AS "displayName"
     FROM candidates c JOIN users u ON u.id=c.user_id
-    WHERE room_access_role($1,u.id) IS NOT NULL
+    WHERE u.id<>$2 AND room_access_role($1,u.id) IS NOT NULL
     ORDER BY u.display_name, u.handle`, [sessionId,actor]);
 }
 
@@ -59,6 +59,9 @@ export async function createTask(actor: string, input: unknown): Promise<{ id: s
       typeof body !== "string" || !body.trim() || body.trim().length > 4000) {
     throw new TaskError("Choose a room member and enter a task of 1–4000 characters.");
   }
+  // Validate before creating either record: a rejected assignment must not
+  // leave an empty source chat or consume its retry ID.
+  if (isSelfAssignment(actor, assigneeId)) throw new TaskError(SELF_ASSIGNMENT_ERROR);
   return transaction(async tx => {
     if (chat) {
       const access = await tx.query(`SELECT id FROM sessions WHERE id=$1

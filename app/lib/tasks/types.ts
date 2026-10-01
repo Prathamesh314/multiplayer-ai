@@ -7,3 +7,7 @@ export type RoomTask = {
   assigneeHandle: string; body: string; status: TaskStatus; createdAt: string;
 };
 export const isUUID = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+// UUIDs are case-insensitive in PostgreSQL; casing must not bypass this policy.
+export const isSelfAssignment = (actor: string, assignee: string): boolean => actor.toLowerCase() === assignee.toLowerCase();
+export const SELF_ASSIGNMENT_ERROR = "Choose another room member. You cannot assign a task to yourself.";

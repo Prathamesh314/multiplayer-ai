@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "../../lib/tasks/types";
+import { isSelfAssignment, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "../../lib/tasks/types";
 
 const labels: Record<TaskStatus,string> = {open:"To do",in_progress:"In progress",done:"Done",cancelled:"Cancelled"};
 async function request<T>(url:string, init?:RequestInit):Promise<T> {
@@ -32,6 +32,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
   const requestsInFlight = useRef(0);
   const pending = useRef<{payload:string;id:string}|null>(null);
   const pickerId = useId();
+  const assignees = members.filter(member => !isSelfAssignment(userId, member.userId));
   const url = `/api/tasks?offset=${offset}&members=${assigning ? "1" : "0"}${sessionId && runId ? `&sessionId=${encodeURIComponent(sessionId)}&runId=${encodeURIComponent(runId)}` : ""}`;
   const refresh = useCallback(async () => {
     const version = ++generation.current;
@@ -57,8 +58,8 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
   async function assign(event:React.FormEvent) {
     event.preventDefault();
     if (mutation.current) return;
-    const member = members.find(m => `@${m.handle}`.toLowerCase() === person.trim().toLowerCase());
-    if (!member) { setError("Choose a person from this room using their @handle."); return; }
+    const member = assignees.find(m => `@${m.handle}`.toLowerCase() === person.trim().toLowerCase());
+    if (!member) { setError("Choose another room member using their @handle."); return; }
     const payload = JSON.stringify({sessionId,runId,assigneeId:member.userId,body:body.trim()});
     if (pending.current?.payload !== payload) pending.current = {payload,id:crypto.randomUUID()};
     mutation.current=true; setBusy(true); setError(null); generation.current++;
@@ -86,10 +87,10 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
       {!runId && <span className="text-xs text-vs-muted">Assigned to you across your rooms</span>}
     </div>
     {assigning && <form onSubmit={assign} className="mt-3 space-y-3">
-      <label className="block">Tag a room member
+      <label className="block">Assign to another room member
         <input required autoFocus disabled={busy} list={pickerId} value={person} onChange={e => setPerson(e.target.value)} placeholder="@handle" className="mt-1 block w-full rounded border border-vs-border bg-vs-editor p-2" />
       </label>
-      <datalist id={pickerId}>{members.map(m => <option key={m.userId} value={`@${m.handle}`}>{m.displayName}</option>)}</datalist>
+      <datalist id={pickerId}>{assignees.map(m => <option key={m.userId} value={`@${m.handle}`}>{m.displayName}</option>)}</datalist>
       <label className="block">What should they do?
         <textarea required disabled={busy} value={body} maxLength={4000} onChange={e => setBody(e.target.value)} placeholder="Please review the code changes in this chat…" rows={3} className="mt-1 block w-full rounded border border-vs-border bg-vs-editor p-2" />
       </label>

@@ -34,6 +34,7 @@ import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } f
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
 
 type AiPanelProps = {
@@ -129,7 +130,7 @@ export function AiPanel({
 }: AiPanelProps) {
   const composer = useRef<ComposerHandle>(null);
   const [taskRevision, setTaskRevision] = useState(0);
-  const [taskPeople, setTaskPeople] = useState<MentionPerson[]>([]);
+  const [taskRoster, setTaskRoster] = useState<{ sessionId: string; people: MentionPerson[] } | null>(null);
   const taskRequest = useRef<{ payload: string; id: string } | null>(null);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
   const [serverCanRun, setServerCanRun] = useState(true);
@@ -166,8 +167,8 @@ export function AiPanel({
         const response = await fetch(`/api/tasks?sessionId=${encodeURIComponent(sessionId)}`, { signal: controller.signal, cache: "no-store" });
         if (response.ok) {
           const data = await response.json();
-          if (!controller.signal.aborted) setTaskPeople(data.members);
-        }
+          if (!controller.signal.aborted) setTaskRoster({ sessionId, people: data.members });
+        } else if (!controller.signal.aborted) setTaskRoster({ sessionId, people: [] });
       } catch { /* A later refresh retries the room roster. */ }
       finally { loading = false; }
     };
@@ -189,6 +190,10 @@ export function AiPanel({
   // Reliable even in a public room (no roster row to carry isSelf); falls back
   // to the roster only until the id resolves. Drives continue-vs-fork and "you".
   const myId = myUserId ?? members.find((member) => member.isSelf)?.userId ?? null;
+  // A slow or failed roster refresh must never offer people from the last room.
+  // Also filter locally in case an older server response still includes self.
+  const taskPeople = (taskRoster?.sessionId === sessionId ? taskRoster.people : [])
+    .filter(person => myId && !isSelfAssignment(myId, person.userId));
   // Whether the run in view is the current user's (or a fresh compose).
   const enteredIsMine = !entered || entered.driverUserId === myId;
 
@@ -743,6 +748,8 @@ export function AiPanel({
     : null;
   async function assignChatTask(person: MentionPerson, body: string) {
     if (!canRun) throw new Error("You need edit access to assign a task.");
+    if (!myId) throw new Error("Your account is still loading. Try again in a moment.");
+    if (isSelfAssignment(myId, person.userId)) throw new Error(SELF_ASSIGNMENT_ERROR);
     const payload = JSON.stringify({ sessionId, ...(entered ? { runId: entered.id } : { newChat: { repoId: repoId ?? null, agentId: active?.id ?? "codex" } }), assigneeId: person.userId, body });
     if (taskRequest.current?.payload !== payload) taskRequest.current = { payload, id: crypto.randomUUID() };
     const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...JSON.parse(payload), id: taskRequest.current.id }) });

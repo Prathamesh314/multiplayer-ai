@@ -1,5 +1,7 @@
 "use client";
 
+import { assignmentDraft } from "../../lib/tasks/composer";
+
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
@@ -152,8 +154,9 @@ export function Composer({
   const [taskMessage, setTaskMessage] = useState("");
   const [taskError, setTaskError] = useState("");
   const assignmentBusy = useRef(false);
-  const assignee = onAssignTask && selectedPerson && draft.split(/\s+/).includes(`@${selectedPerson.handle}`) ? selectedPerson : null;
-  const taskBody = assignee ? draft.split(/(\s+)/).filter(part => part !== `@${assignee.handle}`).join("").trim() : "";
+  const assignment = selectedPerson ? assignmentDraft(draft, selectedPerson.handle) : null;
+  const assignee = onAssignTask && assignment ? selectedPerson : null;
+  const taskBody = assignment?.body ?? "";
 
   useImperativeHandle(inputRef, () => ({
     insertPrompt(text) {
@@ -230,6 +233,9 @@ export function Composer({
 
   function onDraftChange(text: string, caret: number) {
     caretRef.current = caret;
+    // Removing the target cancels selection; typing that handle in a later
+    // message must not silently turn the new message into an assignment.
+    if (selectedPerson && !assignmentDraft(text, selectedPerson.handle)) setSelectedPerson(null);
     setDraft(text);
     syncMention(text, caret);
   }
@@ -290,6 +296,7 @@ export function Composer({
     if (!text) return;
     onSend(text, refsFromText(text));
     setDraft("");
+    setSelectedPerson(null);
     setMention(null);
   }
 

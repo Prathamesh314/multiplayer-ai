@@ -3,19 +3,28 @@ import { randomUUID } from "node:crypto";
 import { memoryFixture } from "./helpers/memory-fixture.mjs";
 import { createRun, getRun, listRunMessages } from "../app/lib/ai/runs.ts";
 import { createTask, listTasks, taskMembers, updateTask } from "../app/lib/tasks/store.ts";
+import { assignmentDraft } from "../app/lib/tasks/composer.ts";
 
 const f = await memoryFixture();
 let passed = 0;
 async function test(name,work) { await work(); passed++; console.log(`  ok ${name}`); }
 const rejects = (fn,status) => assert.rejects(fn,error => error.status === status);
 try {
+  await test("assignment text preserves repeated mentions and requires an exact selected handle",async () => {
+    assert.deepEqual(assignmentDraft('@bob Ask @bob to review this.','bob'),{body:'Ask @bob to review this.'});
+    assert.deepEqual(assignmentDraft('@BOB\nReview the changes.','bob'),{body:'Review the changes.'});
+    assert.deepEqual(assignmentDraft('@bob ','bob'),{body:''});
+    assert.equal(assignmentDraft('@bobby Review the changes.','bob'),null);
+    assert.equal(assignmentDraft('@bob/chat-id is a chat reference.','bob'),null);
+    assert.equal(assignmentDraft('Review the changes.','bob'),null);
+  });
   const run = await createRun({sessionId:f.room,startedBy:f.alice,agentId:"codex",baseSha:"a".repeat(40),title:"Review retry logic"});
   const input = {id:randomUUID(),sessionId:f.room,runId:run.id,assigneeId:f.bob,body:"Please review the retry logic."};
   await test("optimized rosters match authoritative permissions through membership and visibility changes",async () => {
     const check=async room => {
       for(const actor of [f.alice,f.bob,f.outsider]) {
         const allowed=(await f.db.query('SELECT room_access_role($1,$2) AS role',[room,actor])).rows[0].role;
-        const expected=allowed ? (await f.db.query('SELECT id FROM users WHERE room_access_role($1,id) IS NOT NULL',[room])).rows.map(r=>r.id).sort() : [];
+        const expected=allowed ? (await f.db.query('SELECT id FROM users WHERE id<>$2 AND room_access_role($1,id) IS NOT NULL',[room,actor])).rows.map(r=>r.id).sort() : [];
         assert.deepEqual((await taskMembers(room,actor)).map(m=>m.userId).sort(),expected);
       }
     };
@@ -38,6 +47,19 @@ try {
     assert.equal(task.creatorName,"Alice"); assert.equal(task.assigneeHandle,"bob"); assert.equal(task.status,"open");
     assert.equal((await listTasks(f.alice)).length,0);
   });
+  await test("self-assignment is rejected for existing and new chats, including differently cased UUIDs",async () => {
+    const before=(await f.db.query('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n;
+    for (const assigneeId of [f.alice,f.alice.toUpperCase()]) {
+      const id=randomUUID();
+      await rejects(() => createTask(f.alice,{...input,id,assigneeId}),400);
+      await rejects(() => createTask(f.alice,{id,sessionId:f.room,assigneeId,body:'Review my own work',newChat:{repoId:null,agentId:'codex'}}),400);
+      assert.equal(await getRun(id),null);
+      assert.equal((await f.db.query('SELECT count(*)::int AS n FROM room_tasks WHERE id=$1',[id])).rows[0].n,0);
+    }
+    assert.equal((await f.db.query('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,before);
+    assert.equal((await getRun(run.id)).driverUserId,f.alice);
+    assert(!(await taskMembers(f.room,f.alice)).some(member=>member.userId===f.alice));
+  });
   await test("retrying or concurrently submitting one request creates exactly one task",async () => {
     await Promise.all([createTask(f.alice,input),createTask(f.alice,input)]);
     assert.equal((await listTasks(f.bob)).length,1);
@@ -51,7 +73,7 @@ try {
     await updateTask(f.bob,input.id,"in_progress");
     await updateTask(f.bob,input.id,"done");
     assert.equal((await listTasks(f.bob))[0].status,"done");
-    await rejects(() => createTask(f.bob,{...input,id:randomUUID()}),403);
+    await rejects(() => createTask(f.bob,{...input,id:randomUUID(),assigneeId:f.alice}),403);
     await updateTask(f.alice,input.id,"open");
   });
   await test("unauthorised readers, assignees, and mismatched chat/room IDs are rejected",async () => {
@@ -70,8 +92,12 @@ try {
     await rejects(() => updateTask(f.outsider,input.id,"cancelled"),403);
   });
   await test("private room tasks never leak to project colleagues",async () => {
+    const reviewer=(await f.db.query(`INSERT INTO users(handle,email,display_name,connect_code)
+      VALUES ('reviewer','reviewer@tasks.test','Private reviewer','PK-AAAA-AAAD') RETURNING id`)).rows[0].id;
+    await f.db.query("INSERT INTO org_members(org_id,user_id,role) VALUES ($1,$2,'member')",[f.org,reviewer]);
+    await f.db.query("INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'viewer','owner')",[f.secret,reviewer]);
     const secretRun = await createRun({sessionId:f.secret,startedBy:f.outsider,agentId:"codex",baseSha:"b".repeat(40)});
-    const secretTask = {...input,id:randomUUID(),sessionId:f.secret,runId:secretRun.id,assigneeId:f.outsider};
+    const secretTask = {...input,id:randomUUID(),sessionId:f.secret,runId:secretRun.id,assigneeId:reviewer};
     await createTask(f.outsider,secretTask);
     assert.deepEqual(await listTasks(f.alice,{sessionId:f.secret,runId:secretRun.id}),[]);
     assert.deepEqual(await taskMembers(f.secret,f.alice),[]);
@@ -99,7 +125,7 @@ try {
     assert.equal(new Set([...first.slice(0,50),...next].map(t => t.id)).size,54);
   });
   await test("a fresh composer creates one source chat and task atomically without an AI turn",async () => {
-    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review the new design",newChat:{repoId:null,agentId:"codex"}};
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.bob,body:"Review the new design",newChat:{repoId:null,agentId:"codex"}};
     const [first,retry] = await Promise.all([createTask(f.alice,draft),createTask(f.alice,draft)]);
     assert.deepEqual(first,{id:draft.id,runId:draft.id}); assert.deepEqual(retry,first);
     const chat = await getRun(first.runId);
@@ -116,7 +142,7 @@ try {
       await f.db.query(`INSERT INTO room_repos(id,session_id,root_name,created_by,head_sha,seeded_at)
         VALUES ($1,$2,$1,$3,$4,$5)`,[id,scope,f.alice,ready ? "c".repeat(40) : null,ready ? new Date() : null]);
     }
-    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review this repository",newChat:{repoId:"taskrepoaaaa",agentId:"claude"}};
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.bob,body:"Review this repository",newChat:{repoId:"taskrepoaaaa",agentId:"claude"}};
     const created = await createTask(f.alice,draft), chat = await getRun(created.runId);
     assert.equal(chat.repoId,"taskrepoaaaa"); assert.equal(chat.baseSha,"c".repeat(40));
     for (const repoId of ["taskrepobbbb","taskrepocccc","missingrepo"]) {
@@ -126,8 +152,8 @@ try {
     }
   });
   await test("invalid fresh-chat assignments never leave an empty chat behind",async () => {
-    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.alice,body:"Review",newChat:{repoId:null,agentId:"codex"}};
-    await rejects(() => createTask(f.bob,draft),403);
+    const draft = {id:randomUUID(),sessionId:f.room,assigneeId:f.bob,body:"Review",newChat:{repoId:null,agentId:"codex"}};
+    await rejects(() => createTask(f.bob,{...draft,assigneeId:f.alice}),403);
     assert.equal(await getRun(draft.id),null);
     await rejects(() => createTask(f.alice,{...draft,sessionId:f.secret}),403);
     await rejects(() => createTask(f.alice,{...draft,runId:run.id}),400);

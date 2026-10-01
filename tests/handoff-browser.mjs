@@ -133,6 +133,20 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const aliceHandle = (await sql(`SELECT handle FROM users WHERE id=$1`,[alice])).rows[0].handle;
     const taskText = "Please review the changes in this shared chat.";
     await eventually(() => assigner.evaluate(`Array.from(document.querySelectorAll('datalist option')).some(o => o.value === ${JSON.stringify(`@${aliceHandle}`)})`), "room member picker");
+    const assignerHandle=(await sql('SELECT handle FROM users WHERE id=$1',[bob])).rows[0].handle;
+    assert.equal(await assigner.evaluate(`Array.from(document.querySelectorAll('datalist option')).some(o => o.value === ${JSON.stringify('@'+assignerHandle)})`),false);
+    // Direct requests cannot bypass the picker, and rejected requests create
+    // neither an assignment nor a fresh chat (including UUID casing changes).
+    const chatsBeforeSelf=(await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n;
+    for(const assigneeId of [bob,bob.toUpperCase()]) {
+      for(const source of [{runId:chat.id},{newChat:{repoId:imported.id,agentId:'codex'}}]) {
+        const id=randomUUID();
+        const response=await request(tokens[1],'/api/tasks','POST',{id,sessionId:roomId,assigneeId,body:'Forbidden self assignment',...source});
+        assert.equal(response.status,400);assert.match((await response.json()).error,/yourself/);
+        assert.equal((await sql('SELECT count(*)::int AS n FROM room_tasks WHERE id=$1',[id])).rows[0].n,0);
+      }
+    }
+    assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatsBeforeSelf);
     await assigner.evaluate(`(() => {
       const form = document.querySelector('section[aria-label="Chat tasks"] form');
       const input = form.querySelector('input');
@@ -184,8 +198,17 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(()=>assigner.evaluate(`!!document.querySelector(${JSON.stringify(composerSelector)})`),"task composer for non-driver");
     await setComposer('@');
     await eventually(()=>assigner.evaluate('document.body.textContent.includes("People & chat references")'),"people mention picker");
+    assert.equal(await assigner.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+assignerHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
+    // An abandoned person selection must not attach itself to a later message.
     await assigner.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
-    const taggedTask='Please verify the release checklist.';
+    await setComposer('A different message');
+    await eventually(()=>assigner.evaluate('!document.querySelector(\'button[aria-label="Assign task"]\')'),"removed assignment target");
+    await setComposer('@'+aliceHandle+' This was not selected as a task.');
+    assert.equal(await assigner.evaluate('!!document.querySelector(\'button[aria-label="Assign task"]\')'),false);
+    await setComposer('@');
+    await eventually(()=>assigner.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task'))`),"picker after cancelled selection");
+    await assigner.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
+    const taggedTask='Please verify the release checklist with @'+aliceHandle+'. Keep @'+aliceHandle+' informed.';
     await setComposer('@'+aliceHandle+' '+taggedTask);
     await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
     await assigner.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
@@ -223,6 +246,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       return fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`);
     },"people in fresh composer mention picker");
     assert.ok(await fresh.evaluate('document.body.textContent.includes("People & chat references")'));
+    assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     const preview=await fresh.command("Page.captureScreenshot",{format:"png"});
     await writeFile("/private/tmp/new-chat-task-picker.png",Buffer.from(preview.data,"base64"));
     await fresh.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
