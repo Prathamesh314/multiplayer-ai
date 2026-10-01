@@ -13,7 +13,7 @@
 # *run* in the worker.
 
 # --- build stage: compile the Next app --------------------------------------
-FROM node:22-slim AS build
+FROM node:24-slim AS build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ git \
   && rm -rf /var/lib/apt/lists/*
@@ -21,10 +21,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+ARG DESKTOP_DOWNLOAD_MAC_URL
+ARG DESKTOP_DOWNLOAD_WINDOWS_URL
+ARG DESKTOP_DOWNLOAD_LINUX_URL
+RUN npm run build -- --webpack
 
 # --- runtime stage ----------------------------------------------------------
-FROM node:22-slim
+FROM node:24-slim
 # git: local git reads on the shared volume. build tools: node-pty and other
 # native addons compile on install. ca-certificates: the CLIs' HTTPS calls.
 RUN apt-get update \

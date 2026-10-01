@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { currentUser } from "../../../../lib/auth/tokens";
 import { revokeDevice } from "../../../../lib/runner/devices";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
  * Revoke one of the caller's own devices. Takes effect on the device's next
  * request — every runner call re-resolves the token against an unrevoked row.
  */
-export async function DELETE(
+async function handleDELETE(
   _request: Request,
   context: RouteContext<"/api/runner/devices/[deviceId]">,
 ) {
@@ -22,3 +23,5 @@ export async function DELETE(
   }
   return Response.json({ ok: true });
 }
+
+export const DELETE = withApiLimit("/api/runner/devices/[deviceId]", handleDELETE);

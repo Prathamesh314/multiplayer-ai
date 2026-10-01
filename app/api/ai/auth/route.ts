@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { spawn } from "node:child_process";
 import { agentById, type AgentAuth } from "../../../lib/ai/catalog";
 import { authStatus, invalidateAgentCache } from "../../../lib/ai/detect";
@@ -41,7 +42,7 @@ export type AiAuthResult = { auth: AgentAuth | null };
 const MAX_LOGIN_MS = 5 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!(await currentUser())) {
     return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
@@ -192,3 +193,5 @@ function loginStream(bin: string, args: string[], agentId: string): ReadableStre
     },
   });
 }
+
+export const POST = withApiLimit("/api/ai/auth", handlePOST);

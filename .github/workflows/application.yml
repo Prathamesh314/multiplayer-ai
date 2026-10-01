@@ -45,6 +45,9 @@ jobs:
       - run: npm run test:desktop
       - run: npm run test:docker-context
       - run: npm run build -- --webpack
+      - run: npm run test:deployment
+        env:
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:ui
         env:
           CHROME_BIN: /usr/bin/google-chrome

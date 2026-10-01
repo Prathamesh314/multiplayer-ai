@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { ingestApprovedExchanges } from "../../../../lib/ai/shared-memory";
 import { events } from "../../../../lib/events";
 import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export type PublishResponse = { ok: true; sha: string; projectRepositoryId?: string } | { ok: false; reason: "conflict"; files: string[] };
 
 /** Publish only the selected repository; first publication explicitly shares it. */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/publish">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/publish">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -40,3 +41,5 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     authorId: result.user.id, authorName: `${result.user.displayName} · published`, originId: null, at: Date.now() });
   return Response.json({ ...outcome, projectRepositoryId: repositoryId } satisfies PublishResponse);
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/publish", handlePOST);

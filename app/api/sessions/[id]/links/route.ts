@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { access, denied, forbidden } from "../../../../lib/session/auth";
 import {
   createShareLink,
@@ -28,7 +29,7 @@ async function asOwner(id: string) {
   return { refusal: null, result };
 }
 
-export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
   const { id } = await context.params;
   const { refusal } = await asOwner(id);
   if (refusal) return refusal;
@@ -42,7 +43,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
  * Mints a link. The token comes back exactly once — only its hash is stored,
  * so a link that is lost has to be revoked and replaced rather than recovered.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
   const { id } = await context.params;
   const { refusal, result } = await asOwner(id);
   if (refusal || !result) return refusal!;
@@ -69,7 +70,7 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   return Response.json(created satisfies CreateShareLinkResponse, { status: 201 });
 }
 
-export async function DELETE(request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
+async function handleDELETE(request: Request, context: RouteContext<"/api/sessions/[id]/links">) {
   const { id } = await context.params;
   const { refusal } = await asOwner(id);
   if (refusal) return refusal;
@@ -84,3 +85,7 @@ export async function DELETE(request: Request, context: RouteContext<"/api/sessi
   // access they were granted — remove them from the roster to change that.
   return Response.json({ revoked: true });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/links", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/links", handlePOST);
+export const DELETE = withApiLimit("/api/sessions/[id]/links", handleDELETE);

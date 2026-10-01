@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { agentById } from "../app/lib/ai/catalog";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
-import { pairDevice, RunnerApi, RunnerHttpError } from "./api";
+import { pairDevice, RunnerApi, permanentRunnerFailure } from "./api";
 import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDir } from "./config";
 import { runAgentLocally } from "./execute";
 import { listLocalWorkspaces } from "./workspace-layout";
@@ -101,7 +101,7 @@ async function processJob(
     if (renewing) return;
     renewing = true;
     void api.postEvents(job.turnId, []).then(() => { renewedAt = Date.now(); }).catch(cause => {
-      if (Date.now() - renewedAt > 40_000 || cause instanceof RunnerHttpError && cause.status < 500 || /re-pair/.test(String(cause))) execution.abort();
+      if (Date.now() - renewedAt > 40_000 || permanentRunnerFailure(cause)) execution.abort();
     }).finally(() => { renewing = false; });
   }, 15_000);
   const emit = (event: AiRunEvent) => {

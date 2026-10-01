@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { createProject, listProjectsForUser } from "../../../../lib/project/store";
 import type { CreateProjectRequest, ProjectListResponse } from "../../../../lib/project/types";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Projects in this org the caller can access. */
-export async function GET(_request: Request, context: RouteContext<"/api/orgs/[slug]/projects">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/orgs/[slug]/projects">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -20,7 +21,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/orgs/[s
 }
 
 /** Create a repository-independent collaboration project. */
-export async function POST(request: Request, context: RouteContext<"/api/orgs/[slug]/projects">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/orgs/[slug]/projects">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -54,3 +55,6 @@ export async function POST(request: Request, context: RouteContext<"/api/orgs/[s
 
   return Response.json(created.project, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]/projects", handleGET);
+export const POST = withApiLimit("/api/orgs/[slug]/projects", handlePOST);

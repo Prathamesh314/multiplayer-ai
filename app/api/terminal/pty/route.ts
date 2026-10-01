@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { terminalAccess } from "../../../lib/terminal/guard";
 import { destroy, getOrCreate, resize, subscribe, write } from "../../../lib/terminal/pty";
 import type { PtyControl } from "../../../lib/terminal/protocol";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * created on first connect and reaped a short while after the last viewer
  * leaves (see pty.ts). Same RCE gate as the rest of the terminal.
  */
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const access = terminalAccess(request);
   if (!access.allowed) return Response.json({ error: access.reason }, { status: 403 });
 
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
 }
 
 /** Keystrokes, resizes, and kills for a shell. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const access = terminalAccess(request);
   if (!access.allowed) return Response.json({ error: access.reason }, { status: 403 });
 
@@ -115,3 +116,6 @@ export async function POST(request: Request) {
 
   return new Response(null, { status: 204 });
 }
+
+export const GET = withApiLimit("/api/terminal/pty", handleGET);
+export const POST = withApiLimit("/api/terminal/pty", handlePOST);

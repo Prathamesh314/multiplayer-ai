@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { conversationAccess, conversationDenied } from "../../../../../lib/chat/auth";
 import { ensureMember, markRead } from "../../../../../lib/chat/store";
 
@@ -6,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Advance this account's read cursor to now — called when messages arrive
  *  while the conversation is already open. */
-export async function POST(
+async function handlePOST(
   _request: Request,
   context: RouteContext<"/api/chat/conversations/[id]/read">,
 ) {
@@ -20,3 +21,5 @@ export async function POST(
 
   return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
 }
+
+export const POST = withApiLimit("/api/chat/conversations/[id]/read", handlePOST);

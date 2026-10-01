@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { passwordProblem } from "../../../lib/auth/password";
 import { issueToken } from "../../../lib/auth/tokens";
 import type { ContinueRequest, ContinueResponse } from "../../../lib/auth/types";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
  * The account is created only at the username step (/api/auth/register), so a
  * half-finished signup never leaves a rows behind.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: ContinueRequest;
   try {
     body = (await request.json()) as ContinueRequest;
@@ -54,3 +55,5 @@ export async function POST(request: Request) {
 
   return Response.json({ status: "new" } satisfies ContinueResponse);
 }
+
+export const POST = withApiLimit("/api/auth/continue", handlePOST);

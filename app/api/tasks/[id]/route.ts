@@ -1,9 +1,10 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser } from "../../../lib/auth/tokens";
 import { unauthenticated } from "../../../lib/session/auth";
 import { TaskError, updateTask } from "../../../lib/tasks/store";
 
 export const runtime = "nodejs";
-export async function PATCH(request: Request, context: {params:Promise<{id:string}>}) {
+async function handlePATCH(request: Request, context: {params:Promise<{id:string}>}) {
   const user = await currentUser();
   if (!user) return unauthenticated();
   let body: unknown;
@@ -16,3 +17,5 @@ export async function PATCH(request: Request, context: {params:Promise<{id:strin
     throw error;
   }
 }
+
+export const PATCH = withApiLimit("/api/tasks/[id]", handlePATCH);

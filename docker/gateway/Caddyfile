@@ -1,0 +1,38 @@
+{
+    email {$ACME_EMAIL}
+    admin off
+}
+
+{$APP_DOMAIN} {
+    # Only the balancer and container health checks use readiness. Application
+    # responses retain their own private/no-store policy; no API response cache.
+    respond /health/* 404
+
+    request_body {
+        max_size 300MB
+    }
+
+    reverse_proxy {$APP_UPSTREAMS:web:3000 web2:3000} {
+        lb_policy least_conn
+        health_uri /health/ready
+        health_interval 10s
+        health_timeout 3s
+        health_status 200
+        fail_duration 10s
+        max_fails 2
+
+        # Never replay a mutation after an uncertain upstream outcome.
+        lb_retries 0
+        lb_try_duration 0
+
+        # Overwrite, never append or trust values supplied by an Internet client.
+        header_up X-Multiplayer-Client-IP {http.request.remote.host}
+        header_up X-Multiplayer-Proxy-Secret {$PROXY_SHARED_SECRET}
+        transport http {
+            # Below the application's 70-second upstream idle timeout.
+            keepalive 30s
+        }
+        # Caddy flushes text/event-stream immediately. Leave request/response
+        # buffering disabled so uploads and Git packs stream through unchanged.
+    }
+}

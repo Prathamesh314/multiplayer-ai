@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { isUuid } from "../../../lib/ai/turns";
 import {
   ChatAccessError,
@@ -20,7 +21,7 @@ export const dynamic = "force-dynamic";
 const MAX_NAME = 80;
 
 /** The conversations the signed-in account can see in one org. */
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const slug = new URL(request.url).searchParams.get("org");
   if (!slug) {
     return Response.json({ error: "An org is required." }, { status: 400 });
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
 }
 
 /** Create a channel, or open (or reopen) a DM with another member. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let payload: CreateConversationRequest;
   try {
     payload = (await request.json()) as CreateConversationRequest;
@@ -101,3 +102,6 @@ export async function POST(request: Request) {
     throw cause;
   }
 }
+
+export const GET = withApiLimit("/api/chat/conversations", handleGET);
+export const POST = withApiLimit("/api/chat/conversations", handlePOST);

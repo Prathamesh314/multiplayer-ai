@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
 import { ensureRepoContext } from "../../../../../../lib/knowledge/repo-context";
 import { finishSeed, writeSeedBatch, withRepoLock } from "../../../../../../lib/session/repo";
@@ -23,7 +24,7 @@ export type RoomRepoSeedResponse = {
  * per repo: after the first commit the repo is the record, exactly like a
  * session's.
  */
-export async function POST(
+async function handlePOST(
   request: Request,
   context: RouteContext<"/api/sessions/[id]/repos/[repoId]/seed">,
 ) {
@@ -78,3 +79,5 @@ export async function POST(
   return Response.json({ written, skipped, headSha: seeded.headSha } satisfies RoomRepoSeedResponse);
   });
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/repos/[repoId]/seed", handlePOST);

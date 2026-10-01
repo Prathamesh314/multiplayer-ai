@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { currentUser } from "../../lib/auth/tokens";
 import { presence, HEARTBEAT_MS, TTL_MS } from "../../lib/presence";
 import { roleOf } from "../../lib/session/store";
@@ -23,7 +24,7 @@ export type HeartbeatResponse = {
  * One heartbeat per open tab. The response carries the interval so the cadence
  * is the server's decision, not something baked into the bundle.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -62,10 +63,13 @@ export async function POST(request: Request) {
 }
 
 /** Explicit goodbye. An optimisation — the {TTL} window cleans up regardless. */
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   const connectionId = new URL(request.url).searchParams.get("connectionId");
   if (!connectionId) return Response.json({ error: "A connectionId is required." }, { status: 400 });
 
   await (await presence()).disconnect(connectionId);
   return Response.json({ disconnected: true, ttlMs: TTL_MS });
 }
+
+export const POST = withApiLimit("/api/presence", handlePOST);
+export const DELETE = withApiLimit("/api/presence", handleDELETE);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { forbidden, orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { updateOrgDetails } from "../../../../lib/org/store";
 import { canManageOrg } from "../../../../lib/org/types";
@@ -14,7 +15,7 @@ type Body = {
  * Update organisation settings (name and avatar/image).
  * Only an org admin or owner can update organisation details.
  */
-export async function PATCH(
+async function handlePATCH(
   request: Request,
   context: RouteContext<"/api/orgs/[slug]/settings">,
 ) {
@@ -66,3 +67,5 @@ export async function PATCH(
     { status: 200 },
   );
 }
+
+export const PATCH = withApiLimit("/api/orgs/[slug]/settings", handlePATCH);

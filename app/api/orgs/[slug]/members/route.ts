@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { listOrgMembers } from "../../../../lib/org/store";
 import type { OrgMembersResponse } from "../../../../lib/org/types";
@@ -6,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The org roster. Any member may see who else is in the org. */
-export async function GET(_request: Request, context: RouteContext<"/api/orgs/[slug]/members">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/orgs/[slug]/members">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -17,3 +18,5 @@ export async function GET(_request: Request, context: RouteContext<"/api/orgs/[s
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]/members", handleGET);

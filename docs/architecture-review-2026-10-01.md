@@ -133,6 +133,13 @@ optional BullMQ Valkey dependency warning; the enabled Redis path builds.
 
 ## Remaining risks and next stages
 
+Follow-up: shared per-user API token buckets and a standalone Caddy/two-web-instance
+production configuration are now implemented. The development Compose defaults
+remain development-only. See [production deployment](production-deployment.md)
+for limits, authenticated proxy headers, health routing, shared storage and
+failure-injection tests. Global signup restrictions and the data-integrity and
+recovery findings below remain open; this is not a public-launch certification.
+
 These are current findings, not implied fixes in this patch:
 
 | Priority | Evidence and consequence | Next concrete stage |

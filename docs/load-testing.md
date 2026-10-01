@@ -29,6 +29,21 @@ Rebuild after changing application code. The harness deliberately does not run
 against the development compiler. Larger profiles are explicit; they do not run
 as part of `npm test`.
 
+API request protection is now enabled. This direct-to-Next harness places all
+virtual users in one untrusted `direct` ingress bucket; the default IP budget
+will intentionally throttle large profiles. For a **capacity-only** experiment,
+raise only that synthetic shared-ingress budget explicitly, retaining per-user
+limits, and record these overrides with the result:
+
+```sh
+API_RATE_INGRESS_PER_MINUTE=1000000 API_RATE_INGRESS_BURST=1000000 npm run test:load -- --profile=1000
+```
+
+Do not copy those ingress values into production. Gateway/per-user protection
+and outage behavior are exercised separately by `npm run test:deployment`.
+The historical measurements below predate this API limiter and are not a
+latency measurement of the current build.
+
 On macOS/Linux, check `ulimit -n` before large runs. Each live stream needs a
 socket in both the generator and server; HTTP traffic needs additional sockets.
 If the shell has a small soft limit and the hard limit allows it, use

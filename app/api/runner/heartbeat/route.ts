@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { sanitizeCatalog } from "../../../lib/ai/model-discovery";
 import { query } from "../../../lib/db/client";
 import { agentById } from "../../../lib/ai/catalog";
@@ -15,7 +16,7 @@ export type HeartbeatResponse = { ok: true; deviceId: string; serverTime: number
  * route consults for local-first routing). Also the runner's cheapest way to
  * learn it has been revoked: a 401 here means stop and re-pair.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) {
     return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
@@ -33,3 +34,5 @@ export async function POST(request: Request) {
     { headers: { "cache-control": "no-store" } },
   );
 }
+
+export const POST = withApiLimit("/api/runner/heartbeat", handlePOST);

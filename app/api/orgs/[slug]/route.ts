@@ -1,10 +1,11 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { orgAccess, orgDenied } from "../../../lib/org/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** One org, if the caller belongs to it. */
-export async function GET(_request: Request, context: RouteContext<"/api/orgs/[slug]">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/orgs/[slug]">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -12,3 +13,5 @@ export async function GET(_request: Request, context: RouteContext<"/api/orgs/[s
 
   return Response.json(result.org, { headers: { "cache-control": "no-store" } });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]", handleGET);

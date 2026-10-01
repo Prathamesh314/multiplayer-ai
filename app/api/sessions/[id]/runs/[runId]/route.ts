@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { reconcileCompletions } from "../../../../../lib/ai/finalize";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
 import { getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
@@ -12,7 +13,7 @@ const MAX_TITLE = 200;
  * One run with its full conversation — the replay a watcher gets on open,
  * before subscribing to the live tail. `after` fetches only newer turns.
  */
-export async function GET(
+async function handleGET(
   request: Request,
   context: RouteContext<"/api/sessions/[id]/runs/[runId]">,
 ) {
@@ -42,7 +43,7 @@ export async function GET(
  * own chats, not other members'. `{ archived }` archives/restores; `{ title }`
  * renames.
  */
-export async function PATCH(
+async function handlePATCH(
   request: Request,
   context: RouteContext<"/api/sessions/[id]/runs/[runId]">,
 ) {
@@ -74,3 +75,6 @@ export async function PATCH(
   await renameRun(runId, title.slice(0, MAX_TITLE));
   return Response.json({ ok: true });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/runs/[runId]", handleGET);
+export const PATCH = withApiLimit("/api/sessions/[id]/runs/[runId]", handlePATCH);

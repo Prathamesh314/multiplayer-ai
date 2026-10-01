@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { conversationAccess, conversationDenied } from "../../../../../lib/chat/auth";
 import { events } from "../../../../../lib/events";
 import { eventResponse } from "../../../../../lib/events/response";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Recheck both the login token and conversation access before delivering text. */
-export async function GET(
+async function handleGET(
   request: Request,
   context: RouteContext<"/api/chat/conversations/[id]/events">,
 ) {
@@ -23,3 +24,5 @@ export async function GET(
     validateEvents: true,
   });
 }
+
+export const GET = withApiLimit("/api/chat/conversations/[id]/events", handleGET);

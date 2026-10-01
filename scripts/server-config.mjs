@@ -1,4 +1,7 @@
 export function serverWorkers(env = process.env) {
+  if (env.API_TRUST_PROXY === '1' && (!env.REDIS_URL || (env.PROXY_SHARED_SECRET?.length ?? 0) < 32)) {
+    throw new Error('Trusted proxy deployment requires REDIS_URL and PROXY_SHARED_SECRET of at least 32 characters.');
+  }
   const workers = Number(env.WEB_CONCURRENCY ?? 1);
   if (!Number.isInteger(workers) || workers < 1 || workers > 16) {
     throw new Error('WEB_CONCURRENCY must be an integer from 1 to 16.');

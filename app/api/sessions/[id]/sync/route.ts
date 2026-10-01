@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { events } from "../../../../lib/events";
 import { projectRepositoryForRoom } from "../../../../lib/project/repositories";
 import { projectRoleOf } from "../../../../lib/project/store";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export type SyncResponse = { ok: true; sha: string } | { ok: false; reason: "conflict"; files: string[] };
 
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/sync">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/sync">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -30,3 +31,5 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     authorId: result.user.id, authorName: `${result.user.displayName} · synced`, originId: null, at: Date.now() });
   return Response.json(outcome satisfies SyncResponse);
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/sync", handlePOST);

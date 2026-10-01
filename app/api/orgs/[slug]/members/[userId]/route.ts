@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { publishRoleChanged } from "../../../../../lib/events";
 import { forbidden, orgAccess, orgDenied } from "../../../../../lib/org/auth";
 import { getOrgMembership, removeOrgMember, updateOrgMember } from "../../../../../lib/org/store";
@@ -48,7 +49,7 @@ async function guard(
 }
 
 /** Change a member's role and/or active (suspended) status. Org admins only. */
-export async function PATCH(
+async function handlePATCH(
   request: Request,
   context: RouteContext<"/api/orgs/[slug]/members/[userId]">,
 ) {
@@ -92,7 +93,7 @@ export async function PATCH(
 }
 
 /** Remove someone from the org, revoking their access to its projects and rooms. */
-export async function DELETE(
+async function handleDELETE(
   _request: Request,
   context: RouteContext<"/api/orgs/[slug]/members/[userId]">,
 ) {
@@ -108,3 +109,6 @@ export async function DELETE(
   await publishRoleChanged(rooms, userId);
   return Response.json({ removed: true });
 }
+
+export const PATCH = withApiLimit("/api/orgs/[slug]/members/[userId]", handlePATCH);
+export const DELETE = withApiLimit("/api/orgs/[slug]/members/[userId]", handleDELETE);

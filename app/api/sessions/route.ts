@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { currentUser } from "../../lib/auth/tokens";
 import { createRepo, gitAvailable } from "../../lib/session/repo";
 import { createSession, listSessionsForUser } from "../../lib/session/store";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Sessions this account may open. */
-export async function GET() {
+async function handleGET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -17,7 +18,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -43,3 +44,6 @@ export async function POST(request: Request) {
 
   return Response.json(session, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/sessions", handleGET);
+export const POST = withApiLimit("/api/sessions", handlePOST);

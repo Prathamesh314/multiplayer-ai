@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { events } from "../../../../lib/events";
 import { access, denied } from "../../../../lib/session/auth";
 import { createMessage, listMessages } from "../../../../lib/session/store";
@@ -15,7 +16,7 @@ const MAX_BODY = 4000;
  * changing it, and a reviewer who can read the files but not ask a question
  * about them is a strange thing to build.
  */
-export async function GET(request: Request, context: RouteContext<"/api/sessions/[id]/messages">) {
+async function handleGET(request: Request, context: RouteContext<"/api/sessions/[id]/messages">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -30,7 +31,7 @@ export async function GET(request: Request, context: RouteContext<"/api/sessions
   });
 }
 
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/messages">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/messages">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -66,3 +67,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
 
   return Response.json(message, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/messages", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/messages", handlePOST);

@@ -1,5 +1,12 @@
 # Running multiplayer-ai
 
+For an Internet-facing deployment use the standalone
+[`compose.production.yml`](../compose.production.yml) and
+[production deployment guide](../docs/production-deployment.md). It includes
+HTTPS, two web instances, shared per-user API limits, private datastore ports,
+health checks and one migration service. The commands below use the development
+Compose file and should not be exposed publicly unchanged.
+
 ## Hosted app: local runners and users' own AI accounts
 
 The `app` Compose profile hosts collaboration and repository storage. Each

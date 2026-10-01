@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { access, denied } from "../../../../lib/session/auth";
 import { repositoryContext } from "../../../../lib/session/repository-context";
 import { listCommittedTree } from "../../../../lib/session/repo";
@@ -7,7 +8,7 @@ import type { TreeNode } from "../../../../lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+async function handleGET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -37,3 +38,5 @@ function totalsOf(root: TreeNode): { files: number; bytes: number } {
 
   return { files, bytes };
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/tree", handleGET);

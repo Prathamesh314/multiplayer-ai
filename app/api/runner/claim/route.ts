@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { bearerToken, deviceFromToken } from "../../../lib/runner/devices";
 import { claimNextJob } from "../../../lib/runner/jobs";
 import { events } from "../../../lib/events";
@@ -13,7 +14,7 @@ export type ClaimResponse = { job: AgentRunJob | null; leaseMs: number | null };
 /** Claims are durable SQL operations; waiting is driven by pub/sub, not SQL polling. */
 const MAX_WAIT_MS = 25_000;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) {
     return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
@@ -40,3 +41,5 @@ export async function POST(request: Request) {
     }
   } finally { clearTimeout(timer); request.signal.removeEventListener("abort", stop); await off(); }
 }
+
+export const POST = withApiLimit("/api/runner/claim", handlePOST);

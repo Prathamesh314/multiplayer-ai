@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { limitedJson } from "../../../../../lib/http/body";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
 import { claimedJob } from "../../../../../lib/runner/jobs";
@@ -5,7 +6,7 @@ import { consumeChatInput } from "../../../../../lib/ai/input-queue";
 import { ControlError, isUuid } from "../../../../../lib/ai/turns";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/inputs">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/inputs">) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) return Response.json({error:"Unknown or revoked device token."},{status:401});
   const {runId:turnId} = await context.params;
@@ -24,3 +25,5 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
     throw error;
   }
 }
+
+export const POST = withApiLimit("/api/runner/runs/[runId]/inputs", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { forbidden, orgDenied, projectAccess } from "../../../../../../lib/org/auth";
 import { addProjectMember, listProjectMembers } from "../../../../../../lib/project/store";
 import { ensureMemberRoom } from "../../../../../../lib/session/memberRoom";
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** The project roster — who can open every room in it. */
-export async function GET(
+async function handleGET(
   _request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/members">,
 ) {
@@ -24,7 +25,7 @@ export async function GET(
 }
 
 /** Add an org member to the project. Project admins only. */
-export async function POST(
+async function handlePOST(
   request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/members">,
 ) {
@@ -57,3 +58,6 @@ export async function POST(
 
   return Response.json({ added: true }, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]/projects/[projectSlug]/members", handleGET);
+export const POST = withApiLimit("/api/orgs/[slug]/projects/[projectSlug]/members", handlePOST);

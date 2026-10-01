@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { conversationAccess, conversationDenied } from "../../../../../lib/chat/auth";
 import { ChatAccessError, createMessage, listMessages } from "../../../../../lib/chat/store";
 import { isUuid } from "../../../../../lib/ai/turns";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY = 4000;
 
-export async function GET(
+async function handleGET(
   request: Request,
   context: RouteContext<"/api/chat/conversations/[id]/messages">,
 ) {
@@ -27,7 +28,7 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function handlePOST(
   request: Request,
   context: RouteContext<"/api/chat/conversations/[id]/messages">,
 ) {
@@ -73,3 +74,6 @@ export async function POST(
 
   return Response.json(message, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/chat/conversations/[id]/messages", handleGET);
+export const POST = withApiLimit("/api/chat/conversations/[id]/messages", handlePOST);

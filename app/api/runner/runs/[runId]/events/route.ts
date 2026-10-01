@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { persistActivity, validateActivity } from "../../../../../lib/runner/activity";
 import { limitedJson } from "../../../../../lib/http/body";
 import { events } from "../../../../../lib/events";
@@ -26,7 +27,7 @@ export type RunnerEventsRequest = { events: AiRunEvent[]; sequence?: number };
 const MAX_EVENTS_PER_BATCH = 500;
 const ALLOWED = new Set(["start", "out", "think", "act", "err", "notice"]);
 
-export async function POST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/events">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/events">) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) {
     return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
@@ -89,3 +90,5 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   await renewLease(runId, device.id);
   return Response.json({ ok: true, acknowledged: body.sequence ?? null });
 }
+
+export const POST = withApiLimit("/api/runner/runs/[runId]/events", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { currentUser } from "../../lib/auth/tokens";
 import { createOrg, listOrgsForUser } from "../../lib/org/store";
 import type { CreateOrgRequest, OrgListResponse } from "../../lib/org/types";
@@ -6,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Orgs the caller belongs to — the sidebar rail. */
-export async function GET() {
+async function handleGET() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -17,7 +18,7 @@ export async function GET() {
 }
 
 /** Create an organisation. The caller becomes its owner. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -33,3 +34,6 @@ export async function POST(request: Request) {
 
   return Response.json(result.org, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/orgs", handleGET);
+export const POST = withApiLimit("/api/orgs", handlePOST);

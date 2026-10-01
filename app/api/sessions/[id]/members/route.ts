@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { publishRoleChanged } from "../../../../lib/events";
 import { presence } from "../../../../lib/presence";
 import { projectRoleOf } from "../../../../lib/project/store";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * *may* be here, Redis on who *is*. The intersection is deliberate — a member
  * whose access was just revoked can still be mid-heartbeat.
  */
-export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]/members">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/sessions/[id]/members">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -41,7 +42,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
  * it, and only project members can be added, so a private room can never leak
  * access to someone who isn't even on the project.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/members">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/members">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -79,3 +80,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   await publishRoleChanged([id], userId);
   return Response.json({ added: true }, { status: 201 });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/members", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/members", handlePOST);

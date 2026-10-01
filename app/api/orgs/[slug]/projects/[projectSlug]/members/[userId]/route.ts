@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../../lib/http/api-limit";
 import { publishRoleChanged } from "../../../../../../../lib/events";
 import { forbidden, orgDenied, projectAccess } from "../../../../../../../lib/org/auth";
 import {
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 const ROLES: ProjectRole[] = ["manager", "editor", "viewer"];
 
 /** Change an existing member's role. Project admins only. */
-export async function PATCH(
+async function handlePATCH(
   request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/members/[userId]">,
 ) {
@@ -53,7 +54,7 @@ export async function PATCH(
 }
 
 /** Remove someone from the project, revoking their access to all its rooms. */
-export async function DELETE(
+async function handleDELETE(
   _request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/members/[userId]">,
 ) {
@@ -71,3 +72,6 @@ export async function DELETE(
   await publishRoleChanged(rooms, userId);
   return Response.json({ removed: true });
 }
+
+export const PATCH = withApiLimit("/api/orgs/[slug]/projects/[projectSlug]/members/[userId]", handlePATCH);
+export const DELETE = withApiLimit("/api/orgs/[slug]/projects/[projectSlug]/members/[userId]", handleDELETE);

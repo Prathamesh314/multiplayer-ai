@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { currentUser } from "../../lib/auth/tokens";
 import { unauthenticated } from "../../lib/session/auth";
 import { createTask, listTasks, taskMembers, TaskError } from "../../lib/tasks/store";
@@ -5,7 +6,7 @@ import { createTask, listTasks, taskMembers, TaskError } from "../../lib/tasks/s
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const user = await currentUser();
   if (!user) return unauthenticated();
   const params = new URL(request.url).searchParams;
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await currentUser();
   if (!user) return unauthenticated();
   let body: unknown;
@@ -38,3 +39,6 @@ export async function POST(request: Request) {
     throw error;
   }
 }
+
+export const GET = withApiLimit("/api/tasks", handleGET);
+export const POST = withApiLimit("/api/tasks", handlePOST);

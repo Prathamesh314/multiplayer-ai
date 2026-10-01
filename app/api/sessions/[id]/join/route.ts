@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { currentUser } from "../../../../lib/auth/tokens";
 import { events } from "../../../../lib/events";
 import {
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
  *   code   the short code that can be read out loud. It is not revocable on
  *          its own, so it always grants the lowest role.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/join">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/join">) {
   const { id } = await context.params;
 
   const user = await currentUser();
@@ -74,3 +75,5 @@ export async function POST(request: Request, context: RouteContext<"/api/session
 
   return Response.json((await getSession(id, user.id)) ?? session);
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/join", handlePOST);

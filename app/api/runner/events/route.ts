@@ -1,9 +1,10 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { bearerToken, deviceFromToken } from "../../../lib/runner/devices";
 import { events } from "../../../lib/events";
 import { eventResponse } from "../../../lib/events/response";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const token = bearerToken(request);
   const device = await deviceFromToken(token);
   if (!device) return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
@@ -24,3 +25,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withApiLimit("/api/runner/events", handleGET);

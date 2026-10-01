@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { notifyUsage } from "../../../../../../lib/events/notifications";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -10,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string; runId: string }> };
 
-export async function GET(_request: Request, context: Context) {
+async function handleGET(_request: Request, context: Context) {
   const { id, runId } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -21,7 +22,7 @@ export async function GET(_request: Request, context: Context) {
   return Response.json({ run: await getRun(runId), ...await handoffState(runId, id) }, { headers: { "cache-control": "no-store" } });
 }
 
-export async function POST(request: Request, context: Context) {
+async function handlePOST(request: Request, context: Context) {
   const { id, runId } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -48,3 +49,6 @@ export async function POST(request: Request, context: Context) {
     throw cause;
   }
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/runs/[runId]/handoff", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/runs/[runId]/handoff", handlePOST);

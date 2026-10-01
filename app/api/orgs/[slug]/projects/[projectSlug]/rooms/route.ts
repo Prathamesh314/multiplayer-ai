@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { orgDenied, projectAccess } from "../../../../../../lib/org/auth";
 import { ensureMemberRoom } from "../../../../../../lib/session/memberRoom";
 import { listRoomsInProject } from "../../../../../../lib/session/store";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * also covers members who predate the one-room rule and org admins whose
  * project access is implicit — the first look at the project creates theirs.
  */
-export async function GET(
+async function handleGET(
   _request: Request,
   context: RouteContext<"/api/orgs/[slug]/projects/[projectSlug]/rooms">,
 ) {
@@ -32,3 +33,5 @@ export async function GET(
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]/projects/[projectSlug]/rooms", handleGET);

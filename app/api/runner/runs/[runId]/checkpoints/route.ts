@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { events } from "../../../../../lib/events";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
 import { artifactJob } from "../../../../../lib/runner/jobs";
@@ -5,7 +6,7 @@ import { saveCheckpoint, validCheckpoint } from "../../../../../lib/runner/check
 import { limitedJson } from "../../../../../lib/http/body";
 import { isUuid } from "../../../../../lib/ai/turns";
 export const runtime = "nodejs";
-export async function POST(request: Request, context: { params: Promise<{ runId: string }> }) {
+async function handlePOST(request: Request, context: { params: Promise<{ runId: string }> }) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) return Response.json({ error: "Unknown device." }, { status: 401 });
   const { runId } = await context.params;
@@ -19,3 +20,5 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     return Response.json({ acknowledged: body.snapshotSha });
   } catch (cause) { return Response.json({ error: cause instanceof Error ? cause.message : "Checkpoint not saved." }, { status: 409 }); }
 }
+
+export const POST = withApiLimit("/api/runner/runs/[runId]/checkpoints", handlePOST);

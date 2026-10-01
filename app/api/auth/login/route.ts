@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { issueToken } from "../../../lib/auth/tokens";
 import type { LoginRequest, MeResponse } from "../../../lib/auth/types";
 import { authenticate, connectCodeOf } from "../../../lib/repo/users";
@@ -5,7 +6,7 @@ import { authenticate, connectCodeOf } from "../../../lib/repo/users";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: LoginRequest;
   try {
     body = (await request.json()) as LoginRequest;
@@ -28,3 +29,5 @@ export async function POST(request: Request) {
 
   return Response.json({ user, connectCode: await connectCodeOf(user.id) } satisfies MeResponse);
 }
+
+export const POST = withApiLimit("/api/auth/login", handlePOST);

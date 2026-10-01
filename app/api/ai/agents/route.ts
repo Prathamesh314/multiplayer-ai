@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { query } from "../../../lib/db/client";
 import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * given, so the panel can show what is installed and offer install instructions
  * even on a server that refuses to execute anything.
  */
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const user = await currentUser();
   if (!user) {
     return Response.json({ error: "Sign in to continue." }, { status: 401 });
@@ -61,3 +62,5 @@ export async function GET(request: Request) {
     { headers: { "cache-control": "no-store" } },
   );
 }
+
+export const GET = withApiLimit("/api/ai/agents", handleGET);

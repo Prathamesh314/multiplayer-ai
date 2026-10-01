@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { events } from "../../../../lib/events";
 import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function handleGET(request: Request, context: Context) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -36,7 +37,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function PUT(request: Request, context: Context) {
+async function handlePUT(request: Request, context: Context) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -70,3 +71,6 @@ export async function PUT(request: Request, context: Context) {
     return Response.json({ error: cause instanceof Error ? cause.message : "Could not save this file." }, { status: 422 });
   }
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/file", handleGET);
+export const PUT = withApiLimit("/api/sessions/[id]/file", handlePUT);

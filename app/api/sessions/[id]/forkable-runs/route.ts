@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { listForkableRuns } from "../../../../lib/ai/memory";
 import type { ForkableRun } from "../../../../lib/ai/memory";
 import { access, denied } from "../../../../lib/session/auth";
@@ -12,7 +13,7 @@ export type ForkableRunsResponse = { runs: ForkableRun[] };
  * in this room — every chat in a room the caller can see across the project.
  * Personal sessions (no project) have nothing to offer here.
  */
-export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]/forkable-runs">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/sessions/[id]/forkable-runs">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -29,3 +30,5 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/forkable-runs", handleGET);

@@ -1,10 +1,11 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { events } from "../../../../lib/events";
 import { eventResponse } from "../../../../lib/events/response";
 import { access, denied } from "../../../../lib/session/auth";
 import { sessionUserResolver } from "../../../../lib/auth/tokens";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request, context: RouteContext<"/api/sessions/[id]/events">) {
+async function handleGET(request: Request, context: RouteContext<"/api/sessions/[id]/events">) {
   const { id } = await context.params;
   const resolveUser = await sessionUserResolver();
   const result = await access(id, resolveUser);
@@ -27,3 +28,5 @@ export async function GET(request: Request, context: RouteContext<"/api/sessions
     validate: async () => !!await access(id, resolveUser),
   });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/events", handleGET);

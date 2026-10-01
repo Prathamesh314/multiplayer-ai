@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { access, denied, forbidden } from "../../../lib/session/auth";
 import {
   addMember,
@@ -10,7 +11,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/sessions/[id]">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -19,7 +20,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
   return Response.json(result.session, { headers: { "cache-control": "no-store" } });
 }
 
-export async function PATCH(request: Request, context: RouteContext<"/api/sessions/[id]">) {
+async function handlePATCH(request: Request, context: RouteContext<"/api/sessions/[id]">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -71,7 +72,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/sessio
  * and the owner cannot leave, because a session with no owner has nobody who
  * can delete it.
  */
-export async function DELETE(_request: Request, context: RouteContext<"/api/sessions/[id]">) {
+async function handleDELETE(_request: Request, context: RouteContext<"/api/sessions/[id]">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -84,3 +85,7 @@ export async function DELETE(_request: Request, context: RouteContext<"/api/sess
   await removeMember(id, result.user.id);
   return Response.json({ left: true });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]", handleGET);
+export const PATCH = withApiLimit("/api/sessions/[id]", handlePATCH);
+export const DELETE = withApiLimit("/api/sessions/[id]", handleDELETE);

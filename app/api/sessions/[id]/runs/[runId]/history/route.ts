@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { withStoredRepo } from "../../../../../../lib/storage/git-cache";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -20,7 +21,7 @@ async function gate(context: Context) {
   if (!run || run.sessionId !== id) return Response.json({ error: "Chat not found." }, { status: 404 });
   return { result, run };
 }
-export async function GET(request: Request, context: Context) {
+async function handleGET(request: Request, context: Context) {
   const gated = await gate(context); if (gated instanceof Response) return gated;
   const { run } = gated, url = new URL(request.url);
   const snapshotId = url.searchParams.get("snapshot");
@@ -54,7 +55,7 @@ export async function GET(request: Request, context: Context) {
     FROM agent_turns t LEFT JOIN run_activity_batches b ON b.turn_id = t.id WHERE t.run_id = $1 GROUP BY t.id ORDER BY t.created_at DESC LIMIT 100`, [run.id]);
   return Response.json({ turns, snapshots: await listCheckpoints(run.id), selectedSnapshotId: run.restoreSnapshotId ?? null }, { headers: { "cache-control": "no-store" } });
 }
-export async function POST(request: Request, context: Context) {
+async function handlePOST(request: Request, context: Context) {
   const gated = await gate(context); if (gated instanceof Response) return gated;
   const { run, result } = gated;
   const body = await request.json().catch(() => null);
@@ -74,3 +75,6 @@ export async function POST(request: Request, context: Context) {
     return Response.json({ ok: true });
   } catch (cause) { return Response.json({ error: cause instanceof Error ? cause.message : "Checkpoint not selected." }, { status: 409 }); }
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/runs/[runId]/history", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/runs/[runId]/history", handlePOST);

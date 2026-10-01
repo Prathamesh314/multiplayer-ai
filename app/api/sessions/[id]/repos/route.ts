@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { projectRoleOf } from "../../../../lib/project/store";
 import { getProjectRepository } from "../../../../lib/project/repositories";
 import { attachProjectRepository } from "../../../../lib/project/repository-workspaces";
@@ -15,7 +16,7 @@ export type CreateRoomRepoRequest = { name?: string; projectRepositoryId?: strin
 export type CreateRoomRepoResponse = { repo: RoomRepo };
 
 /** The room's imported repos — the options a chat can target besides the fork. */
-export async function GET(_request: Request, context: RouteContext<"/api/sessions/[id]/repos">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/sessions/[id]/repos">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -32,7 +33,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/session
  * Write access, not owner-only: an editor co-working in someone's room may
  * bring the codebase the collaboration needs — the record keeps who did.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/repos">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/repos">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -91,3 +92,6 @@ export async function POST(request: Request, context: RouteContext<"/api/session
   await withRepoLock(repo.id, () => createRepo(repo.id));
   return Response.json({ repo } satisfies CreateRoomRepoResponse);
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/repos", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/repos", handlePOST);

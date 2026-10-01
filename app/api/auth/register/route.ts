@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { passwordProblem } from "../../../lib/auth/password";
 import { issueToken } from "../../../lib/auth/tokens";
 import type { MeResponse, RegisterRequest } from "../../../lib/auth/types";
@@ -6,7 +7,7 @@ import { connectCodeOf, createUser } from "../../../lib/repo/users";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: RegisterRequest;
   try {
     body = (await request.json()) as RegisterRequest;
@@ -46,3 +47,5 @@ export async function POST(request: Request) {
     { status: 201 },
   );
 }
+
+export const POST = withApiLimit("/api/auth/register", handlePOST);

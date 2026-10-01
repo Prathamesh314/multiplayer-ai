@@ -1,0 +1,180 @@
+# One repository-owning host. This is standalone; do not merge it with the
+# development Compose file. Only Caddy publishes ports on the host.
+name: multiplayer-production
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
+  REDIS_URL: redis://redis:6379
+  LOCAL_RUNNERS: "1"
+  MULTIPLAYER_AI_TERMINAL: "0"
+  AGENT_WORKER: "0"
+  WEB_CONCURRENCY: "1"
+  API_TRUST_PROXY: "1"
+  API_RATE_INGRESS_PER_MINUTE: ${API_RATE_INGRESS_PER_MINUTE:-6000}
+  API_RATE_INGRESS_BURST: ${API_RATE_INGRESS_BURST:-1500}
+  API_RATE_ANONYMOUS_PER_MINUTE: ${API_RATE_ANONYMOUS_PER_MINUTE:-120}
+  API_RATE_ANONYMOUS_BURST: ${API_RATE_ANONYMOUS_BURST:-40}
+  API_RATE_AUTH_PER_MINUTE: ${API_RATE_AUTH_PER_MINUTE:-20}
+  API_RATE_AUTH_BURST: ${API_RATE_AUTH_BURST:-10}
+  API_RATE_PAIR_PER_MINUTE: ${API_RATE_PAIR_PER_MINUTE:-10}
+  API_RATE_PAIR_BURST: ${API_RATE_PAIR_BURST:-5}
+  API_RATE_READ_PER_MINUTE: ${API_RATE_READ_PER_MINUTE:-600}
+  API_RATE_READ_BURST: ${API_RATE_READ_BURST:-120}
+  API_RATE_WRITE_PER_MINUTE: ${API_RATE_WRITE_PER_MINUTE:-180}
+  API_RATE_WRITE_BURST: ${API_RATE_WRITE_BURST:-60}
+  API_RATE_UPLOAD_PER_MINUTE: ${API_RATE_UPLOAD_PER_MINUTE:-120}
+  API_RATE_UPLOAD_BURST: ${API_RATE_UPLOAD_BURST:-60}
+  API_RATE_STREAM_PER_MINUTE: ${API_RATE_STREAM_PER_MINUTE:-60}
+  API_RATE_STREAM_BURST: ${API_RATE_STREAM_BURST:-20}
+  API_RATE_RUNNER_PER_MINUTE: ${API_RATE_RUNNER_PER_MINUTE:-600}
+  API_RATE_RUNNER_BURST: ${API_RATE_RUNNER_BURST:-120}
+  API_RATE_ACTIVITY_PER_MINUTE: ${API_RATE_ACTIVITY_PER_MINUTE:-600}
+  API_RATE_ACTIVITY_BURST: ${API_RATE_ACTIVITY_BURST:-180}
+  API_RATE_GIT_PER_MINUTE: ${API_RATE_GIT_PER_MINUTE:-120}
+  API_RATE_GIT_BURST: ${API_RATE_GIT_BURST:-40}
+  PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set a random PROXY_SHARED_SECRET of at least 32 characters}
+  MULTIPLAYER_AI_DATA: /app/workspaces
+  STORAGE_PROVIDER: local
+  MNEMOSYNE_URL: http://mnemosyne:8787/mcp
+  MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:?Set MNEMOSYNE_MCP_TOKEN}
+  REPO_EMBEDDING_URL: http://repo-embeddings:11434/v1/embeddings
+  REPO_EMBEDDING_MODEL: nomic-embed-text:v1.5
+  REPO_EMBEDDING_DIMENSIONS: "768"
+
+x-web: &web
+  image: multiplayer-web:${APP_VERSION:-local}
+  build:
+    context: .
+    dockerfile: docker/web/Dockerfile
+    args:
+      DESKTOP_DOWNLOAD_MAC_URL: ${DESKTOP_DOWNLOAD_MAC_URL:-}
+      DESKTOP_DOWNLOAD_WINDOWS_URL: ${DESKTOP_DOWNLOAD_WINDOWS_URL:-}
+      DESKTOP_DOWNLOAD_LINUX_URL: ${DESKTOP_DOWNLOAD_LINUX_URL:-}
+  restart: unless-stopped
+  environment: *app-environment
+  # Both replicas use one built image and one data volume. Migrations run once
+  # through the migrate service before either replica or the worker is started.
+  command: ["node", "scripts/serve.mjs", "-H", "0.0.0.0", "-p", "3000"]
+  volumes: ["workspace_data:/app/workspaces"]
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 30s
+
+services:
+  gateway:
+    image: caddy:2.11.2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set the public hostname, without a scheme}
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact email}
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set PROXY_SHARED_SECRET}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_healthy }
+      web2: { condition: service_healthy }
+
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-multiplayer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-multiplayer_ai}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-multiplayer} -d ${POSTGRES_DB:-multiplayer_ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Bounded memory; refuse writes instead of evicting live limits/locks.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: multiplayer-web:${APP_VERSION:-local}
+    environment: *app-environment
+    command: ["node", "db/migrate.mjs"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  web: *web
+  web2: *web
+
+  worker:
+    image: multiplayer-worker:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+      MEMORY_EXTRACTION_URL: ${MEMORY_EXTRACTION_URL:-}
+      MEMORY_EXTRACTION_MODEL: ${MEMORY_EXTRACTION_MODEL:-}
+      MEMORY_EXTRACTION_API_KEY: ${MEMORY_EXTRACTION_API_KEY:-}
+    volumes: ["workspace_data:/app/workspaces"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  repo-embeddings:
+    image: ${REPO_OLLAMA_IMAGE:-ollama/ollama:latest}
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes: ["repo-embedding-models:/root/.ollama"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  repo-embedding-model:
+    image: ${REPO_OLLAMA_IMAGE:-ollama/ollama:latest}
+    restart: on-failure
+    depends_on:
+      repo-embeddings: { condition: service_healthy }
+    environment:
+      OLLAMA_HOST: http://repo-embeddings:11434
+    command: ["pull", "nomic-embed-text:v1.5"]
+
+  mnemosyne:
+    build:
+      context: .
+      dockerfile: docker/mnemosyne/Dockerfile
+    restart: unless-stopped
+    environment:
+      MNEMOSYNE_MCP_TOKEN: ${MNEMOSYNE_MCP_TOKEN:?Set MNEMOSYNE_MCP_TOKEN}
+      MNEMOSYNE_MCP_ALLOWED_HOSTS: mnemosyne:8787
+      MNEMOSYNE_AUTO_SLEEP_ENABLED: "false"
+      MNEMOSYNE_LLM_ENABLED: "false"
+    volumes: ["mnemosyne-data:/data"]
+
+volumes:
+  postgres-data:
+  workspace_data:
+  redis-data:
+  mnemosyne-data:
+  repo-embedding-models:
+  caddy_data:
+  caddy_config:

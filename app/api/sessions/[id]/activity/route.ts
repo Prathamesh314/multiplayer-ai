@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { repositoryContext } from "../../../../lib/session/repository-context";
 import { events } from "../../../../lib/events";
 import { access, canWrite, denied } from "../../../../lib/session/auth";
@@ -18,7 +19,7 @@ export type ActivityRequest = { path: string; line?: number; column?: number; or
  * It is fire-and-forget on both sides — losing one changes nothing, because
  * another is along shortly and the badge expires on its own.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/activity">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/activity">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -59,3 +60,5 @@ export async function POST(request: Request, context: RouteContext<"/api/session
 
   return new Response(null, { status: 204 });
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/activity", handlePOST);

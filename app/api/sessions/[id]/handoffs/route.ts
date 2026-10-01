@@ -1,10 +1,11 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { access, canWrite, denied } from "../../../../lib/session/auth";
 import { query } from "../../../../lib/db/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+async function handleGET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -20,3 +21,5 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   );
   return Response.json({ offers }, { headers: { "cache-control": "no-store" } });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/handoffs", handleGET);

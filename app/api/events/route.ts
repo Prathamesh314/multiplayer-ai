@@ -1,10 +1,11 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { sessionUserResolver } from "../../lib/auth/tokens";
 import { events } from "../../lib/events";
 import { eventResponse } from "../../lib/events/response";
 import { query } from "../../lib/db/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const resolveUser = await sessionUserResolver();
   const user = await resolveUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
@@ -22,3 +23,5 @@ export async function GET(request: Request) {
     return async () => { await Promise.all(off.map(fn => fn())); };
   }, { validate: async () => (await resolveUser())?.id === user.id });
 }
+
+export const GET = withApiLimit("/api/events", handleGET);

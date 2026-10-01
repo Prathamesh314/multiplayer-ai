@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { conversationAccess, conversationDenied } from "../../../../lib/chat/auth";
 import { ensureMember, loadConversation, markRead } from "../../../../lib/chat/store";
 import type { ConversationResponse } from "../../../../lib/chat/types";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** The open conversation, with its roster. Opening it also joins a public
  *  channel (so unread tracking starts) and advances the read cursor. */
-export async function GET(
+async function handleGET(
   _request: Request,
   context: RouteContext<"/api/chat/conversations/[id]">,
 ) {
@@ -26,3 +27,5 @@ export async function GET(
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/chat/conversations/[id]", handleGET);

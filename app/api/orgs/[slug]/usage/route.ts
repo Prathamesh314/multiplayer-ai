@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { orgUsage, type OrgUsage } from "../../../../lib/ai/usage";
 
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export type OrgUsageResponse = OrgUsage;
 
 /** The org's pooled AI-run usage against its limits. Any member may see it. */
-export async function GET(_request: Request, context: RouteContext<"/api/orgs/[slug]/usage">) {
+async function handleGET(_request: Request, context: RouteContext<"/api/orgs/[slug]/usage">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -18,3 +19,5 @@ export async function GET(_request: Request, context: RouteContext<"/api/orgs/[s
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/orgs/[slug]/usage", handleGET);

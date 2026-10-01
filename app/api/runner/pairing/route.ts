@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser } from "../../../lib/auth/tokens";
 import { createPairingCode } from "../../../lib/runner/devices";
 
@@ -11,7 +12,7 @@ export type PairingCodeResponse = { code: string; expiresAt: number };
  * computer. The code appears once, here; the runner exchanges it at
  * /api/runner/pair. Ten minutes, single use.
  */
-export async function POST() {
+async function handlePOST() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -20,3 +21,5 @@ export async function POST() {
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const POST = withApiLimit("/api/runner/pairing", handlePOST);

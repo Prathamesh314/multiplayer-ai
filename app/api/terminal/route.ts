@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../lib/http/api-limit";
 import { terminalAccess } from "../../lib/terminal/guard";
 import type { TerminalStatus } from "../../lib/terminal/protocol";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
  * by the pty route; this only reports enablement (and the shell/cwd to show)
  * without disclosing anything about the host when access is denied.
  */
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const access = terminalAccess(request);
 
   const status: TerminalStatus = access.allowed
@@ -28,3 +29,5 @@ function shellPath(): string {
   if (process.platform === "win32") return process.env.ComSpec ?? "cmd.exe";
   return process.env.SHELL ?? "/bin/sh";
 }
+
+export const GET = withApiLimit("/api/terminal", handleGET);

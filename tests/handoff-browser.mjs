@@ -65,7 +65,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   try {
-    await eventually(async () => (await fetch(`${server}/login`)).ok, "test server", 180);
+    await eventually(async () => (await fetch(`${server}/health/ready`)).ok, "test server dependencies", 180);
     console.log("  ok actual Next.js API server started against isolated PostgreSQL schema");
     // Exercise authorization through real cookies/routes and an already-open
     // stream, not just a mocked guard or the database helper.

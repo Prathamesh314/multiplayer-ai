@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { exchangePairingCode } from "../../../lib/runner/devices";
 import type { RunnerDevice } from "../../../lib/runner/devices";
 
@@ -13,7 +14,7 @@ export type PairResponse = { device: RunnerDevice; token: string };
  * ago by a signed-in browser. The token in this response is shown exactly
  * once; the server keeps only its hash.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: PairRequest;
   try {
     body = (await request.json()) as PairRequest;
@@ -44,3 +45,5 @@ export async function POST(request: Request) {
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const POST = withApiLimit("/api/runner/pair", handlePOST);

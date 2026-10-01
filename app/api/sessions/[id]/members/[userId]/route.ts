@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { publishRoleChanged } from "../../../../../lib/events";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
 import { removeMember } from "../../../../../lib/session/store";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
  * (its creator) can't be removed — a room with nobody who can manage it is not
  * a reachable state.
  */
-export async function DELETE(
+async function handleDELETE(
   _request: Request,
   context: RouteContext<"/api/sessions/[id]/members/[userId]">,
 ) {
@@ -32,3 +33,5 @@ export async function DELETE(
   await publishRoleChanged([id], userId);
   return Response.json({ removed: true });
 }
+
+export const DELETE = withApiLimit("/api/sessions/[id]/members/[userId]", handleDELETE);

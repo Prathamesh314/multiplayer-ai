@@ -1,10 +1,11 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { createMemory, listMemories, MemoryError, type CreateMemory, type MemoryStatus } from "../../../../lib/knowledge/memory-records";
 import { memoryBody, memoryRequest } from "../../../../lib/knowledge/memory-http";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(request: Request, context: Context) {
+async function handleGET(request: Request, context: Context) {
   const { id } = await context.params;
   return memoryRequest(id, false, async ({ user }) => {
     const params = new URL(request.url).searchParams;
@@ -16,7 +17,7 @@ export async function GET(request: Request, context: Context) {
   });
 }
 
-export async function POST(request: Request, context: Context) {
+async function handlePOST(request: Request, context: Context) {
   const { id } = await context.params;
   return memoryRequest(id, true, async ({ user }) => {
     const body = await memoryBody(request);
@@ -24,3 +25,6 @@ export async function POST(request: Request, context: Context) {
     return { memory: await createMemory(id, user.id, body as CreateMemory) };
   });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/memories", handleGET);
+export const POST = withApiLimit("/api/sessions/[id]/memories", handlePOST);

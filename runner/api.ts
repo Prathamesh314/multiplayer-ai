@@ -15,7 +15,12 @@ import type { PairResponse } from "../app/api/runner/pair/route";
 import type { RunnerCompleteRequest } from "../app/api/runner/runs/[runId]/complete/route";
 
 export class RunnerHttpError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
+  constructor(message: string, readonly status: number, readonly retryAfterMs = 1000) { super(message); }
+}
+
+export function permanentRunnerFailure(error: unknown): boolean {
+  return error instanceof RunnerHttpError && error.status < 500 && error.status !== 429 ||
+    error instanceof Error && error.message.includes('re-pair');
 }
 
 export class RunnerApi {
@@ -41,7 +46,9 @@ export class RunnerApi {
     }
     if (!response.ok) {
       const parsed = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new RunnerHttpError(parsed?.error ?? `${path} failed with ${response.status}`, response.status);
+      const seconds = Number(response.headers.get("retry-after"));
+      const retryAfterMs = Number.isFinite(seconds) && seconds > 0 ? Math.min(30_000, seconds * 1000) : 1000;
+      throw new RunnerHttpError(parsed?.error ?? `${path} failed with ${response.status}`, response.status, retryAfterMs);
     }
     return (await response.json()) as T;
   }
@@ -72,8 +79,8 @@ export class RunnerApi {
       try { return (await this.post<{input:QueuedInput|null}>(`/api/runner/runs/${encodeURIComponent(turnId)}/inputs`,action)).input; }
       catch(error) {
         failure=error;
-        if (error instanceof RunnerHttpError && error.status < 500 || error instanceof Error && error.message.includes('re-pair')) throw error;
-        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        if (permanentRunnerFailure(error)) throw error;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, error instanceof RunnerHttpError && error.status === 429 ? error.retryAfterMs : 250 * (attempt + 1)));
       }
     }
     throw failure;

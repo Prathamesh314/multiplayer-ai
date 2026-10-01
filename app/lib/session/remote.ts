@@ -71,11 +71,17 @@ async function uploadScan<T extends { skipped: string[] }>(
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         response = await fetch(url, payload);
-        if (response.status < 500) break;
+        if (response.status < 500 && response.status !== 429) break;
       } catch (cause) {
         if (attempt === 2) throw cause;
       }
-      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      if (attempt < 2) {
+        const seconds = Number(response?.headers.get("retry-after"));
+        const delay = response?.status === 429 && Number.isFinite(seconds) && seconds > 0
+          ? Math.min(60_000, seconds * 1000) : 500 * (attempt + 1);
+        await response?.body?.cancel();
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
     if (!response?.ok) throw new Error(response ? await readError(response, "Could not upload the folder.") : "Upload interrupted. Pick the same folder again to retry.");
 

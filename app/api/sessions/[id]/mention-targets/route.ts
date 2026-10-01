@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { listRunsForRooms } from "../../../../lib/ai/runs";
 import { access, denied } from "../../../../lib/session/auth";
 import { listRoomsInProject } from "../../../../lib/session/store";
@@ -16,7 +17,7 @@ export type MentionTargetsResponse = { rooms: MentionRoomDTO[] };
  * too, so the picker can show the whole project and say "no chats yet".
  * Personal rooms (no project) have nothing to reference.
  */
-export async function GET(
+async function handleGET(
   _request: Request,
   context: RouteContext<"/api/sessions/[id]/mention-targets">,
 ) {
@@ -54,3 +55,5 @@ export async function GET(
     headers: { "cache-control": "no-store" },
   });
 }
+
+export const GET = withApiLimit("/api/sessions/[id]/mention-targets", handleGET);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { access, denied, forbidden } from "../../../../lib/session/auth";
 import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { finishSeed, writeSeedBatch } from "../../../../lib/session/repo";
@@ -14,7 +15,7 @@ const MAX_FILES_PER_BATCH = 500;
  * seed, and only once: after the session branch exists the repo is the record
  * and further changes go through the file route as commits.
  */
-export async function POST(request: Request, context: RouteContext<"/api/sessions/[id]/seed">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/sessions/[id]/seed">) {
   const { id } = await context.params;
   const result = await access(id);
   const refusal = denied(result);
@@ -63,3 +64,5 @@ export async function POST(request: Request, context: RouteContext<"/api/session
     repo: updated?.repo ?? repo,
   } satisfies SeedResponse);
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/seed", handlePOST);

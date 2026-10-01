@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
 import { getRun, joinRun, leaveRun } from "../../../../../../lib/ai/runs";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
  * editor — which lets you send prompts into someone else's run — needs the same
  * write access that starting one does.
  */
-export async function POST(
+async function handlePOST(
   request: Request,
   context: RouteContext<"/api/sessions/[id]/runs/[runId]/join">,
 ) {
@@ -40,7 +41,7 @@ export async function POST(
 }
 
 /** Stop watching. */
-export async function DELETE(
+async function handleDELETE(
   _request: Request,
   context: RouteContext<"/api/sessions/[id]/runs/[runId]/join">,
 ) {
@@ -52,3 +53,6 @@ export async function DELETE(
   await leaveRun(runId, result.user.id);
   return Response.json({ left: true });
 }
+
+export const POST = withApiLimit("/api/sessions/[id]/runs/[runId]/join", handlePOST);
+export const DELETE = withApiLimit("/api/sessions/[id]/runs/[runId]/join", handleDELETE);

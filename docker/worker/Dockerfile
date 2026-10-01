@@ -10,7 +10,7 @@
 # NOTE: this image is provided for the containerized (Slice-2) deployment and is
 # not exercised by local development, which runs the worker on the host via
 # `AGENT_WORKER=1 ./start.sh`.
-FROM node:22-slim
+FROM node:24-slim
 
 # git: repo.ts drives git via execFile. build tools + python3: some deps carry
 # native addons (e.g. node-pty) that fall back to node-gyp when no prebuild

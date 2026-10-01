@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../../lib/http/api-limit";
 import { limitedJson } from "../../../../../../lib/http/body";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -25,6 +26,6 @@ async function handle(request: Request, context: RouteContext<"/api/sessions/[id
     throw error;
   }
 }
-export const GET = handle;
-export const POST = handle;
-export const DELETE = handle;
+export const GET = withApiLimit("/api/sessions/[id]/runs/[runId]/inputs", handle);
+export const POST = withApiLimit("/api/sessions/[id]/runs/[runId]/inputs", handle);
+export const DELETE = withApiLimit("/api/sessions/[id]/runs/[runId]/inputs", handle);

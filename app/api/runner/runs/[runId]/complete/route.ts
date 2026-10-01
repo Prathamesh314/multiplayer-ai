@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { agentById } from "../../../../../lib/ai/catalog";
 import { finalizeAgentRun } from "../../../../../lib/ai/finalize";
 import { publishRunEvent } from "../../../../../lib/ai/run-stream";
@@ -31,7 +32,7 @@ const MAX_ERR_BYTES = 256 * 1024;
  * bare repo (present *and* descended from the run's base) before any head
  * moves. A runner cannot claim a commit it never pushed.
  */
-export async function POST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/complete">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/runner/runs/[runId]/complete">) {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) {
     return Response.json({ error: "Unknown or revoked device token." }, { status: 401 });
@@ -102,3 +103,5 @@ export async function POST(request: Request, context: RouteContext<"/api/runner/
   await completeJob(runId, device.id);
   return Response.json({ ok: true });
 }
+
+export const POST = withApiLimit("/api/runner/runs/[runId]/complete", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser } from "../../../lib/auth/tokens";
 import { acceptInvitationByToken } from "../../../lib/org/store";
 
@@ -5,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Accept an email invitation by its one-time link token. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
@@ -24,3 +25,5 @@ export async function POST(request: Request) {
 
   return Response.json({ orgSlug: result.orgSlug }, { status: 200 });
 }
+
+export const POST = withApiLimit("/api/invitations/accept", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { acquireStoredRepo } from "../../../../lib/storage/git-cache";
 import { candidatePush } from "../../../../lib/runner/push";
 import { artifactJob, claimedJob } from "../../../../lib/runner/jobs";
@@ -56,7 +57,7 @@ const refuse = (status: number, message: string): Response =>
  * revoked token; 404 for everything else (unknown ref, no role, read-only
  * pushing) so the surface cannot be used to probe which repos exist.
  */
-async function gate(request: Request, repoRef: string, write: boolean) {
+async function gate(request: Request, repoRef: string, write: boolean): Promise<{ error: Response } | { bare: string; release: () => Promise<void> }> {
   const device = await deviceFromToken(bearerToken(request));
   if (!device) return { error: refuse(401, "Unknown or revoked device token.") };
 
@@ -116,7 +117,7 @@ function bodyStream(request: Request): Readable {
 }
 
 /** Ref advertisement: what the client asks first, for both clone and push. */
-export async function GET(request: Request, context: RouteContext<"/api/git/[repoRef]/[...op]">) {
+async function handleGET(request: Request, context: RouteContext<"/api/git/[repoRef]/[...op]">) {
   const { repoRef, op } = await context.params;
   if (op.join("/") !== "info/refs") return refuse(404, "Not found.");
 
@@ -144,7 +145,7 @@ export async function GET(request: Request, context: RouteContext<"/api/git/[rep
 }
 
 /** The service call itself: pack negotiation (clone/fetch) or a push. */
-export async function POST(request: Request, context: RouteContext<"/api/git/[repoRef]/[...op]">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/git/[repoRef]/[...op]">) {
   const { repoRef, op } = await context.params;
   const service = op.join("/");
   if (!SERVICES.has(service)) return refuse(404, "Not found.");
@@ -179,3 +180,6 @@ export async function POST(request: Request, context: RouteContext<"/api/git/[re
     },
   });
 }
+
+export const GET = withApiLimit("/api/git/[repoRef]/[...op]", handleGET);
+export const POST = withApiLimit("/api/git/[repoRef]/[...op]", handlePOST);

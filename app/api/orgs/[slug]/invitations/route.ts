@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../../lib/http/api-limit";
 import { findByConnectCode } from "../../../../lib/repo/users";
 import { forbidden, orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { inviteByConnectCode, inviteByEmail } from "../../../../lib/org/store";
@@ -18,7 +19,7 @@ type Body = {
  * one-time link. Both create a *pending* invitation — never a membership — and
  * only an org admin or owner may issue one.
  */
-export async function POST(request: Request, context: RouteContext<"/api/orgs/[slug]/invitations">) {
+async function handlePOST(request: Request, context: RouteContext<"/api/orgs/[slug]/invitations">) {
   const { slug } = await context.params;
   const result = await orgAccess(slug);
   const refusal = orgDenied(result);
@@ -67,3 +68,5 @@ export async function POST(request: Request, context: RouteContext<"/api/orgs/[s
 
   return Response.json({ error: "Specify via: 'connect_code' or 'email'." }, { status: 400 });
 }
+
+export const POST = withApiLimit("/api/orgs/[slug]/invitations", handlePOST);

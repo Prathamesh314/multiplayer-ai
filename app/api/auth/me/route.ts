@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser, revokeToken } from "../../../lib/auth/tokens";
 import type { MeResponse } from "../../../lib/auth/types";
 import { connectCodeOf, rotateConnectCode } from "../../../lib/repo/users";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Who the browser is signed in as. Null rather than 401: not being signed in
  *  is a normal answer to this question, not an error. */
-export async function GET() {
+async function handleGET() {
   const user = await currentUser();
   return Response.json(
     {
@@ -19,14 +20,18 @@ export async function GET() {
 }
 
 /** Rotates the connect code, which is how a leaked one is revoked. */
-export async function POST() {
+async function handlePOST() {
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
   return Response.json({ user, connectCode: await rotateConnectCode(user.id) } satisfies MeResponse);
 }
 
-export async function DELETE() {
+async function handleDELETE() {
   await revokeToken();
   return Response.json({ user: null, connectCode: null } satisfies MeResponse);
 }
+
+export const GET = withApiLimit("/api/auth/me", handleGET);
+export const POST = withApiLimit("/api/auth/me", handlePOST);
+export const DELETE = withApiLimit("/api/auth/me", handleDELETE);

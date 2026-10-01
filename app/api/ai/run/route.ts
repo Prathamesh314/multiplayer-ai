@@ -1,3 +1,4 @@
+import { withApiLimit } from "../../../lib/http/api-limit";
 import { getCheckpoint } from "../../../lib/runner/checkpoints";
 import { projectRepositoryForRoom } from "../../../lib/project/repositories";
 import { randomUUID } from "node:crypto";
@@ -87,7 +88,7 @@ export type AiRunRequest = {
  * The prompt is passed as an argv element, never through a shell, so no amount
  * of quoting in it can become a second command.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: AiRunRequest;
   try {
     body = (await request.json()) as AiRunRequest;
@@ -467,6 +468,8 @@ function inlineStream(job: AgentRunJob): ReadableStream<Uint8Array> {
     },
   });
 }
+
+export const POST = withApiLimit("/api/ai/run", handlePOST);
 
 /**
  * Redis: the worker runs the turn; this forwards its events off the per-run
