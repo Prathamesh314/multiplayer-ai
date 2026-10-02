@@ -1,3 +1,4 @@
+import { localReleaseEnvironment, releaseChecks, checkWorkspace, verifySignedMac } from "./release-preflight.mjs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtemp, mkdir, readdir, copyFile, writeFile } from "node:fs/promises";
@@ -8,12 +9,15 @@ import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url);
 const { buildTarget, packagedExecutable } = require("./targets.cjs");
 const { platform, arch, release, setup, builderArgs } = buildTarget(process.argv.slice(2));
-const env = { ...process.env, DESKTOP_RELEASE: release ? "1" : "0" };
+const env = { ...localReleaseEnvironment(), DESKTOP_RELEASE: release ? "1" : "0" };
 if (setup) {
   env.DESKTOP_WORKSPACE_URL = "";
   env.DESKTOP_UPDATE_URL = "";
 }
 if (release) {
+  const errors = releaseChecks(env);
+  if (errors.length) throw new Error(errors.join("\n"));
+  await checkWorkspace(env);
   if (!["darwin", "win32"].includes(process.platform)) throw new Error("Signed release builds are supported only on macOS and Windows. Linux builds are previews until platform acceptance is complete.");
   if (!env.CSC_LINK && !env.CSC_NAME) throw new Error("Provide CSC_LINK or CSC_NAME for a signed release.");
   if (env.CSC_NAME === "-") throw new Error("Ad-hoc signing cannot be used for a release.");
@@ -25,6 +29,7 @@ for (const args of [["desktop/prepare.mjs"], [require.resolve("electron-builder/
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+if (release && platform === "darwin") verifySignedMac(join(env.DESKTOP_OUTPUT_DIR, "mac" + (arch === "x64" ? "" : "-" + arch), "Multiplayer AI.app"));
 await mkdir("desktop-dist", { recursive: true });
 const hashes = [];
 for (const file of (await readdir(env.DESKTOP_OUTPUT_DIR)).sort()) {

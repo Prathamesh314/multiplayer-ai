@@ -1,3 +1,4 @@
+import { signupInvitation, SignupAdmissionError } from "../../../lib/auth/admission";
 import { withApiLimit } from "../../../lib/http/api-limit";
 import { passwordProblem } from "../../../lib/auth/password";
 import { issueToken } from "../../../lib/auth/tokens";
@@ -53,6 +54,11 @@ async function handlePOST(request: Request) {
   const problem = passwordProblem(password);
   if (problem) return Response.json({ error: problem, field: "password" }, { status: 400 });
 
+  try { await signupInvitation(email, body.invitationToken); }
+  catch (cause) {
+    if (cause instanceof SignupAdmissionError) return Response.json({ error: cause.message, field: "invitation" }, { status: 403 });
+    throw cause;
+  }
   return Response.json({ status: "new" } satisfies ContinueResponse);
 }
 

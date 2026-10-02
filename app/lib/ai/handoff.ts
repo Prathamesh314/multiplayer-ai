@@ -80,7 +80,10 @@ export async function changeHandoff(runId: string, sessionId: string, actorId: s
       if (run.control_version !== input.version) throw new ControlError("Control changed. Refresh the chat.");
       const { rows: [active] } = await tx.query(
         `SELECT t.*, j.status AS job_status, j.lease_expires_at,
-           t.created_at < now() - interval '12 minutes' AS timed_out,
+           CASE WHEN t.execution_target='server' AND t.status='running'
+             THEN COALESCE(t.execution_lease_until,t.created_at+interval '12 minutes')<now()
+             WHEN j.status='claimed' THEN false
+             ELSE t.created_at<now()-interval '15 minutes' END AS timed_out,
            j.lease_expires_at < now() AS lease_expired
          FROM agent_turns t LEFT JOIN runner_jobs j ON j.turn_id = t.id
          WHERE t.run_id = $1 AND t.status IN ('preparing', 'queued', 'running') FOR UPDATE OF t`, [runId],

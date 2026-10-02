@@ -26,6 +26,7 @@ export async function fetchMe(): Promise<MeResponse> {
 }
 
 export async function register(input: {
+  invitationToken?: string;
   handle: string;
   email: string;
   displayName: string;

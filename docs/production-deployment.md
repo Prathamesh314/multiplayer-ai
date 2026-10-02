@@ -104,7 +104,8 @@ expires idle buckets. Redis failures return a bounded, retryable 503 **before**
 the API handler executes. There is no per-replica fallback that could multiply
 allowances. Production Redis uses AOF and no-eviction with a 256 MiB memory cap;
 alert on memory, rejected writes and failures. AOF `everysec` is not a zero-loss
-durability guarantee and does not solve repository lock-loss fencing.
+durability guarantee. Repository writers now use kernel file locks on the shared
+local volume independently of Redis; see `launch-remediation.md`.
 
 Local single-process development without Redis uses a bounded in-memory store.
 Without `API_TRUST_PROXY=1`, IP headers are ignored and anonymous/ingress requests
@@ -158,9 +159,27 @@ Configure the app credentials on web and worker, retain the encryption key, and
 run one Discord gateway worker per deployment. The human chat sidebar is replaced
 by Connections; AI chats and tasks stay in the app.
 
-Remaining beta gates include global signup restrictions, repository mutation
-fencing, abandoned-turn recovery and a successful coordinated restore drill.
-The load balancer does not remove those risks. See the architecture review.
+The October 2 remediation implements kernel repository locks, abandoned-turn
+recovery, coordinated backup/restore, invitation admission and storage admission.
+See `launch-remediation.md` for tests, scope and remaining external release gates.
+Stop **all** old web/worker replicas before upgrading the lock implementation.
+
+Production defaults to `SIGNUP_MODE=invite`. Create the first private invitation
+against the deployed database using `npm run beta:invite -- EMAIL HTTPS_ORIGIN`;
+organisation admins can then invite their team through the existing UI. Inside
+the production network, use the worker image's bundled source/runtime:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yml run --rm --no-deps worker npm run beta:invite -- person@example.com https://your-workspace.example
+```
+
+The command prints a private single-use link; send it only to its recipient. Use
+`SIGNUP_MODE=closed` to pause new accounts without blocking existing logins.
+`ORG_STORAGE_LIMIT_BYTES` defaults to 10 GiB and `STORAGE_MIN_FREE_BYTES` to 2 GiB.
+Admission failures explain the allowance/disk issue without removing existing work.
+These controls do not bound PostgreSQL, logs, backups, or embedding data; monitor
+those separately. Follow `backup-restore.md` for encrypted off-host backups and
+an actual restore drill before accepting valuable data.
 
 ## Verification
 

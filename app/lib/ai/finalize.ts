@@ -57,7 +57,8 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     const { rows: [role] } = await tx.query(`SELECT room_access_role($1, $2) AS role`, [input.sessionId, turn.driver_user_id]);
     if (!["owner", "editor"].includes(role?.role)) throw new ControlError("Execution access was revoked.", 403);
     const { rows: [job] } = await tx.query(`SELECT *, lease_expires_at > now() AS live FROM runner_jobs WHERE turn_id = $1`, [input.turnId]);
-    if (job && !turn.completion && (job.status !== "claimed" || !job.live)) throw new ControlError("The runner lease expired. Recover control before retrying.");
+    if (turn.execution_target === 'local' && job && !turn.completion && (job.status !== "claimed" || !job.live)) throw new ControlError("The runner lease expired. Recover control before retrying.");
+    if (turn.execution_target === 'server' && turn.execution_token && !turn.completion && new Date(turn.execution_lease_until).getTime() <= Date.now()) throw new ControlError("The executor lease expired. The candidate is preserved for review.");
     await closeTurnInputs(tx, input.turnId);
     const saved = turn.completion ?? { ...input, onError: undefined };
     await tx.query(`UPDATE agent_turns SET completion = $2 WHERE id = $1`, [input.turnId, JSON.stringify(saved)]);
@@ -67,9 +68,12 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   const saved = snapshot.input!;
   const repoRef = saved.repoId ?? saved.sessionId;
   const committed = await withRepoLock(repoRef, () => transaction(async tx => {
-    await tx.query(`SELECT id FROM agent_runs WHERE id = $1 FOR UPDATE`, [saved.runId]);
+    const { rows: [run] } = await tx.query(`SELECT *,room_access_role(session_id,driver_user_id) AS role FROM agent_runs WHERE id = $1 FOR UPDATE`, [saved.runId]);
     const { rows: [turn] } = await tx.query(`SELECT * FROM agent_turns WHERE id = $1 FOR UPDATE`, [saved.turnId]);
     if (turn.result) return { result: turn.result as FinalizeResult, fresh: false };
+    if (turn.status !== 'running' || run.driver_user_id !== turn.driver_user_id || run.control_version !== turn.control_version || !['owner','editor'].includes(run.role)) {
+      throw new ControlError("Execution lost access or control before publishing. Its candidate was preserved.");
+    }
     let sha = saved.sha;
     let failure = saved.errOutput.trim();
     let status: "completed" | "failed" = saved.code === 0 ? "completed" : "failed";

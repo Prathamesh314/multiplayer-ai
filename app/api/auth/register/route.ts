@@ -23,6 +23,7 @@ async function handlePOST(request: Request) {
   }
 
   const result = await createUser({
+    invitationToken: typeof body.invitationToken === "string" ? body.invitationToken : undefined,
     handle: body.handle,
     email: body.email,
     displayName: typeof body.displayName === "string" ? body.displayName : "",
@@ -30,7 +31,7 @@ async function handlePOST(request: Request) {
   });
 
   if (!result.ok) {
-    return Response.json({ error: result.error, field: result.field }, { status: 409 });
+    return Response.json({ error: result.error, field: result.field }, { status: result.field === "invitation" ? 403 : 409 });
   }
 
   // Registering signs you in; making people log in again immediately is a

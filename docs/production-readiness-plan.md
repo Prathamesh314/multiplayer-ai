@@ -1,5 +1,11 @@
 # Production readiness and scaling plan
 
+> Update, October 2: repository locking, abandoned-turn recovery, coordinated
+> restore, signup/storage admission and release preparation are addressed in
+> [launch-remediation.md](launch-remediation.md). The findings below are the
+> original review; live deployment/signing/provider acceptance remains separate.
+
+
 > Historical review. Several findings below have since been fixed or changed.
 > Use the [1 October implementation review](architecture-review-2026-10-01.md)
 > for the current single-server beta scope and verified results.

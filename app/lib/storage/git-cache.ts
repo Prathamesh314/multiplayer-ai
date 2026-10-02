@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createWriteStream } from "node:fs";
 import { query, queryOne } from "../db/client";
-import { repoLock } from "../session/lock";
+import { outsideRepoLocks, repoLock } from "../session/lock";
 import { dataRoot } from "../session/paths";
 import { objectGit, objectText } from "../git/objects";
 import { storeFileObject, readFileObject, removeFileObject } from "./blobs";
@@ -120,7 +120,7 @@ let lastTrim = 0;
 function scheduleTrim() {
   if (!process.env.STORAGE_GIT_CACHE_BYTES || trimming || Date.now() - lastTrim < 30_000) return;
   lastTrim = Date.now();
-  void trimGitCache().catch(error => console.error("Git cache trimming deferred:", error.message));
+  void outsideRepoLocks(trimGitCache).catch(error => console.error("Git cache trimming deferred:", error.message));
 }
 /** Target budget: active/importing repositories stay pinned even when over budget. */
 export function trimGitCache(): Promise<{ bytes: number; archived: string[] }> {

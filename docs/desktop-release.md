@@ -266,3 +266,24 @@ microphone or notification features requires a scoped permission design.
 - [electron-builder platform builds](https://www.electron.build/v26/docs/features/multi-platform-build/)
 - [Electron headless testing](https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci)
 - [electron-builder signing](https://www.electron.build/docs/features/code-signing/)
+
+## Local release configuration — October 2, 2026
+
+For local signing, copy `desktop/signing.env.example` to `.env.desktop.local`.
+The file is ignored by Git; keep it private (mode 0600 on macOS/Linux).
+Packaging reads it as environment data, never as executable shell code. Existing
+process/CI variables take precedence. Set the real certificate identity or
+certificate file and notarization credentials there; the template contains none.
+Leave the workspace and update URLs blank until deployment.
+
+Run `npm run desktop:preflight` after deploying. It rejects missing credentials,
+ad-hoc identities and invalid URLs, then checks HTTPS workspace readiness. The
+release build repeats these checks. After macOS packaging it additionally runs
+strict codesign verification, Gatekeeper assessment and stapled notarization
+validation before copying artifacts into `desktop-dist`. These checks do not
+replace installation and signed-update testing on another machine.
+
+Local configuration/parser tests pass. No signing identity is currently visible
+on the development Mac; no deployed HTTPS origin or live update feed was supplied.
+No signed release, notarization, production Slack/Discord connection, or signed
+upgrade is claimed by this remediation. Preview setup builds remain available.

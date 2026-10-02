@@ -1,224 +1,107 @@
-import { randomBytes } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import { mkdir, open } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { dataRoot } from "./paths";
 
-/**
- * A mutual-exclusion lock keyed by session id, used to serialise git operations
- * on one session's working copy.
- *
- * Git serialises on `index.lock`, so two concurrent commits in the same working
- * copy make one of them fail (see the note on `withRepoLock` in `repo.ts`). A
- * per-process `Map` mutex is enough *while every writer lives in one process*.
- * Once agent runs move to a separate worker (see ARCHITECTURE.md's "run
- * execution is server-local" boundary), a human's debounced file-save in the
- * web process and the agent's commit in the worker process are two processes
- * racing for the same `index.lock` — an in-process mutex on either side cannot
- * see the other. The Redis driver below is that missing cross-process arbiter;
- * the in-memory one stays the correct choice for single-process development.
- *
- * The two drivers are interchangeable behind this interface, exactly like the
- * event bus (`app/lib/events`) and presence (`app/lib/presence`).
- */
 export interface RepoLock {
-  /** Runs `task` while holding the lock for `id`; releases it however task settles. */
   withLock<T>(id: string, task: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
+type HeldLock = { fd: number; active: boolean };
+const globalLocks = globalThis as unknown as {
+  __maFileLocks?: AsyncLocalStorage<Map<string, HeldLock>>;
+  __maRepoLock?: Promise<RepoLock>;
+};
+const held = globalLocks.__maFileLocks ??= new AsyncLocalStorage<Map<string, HeldLock>>();
 
-/**
- * Single-process fan-in for development.
- *
- * This is the existing `withRepoLock` behaviour, lifted verbatim: a promise
- * chain per id so callers queue rather than race, and a failure settles the
- * chain rather than poisoning it. Correct only while one process holds every
- * writer — which is exactly the condition the Redis driver exists to drop.
- */
+/** Git children inherit the kernel locks, including when the parent is killed.
+ * An escaped asynchronous callback must never reuse closed/reassigned fds. */
+export function inheritedRepoLocks(): number[] {
+  const locks = [...(held.getStore()?.values() ?? [])];
+  if (locks.some(lock => !lock.active)) throw new Error("Repository operation outlived its lock.");
+  return locks.map(lock => lock.fd);
+}
+
+/** Start a genuinely independent background operation with its own locks. */
+export function outsideRepoLocks<T>(task: () => T): T {
+  return held.run(new Map(), task);
+}
+
 export function createMemoryLock(): RepoLock {
   const chains = new Map<string, Promise<unknown>>();
-
   return {
     async withLock(id, task) {
-      const previous = chains.get(id) ?? Promise.resolve();
-      const result = previous.then(task, task);
-      // The next caller waits on the settled form so one rejection cannot break
-      // the queue; this caller still sees the real outcome through `result`.
-      const settled = result.then(
-        () => undefined,
-        () => undefined,
-      );
+      const result = (chains.get(id) ?? Promise.resolve()).then(task, task);
+      const settled = result.then(() => undefined, () => undefined);
       chains.set(id, settled);
-      try {
-        return await result;
-      } finally {
-        if (chains.get(id) === settled) chains.delete(id);
-      }
+      try { return await result; }
+      finally { if (chains.get(id) === settled) chains.delete(id); }
     },
-
-    async close() {
-      chains.clear();
-    },
+    async close() {},
   };
 }
 
-/**
- * The slice of a `node-redis` client the Redis lock needs. Kept to two methods
- * so a test can supply a fake with real `SET NX PX` / `EVAL` semantics, the way
- * the presence and event-bus suites already do.
- */
-export type LockRedis = {
-  set(key: string, value: string, options: { NX: true; PX: number }): Promise<string | null>;
-  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
-};
-
-export type RedisLockOptions = {
-  /** Lock lifetime if the holder vanishes; renewed underneath a running task. */
-  ttlMs?: number;
-  /** How long to keep retrying acquisition before giving up. */
-  acquireTimeoutMs?: number;
-  /** Base gap between acquisition attempts (a little jitter is added). */
-  retryDelayMs?: number;
-  /** Namespace for the lock keys; overridable so tests never collide. */
-  prefix?: string;
-  /** Injectable sleep, so a test can tie backoff to its fake clock. */
-  delay?: (ms: number) => Promise<void>;
-};
-
-// Release and renew are compare-and-act: touch the key only while we still own
-// it, so a lock that already expired and was retaken by someone else is never
-// deleted or extended out from under them. Done in Lua for atomicity.
-const RELEASE = `
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('del', KEYS[1])
-else
-  return 0
-end`;
-
-const RENEW = `
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('pexpire', KEYS[1], ARGV[2])
-else
-  return 0
-end`;
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-/**
- * Cross-process lock over Redis.
- *
- * `SET key token NX PX ttl` is the classic single-instance mutex: the first
- * caller to set the key owns it, everyone else spins until it clears or its TTL
- * lapses. The TTL is the safety valve — a worker that is SIGKILLed mid-run
- * cannot wedge the session forever — and a watchdog extends it every ttl/3
- * while the task is genuinely still running, so a slow-but-alive operation (a
- * cold `ensureWork` clone of a large repo) is not cut loose while it works.
- *
- * This is deliberately a single-instance lock, not Redlock: one Redis is the
- * same Redis the event bus and presence already depend on, and losing that
- * Redis degrades far more than this lock.
- */
-export function createRedisLock(redis: LockRedis, options: RedisLockOptions = {}): RepoLock {
-  const ttlMs = options.ttlMs ?? 30_000;
+// flock belongs to the open file description shared with the parent, not the
+// helper's PID. Python is already installed in the production web/worker images.
+// No lease expiry, stale-file deletion, Redis dependency, or native Node addon.
+const ACQUIRE = `import errno,fcntl,sys,time
+deadline=time.monotonic()+float(sys.argv[1])
+while True:
+ try:
+  fcntl.flock(3,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  break
+ except OSError as error:
+  if error.errno not in (errno.EACCES,errno.EAGAIN): raise
+  if time.monotonic()>=deadline: sys.exit(75)
+  time.sleep(0.025)
+`;
+export function createFileLock(options: { directory?: string; acquireTimeoutMs?: number; python?: string } = {}): RepoLock {
   const acquireTimeoutMs = options.acquireTimeoutMs ?? 60_000;
-  const retryDelayMs = options.retryDelayMs ?? 100;
-  const prefix = options.prefix ?? "repo-lock";
-  const delay = options.delay ?? sleep;
-
-  const keyFor = (id: string) => `${prefix}:${id}`;
-
-  const acquire = async (key: string, token: string, deadline: number): Promise<void> => {
-    // A first attempt with no wait, then spin until the deadline. The gap has a
-    // little jitter so a thundering herd of waiters does not resynchronise on
-    // every retry and hammer the same instant.
-    for (;;) {
-      const ok = await redis.set(key, token, { NX: true, PX: ttlMs });
-      if (ok) return;
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out acquiring lock ${key} after ${acquireTimeoutMs}ms.`);
-      }
-      await delay(retryDelayMs + Math.floor(Math.random() * retryDelayMs));
-    }
-  };
-
-  const release = async (key: string, token: string): Promise<void> => {
-    await redis.eval(RELEASE, { keys: [key], arguments: [token] }).catch(() => {
-      // A failed release is not fatal: the TTL will clear the key regardless.
-      // Better to let the task's own result surface than to mask it with this.
-    });
-  };
-
+  if (!Number.isFinite(acquireTimeoutMs) || acquireTimeoutMs < 1) throw new Error("Invalid repository lock timeout.");
   return {
     async withLock(id, task) {
-      const key = keyFor(id);
-      // A fresh token per acquisition is what makes release/renew safe: they
-      // only ever act on a key that still carries *our* token.
-      const token = randomBytes(16).toString("hex");
-      await acquire(key, token, Date.now() + acquireTimeoutMs);
-
-      // Keep the lock alive under a long-but-live task. Cleared in `finally`
-      // before release, so it can never race the unlock. `unref` so a lingering
-      // timer never keeps the process up on its own.
-      const watchdog = setInterval(() => {
-        void redis
-          .eval(RENEW, { keys: [key], arguments: [token, String(ttlMs)] })
-          .catch(() => {});
-      }, Math.max(1, Math.floor(ttlMs / 3)));
-      (watchdog as { unref?: () => void }).unref?.();
-
+      if (process.platform === "win32") throw new Error("The repository server requires Linux/macOS file locking. Run the server in Docker; Windows desktop runners are supported.");
+      const directory = resolve(options.directory ?? join(dataRoot(), "repo-locks"));
+      const path = join(directory, createHash("sha256").update(id).digest("hex") + ".lock");
+      inheritedRepoLocks();
+      if (held.getStore()?.get(path)?.active) return task();
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const handle = await open(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+      const state: HeldLock = { fd: handle.fd, active: false };
       try {
-        return await task();
+        await new Promise<void>((resolveAcquire, reject) => {
+          const child = spawn(options.python ?? process.env.REPO_LOCK_PYTHON ?? "python3", ["-c", ACQUIRE, String(acquireTimeoutMs / 1000)], {
+            stdio: ["ignore", "ignore", "pipe", handle.fd], windowsHide: true,
+          });
+          let error = "";
+          child.stderr!.on("data", chunk => { error = (error + chunk).slice(-2048); });
+          const deadline = setTimeout(() => child.kill("SIGKILL"), acquireTimeoutMs + 5000);
+          child.once("error", cause => { clearTimeout(deadline); reject(cause); });
+          child.once("close", code => {
+            clearTimeout(deadline);
+            if (code === 0) resolveAcquire();
+            else reject(new Error(code === 75 ? "Repository is busy. Try again shortly." : `Repository file lock unavailable: ${error || code}`));
+          });
+        });
+        state.active = true;
+        return await held.run(new Map([...(held.getStore() ?? []), [path, state]]), task);
       } finally {
-        clearInterval(watchdog);
-        await release(key, token);
+        state.active = false;
+        // Never unlink or LOCK_UN: Git children may still hold this description.
+        // The kernel releases it only after the last inherited fd is closed.
+        await handle.close();
       }
     },
-
-    async close() {
-      // The client's lifecycle is owned by whoever built it (see `build` below).
-    },
+    async close() {},
   };
 }
 
-/**
- * The process-wide repo lock, chosen the way the event bus is
- * (`app/lib/events/index.ts`): Redis when `REDIS_URL` is set — the only correct
- * choice once web and worker are separate processes — and an in-process mutex
- * otherwise, which is right for single-process development.
- *
- * Cached on `globalThis` for the same reason the bus is: Next re-evaluates
- * modules on edit in dev, and a fresh lock per reload would let two "held"
- * locks that are really the same session run concurrently.
- */
-const globalForLock = globalThis as unknown as { __maRepoLock?: Promise<RepoLock> };
-
+/** All writers share a local filesystem on the single repository-owning host.
+ * NFS/multi-host storage is intentionally unsupported. Fail closed if locking
+ * is unavailable. All replicas must be stopped when upgrading the old driver. */
 export function repoLock(): Promise<RepoLock> {
-  globalForLock.__maRepoLock ??= build();
-  return globalForLock.__maRepoLock;
-}
-
-async function build(): Promise<RepoLock> {
-  const url = process.env.REDIS_URL;
-  if (!url) return createMemoryLock();
-
-  try {
-    const { createClient } = (await import("redis")) as {
-      createClient: (options: { url: string }) => {
-        connect(): Promise<unknown>;
-      } & LockRedis;
-    };
-
-    // An ordinary command connection — not a subscriber, so `set`/`eval` run
-    // normally. Separate from the bus's connections on purpose: a lock stall
-    // must never wedge event delivery, or vice versa.
-    const client = createClient({ url });
-    await client.connect();
-    return createRedisLock(client);
-  } catch (cause) {
-    // Unlike the event bus, a missing cross-process lock is not safe to paper
-    // over: falling back to an in-process mutex here would silently drop the
-    // guarantee that a worker commit and a web save can't collide. So this
-    // throws rather than degrading — the decoupled mode requires a real Redis.
-    throw new Error(
-      `REDIS_URL is set but the repo lock could not connect to Redis: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-    );
-  }
+  return globalLocks.__maRepoLock ??= Promise.resolve(createFileLock());
 }

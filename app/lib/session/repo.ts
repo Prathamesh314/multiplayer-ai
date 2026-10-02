@@ -1,3 +1,4 @@
+import { withStorageAdmission, requireStorageGrowth, directoryBytes } from "../storage/admission";
 import { withStoredRepo } from "../storage/git-cache";
 import { cachedGitRead } from "../git/read-cache";
 import { filterImportIndex } from "../git/import-index";
@@ -26,51 +27,15 @@ export function sessionBranchOf(id: string): string {
   return `session/${id}`;
 }
 
-/**
- * Git serialises on `index.lock`, so two concurrent commits in the same working
- * copy make one of them fail. Queue per session instead of letting them race.
- *
- * The queueing lives in `app/lib/session/lock.ts` now, because the racers are no
- * longer always in one process: once agent runs move to a worker, a human's
- * file-save (web process) and the agent's commit (worker process) contend for
- * the same `index.lock`, and only a cross-process lock can see both. `repoLock`
- * is that arbiter — Redis-backed when `REDIS_URL` is set, and the same
- * in-process mutex this used to be otherwise. Every working-copy git op in this
- * module routes through here, so they all serialise on one lock.
- */
+/** Serialize all server writers on the shared filesystem, including across replicas. */
 export async function withRepoLock<T>(id: string, task: () => Promise<T>): Promise<T> {
   const lock = await repoLock();
-  return lock.withLock(id, task);
+  return withStorageAdmission(id, () => lock.withLock(id, task));
 }
 
-/**
- * Config is pinned per invocation rather than read from the machine: a session
- * repo must behave identically wherever the server happens to run.
- */
-const CONFIG = [
-  "-c", "user.name=multiplayer-ai",
-  "-c", "user.email=sessions@multiplayer-ai.local",
-  "-c", "commit.gpgsign=false",
-  "-c", "core.autocrlf=false",
-  // Keeps non-ASCII paths readable in ls-tree output instead of \NNN escapes.
-  "-c", "core.quotePath=false",
-];
-
-const GIT_ENV = {
-  GIT_NO_REPLACE_OBJECTS: "1",
-  GIT_CONFIG_NOSYSTEM: "1",
-  GIT_CONFIG_GLOBAL: "/dev/null",
-  GIT_TERMINAL_PROMPT: "0",
-};
-
+/** Git children inherit the repository lock until the command actually exits. */
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await run("git", [...CONFIG, ...args], {
-    cwd,
-    env: { ...process.env, ...GIT_ENV },
-    maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true,
-  });
-  return stdout;
+  return (await objectGit(cwd, ["-c", "core.autocrlf=false", "-c", "core.quotePath=false", ...args], undefined, {}, 64 * 1024 * 1024)).toString("utf8");
 }
 
 /** True when git exits non-zero, rather than throwing. */
@@ -160,6 +125,7 @@ async function stored_forkRoomRepository(
   const bare = barePath(roomId);
   const branch = sessionBranchOf(roomId);
   await mkdir(dirname(bare), { recursive: true });
+  await requireStorageGrowth((await directoryBytes(sharedBare)) * 2 + 2 * 1024 * 1024);
   if (!await exists(bare)) await git(dirname(bare), ["clone", "--bare", sharedBare, bare]);
   const baseSha = (await git(bare, ["rev-parse", BASE_BRANCH])).trim();
   await git(bare, ["update-ref", `refs/heads/${branch}`, baseSha]);
@@ -204,6 +170,7 @@ async function mergeShared(roomId: string, repositoryId: string, publish: boolea
     const bare = barePath(roomId), shared = sharedRepositoryBarePath(repositoryId);
     const ref = `refs/heads/${sessionBranchOf(roomId)}`;
     const ours = (await git(bare, ["rev-parse", ref])).trim();
+    await requireStorageGrowth((await directoryBytes(shared)) * 3 + 32 * 1024 * 1024);
     await git(bare, ["fetch", "--no-tags", shared, `refs/heads/${BASE_BRANCH}`]);
     const theirs = (await git(bare, ["rev-parse", "FETCH_HEAD"])).trim();
     const outcome = await mergeObjects(bare, ours, theirs);
@@ -398,6 +365,12 @@ async function stored_writeSeedBatch(
   id: string,
   files: { path: string; data: string }[],
 ): Promise<SeedOutcome> {
+  const estimatedBytes = files.reduce((sum, file) => {
+    const relative = safeRelativePath(file.path), bytes = Buffer.byteLength(file.data, "base64");
+    if (!relative || bytes > MAX_SEED_FILE_BYTES || /(^|\/)(node_modules|\.next|\.env(?:\.(?:local|development|production|test)(?:\.local)?)?)(\/|$)/.test(relative)) return sum;
+    return sum + bytes + Buffer.byteLength(relative) * 4 + 512;
+  }, 0);
+  await requireStorageGrowth(estimatedBytes * 2 + 2 * 1024 * 1024);
   const bare = barePath(id);
   const index = { GIT_INDEX_FILE: join(bare, "import.index") };
   if (!await exists(index.GIT_INDEX_FILE)) await objectGit(bare, ["read-tree", "--empty"], undefined, index);
@@ -687,9 +660,7 @@ export type SaveResult =
 async function mergeFile(ours: string, base: string, theirs: string): Promise<number> {
   try {
     // Merges `theirs` into `ours` using `base` as the ancestor, in place in `ours`.
-    await run("git", ["merge-file", "-L", "current", "-L", "base", "-L", "incoming", ours, base, theirs], {
-      windowsHide: true,
-    });
+    await objectGit(dirname(ours), ["merge-file", "-L", "current", "-L", "base", "-L", "incoming", ours, base, theirs]);
     return 0;
   } catch (cause) {
     const code = (cause as { code?: unknown }).code;
@@ -898,10 +869,7 @@ async function stored_readCommittedBytes(id: string, sha: string, relative: stri
   const object = `${sha}:${relative}`;
   const size = Number((await git(bare, ["cat-file", "-s", object])).trim());
   if (size > MAX_SEED_FILE_BYTES) throw new Error("This file exceeds the 8 MB read limit.");
-  const { stdout } = await run("git", [...CONFIG, "cat-file", "blob", object], {
-    cwd: bare, env: { ...process.env, ...GIT_ENV }, encoding: "buffer", maxBuffer: MAX_SEED_FILE_BYTES + 1024,
-  });
-  return stdout;
+  return objectGit(bare, ["cat-file", "blob", object], undefined, {}, MAX_SEED_FILE_BYTES + 1024);
   });
 }
 
@@ -921,14 +889,15 @@ async function stored_initializeSharedRepository(ref: string, repositoryId: stri
   if (await sharedRepositoryHeadSha(repositoryId)) return;
   await mkdir(dirname(bare), { recursive: true });
   if (!await exists(bare)) await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
+  await requireStorageGrowth((await directoryBytes(barePath(ref))) * 2 + 2 * 1024 * 1024);
   await git(bare, ["fetch", barePath(ref), `${sha}:refs/heads/${BASE_BRANCH}`]);
 }
 
-export const createRepo = (...args: Parameters<typeof stored_createRepo>): ReturnType<typeof stored_createRepo> => withStoredRepo(barePath(args[0]), () => stored_createRepo(...args));
+export const createRepo = (...args: Parameters<typeof stored_createRepo>): ReturnType<typeof stored_createRepo> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_createRepo(...args)));
 
-export const writeSeedBatch = (...args: Parameters<typeof stored_writeSeedBatch>): ReturnType<typeof stored_writeSeedBatch> => withStoredRepo(barePath(args[0]), () => stored_writeSeedBatch(...args));
+export const writeSeedBatch = (...args: Parameters<typeof stored_writeSeedBatch>): ReturnType<typeof stored_writeSeedBatch> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_writeSeedBatch(...args)));
 
-export const finishSeed = (...args: Parameters<typeof stored_finishSeed>): ReturnType<typeof stored_finishSeed> => withStoredRepo(barePath(args[0]), () => stored_finishSeed(...args));
+export const finishSeed = (...args: Parameters<typeof stored_finishSeed>): ReturnType<typeof stored_finishSeed> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_finishSeed(...args)));
 
 export const verifyPushedCommit = (...args: Parameters<typeof stored_verifyPushedCommit>): ReturnType<typeof stored_verifyPushedCommit> => withStoredRepo(barePath(args[0]), () => stored_verifyPushedCommit(...args));
 
@@ -954,21 +923,21 @@ export const readRepoBytes = (...args: Parameters<typeof stored_readRepoBytes>):
 
 export const headSha = (...args: Parameters<typeof stored_headSha>): ReturnType<typeof stored_headSha> => withStoredRepo(barePath(args[0]), () => stored_headSha(...args));
 
-export const writeRepoFile = (...args: Parameters<typeof stored_writeRepoFile>): ReturnType<typeof stored_writeRepoFile> => withStoredRepo(barePath(args[0]), () => stored_writeRepoFile(...args));
+export const writeRepoFile = (...args: Parameters<typeof stored_writeRepoFile>): ReturnType<typeof stored_writeRepoFile> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_writeRepoFile(...args)));
 
-export const mergeSave = (...args: Parameters<typeof stored_mergeSave>): ReturnType<typeof stored_mergeSave> => withStoredRepo(barePath(args[0]), () => stored_mergeSave(...args));
+export const mergeSave = (...args: Parameters<typeof stored_mergeSave>): ReturnType<typeof stored_mergeSave> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_mergeSave(...args)));
 
-export const commitWork = (...args: Parameters<typeof stored_commitWork>): ReturnType<typeof stored_commitWork> => withStoredRepo(barePath(args[0]), () => stored_commitWork(...args));
+export const commitWork = (...args: Parameters<typeof stored_commitWork>): ReturnType<typeof stored_commitWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_commitWork(...args)));
 
-export const checkoutHead = (...args: Parameters<typeof stored_checkoutHead>): ReturnType<typeof stored_checkoutHead> => withStoredRepo(barePath(args[0]), () => stored_checkoutHead(...args));
+export const checkoutHead = (...args: Parameters<typeof stored_checkoutHead>): ReturnType<typeof stored_checkoutHead> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_checkoutHead(...args)));
 
-export const ensureWork = (...args: Parameters<typeof stored_ensureWork>): ReturnType<typeof stored_ensureWork> => withStoredRepo(barePath(args[0]), () => stored_ensureWork(...args));
+export const ensureWork = (...args: Parameters<typeof stored_ensureWork>): ReturnType<typeof stored_ensureWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_ensureWork(...args)));
 
-export const prepareTurnWork = (...args: Parameters<typeof stored_prepareTurnWork>): ReturnType<typeof stored_prepareTurnWork> => withStoredRepo(barePath(args[0]), () => stored_prepareTurnWork(...args));
+export const prepareTurnWork = (...args: Parameters<typeof stored_prepareTurnWork>): ReturnType<typeof stored_prepareTurnWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_prepareTurnWork(...args)));
 
-export const commitTurnWork = (...args: Parameters<typeof stored_commitTurnWork>): ReturnType<typeof stored_commitTurnWork> => withStoredRepo(barePath(args[0]), () => stored_commitTurnWork(...args));
+export const commitTurnWork = (...args: Parameters<typeof stored_commitTurnWork>): ReturnType<typeof stored_commitTurnWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_commitTurnWork(...args)));
 
-export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): ReturnType<typeof stored_promoteTurn> => withStoredRepo(barePath(args[0]), () => stored_promoteTurn(...args));
+export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): ReturnType<typeof stored_promoteTurn> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_promoteTurn(...args)));
 
 export const listCommittedTree = (...args: Parameters<typeof stored_listCommittedTree>): ReturnType<typeof stored_listCommittedTree> => withStoredRepo(barePath(args[0]), () => stored_listCommittedTree(...args));
 
@@ -976,7 +945,7 @@ export const readCommittedBytes = (...args: Parameters<typeof stored_readCommitt
 
 export const committedChanges = (...args: Parameters<typeof stored_committedChanges>): ReturnType<typeof stored_committedChanges> => withStoredRepo(barePath(args[0]), () => stored_committedChanges(...args));
 
-export const ensureSharedRepository = (...args: Parameters<typeof stored_ensureSharedRepository>): ReturnType<typeof stored_ensureSharedRepository> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_ensureSharedRepository(...args));
+export const ensureSharedRepository = (...args: Parameters<typeof stored_ensureSharedRepository>): ReturnType<typeof stored_ensureSharedRepository> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => withRepoLock(`shared:${args[0]}`, () => stored_ensureSharedRepository(...args)));
 
 export const sharedRepositoryHeadSha = (...args: Parameters<typeof stored_sharedRepositoryHeadSha>): ReturnType<typeof stored_sharedRepositoryHeadSha> => withStoredRepo(sharedRepositoryBarePath(args[0]), () => stored_sharedRepositoryHeadSha(...args));
 
@@ -992,10 +961,10 @@ export const repoSnapshotDiff = (...args: Parameters<typeof stored_repoSnapshotD
 
 export const repoSnapshotText = (...args: Parameters<typeof stored_repoSnapshotText>): ReturnType<typeof stored_repoSnapshotText> => withStoredRepo(contextBare(args[0]), () => stored_repoSnapshotText(...args));
 
-export const forkRoomRepository = (...args: Parameters<typeof stored_forkRoomRepository>): ReturnType<typeof stored_forkRoomRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_forkRoomRepository(...args)));
+export const forkRoomRepository = (...args: Parameters<typeof stored_forkRoomRepository>): ReturnType<typeof stored_forkRoomRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => withRepoLock(args[0], () => withRepoLock(`shared:${args[1]}`, () => stored_forkRoomRepository(...args)))));
 
 export const publishRoom = (...args: Parameters<typeof stored_publishRoom>): ReturnType<typeof stored_publishRoom> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_publishRoom(...args)));
 
 export const syncRoom = (...args: Parameters<typeof stored_syncRoom>): ReturnType<typeof stored_syncRoom> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_syncRoom(...args)));
 
-export const initializeSharedRepository = (...args: Parameters<typeof stored_initializeSharedRepository>): ReturnType<typeof stored_initializeSharedRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => stored_initializeSharedRepository(...args)));
+export const initializeSharedRepository = (...args: Parameters<typeof stored_initializeSharedRepository>): ReturnType<typeof stored_initializeSharedRepository> => withStoredRepo(barePath(args[0]), () => withStoredRepo(sharedRepositoryBarePath(args[1]), () => withRepoLock(args[0], () => withRepoLock(`shared:${args[1]}`, () => stored_initializeSharedRepository(...args)))));

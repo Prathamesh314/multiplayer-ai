@@ -265,10 +265,19 @@ try {
   await test("push protocol accepts one candidate ref and refuses canonical or multiple ref updates", async () => {
     const turnId = randomUUID();
     const packet = ref => { const command = `${"0".repeat(40)} ${"a".repeat(40)} ${ref}\0report-status\n`; return `${(command.length + 4).toString(16).padStart(4, "0")}${command}`; };
-    const safe = Buffer.from(`${packet(`refs/turns/${turnId}`)}0000PACK`);
+    const packHeader = Buffer.alloc(12); packHeader.write("PACK"); packHeader.writeUInt32BE(2, 4);
+    const safe = Buffer.concat([Buffer.from(`${packet(`refs/turns/${turnId}`)}0000`), packHeader]);
     const stream = await candidatePush(Readable.from([safe.subarray(0, 3), safe.subarray(3)]), turnId);
     const chunks = []; for await (const chunk of stream) chunks.push(chunk);
     assert.deepEqual(Buffer.concat(chunks), safe);
+    const excessive = Buffer.from(safe); excessive.writeUInt32BE(250001, excessive.length - 4);
+    await assert.rejects(candidatePush(Readable.from([excessive]), turnId), /object limit/);
+    await assert.rejects(candidatePush(Readable.from([safe.subarray(0, safe.length - 1)]), turnId), /Incomplete Git pack/);
+    const refOnly = safe.subarray(0, safe.length - 12);
+    const existing = await candidatePush(Readable.from([refOnly]), turnId);
+    const existingChunks = []; for await (const chunk of existing) existingChunks.push(chunk);
+    assert.deepEqual(Buffer.concat(existingChunks), refOnly);
+
     await assert.rejects(candidatePush(Readable.from([packet("refs/heads/session/test") + "0000PACK"]), turnId));
     await assert.rejects(candidatePush(Readable.from([packet(`refs/turns/${turnId}`) + packet("refs/heads/main") + "0000PACK"]), turnId));
   });

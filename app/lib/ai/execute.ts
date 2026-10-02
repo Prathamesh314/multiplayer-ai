@@ -1,4 +1,5 @@
-import { startTurn, failTurn } from "./turns";
+import { startTurn, failTurn, renewServerTurn } from "./turns";
+import { randomUUID } from "node:crypto";
 import { events } from "../events";
 import { commitTurnWork, prepareTurnWork } from "../session/repo";
 import { agentById } from "./catalog";
@@ -21,7 +22,16 @@ export async function executeAgentRun(job: AgentRunJob, onEvent: (event: AiRunEv
     if (event.t === "notice") void appendMessage({ runId, role: "system", body: event.message }).then(turn =>
       broadcast({ type: "run.turn", runId, seq: turn.seq, role: "system", authorName: null, body: turn.body, at: Date.now() })).catch(() => {});
   };
-  if (!await startTurn(job)) { send({ t: "notice", message: "This turn was already claimed or is no longer eligible to execute." }); return; }
+  const executionToken = randomUUID();
+  if (!await startTurn(job, executionToken)) { send({ t: "notice", message: "This turn was already claimed or is no longer eligible to execute." }); return; }
+  const controller = new AbortController();
+  let renewing = false;
+  const heartbeat = setInterval(() => {
+    if (renewing) return;
+    renewing = true;
+    void renewServerTurn(job.turnId,executionToken).then(live => { if (!live) controller.abort(); }, () => controller.abort()).finally(() => { renewing = false; });
+  },10_000);
+  heartbeat.unref();
   let inputs: Awaited<ReturnType<typeof serverInputSource>> | undefined;
   try {
     const agent = agentById(job.agentId);
@@ -29,7 +39,7 @@ export async function executeAgentRun(job: AgentRunJob, onEvent: (event: AiRunEv
     const cwd = await prepareTurnWork(repoRef, job.turnId, baseSha);
     inputs = await serverInputSource(job);
     send({ t: "start", agent: agent.bin, cwd, runId });
-    const result = await runAgentLocally({ spec: agent, prompt: job.agentPrompt, model: job.model, effort: job.effort, cwd, inputs, onEvent: send });
+    const result = await runAgentLocally({ spec: agent, prompt: job.agentPrompt, model: job.model, effort: job.effort, cwd, inputs, onEvent: send, signal: controller.signal });
     let sha: string | null = null;
     try { sha = await commitTurnWork(repoRef, job.turnId, baseSha, author); }
     catch (cause) { result.code = 1; result.errOutput += `Could not commit the changes: ${String(cause)}\n`; send({ t: "err", d: result.errOutput }); }
@@ -45,5 +55,5 @@ export async function executeAgentRun(job: AgentRunJob, onEvent: (event: AiRunEv
     await failTurn(job.turnId, message).catch(() => {});
     broadcast({ type: "run.finished", runId, status: "failed", headSha: null, at: Date.now() });
     send({ t: "exit", code: null, ms: 0, headSha: null, committed: false });
-  } finally { await inputs?.close(); }
+  } finally { clearInterval(heartbeat); await inputs?.close(); }
 }

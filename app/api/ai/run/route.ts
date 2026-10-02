@@ -407,7 +407,7 @@ async function handlePOST(request: Request) {
     userPrompt: prompt,
   };
 
-  await prepareTurn(job);
+  await prepareTurn(job, useLocal ? "local" : "server");
 
   const headers = {
     "content-type": "application/x-ndjson; charset=utf-8",

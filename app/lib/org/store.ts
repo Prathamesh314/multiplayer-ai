@@ -418,6 +418,7 @@ export async function acceptInvitationByToken(
       `UPDATE org_invitations
           SET accepted_at = now(), accepted_by = $2
         WHERE token_hash = $1
+          AND (signup_user_id IS NULL OR signup_user_id = $2)
           AND via = 'email'
           AND accepted_at IS NULL AND revoked_at IS NULL
           AND expires_at > now()

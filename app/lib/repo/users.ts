@@ -1,7 +1,8 @@
+import { SignupAdmissionError, signupInvitation } from "../auth/admission";
 import { randomBytes } from "node:crypto";
 import { hashPassword, verifyPassword } from "../auth/password";
 import type { CurrentUser } from "../auth/types";
-import { isUniqueViolation, query, queryOne } from "../db/client";
+import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 
 /** The alphabet the connect_code CHECK allows: no I, O, 0 or 1 to misread. */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -36,11 +37,12 @@ export type CreateUserInput = {
   email: string;
   displayName: string;
   password: string;
+  invitationToken?: string;
 };
 
 export type CreateUserResult =
   | { ok: true; user: CurrentUser }
-  | { ok: false; field: "handle" | "email" | "password"; error: string };
+  | { ok: false; field: "handle" | "email" | "password" | "invitation"; error: string };
 
 export async function createUser(input: CreateUserInput): Promise<CreateUserResult> {
   const handle = input.handle.trim().toLowerCase();
@@ -64,14 +66,22 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
   // unlikely but not impossible, and it should not surface as a failed signup.
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const row = await queryOne<UserRow>(
+      const row = await transaction(async tx => {
+        const invitation = await signupInvitation(email, input.invitationToken, tx);
+        const inserted = await tx.query<UserRow>(
         `INSERT INTO users (handle, email, display_name, password_hash, connect_code)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, handle, email, display_name, avatar_url`,
         [handle, email, displayName, passwordHash, connectCode()],
       );
-      return { ok: true, user: toUser(row!) };
+        const user = inserted.rows[0];
+        if (invitation?.kind === "beta") await tx.query(`UPDATE signup_invitations SET used_at=now(),used_by=$2 WHERE id=$1`, [invitation.id,user.id]);
+        if (invitation?.kind === "org") await tx.query(`UPDATE org_invitations SET signup_user_id=$2 WHERE id=$1`, [invitation.id,user.id]);
+        return user;
+      });
+      return { ok: true, user: toUser(row) };
     } catch (cause) {
+      if (cause instanceof SignupAdmissionError) return { ok: false, field: "invitation", error: cause.message };
       if (isUniqueViolation(cause, "users_handle_key")) {
         return { ok: false, field: "handle", error: "That handle is taken." };
       }

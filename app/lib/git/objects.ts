@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { inheritedRepoLocks } from "../session/lock";
 
 /** Bounded Git plumbing with no inherited repository paths or executable hooks. */
 export function objectGit(cwd: string, args: string[], input?: Buffer | string, extraEnv: Partial<NodeJS.ProcessEnv> = {}, maxBytes = 16 * 1024 * 1024): Promise<Buffer> {
@@ -9,16 +10,16 @@ export function objectGit(cwd: string, args: string[], input?: Buffer | string, 
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
     const child = spawn("git", ["-c", "user.name=multiplayer-ai", "-c", "user.email=sessions@multiplayer-ai.local", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", ...args], {
       cwd, windowsHide: true, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_REPLACE_OBJECTS: "1", GIT_TERMINAL_PROMPT: "0", ...extraEnv },
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", ...inheritedRepoLocks()],
     });
     const chunks: Buffer[] = []; let bytes = 0; let stderr = ""; let failure: Error | undefined;
     const timer = setTimeout(() => { failure = new Error("Git operation timed out."); child.kill(); }, 120_000);
-    child.stdout.on("data", (chunk: Buffer) => { bytes += chunk.length; if (bytes > maxBytes) { failure = new Error("Git output exceeds the read limit."); child.kill(); } else chunks.push(chunk); });
-    child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-8192); });
-    child.stdin.on("error", () => {});
+    child.stdout!.on("data", (chunk: Buffer) => { bytes += chunk.length; if (bytes > maxBytes) { failure = new Error("Git output exceeds the read limit."); child.kill(); } else chunks.push(chunk); });
+    child.stderr!.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-8192); });
+    child.stdin!.on("error", () => {});
     child.on("error", error => { clearTimeout(timer); reject(error); });
     child.on("close", code => { clearTimeout(timer); if (failure) reject(failure); else if (code) reject(Object.assign(new Error(stderr || `Git ${args[0]} failed (${code})`), { code, stdout: Buffer.concat(chunks) })); else resolve(Buffer.concat(chunks)); });
-    child.stdin.end(input);
+    child.stdin!.end(input);
   });
 }
 export async function objectText(cwd: string, args: string[], input?: Buffer | string, env?: Partial<NodeJS.ProcessEnv>): Promise<string> {

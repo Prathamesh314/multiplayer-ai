@@ -12,13 +12,15 @@ const MIN_PASSWORD_LENGTH = 10;
 /** Step one collects email + password; step two only appears for new accounts. */
 type Step = "email" | "username";
 
-export function AuthForm() {
+export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invite" | "closed" }) {
   const router = useRouter();
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
   // link bounce someone to another origin after they type their password.
   const rawNext = params.get("next") ?? "/workspace";
   const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/workspace";
+
+  const invitationToken = params.get("invite") ?? /^\/invite\/([a-zA-Z0-9_-]{43})$/.exec(next)?.[1];
 
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
@@ -39,7 +41,7 @@ export function AuthForm() {
     setError(null);
     setShowPassword(false);
     try {
-      const result = await continueWithEmail({ email: email.trim(), password });
+      const result = await continueWithEmail({ email: email.trim(), password, invitationToken });
       if (result.status === "existing") {
         done();
         return;
@@ -59,6 +61,7 @@ export function AuthForm() {
     setError(null);
     try {
       await register({
+        invitationToken,
         handle: handle.trim(),
         email: email.trim(),
         displayName: handle.trim(),
@@ -102,8 +105,7 @@ export function AuthForm() {
               Your team starts here
             </h1>
             <p className="mt-2 text-[14px] leading-6 text-vs-muted">
-              Enter your email and password. We&apos;ll sign you in, or start a new account if this
-              is your first time.
+              {signupMode === "open" ? "Enter your email and password to sign in or create an account." : signupMode === "closed" ? "Sign in to your existing account. New registrations are currently closed." : invitationToken ? "Sign in or create an account using the email your invitation was sent to." : "Sign in to your account. To join the beta, open the invitation link from your team administrator."}
             </p>
 
             <form onSubmit={submitEmail} className="mt-7 space-y-5">

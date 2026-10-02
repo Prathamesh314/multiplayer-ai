@@ -1,3 +1,4 @@
+import { StorageAdmissionError } from "../storage/admission";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { NextRequest } from "next/server";
@@ -122,7 +123,12 @@ export function withApiLimit<Args extends unknown[]>(route: string, handler: (re
   return async (request: Request, ...args: Args): Promise<Response> => {
     const admission = await admitApiRequest(request, route);
     if (admission instanceof Response) return admission;
-    const response = await handler(request, ...args);
+    let response: Response;
+    try { response = await handler(request, ...args); }
+    catch (cause) {
+      if (!(cause instanceof StorageAdmissionError)) throw cause;
+      response = Response.json({ error: cause.message }, { status: cause.status });
+    }
     const headers = new Headers(response.headers);
     headers.set("cache-control", "no-store");
     admission.forEach((value, key) => headers.set(key, value));

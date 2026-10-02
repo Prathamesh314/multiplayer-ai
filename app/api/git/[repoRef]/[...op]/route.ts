@@ -1,3 +1,4 @@
+import { withStorageAdmission, StorageAdmissionError } from "../../../../lib/storage/admission";
 import { withApiLimit } from "../../../../lib/http/api-limit";
 import { acquireStoredRepo } from "../../../../lib/storage/git-cache";
 import { candidatePush } from "../../../../lib/runner/push";
@@ -10,6 +11,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createGunzip } from "node:zlib";
 import { bearerToken, deviceFromToken } from "../../../../lib/runner/devices";
 import { resolveGitAccess } from "../../../../lib/runner/git-access";
+import { inheritedRepoLocks, outsideRepoLocks, repoLock } from "../../../../lib/session/lock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,29 +82,34 @@ async function gate(request: Request, repoRef: string, write: boolean): Promise<
 /** Spawn the git service and hand its stdout back as a streaming response body. */
 function streamGit(
   args: string[],
-  options: { stdin?: Readable; gitProtocol?: string | null; release: () => Promise<void> },
+  options: { stdin?: Readable; gitProtocol?: string | null; release: () => Promise<void>; onClosed?: () => void },
   prefix?: string,
 ): ReadableStream<Uint8Array> {
   const child = spawn("git", args, {
     env: { ...process.env, ...GIT_ENV, ...(options.gitProtocol ? { GIT_PROTOCOL: options.gitProtocol } : {}) },
     windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe", ...inheritedRepoLocks()],
   });
-  child.once("close", () => { void options.release(); });
-  child.once("error", () => { void options.release(); });
+  let released = false;
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 120_000);
+  const release = () => { clearTimeout(timeout); if (!released) { released = true; void outsideRepoLocks(options.release); } };
+  child.once("close", () => { release(); options.onClosed?.(); });
+  child.once("error", () => { release(); options.onClosed?.(); });
+  child.stdin!.on("error", () => {});
   if (options.stdin) {
     options.stdin.on("error", () => child.kill("SIGKILL"));
-    options.stdin.pipe(child.stdin);
+    options.stdin.pipe(child.stdin!);
   }
-  else child.stdin.end();
+  else child.stdin!.end();
   // Protocol errors surface to the client through the stream; the server log
   // is the place operators will actually debug a broken clone from.
-  child.stderr.on("data", (chunk: Buffer) => console.error(`git ${args[0]}: ${chunk}`));
+  child.stderr!.on("data", (chunk: Buffer) => console.error(`git ${args[0]}: ${chunk}`));
 
   // Node's stream adapter propagates downstream backpressure to Git. A slow
   // download must not buffer an entire pack in the application process.
   const output = new PassThrough({ highWaterMark: 64 * 1024 });
   if (prefix) output.write(encoder.encode(prefix));
-  child.stdout.pipe(output);
+  child.stdout!.pipe(output);
   child.on("error", cause => output.destroy(cause));
   output.on("close", () => { if (child.exitCode === null) child.kill("SIGKILL"); });
   return Readable.toWeb(output) as ReadableStream<Uint8Array>;
@@ -159,6 +166,10 @@ async function handlePOST(request: Request, context: RouteContext<"/api/git/[rep
         // Push discipline lives here, not in the runner's goodwill.
         "-c", "receive.denyNonFastForwards=true",
         "-c", "receive.denyDeletes=true",
+        "-c", "receive.maxInputSize=134217728",
+        "-c", "receive.unpackLimit=0",
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "gc.auto=0",
         "receive-pack", "--stateless-rpc", gated.bare,
       ]
     : ["upload-pack", "--stateless-rpc", gated.bare];
@@ -168,11 +179,25 @@ async function handlePOST(request: Request, context: RouteContext<"/api/git/[rep
     try { stdin = await candidatePush(stdin, request.headers.get("x-turn-id")!, request.headers.has("x-checkpoint-sequence") ? Number(request.headers.get("x-checkpoint-sequence")) : undefined); }
     catch (cause) { await gated.release(); return refuse(403, cause instanceof Error ? cause.message : "Push refused."); }
   }
-  const body = streamGit(args, {
-    stdin,
-    release: gated.release,
-    gitProtocol: request.headers.get("git-protocol"),
-  });
+  let body: ReadableStream<Uint8Array>;
+  try {
+    const start = async () => streamGit(args, {
+      stdin, release: gated.release, gitProtocol: request.headers.get("git-protocol"),
+    });
+    body = write ? await new Promise<ReadableStream<Uint8Array>>((resolveBody, rejectBody) => {
+      // Keep the admission reservation and owner lock until the Git process exits,
+      // while streaming its response with backpressure to the client.
+      void withStorageAdmission(repoRef, async () => (await repoLock()).withLock(repoRef, async () => {
+        let finished!: () => void;
+        const done = new Promise<void>(resolve => { finished = resolve; });
+        resolveBody(streamGit(args, { stdin, release: gated.release, gitProtocol: request.headers.get("git-protocol"), onClosed: finished }));
+        await done;
+      }), 160 * 1024 * 1024).catch(rejectBody);
+    }) : await start();
+  } catch (cause) {
+    stdin.destroy(); await gated.release();
+    return refuse(cause instanceof StorageAdmissionError ? cause.status : 503, cause instanceof Error ? cause.message : "Repository is busy.");
+  }
   return new Response(body, {
     headers: {
       "content-type": `application/x-${service}-result`,

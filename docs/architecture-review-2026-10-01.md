@@ -1,5 +1,11 @@
 # Architecture review and fixes — 1 October 2026
 
+> Update, October 2: repository locking, abandoned-turn recovery, coordinated
+> restore, signup/storage admission and release preparation are addressed in
+> [launch-remediation.md](launch-remediation.md). The findings below are the
+> original review; live deployment/signing/provider acceptance remains separate.
+
+
 Scope: invite-only beta on one server, as selected by the product owner.
 Started from clean `main` at `af01556`; `git pull --ff-only origin main` was
 already current. This review traces the organization → project → member room →

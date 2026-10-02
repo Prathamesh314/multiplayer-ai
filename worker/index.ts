@@ -22,11 +22,26 @@ import { publishRunEvent } from "../app/lib/ai/run-stream";
 import { createRunWorker, queueEnabled } from "../app/lib/queue";
 import { loadEnvConfig } from "@next/env";
 import { startTeamContext } from './team-context';
+import { recoverAgentTurns } from '../app/lib/ai/recovery';
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const closers: Array<() => Promise<void>> = [];
 if (process.env.DATABASE_URL) closers.push(startTeamContext());
+
+// Independent, bounded recovery. Indexing outages cannot leave turns stranded.
+if (process.env.DATABASE_URL) {
+  let stopped=false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending=Promise.resolve();
+  const tick=()=>{
+    pending=recoverAgentTurns().then(()=>{},()=>{console.warn('AI recovery will retry.');}).finally(()=>{
+      if(!stopped)timer=setTimeout(tick,10_000);
+    });
+  };
+  tick();
+  closers.push(async()=>{stopped=true;clearTimeout(timer);await pending;});
+}
 
 // Poll durable indexing requests and missing vectors, never scan repositories.
 // A failed transaction leaves its request ready for a later retry.

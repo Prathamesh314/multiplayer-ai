@@ -8,6 +8,7 @@ export type CurrentUser = {
 };
 
 export type RegisterRequest = {
+  invitationToken?: string;
   handle: string;
   email: string;
   displayName: string;
@@ -21,7 +22,7 @@ export type LoginRequest = {
 };
 
 /** Email-first step one: the same form logs in or begins signup. */
-export type ContinueRequest = { email: string; password: string };
+export type ContinueRequest = { email: string; password: string; invitationToken?: string };
 
 export type ContinueResponse =
   /** The email is known and the password matched — already signed in. */

@@ -1,5 +1,6 @@
+import { withStorageAdmission } from "../storage/admission";
 import { createHash } from "node:crypto";
-import { query, transaction } from "../db/client";
+import { query, queryOne, transaction } from "../db/client";
 import { readActivityObject, storeActivityObject } from "../storage/blobs";
 import type { AiRunEvent } from "../ai/run-events";
 
@@ -18,7 +19,15 @@ export async function persistActivity(turnId: string, sequence: number, events: 
   if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 20000) throw new Error("Invalid activity sequence.");
   const text = JSON.stringify(sharedActivity(events));
   const hash = createHash("sha256").update(text).digest("hex");
-  return transaction(async tx => {
+  // An acknowledged retry needs no additional disk allowance, even when full.
+  const acknowledged = await queryOne<{ content_hash: string }>(`SELECT content_hash FROM run_activity_batches WHERE turn_id=$1 AND sequence=$2`, [turnId,sequence]);
+  if (acknowledged) {
+    if (acknowledged.content_hash !== hash) throw new Error("Activity retry differs from acknowledged content.");
+    return false;
+  }
+  const room = await queryOne<{ session_id: string }>(`SELECT r.session_id FROM agent_turns t JOIN agent_runs r ON r.id=t.run_id WHERE t.id=$1`, [turnId]);
+  if (!room) throw new Error("Unknown activity turn.");
+  return withStorageAdmission(room.session_id, () => transaction(async tx => {
     await tx.query(`SELECT id FROM agent_turns WHERE id = $1 FOR UPDATE`, [turnId]);
     const { rows: [existing] } = await tx.query(`SELECT content_hash FROM run_activity_batches WHERE turn_id = $1 AND sequence = $2`, [turnId, sequence]);
     if (existing) { if (existing.content_hash !== hash) throw new Error("Activity retry differs from acknowledged content."); return false; }
@@ -28,7 +37,7 @@ export async function persistActivity(turnId: string, sequence: number, events: 
     const object = await storeActivityObject(turnId, text);
     await tx.query(`INSERT INTO run_activity_batches(turn_id, sequence, object_key, content_hash, bytes) VALUES ($1,$2,$3,$4,$5)`, [turnId, sequence, object.key, object.hash, object.bytes]);
     return true;
-  });
+  }), Buffer.byteLength(text) + 4096);
 }
 export async function activityPage(turnId: string, after: number) {
   const rows = await query<{ sequence: number; object_key: string; content_hash: string; created_at: string }>(`SELECT sequence, object_key, content_hash, created_at FROM run_activity_batches WHERE turn_id = $1 AND sequence > $2 ORDER BY sequence LIMIT 8`, [turnId, after]);

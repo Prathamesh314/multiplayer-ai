@@ -16,11 +16,8 @@ export async function enqueueLocalJob(job: AgentRunJob, userId: string): Promise
 
 export async function claimNextJob(input: { userId: string; deviceId: string }): Promise<{ job: AgentRunJob; leaseMs: number } | null> {
   return transaction(async tx => {
-    const { rows: [row] } = await tx.query<{ payload: AgentRunJob }>(
-      `UPDATE runner_jobs SET status = 'claimed', device_id = $2, claimed_at = now(),
-        lease_expires_at = now() + make_interval(secs => $3)
-       WHERE id = (
-         SELECT j.id FROM runner_jobs j JOIN agent_turns t ON t.id = j.turn_id
+    const { rows: [candidate] } = await tx.query<{ id: string }>(
+      `SELECT j.id FROM runner_jobs j JOIN agent_turns t ON t.id = j.turn_id
          JOIN agent_runs r ON r.id = j.run_id JOIN runner_devices d ON d.id = $2
          WHERE j.user_id = $1 AND j.status = 'queued' AND t.status = 'queued'
            AND d.user_id = $1 AND d.revoked_at IS NULL AND d.version = '2'
@@ -29,11 +26,14 @@ export async function claimNextJob(input: { userId: string; deviceId: string }):
            AND runner_supports_model(d.model_catalog, j.payload->>'agentId', j.payload->>'model', j.payload->>'effort')
            AND r.driver_user_id = $1 AND r.control_version = t.control_version
            AND room_access_role(r.session_id, $1) IN ('owner', 'editor')
-         ORDER BY j.created_at LIMIT 1 FOR UPDATE OF j SKIP LOCKED
-       ) RETURNING payload`, [input.userId, input.deviceId, JOB_LEASE_MS / 1000],
+         ORDER BY j.created_at LIMIT 1 FOR UPDATE OF r SKIP LOCKED`, [input.userId, input.deviceId],
     );
+    if (!candidate) return null;
+    const { rows: [row] } = await tx.query<{ payload: AgentRunJob }>(`UPDATE runner_jobs SET status='claimed',device_id=$2,
+      claimed_at=now(),lease_expires_at=now()+make_interval(secs=>$3) WHERE id=$1 AND status='queued' RETURNING payload`,
+    [candidate.id,input.deviceId,JOB_LEASE_MS/1000]);
     if (!row) return null;
-    await tx.query(`UPDATE agent_turns SET status = 'running' WHERE id = $1`, [row.payload.turnId]);
+    await tx.query(`UPDATE agent_turns SET status='running',execution_target='local',execution_token=NULL,execution_lease_until=NULL WHERE id=$1`, [row.payload.turnId]);
     await tx.query(`UPDATE agent_runs SET assigned_device_id = $2 WHERE id = $1`, [row.payload.runId, input.deviceId]);
     return { job: row.payload, leaseMs: JOB_LEASE_MS };
   });

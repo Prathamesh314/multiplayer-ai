@@ -2,6 +2,7 @@ import { notifyUsage } from "../events/notifications";
 import { closeTurnInputs } from "./close-inputs";
 import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
+import { randomUUID } from "node:crypto";
 
 export class ControlError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -62,26 +63,42 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
   });
 }
 
-export async function prepareTurn(job: AgentRunJob) {
+export async function prepareTurn(job: AgentRunJob, target: "local" | "server" = "server") {
   await transaction(async tx => {
     await tx.query(`SELECT id FROM agent_runs WHERE id = $1 FOR UPDATE`, [job.runId]);
-    await tx.query(`UPDATE agent_turns SET payload = $2, status = 'queued' WHERE id = $1 AND status = 'preparing'`, [job.turnId, JSON.stringify(job)]);
+    const prepared = await tx.query(`UPDATE agent_turns SET payload=$2,status='queued',prepared_at=now(),execution_target=$3
+      WHERE id=$1 AND status='preparing' RETURNING id`, [job.turnId, JSON.stringify(job), target]);
+    if (!prepared.rowCount) throw new ControlError("This turn is no longer waiting for preparation. Refresh the chat.");
+    if (target === "local") {
+      // Dispatch is durable in the same transaction as preparation. A web crash
+      // before the notification cannot strand a turn without a runner job.
+      await tx.query(`INSERT INTO runner_jobs(run_id,turn_id,user_id,payload) VALUES ($1,$2,$3,$4)
+        ON CONFLICT(turn_id) DO NOTHING`, [job.runId,job.turnId,job.userId,JSON.stringify(job)]);
+      await tx.query(`UPDATE agent_runs SET execution='local' WHERE id=$1`,[job.runId]);
+    }
     await tx.query(`UPDATE agent_runs SET agent_id = $2 WHERE id = $1 AND control_version = $3 AND driver_user_id = $4`,
       [job.runId, job.agentId, job.controlVersion, job.userId]);
     if (job.restoreCheckpoint) await tx.query(`UPDATE agent_runs SET restore_snapshot_id = NULL WHERE id = $1 AND restore_snapshot_id = $2`, [job.runId, job.restoreCheckpoint.id]);
   });
 }
 
-export async function startTurn(job: AgentRunJob): Promise<boolean> {
+export async function startTurn(job: AgentRunJob, token = randomUUID()): Promise<boolean> {
   const row = await queryOne(
-    `UPDATE agent_turns t SET status = 'running' FROM agent_runs r
+    `UPDATE agent_turns t SET status = 'running',execution_target='server',execution_token=$2,execution_lease_until=now()+interval '60 seconds' FROM agent_runs r
      WHERE t.id = $1 AND t.run_id = r.id AND t.status = 'queued'
+       AND NOT EXISTS (SELECT 1 FROM runner_jobs j WHERE j.turn_id=t.id AND j.status IN ('queued','claimed'))
        AND r.driver_user_id = t.driver_user_id AND r.control_version = t.control_version
        AND room_access_role(r.session_id, t.driver_user_id) IN ('owner', 'editor') RETURNING t.id`,
-    [job.turnId],
+    [job.turnId, token],
   );
   if (row) void notifyUsage(job.sessionId);
   return !!row;
+}
+
+export async function renewServerTurn(turnId: string, token: string): Promise<boolean> {
+  return !!await queryOne(`UPDATE agent_turns SET execution_lease_until=now()+interval '60 seconds'
+    WHERE id=$1 AND execution_token=$2 AND execution_target='server' AND status='running'
+      AND execution_lease_until>now() RETURNING id`,[turnId,token]);
 }
 
 export async function failTurn(turnId: string, message: string) {

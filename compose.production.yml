@@ -4,6 +4,9 @@ name: multiplayer-production
 
 x-app-environment: &app-environment
   NODE_ENV: production
+  SIGNUP_MODE: ${SIGNUP_MODE:-invite}
+  ORG_STORAGE_LIMIT_BYTES: ${ORG_STORAGE_LIMIT_BYTES:-10737418240}
+  STORAGE_MIN_FREE_BYTES: ${STORAGE_MIN_FREE_BYTES:-2147483648}
   DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
   REDIS_URL: redis://redis:6379
   LOCAL_RUNNERS: "1"
