@@ -5,6 +5,7 @@ import { ChatIcon, GitBranchIcon, TerminalIcon, UsersIcon } from "./components/i
 import { ProductPreview } from "./components/marketing/ProductPreview";
 import { MobileNavigation } from "./components/marketing/MobileNavigation";
 import styles from "./components/marketing/marketing.module.css";
+import { desktopDownloadUrl } from "./lib/desktop-downloads";
 
 export const metadata: Metadata = {
   title: "Multiplayer AI — Great software is a team sport.",
@@ -15,16 +16,6 @@ export const metadata: Metadata = {
     type: "website",
   },
 };
-
-function downloadUrl(value: string | undefined, placeholder: string) {
-  if (value) {
-    try {
-      const url = new URL(value);
-      if (url.protocol === "https:" && !url.username && !url.password) return { href: url.href, demo: false };
-    } catch { /* An invalid release URL falls back to the labeled demo link. */ }
-  }
-  return { href: `https://example.com/downloads/${placeholder}`, demo: true };
-}
 
 function Arrow({ down = false }: { down?: boolean }) {
   return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={down ? "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -44,10 +35,20 @@ const questions = [
 
 export default function Home() {
   const platforms = [
-    { name: "macOS", detail: "Desktop app for your Mac", icon: "⌘", ...downloadUrl(process.env.DESKTOP_DOWNLOAD_MAC_URL, "Multiplayer-AI.dmg") },
-    { name: "Windows", detail: "Desktop installer", icon: "⊞", ...downloadUrl(process.env.DESKTOP_DOWNLOAD_WINDOWS_URL, "Multiplayer-AI-Setup.exe") },
-    { name: "Linux", detail: "AppImage · Preview", icon: ">_", ...downloadUrl(process.env.DESKTOP_DOWNLOAD_LINUX_URL, "Multiplayer-AI.AppImage") },
+    { name: "macOS", detail: "Choose your Mac’s processor", icon: "⌘", downloads: [
+      { label: "Apple Silicon · .dmg", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_MAC_URL) },
+      { label: "Intel Mac · .dmg", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_MAC_INTEL_URL) },
+    ] },
+    { name: "Windows", detail: "Windows 10 or later · 64-bit", icon: "⊞", downloads: [
+      { label: "Windows x64 · .exe", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_WINDOWS_URL) },
+    ] },
+    { name: "Linux", detail: "64-bit Linux · AppImage", icon: ">_", downloads: [
+      { label: "Linux x64 · AppImage", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_LINUX_URL) },
+    ] },
   ];
+  const available = platforms.some(platform => platform.downloads.some(download => download.href));
+  const preview = process.env.DESKTOP_DOWNLOAD_CHANNEL !== "release";
+  const checksums = desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_CHECKSUMS_URL);
 
   return (
     <div className={styles.site}>
@@ -87,7 +88,17 @@ export default function Home() {
           ["02", "Make room for the work", "Open a room, invite your teammates, and choose an AI agent. Build in parallel with the context close at hand."],
           ["03", "Make the next move", "Review a diff. Ask for a second opinion. Hand off a task. Publish your room’s changes when the team is ready."],
         ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div></section>
-        <section id="download" className={`${styles.section} ${styles.download}`} aria-labelledby="download-title"><div className={styles.downloadHeading}><div><p className={styles.kicker}>YOUR NEXT GREAT PROJECT STARTS HERE</p><h2 id="download-title">Better, together.<br /><span>Even better on desktop.</span></h2></div><p>A dedicated space for your team, with a local runner built right in. Choose your platform to get started.</p></div><div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}><span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p><a href={platform.href} className={styles.platformDownload} aria-describedby={platform.demo ? "download-demo-note" : undefined}>Download for {platform.name} <Arrow down /></a>{platform.demo && <small>Demo link · Release coming soon</small>}</article>)}</div><div className={styles.downloadFootnote}><div><p>Requires a workspace connection, Git, and a signed-in AI CLI.</p>{platforms.some(platform => platform.demo) && <p id="download-demo-note">Demo download links are placeholders. Installers are not published yet.</p>}</div><Link href="/workspace">Get started in your browser <Arrow /></Link></div></section>
+        <section id="download" className={`${styles.section} ${styles.download}`} aria-labelledby="download-title">
+          <div className={styles.downloadHeading}><div><p className={styles.kicker}>YOUR NEXT GREAT PROJECT STARTS HERE</p><h2 id="download-title">Better, together.<br /><span>Even better on desktop.</span></h2></div><p>A dedicated space for your team, with a local runner built right in. Choose your platform to get started.</p></div>
+          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. Your operating system may warn or block installation.</p>}
+          <div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}>
+            <span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p>
+            <div className={styles.platformDownloads}>{platform.downloads.map(download => download.href
+              ? <a key={download.label} href={download.href} className={styles.platformDownload} aria-label={`Download ${download.label}`} aria-describedby={preview ? "download-preview-note" : undefined}>{download.label} <Arrow down /></a>
+              : <span key={download.label} className={styles.platformUnavailable}>{download.label}<small>Coming soon</small></span>)}</div>
+          </article>)}</div>
+          <div className={styles.downloadFootnote}><div><p>After installing, enter this website’s HTTPS address in Workspace address, then sign in.</p><p>Requires a workspace connection, Git, and a signed-in AI CLI.</p>{checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}</div><Link href="/workspace">Get started in your browser <Arrow /></Link></div>
+        </section>
         <section id="faq" className={`${styles.section} ${styles.faq}`} aria-labelledby="faq-title"><div><p className={styles.kicker}>A LITTLE MORE CONTEXT</p><h2 id="faq-title">Glad you asked.</h2><p>The details, before you dive in.</p></div><div className={styles.questions}>{questions.map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div></section>
         <section className={styles.finalCta}><span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span><h2>Build something great.<br /><span>Together.</span></h2><Link href="/workspace" className={styles.primaryButton}>Open your workspace <Arrow /></Link><p>Good ideas deserve good company.</p></section>
       </main>

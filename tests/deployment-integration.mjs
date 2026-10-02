@@ -6,7 +6,7 @@ import { execFile, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -19,6 +19,10 @@ nextEnv.loadEnvConfig(process.cwd(), true);
 const run = promisify(execFile), containers = [], processes = [], servers = [], clients = [];
 const secret = randomBytes(32).toString('hex');
 const root = await mkdtemp(join(tmpdir(), 'multiplayer-deployment-'));
+const downloads = join(root, 'downloads');
+await mkdir(join(downloads, 'preview-test'), { recursive: true });
+const installer = Buffer.from('verified-preview-installer-fixture');
+await writeFile(join(downloads, 'preview-test', 'app.exe'), installer);
 let fixture;
 async function docker(args, options = {}) { return (await run('docker', args, { maxBuffer: 1024 * 1024, ...options })).stdout.trim(); }
 async function eventually(check, label, attempts = 150) {
@@ -40,6 +44,7 @@ async function gateway(ports) {
   const started = await startContainer(['--add-host=host.docker.internal:host-gateway',
     '-e', 'APP_DOMAIN=:8080', '-e', 'ACME_EMAIL=fixture@example.com', '-e', `PROXY_SHARED_SECRET=${secret}`,
     '-e', `APP_UPSTREAMS=${ports.map(port => `host.docker.internal:${port}`).join(' ')}`,
+    '-v', `${downloads}:/srv/desktop-downloads:ro`,
     '-v', `${resolve('docker/gateway/Caddyfile')}:/etc/caddy/Caddyfile:ro`, 'caddy:2.11.2-alpine'], 8080);
   const base = 'http://'+started.address;
   await eventually(async () => { try { return (await fetch(base+'/health/ready')).status === 404; } catch { return false; } }, 'gateway startup');
@@ -89,7 +94,7 @@ try {
   for (let i = 0; i < 2; i++) {
     const probe = createServer(), port = await listen(probe); await new Promise(resolve => probe.close(resolve)); ports.push(port);
     const child = spawn(process.execPath, ['scripts/serve.mjs', '-H', '0.0.0.0', '-p', String(port)], {
-      env: { ...process.env, NODE_ENV: 'production', NEXT_TEST_DIST_DIR: '.next', NEXT_TELEMETRY_DISABLED: '1',
+      env: { ...process.env, NODE_ENV: 'production', NEXT_TEST_DIST_DIR: process.env.NEXT_TEST_DIST_DIR || '.next', NEXT_TELEMETRY_DISABLED: '1',
         DATABASE_URL: databaseUrl.href, REDIS_URL: redisUrl, MULTIPLAYER_AI_DATA: root, MNEMOSYNE_URL: '', REPO_EMBEDDING_URL: '',
         LOCAL_RUNNERS: '1', AGENT_WORKER: '0', MULTIPLAYER_AI_TERMINAL: '0', WEB_CONCURRENCY: '1',
         API_TRUST_PROXY: '1', PROXY_SHARED_SECRET: secret, API_RATE_NAMESPACE: 'deployment-test',
@@ -159,6 +164,25 @@ try {
     servers.push(server); upstreamPorts.push(await listen(server));
   }
   const gatewayBase = await gateway(upstreamPorts);
+  const downloadUrl = gatewayBase+'/downloads/desktop/preview-test/app.exe';
+  const head = await fetch(downloadUrl, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(Number(head.headers.get('content-length')), installer.length);
+  assert.equal(head.headers.get('content-disposition'), 'attachment');
+  assert.equal(head.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(head.headers.get('cache-control'), /immutable/);
+  assert.equal(head.headers.get('x-test-upstream'), null, 'downloads bypass application replicas');
+  assert.deepEqual(Buffer.from(await (await fetch(downloadUrl)).arrayBuffer()), installer);
+  const range = await fetch(downloadUrl, { headers: { range: 'bytes=3-9' } });
+  assert.equal(range.status, 206);
+  assert.equal(range.headers.get('content-range'), `bytes 3-9/${installer.length}`);
+  assert.deepEqual(Buffer.from(await range.arrayBuffer()), installer.subarray(3, 10));
+  for (const path of ['/downloads/desktop/preview-test/', '/downloads/desktop/missing.exe', '/health/ready']) {
+    const missing = await fetch(gatewayBase+path);
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(missing.headers.get('cache-control') || '', /immutable/, 'missing downloads must not be cached as a release');
+  }
+  console.log('PASS: public installer bytes, resumable downloads, no directory listing and private health endpoint.');
   const seen = new Set(await Promise.all(Array.from({ length: 12 }, async () => (await fetch(gatewayBase+'/')).text())));
   assert.equal(seen.size, 2, 'both upstreams receive traffic');
   const streaming = await fetch(gatewayBase+'/events', { signal: AbortSignal.timeout(20_000) });

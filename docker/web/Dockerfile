@@ -26,8 +26,11 @@ RUN --mount=type=cache,target=/root/.npm \
     CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY . .
 ARG DESKTOP_DOWNLOAD_MAC_URL
+ARG DESKTOP_DOWNLOAD_MAC_INTEL_URL
 ARG DESKTOP_DOWNLOAD_WINDOWS_URL
 ARG DESKTOP_DOWNLOAD_LINUX_URL
+ARG DESKTOP_DOWNLOAD_CHANNEL
+ARG DESKTOP_DOWNLOAD_CHECKSUMS_URL
 RUN npm run build -- --webpack
 
 # --- runtime stage ----------------------------------------------------------

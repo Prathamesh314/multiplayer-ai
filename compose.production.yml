@@ -64,8 +64,11 @@ x-web: &web
     dockerfile: docker/web/Dockerfile
     args:
       DESKTOP_DOWNLOAD_MAC_URL: ${DESKTOP_DOWNLOAD_MAC_URL:-}
+      DESKTOP_DOWNLOAD_MAC_INTEL_URL: ${DESKTOP_DOWNLOAD_MAC_INTEL_URL:-}
       DESKTOP_DOWNLOAD_WINDOWS_URL: ${DESKTOP_DOWNLOAD_WINDOWS_URL:-}
       DESKTOP_DOWNLOAD_LINUX_URL: ${DESKTOP_DOWNLOAD_LINUX_URL:-}
+      DESKTOP_DOWNLOAD_CHANNEL: ${DESKTOP_DOWNLOAD_CHANNEL:-preview}
+      DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
   restart: unless-stopped
   environment: *app-environment
   # Both replicas use one built image and one data volume. Migrations run once
@@ -92,6 +95,7 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DESKTOP_DOWNLOADS_DIR:-./desktop-dist/published}:/srv/desktop-downloads:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

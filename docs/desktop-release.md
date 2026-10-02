@@ -80,9 +80,9 @@ node tests/desktop-smoke.mjs --packaged
 Preview installers start with **Workspace address**. Enter the HTTPS origin of
 your deployed workspace; these installers do not deploy a server. The platform
 scripts use `--setup`, which clears any workspace/update URL inherited from the
-build environment. Preview filenames include `-preview` and are not published.
-The website's placeholder download links remain placeholders until distribution
-is ready.
+build environment. Preview filenames include `-preview`. CI artifacts are private
+until an operator deliberately publishes verified installers for preview testing.
+An unconfigured website shows **Coming soon**, with no fake download links.
 
 After signing in, the desktop app connects this computer automatically; users
 do not need a pairing command. Install Git and install/authenticate the chosen AI
@@ -109,8 +109,31 @@ Windows, run the NSIS `.exe` and choose an installation location. On Linux, mark
 the AppImage executable with `chmod +x Multiplayer-AI-*.AppImage` and run it;
 systems without FUSE can use `./Multiplayer-AI-…AppImage --appimage-extract-and-run`.
 Preview Mac builds are ad-hoc signed and Windows builds are unsigned, so normal
-OS trust checks may warn or block them. Public distribution still needs the
-signing steps below.
+OS trust checks may warn or block them. A production release still needs the
+signing steps below; do not present a preview as a signed production release.
+
+### Publish preview downloads on the application server
+
+Use artifacts from one successful native CI run on the intended commit. Verify
+each installer against its artifact's `SHA256SUMS-*-preview.txt` before upload.
+Copy only the four installers and a combined `SHA256SUMS.txt` into a new versioned
+directory, for example `/var/lib/multiplayer/downloads/preview-<commit>-<run>/`.
+Never put secrets, source code, or symlinks in this public directory. Preserve
+existing version directories: their contents have an immutable cache policy.
+
+Set `DESKTOP_DOWNLOADS_DIR=/var/lib/multiplayer/downloads` in the production env.
+Caddy mounts it read-only and serves `/downloads/desktop/<version>/<filename>`
+directly, including resumable Range downloads. Directory listings are disabled;
+the web application and GitHub credentials are not involved in file delivery.
+
+Set these to the matching public HTTPS URLs before rebuilding the web image:
+`DESKTOP_DOWNLOAD_MAC_URL` (arm64), `DESKTOP_DOWNLOAD_MAC_INTEL_URL` (x64),
+`DESKTOP_DOWNLOAD_WINDOWS_URL`, `DESKTOP_DOWNLOAD_LINUX_URL`, and
+`DESKTOP_DOWNLOAD_CHECKSUMS_URL`. Keep `DESKTOP_DOWNLOAD_CHANNEL=preview` for
+unsigned/ad-hoc builds so the installation limitations are visible before download.
+Recreate the gateway when adding/changing its volume mount, then verify each URL
+returns the expected file length, supports a Range request, and matches its hash.
+These manual previews do not enable automatic updates.
 
 `desktop:prod` is an alias for attach mode, not a standalone backend installer.
 For a local production server, build the web application and start `next:start`
