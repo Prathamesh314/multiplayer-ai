@@ -103,7 +103,11 @@ test('idle packaged runner waits for push and claims immediately on a work signa
     source.write('event: runner.work\ndata: {"type":"runner.work"}\n\n');
     await wait(()=>claims>idle);assert.equal(claims,idle+1);
     const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exited;
-    assert.equal(child.exitCode,0,error);
+    // Node emulates kill() on Windows by forcibly terminating the process;
+    // SIGTERM handlers only provide a graceful exit on POSIX. Desktop runner
+    // draining uses IPC and is covered by the native packaged smoke test.
+    if(process.platform==='win32')assert.equal(child.signalCode,'SIGTERM',error);
+    else assert.equal(child.exitCode,0,error);
   } finally {
     if(child&&child.exitCode===null)child.kill('SIGKILL');
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
