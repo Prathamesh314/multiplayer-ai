@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { continueWithEmail, register } from "../../lib/auth/client";
+import { invitationDetails } from "../../lib/auth/invitation-link";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 
 const MIN_PASSWORD_LENGTH = 10;
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 /** Step one collects email + password; step two only appears for new accounts. */
 type Step = "email" | "username";
@@ -20,10 +24,15 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
   const rawNext = params.get("next") ?? "/workspace";
   const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/workspace";
 
-  const invitationToken = params.get("invite") ?? /^\/invite\/([a-zA-Z0-9_-]{43})$/.exec(next)?.[1];
+  const linkedInvitation = params.get("invite") ?? /^\/invite\/([a-zA-Z0-9_-]{43})$/.exec(next)?.[1] ?? "";
+  const [pastedInvitation, setPastedInvitation] = useState<{ source: string; value: string } | null>(null);
+  const invitationInput = pastedInvitation?.source === linkedInvitation ? pastedInvitation.value : linkedInvitation;
+  // A malformed value is still sent to the server: an existing account can
+  // sign in without an invitation, even when arriving through an old link.
+  const invitationToken = invitationDetails(invitationInput)?.token ?? (invitationInput.trim() || undefined);
 
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => params.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [handle, setHandle] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -138,6 +147,27 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
 
               {error && <ErrorNote>{error}</ErrorNote>}
 
+              {signupMode === "invite" && (
+                <Field label="Invitation link or code" hint="Required only when creating a new account. Paste the newest invitation and use the email it was issued to.">
+                  <input
+                    type="text"
+                    value={invitationInput}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setPastedInvitation({ source: linkedInvitation, value });
+                      const invitedEmail = invitationDetails(value)?.email;
+                      if (invitedEmail) setEmail(invitedEmail);
+                      setError(null);
+                    }}
+                    placeholder="Paste your invitation link or code"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className={inputClass}
+                  />
+                </Field>
+              )}
+
               <SubmitButton busy={busy}>Continue</SubmitButton>
             </form>
           </>
@@ -209,14 +239,17 @@ function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => v
 }
 
 function SubmitButton({ busy, children }: { busy: boolean; children: React.ReactNode }) {
+  // Before hydration, a native GET form submission strips the invitation from
+  // the URL. Keep submission disabled until React can handle the form.
+  const ready = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   return (
     <button
       type="submit"
-      disabled={busy}
+      disabled={busy || !ready}
       className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {busy && <SpinnerIcon className="h-4 w-4" />}
-      {children}
+      {ready ? children : "Loading sign in…"}
     </button>
   );
 }

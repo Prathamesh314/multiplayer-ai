@@ -15,6 +15,7 @@ async function main() {
     database = pool();
     const token = await issueSignupInvitation(email, hours ? Number(hours) : 72);
     url.pathname = "/login"; url.searchParams.set("invite", token);
+    url.searchParams.set("email", email.trim());
     console.log(`Private, single-use invitation for ${email}:\n${url.href}\nSend this privately. Do not commit the link or put it in public logs.`);
   } finally {
     await database?.end();

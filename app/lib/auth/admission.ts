@@ -8,7 +8,7 @@ export function signupMode(): "open" | "invite" | "closed" {
   return mode;
 }
 export class SignupAdmissionError extends Error {
-  constructor() { super("New accounts require a valid invitation for this email. Ask your team administrator for an invitation link."); }
+  constructor(message = "This invitation does not match this email, or it has expired, been used, or been replaced. Use the newest invitation and the email it was issued to.") { super(message); }
 }
 const digest = (token: string) => createHash("sha256").update(token).digest();
 
@@ -16,7 +16,9 @@ const digest = (token: string) => createHash("sha256").update(token).digest();
 export async function signupInvitation(email: string, token: unknown, tx?: PoolClient) {
   const mode = signupMode();
   if (mode === "open") return null;
-  if (mode === "closed" || typeof token !== "string" || !/^[a-zA-Z0-9_-]{43}$/.test(token)) throw new SignupAdmissionError();
+  if (mode === "closed") throw new SignupAdmissionError("New registrations are currently closed. Existing accounts can still sign in.");
+  if (typeof token !== "string" || !token.trim()) throw new SignupAdmissionError("Your account has not been created yet. Paste your invitation into the Invitation link or code field to create it.");
+  if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) throw new SignupAdmissionError("That invitation is incomplete. Paste the entire invitation link or its 43-character code.");
   const lookup = async (sql: string) => tx ? (await tx.query(sql, [digest(token), email.trim()])).rows[0] : queryOne<{ id: string }>(sql, [digest(token), email.trim()]);
   const beta = await lookup(`SELECT id FROM signup_invitations WHERE token_hash=$1 AND email=$2
     AND used_at IS NULL AND revoked_at IS NULL AND expires_at>now()${tx ? " FOR UPDATE" : ""}`);

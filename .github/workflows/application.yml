@@ -70,6 +70,9 @@ jobs:
       - run: npm run test:ui
         env:
           CHROME_BIN: /usr/bin/google-chrome
+      - run: npm run test:auth-ui
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
       - run: npm run test:workspace-ui
         env:
           CHROME_BIN: /usr/bin/google-chrome

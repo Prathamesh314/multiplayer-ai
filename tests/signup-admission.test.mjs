@@ -17,6 +17,9 @@ test('registration admission preserves login and atomically claims private invit
       const token=await issueSignupInvitation('new@example.test');
       assert.equal((await createUser(input('newuser','wrong@example.test',token))).field,'invitation');
       await assert.rejects(signupInvitation('new@example.test','bad'));
+      await assert.rejects(signupInvitation('new@example.test',undefined),/Paste your invitation/);
+      await assert.rejects(signupInvitation('new@example.test','bad'),/incomplete/);
+      await assert.rejects(signupInvitation('wrong@example.test',token),/does not match this email/);
     });
     await t.test('one winner under concurrent claims and no replay',async()=>{
       const token=await issueSignupInvitation('race@example.test');

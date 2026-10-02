@@ -32,6 +32,7 @@
     "test:team-context:http": "node --import tsx tests/team-context-http.mjs",
     "test:deployment": "node --import tsx tests/deployment-integration.mjs",
     "test:ui": "node tests/chat-ui.browser.mjs --start-server",
+    "test:auth-ui": "node tests/auth-ui.browser.mjs --start-server",
     "test:desktop": "node --test tests/desktop.test.cjs",
     "test:server": "node --test tests/server-lifecycle.test.mjs",
     "test:desktop:smoke": "npm run desktop:prepare && node tests/desktop-smoke.mjs",
@@ -79,7 +80,7 @@
     "backup:restore-config": "node scripts/backup.mjs restore-config",
     "test:backup": "node tests/backup-restore.mjs",
     "beta:invite": "tsx scripts/invite-beta.ts",
-    "test:admission": "node --import tsx --test tests/signup-admission.test.mjs tests/storage-admission.test.mjs tests/receive-budget.test.mjs tests/invite-beta-cli.test.mjs",
+    "test:admission": "node --import tsx --test tests/signup-admission.test.mjs tests/storage-admission.test.mjs tests/receive-budget.test.mjs tests/invite-beta-cli.test.mjs tests/invitation-link.test.mjs",
     "desktop:preflight": "node desktop/release-preflight.mjs",
     "test:release-preflight": "node --test tests/release-preflight.test.mjs",
     "test:signup:http": "node --import tsx tests/signup-http.mjs"
