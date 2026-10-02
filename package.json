@@ -79,7 +79,7 @@
     "backup:restore-config": "node scripts/backup.mjs restore-config",
     "test:backup": "node tests/backup-restore.mjs",
     "beta:invite": "tsx scripts/invite-beta.ts",
-    "test:admission": "node --import tsx --test tests/signup-admission.test.mjs tests/storage-admission.test.mjs tests/receive-budget.test.mjs",
+    "test:admission": "node --import tsx --test tests/signup-admission.test.mjs tests/storage-admission.test.mjs tests/receive-budget.test.mjs tests/invite-beta-cli.test.mjs",
     "desktop:preflight": "node desktop/release-preflight.mjs",
     "test:release-preflight": "node --test tests/release-preflight.test.mjs",
     "test:signup:http": "node --import tsx tests/signup-http.mjs"
