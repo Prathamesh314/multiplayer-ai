@@ -153,6 +153,11 @@ Desktop installers are released separately. Set the three `DESKTOP_DOWNLOAD_*`
 variables before building the web image; the Docker build now forwards them.
 Empty variables retain explicitly labeled demo links. See `desktop-release.md`.
 
+For optional Slack/Discord project context, follow `team-context-connections.md`.
+Configure the app credentials on web and worker, retain the encryption key, and
+run one Discord gateway worker per deployment. The human chat sidebar is replaced
+by Connections; AI chats and tasks stay in the app.
+
 Remaining beta gates include global signup restrictions, repository mutation
 fencing, abandoned-turn recovery and a successful coordinated restore drill.
 The load balancer does not remove those risks. See the architecture review.

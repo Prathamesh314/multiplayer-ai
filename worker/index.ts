@@ -21,10 +21,12 @@ import { executeAgentRun } from "../app/lib/ai/execute";
 import { publishRunEvent } from "../app/lib/ai/run-stream";
 import { createRunWorker, queueEnabled } from "../app/lib/queue";
 import { loadEnvConfig } from "@next/env";
+import { startTeamContext } from './team-context';
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const closers: Array<() => Promise<void>> = [];
+if (process.env.DATABASE_URL) closers.push(startTeamContext());
 
 // Poll durable indexing requests and missing vectors, never scan repositories.
 // A failed transaction leaves its request ready for a later retry.

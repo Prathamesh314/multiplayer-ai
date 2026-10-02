@@ -59,6 +59,7 @@ const REPO_SIGNALS: Array<[name: string, pattern: RegExp]> = [
 
 /** Signals a prompt is about what people discussed, decided, or planned. */
 const CONVERSATION_SIGNALS: Array<[name: string, pattern: RegExp]> = [
+  ['external-chat', /\b(?:slack|discord)\b/i],
   ["channel", /(?:^|\s)#[\w"-]+|\b(?:channel|group|room)\s+(?:chat|discussion)|\b(?:requirements|specification|agreed|agreement|decide|discussion|feedback|proposed|suggested)\b/i],
   ["mention", /(?:^|\s)@\w[\w-]*/],
   [

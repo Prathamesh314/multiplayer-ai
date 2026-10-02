@@ -20,10 +20,11 @@ type Props = {
   onNewProject: () => void;
   onInvite: () => void;
   onManageMembers: (project: Project) => void;
+  onConnections: (project: Project) => void;
   onOpenRoom: (id: string) => void;
 };
 
-export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
+export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
   const [search, setSearch] = useState("");
   const visible = projects?.filter((project) =>
     project.name.toLowerCase().includes(search.trim().toLowerCase()),
@@ -81,7 +82,7 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             </div>
           ) : (
             <div className="grid gap-4 xl:grid-cols-2">
-              {visible?.map((project) => <ProjectCard key={project.id} project={project} org={org} me={me} onManageMembers={() => onManageMembers(project)} onOpenRoom={onOpenRoom} />)}
+              {visible?.map((project) => <ProjectCard key={project.id} project={project} org={org} me={me} onManageMembers={() => onManageMembers(project)} onConnections={()=>onConnections(project)} onOpenRoom={onOpenRoom} />)}
             </div>
           )}
         </section>
@@ -119,7 +120,7 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
   );
 }
 
-function ProjectCard({ project, org, me, onManageMembers, onOpenRoom }: Pick<Props, "org" | "me" | "onOpenRoom"> & { project: Project; onManageMembers: () => void }) {
+function ProjectCard({ project, org, me, onManageMembers, onConnections, onOpenRoom }: Pick<Props, "org" | "me" | "onOpenRoom"> & { project: Project; onManageMembers: () => void; onConnections:()=>void }) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,6 +150,7 @@ function ProjectCard({ project, org, me, onManageMembers, onOpenRoom }: Pick<Pro
       {error && <div className="mt-4"><ErrorNote>{error}</ErrorNote></div>}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
         <button type="button" onClick={onManageMembers} className="flex items-center gap-2 rounded-md py-2 text-sm text-vs-muted hover:text-vs-fg"><UsersIcon className="h-4 w-4" /> Members</button>
+        <button type="button" onClick={onConnections} className="rounded-md py-2 text-sm text-vs-muted hover:text-vs-fg">Connections</button>
         <PrimaryButton disabled={opening || !me} onClick={() => void openRoom()}>{opening ? <SpinnerIcon className="h-4 w-4" /> : <ChevronIcon className="h-4 w-4" />}{opening ? "Opening…" : project.myRole === "viewer" ? "View a room" : "Open my room"}</PrimaryButton>
       </div>
     </article>

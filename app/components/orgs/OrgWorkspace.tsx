@@ -47,8 +47,7 @@ import {
 } from "./dialogs";
 import { OrgSettingsDialog } from "./OrgSettingsDialog";
 import { initials } from "./parts";
-import { ChatSection } from "../chat/ChatSection";
-import { ConversationView } from "../chat/ConversationView";
+import { ConnectionsPanel } from './ConnectionsPanel';
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
 import { TaskPanel } from "../tasks/TaskPanel";
@@ -92,7 +91,8 @@ export function OrgWorkspace() {
   const reloadOrgs = useCallback(async () => {
     const list = await listMyOrgs();
     setOrgs(list);
-    setActiveSlug((current) => current ?? list[0]?.slug ?? null);
+    const requestedOrg = new URLSearchParams(window.location.search).get('org');
+    setActiveSlug((current) => list.find(org=>org.slug===requestedOrg)?.slug ?? current ?? list[0]?.slug ?? null);
     return list;
   }, []);
 
@@ -483,11 +483,8 @@ function OrgPanel({
   const [roomSearch, setRoomSearch] = useState("");
   const [showNavigation, setShowNavigation] = useState(false);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
-  // The open team-chat conversation, rendered in <main> instead of the welcome
-  // placeholder. `chatVersion` is bumped to refresh the sidebar's unread counts.
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [chatVersion, setChatVersion] = useState(0);
-  const bumpChat = useCallback(() => setChatVersion((v) => v + 1), []);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [connectionProject, setConnectionProject] = useState<string | null>(null);
 
   if (loadedSlug !== org.slug) {
     setLoadedSlug(org.slug);
@@ -501,6 +498,11 @@ function OrgPanel({
         if (cancelled) return;
         setProjects(list);
         setProjectError(null);
+        const requested = new URLSearchParams(window.location.search).get('connections');
+        if (requested && list.some(project => project.id === requested)) {
+          setConnectionProject(requested);setConnectionsOpen(true);
+          window.history.replaceState(null,'','/workspace');
+        }
       })
       .catch((cause) => !cancelled && setProjectError(cause instanceof Error ? cause.message : "Could not load projects."));
     return () => {
@@ -512,7 +514,7 @@ function OrgPanel({
     <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
       <div className="flex shrink-0 items-center justify-between border-b border-vs-border px-4 py-3 lg:hidden">
         <span className="truncate text-sm font-semibold">{org.name}</span>
-        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & chat"}</button>
+        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & connections"}</button>
       </div>
       <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-[296px] lg:border-b-0 lg:border-r`}>
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
@@ -553,9 +555,10 @@ function OrgPanel({
         </header>
 
         <UsageBadge orgSlug={org.slug} />
-        <button type="button" onClick={() => { setActiveConversationId(null); setShowNavigation(false); }} aria-current={activeConversationId === null ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${activeConversationId === null ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
+        <button type="button" onClick={() => { setConnectionsOpen(false); setShowNavigation(false); }} aria-current={!connectionsOpen ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${!connectionsOpen ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
           <GitBranchIcon className="h-4 w-4" /> Project overview
         </button>
+        <button type="button" onClick={()=>{setConnectionsOpen(true);setShowNavigation(false);}} aria-current={connectionsOpen?'page':undefined} className={`mx-3 mt-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${connectionsOpen?'bg-vs-active text-vs-fg':'text-vs-muted hover:bg-vs-hover'}`}><UsersIcon className="h-4 w-4"/> Connections <span className="ml-auto text-xs text-vs-muted">Slack · Discord</span></button>
 
         {invitations.length > 0 && (
           <div className="border-b border-vs-border p-2">
@@ -645,16 +648,6 @@ function OrgPanel({
             )}
           </div>
 
-          {me && (
-            <ChatSection
-              org={org}
-              meId={me.id}
-              activeConversationId={activeConversationId}
-              version={chatVersion}
-              onOpen={(id) => { setActiveConversationId(id); setShowNavigation(false); }}
-              onChanged={bumpChat}
-            />
-          )}
         </div>
         {me && (
           <div className={chatStyles.profileBar}>
@@ -666,13 +659,8 @@ function OrgPanel({
         )}
       </aside>
 
-      {activeConversationId && me ? (
-        <ConversationView
-          key={activeConversationId}
-          conversationId={activeConversationId}
-          me={me}
-          onRead={bumpChat}
-        />
+      {connectionsOpen ? (
+        <ConnectionsPanel org={org} projects={projects??[]} selectedId={connectionProject} onSelect={setConnectionProject}/>
       ) : (
         <ProjectOverview
           onConnectAi={onConnectAi}
@@ -685,6 +673,7 @@ function OrgPanel({
           onNewProject={onNewProject}
           onInvite={onInvite}
           onManageMembers={onManageMembers}
+          onConnections={project=>{setConnectionProject(project.id);setConnectionsOpen(true);}}
           onOpenRoom={onOpenRoom}
         />
       )}

@@ -321,7 +321,7 @@ async function handlePOST(request: Request) {
       if (knowledge.chatRecalled > 0) {
         const rooms = [...new Set(knowledge.chatSources.map((source) => source.roomName))];
         const people = [...new Set(knowledge.chatSources.map((source) => `@${source.handle}`))];
-        parts.push(`${knowledge.chatRecalled} room chat messages from ${rooms.join(", ")} (${people.join(", ")})`);
+        parts.push(`${knowledge.chatRecalled} team discussion messages from ${rooms.join(", ")} (${people.join(", ")})`);
       }
       const suffix =
         knowledge.truncatedRooms > 0

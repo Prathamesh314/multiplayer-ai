@@ -7,7 +7,7 @@ import { limitKey, limitStore, type LimitPolicy, type LimitStore } from "./rate-
 const defaults = {
   ingress: [6000, 1500], anonymous: [120, 40], auth: [20, 10], pair: [10, 5],
   read: [600, 120], write: [180, 60], upload: [120, 60], stream: [60, 20],
-  runner: [600, 120], activity: [600, 180], git: [120, 40],
+  runner: [600, 120], activity: [600, 180], git: [120, 40], webhook: [6000, 1500],
 } as const;
 export type PolicyName = keyof typeof defaults;
 
@@ -27,6 +27,7 @@ export function usesDeviceToken(route: string) {
 }
 
 export function policyFor(route: string, method: string): PolicyName {
+  if (route === '/api/integrations/slack/events') return 'webhook';
   if (["/api/auth/login", "/api/auth/continue", "/api/auth/register"].includes(route)) return "auth";
   if (["/api/runner/pair", "/api/runner/pairing"].includes(route)) return "pair";
   if (route.startsWith("/api/git/")) return "git";
@@ -107,7 +108,7 @@ export async function admitApiRequest(request: Request, route: string, dependenc
     const name = policyFor(route, request.method);
     // Credential attempts are limited even when a caller also supplies a valid
     // browser cookie. Changing random tokens never creates fresh IP buckets.
-    if (name === "auth" || route === "/api/runner/pair") return await take(`ip:${address}`, name);
+    if (name === "auth" || name === 'webhook' || route === "/api/runner/pair") return await take(`ip:${address}`, name);
     const userId = await (dependencies?.userId ?? requestUserId)(request, route);
     return await take(userId ? `user:${userId}` : `ip:${address}`, userId ? name : "anonymous");
   } catch {

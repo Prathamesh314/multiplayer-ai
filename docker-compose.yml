@@ -11,6 +11,18 @@
 
 name: multiplayer-ai
 
+x-team-context: &team-context
+  INTEGRATIONS_PUBLIC_URL: ${INTEGRATIONS_PUBLIC_URL:-}
+  INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-}
+  SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+  SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+  SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+  DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+  DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+  DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+  TEAM_CONTEXT_BACKEND: ${TEAM_CONTEXT_BACKEND:-postgres}
+  TEAM_CONTEXT_RETENTION_DAYS: ${TEAM_CONTEXT_RETENTION_DAYS:-30}
+
 services:
   postgres:
     # 18 specifically: the schema uses uuidv7() for time-ordered primary keys,
@@ -117,6 +129,7 @@ services:
         condition: service_healthy
     environment:
       # Require the caller's paired runner; disable both hosted execution paths.
+      <<: *team-context
       LOCAL_RUNNERS: "1"
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       AGENT_WORKER: "0"
@@ -151,6 +164,7 @@ services:
         condition: service_healthy
     environment:
       # Keep background indexing running without consuming agent-run jobs.
+      <<: *team-context
       AGENT_WORKER: "0"
       MULTIPLAYER_AI_TERMINAL: "0"
       REPO_EMBEDDING_QUERY_PREFIX:

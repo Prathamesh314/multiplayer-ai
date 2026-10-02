@@ -53,6 +53,8 @@ function installFixtures() {
     message("m8", "alex", "Sounds good. Let’s review the changes together before we publish. Thanks, everyone!", "2026-09-29T09:28:00"),
   ];
   window.__chatFixture = { failNext: false, sent: [], unknown: [], messages, streams: [], sendDelay: 0 };
+  const integration = {id:'slack-connection',provider:'slack',name:'Northstar Slack',channels:[{id:'engineering',name:'engineering',url:'https://app.slack.com/client/T1/C1',verifiedAt:new Date().toISOString(),syncedAt:new Date().toISOString(),messageCount:15,error:null}]};
+  let connected=true;
   class FixtureEventSource extends EventTarget {
     constructor(url) {
       super(); this.url = url;
@@ -78,6 +80,17 @@ function installFixtures() {
     if (path.endsWith("/projects")) return json({projects:[{id:"checkout",orgId:org.id,slug:"checkout",name:"Northstar Checkout",source:"local",githubRepo:null,defaultBranch:"main",upstreamUrl:null,myRole:"manager",createdAt:0,archivedAt:null}]});
     if (path.endsWith("/rooms")) return json({sessions:[{id:"alex-room",name:"Checkout · Alex",ownerId:"alex",visibility:"public"},{id:"priya-room",name:"Checkout · Priya",ownerId:"priya",visibility:"public"}]});
     if (path === "/api/tasks") return json({tasks:[],members:[],hasMore:false});
+    if (path.endsWith('/integrations')) return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:connected?[integration]:[]});
+    if (path.endsWith('/integrations/slack')) {
+      if(init.method==='DELETE'){connected=false;return json({ok:true});}
+      if(init.method==='PUT'){
+        if(window.__chatFixture.failNext){window.__chatFixture.failNext=false;return json({error:'Could not save channels. Try again.'},503);}
+        const {channelIds,shareWithProject}=JSON.parse(init.body);
+        if(!shareWithProject)return json({error:'Sharing confirmation is required.'},400);
+        integration.channels=channelIds.map(id=>({id,name:id,url:'https://app.slack.com/client/T1/'+id,verifiedAt:null,syncedAt:null,messageCount:0,error:null}));return json({ok:true});
+      }
+      return json({channels:['engineering','product-design'].map(id=>({id,name:id,url:'https://app.slack.com/client/T1/'+id}))});
+    }
     if (path === "/api/chat/conversations") return json({conversations:[...channels,...dms]});
     if (path.endsWith("/read")) return json({ok:true});
     if (path.endsWith("/messages")) {
@@ -130,7 +143,6 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument",{source:`(${installFixtures.toString()})()`});
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/workspace"});
-  await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="#product-design")'),"channels");
   await eventually(()=>evaluate('!!document.querySelector("#projects-heading") && !!document.querySelector("main article")'),"project overview");
   assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
   await evaluate("document.fonts.ready");await screenshot("projects");
@@ -158,63 +170,33 @@ try {
   await viewport(390);
   await fits("project overview fits mobile");await screenshot("projects-mobile");
   await viewport(1440);
-  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="#product-design").click()');
-  await eventually(()=>evaluate('!!document.querySelector("textarea") && document.body.innerText.includes("Thanks, everyone!")'),"conversation");
-  await evaluate(`window.__chatFixture.messages.push({...window.__chatFixture.messages[0],id:'missed-during-disconnect',body:'Recovered after reconnect',createdAt:Date.now()});`);
-  assert.equal(await evaluate('document.body.innerText.includes("Recovered after reconnect")'),false);
-  await evaluate(`for(const source of window.__chatFixture.streams)source.dispatchEvent(new MessageEvent('ready',{data:'{}'}));`);
-  await eventually(()=>evaluate('document.body.innerText.includes("Recovered after reconnect")'),'reconnect history recovery');
-  await evaluate("document.fonts.ready");await delay(200);
-  assert.ok(await evaluate('document.querySelector("#conversation-members").innerText.includes("Priya Shah")'));
-  await writeFile(process.env.CHAT_UI_SCREENSHOT ?? join(tmpdir(),"multiplayer-team-chat.png"),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
-  await click('button[aria-label="Search messages"]');
-  await type('input[aria-label="Search loaded messages"]',"quantity validation");
-  assert.equal(await evaluate('document.querySelectorAll("article").length'),1);
-  await type('input[aria-label="Search loaded messages"]',"no-such-message");
-  assert.ok(await evaluate('document.body.innerText.includes("No loaded messages match")'));
-  await click('button[aria-label="Close message search"]');
-  await type("textarea","A message to retry");
-  await evaluate("window.__chatFixture.failNext=true");
-  await click('button[aria-label="Send message"]');
-  await eventually(()=>evaluate('!!document.querySelector("[role=alert]")'),"send failure");
-  assert.equal(await evaluate('document.querySelector("textarea").value'),"A message to retry");
-  assert.ok(await evaluate('document.body.innerText.includes("Thanks, everyone!")'));
-  await click('button[aria-label="Send message"]');
-  await eventually(()=>evaluate('document.querySelector("textarea").value === ""'),"successful retry");
-  assert.equal(await evaluate('Array.from(document.querySelectorAll("article p")).filter(p=>p.textContent==="A message to retry").length'),1);
-  await type("textarea","Only send once");
-  await evaluate("window.__chatFixture.sendDelay=250");
-  await evaluate('const send=document.querySelector("button[aria-label=\\"Send message\\"]");send.click();send.click()');
-  await eventually(()=>evaluate('document.querySelector("textarea").value === ""'),"single send");
-  assert.equal(await evaluate('window.__chatFixture.sent.filter(m=>m.body==="Only send once").length'),1);
-  assert.equal(await evaluate('document.querySelector("textarea").maxLength'),4000);
-  await type("textarea","A composed message");
-  const sentBefore = await evaluate('window.__chatFixture.sent.length');
-  await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",isComposing:true,bubbles:true,cancelable:true}))');
-  await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",shiftKey:true,bubbles:true,cancelable:true}))');
-  assert.equal(await evaluate('window.__chatFixture.sent.length'),sentBefore);
-  assert.equal(await evaluate('document.querySelector("textarea").value'),"A composed message");
-  await type("textarea","");
-  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Load earlier messages").click()');
-  await eventually(()=>evaluate('document.body.innerText.includes("Earlier context:")'),"history pagination");
-  for(const width of [768,390,320]){
-    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width<500});await delay(100);
-    assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"),true,`overflow at ${width}`);
-    assert.equal(await evaluate('!!document.querySelector("#conversation-members")'),false);
-    await click('button[aria-label="Toggle member list"]');
-    assert.ok(await evaluate('!!document.querySelector("#conversation-members")'));
-    await click('button[aria-label="Close member list"]');
-    const composer=await evaluate('(()=>{const r=document.querySelector("textarea").getBoundingClientRect();return {right:r.right,bottom:r.bottom,width:r.width}})()');
-    assert.ok(composer.right<=width && composer.bottom<=900 && composer.width>80,`composer at ${width}`);
-    if(width===390)await writeFile(join(tmpdir(),"multiplayer-team-chat-mobile.png"),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
-  }
-  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});await delay(100);
-  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="PSPriya Shah").click()');
-  await eventually(()=>evaluate('document.body.innerText.includes("This is the start of your conversation with Priya Shah.")'),"direct messages");
-  assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
+  assert.equal(await evaluate('!!document.querySelector("textarea")'),false,'human chat is removed from project workspace');
+  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Connections").click()');
+  await eventually(()=>evaluate('document.body.innerText.includes("Northstar Slack")'),'project connections');
+  assert.ok(await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.includes("Connect Discord")).disabled'),'unconfigured provider is honestly disabled');
+  assert.ok(await evaluate('document.body.innerText.includes("15 messages")'));
+  await screenshot('connections');
+  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Choose channels").click()');
+  await eventually(()=>evaluate('!!document.querySelector("dialog input[type=search]")'),'channel picker');
+  await type('input[aria-label="Search channels"]','product');
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("dialog label")).filter(el=>el.textContent.includes("#engineering")).length'),0);
+  await evaluate('Array.from(document.querySelectorAll("dialog label")).find(el=>el.textContent.includes("#product-design")).querySelector("input").click()');
+  assert.ok(await evaluate('Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.includes("Save channels")).disabled'),'sharing consent required');
+  await evaluate('Array.from(document.querySelectorAll("dialog label")).find(el=>el.textContent.includes("authorised")).querySelector("input").click()');
+  await evaluate('window.__chatFixture.failNext=true;Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.includes("Save channels")).click()');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Could not save channels")'),'save error visible in picker');
+  assert.equal(await evaluate('document.querySelectorAll("dialog input[type=checkbox]:checked").length'),2,'selection and consent survive failed save');
+  await evaluate('Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.includes("Save channels")).click()');
+  await eventually(()=>evaluate('!document.querySelector("dialog") && document.body.innerText.includes("2 selected channels")'),'channels saved');
+  for(const width of [768,390,320]){await viewport(width);await fits(`connections at ${width}`);if(width===390)await screenshot('connections-mobile');}
+  await viewport(1440);
+  await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Disconnect").click()');
+  await eventually(()=>evaluate('!!document.querySelector("dialog")'),'disconnect confirmation');
+  await evaluate('Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.trim()==="Disconnect").click()');
+  await eventually(()=>evaluate('!document.querySelector("dialog") && !document.body.innerText.includes("Northstar Slack")'),'disconnect removes source');
   await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"light"},{name:"prefers-reduced-motion",value:"reduce"}]});
-  await delay(200);await screenshot("chat-light");
-  assert.ok(await evaluate('parseFloat(getComputedStyle(document.querySelector("textarea")).transitionDuration) <= 0.001'),"reduced motion respected");
+  await delay(200);await screenshot("connections-light");
+  assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
   await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
   for(const [path,ready,name] of [["/login",'input[type="email"]',"login"],["/s/locked-room",'input',"locked-room"],["/invite/expired",'[role="alert"]',"invitation"]]) {
     await send("Page.navigate",{url:base+path});
@@ -241,6 +223,6 @@ try {
   await escape();
   assert.equal(await evaluate('!!document.querySelector("dialog[open]")'),false);
   assert.deepEqual(errors,[]);
-  console.log("PASS: website, sign-in, invitations, locked rooms, project overview, settings save, modal focus/scrolling, light/dark, reduced motion, real chat UI, reconnect recovery, members, search, empty results, send failure/draft recovery, SSE deduplication, double-send prevention, history, DMs, and responsive layouts.");
-  console.log("Screenshots: "+(process.env.CHAT_UI_SCREENSHOT ?? join(tmpdir(),"multiplayer-team-chat.png"))+" and "+join(tmpdir(),"multiplayer-team-chat-mobile.png"));
+  console.log("PASS: website, sign-in, invitations, locked rooms, project overview, settings save, modal focus/scrolling, light/dark, reduced motion, project-scoped connections, channel search, explicit sharing, save failure/retry, disconnect, and responsive layouts.");
+  console.log("Screenshots: "+join(tmpdir(),"multiplayer-ui-connections.png")+" and "+join(tmpdir(),"multiplayer-ui-connections-mobile.png"));
 } finally {socket?.close();chrome.kill();if(server && server.exitCode===null){server.kill();await once(server,"exit").catch(()=>{});}}

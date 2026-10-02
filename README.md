@@ -132,6 +132,10 @@ With the Docker services running and migration 029 applied, run
 retrieval in an isolated test schema. It cleans up its fixture data afterward.
 
 ### Project room chat memory
+
+The workspace now uses **Connections** for selected Slack/Discord channels per
+project. AI chats and task assignment remain in the app; previous human chat
+records are retained. See [setup and provider configuration](docs/team-context-connections.md).
 The context router also recognizes requests about team discussions, decisions,
 requirements, and feedback. It searches human messages in accessible rooms of
 the current project, selecting rooms by topic or `#room` / `#"Room name"`, and
