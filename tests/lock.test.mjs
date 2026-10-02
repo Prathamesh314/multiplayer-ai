@@ -6,7 +6,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createFileLock, createMemoryLock, inheritedRepoLocks } from '../app/lib/session/lock.ts';
+import { createFileLock, createMemoryLock, inheritedRepoLocks, repoLock } from '../app/lib/session/lock.ts';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(),'mp-kernel-lock-'));
@@ -69,4 +69,10 @@ test('in-memory utility still serializes and recovers after a rejected task',asy
   const lock=createMemoryLock(), log=[];
   await Promise.all([lock.withLock('x',async()=>{log.push(1);await delay(10);log.push(2);}),lock.withLock('x',async()=>log.push(3))]);
   assert.deepEqual(log,[1,2,3]);
+});
+
+test('hot reload cannot silently retain the old expiring lock driver',()=>{
+  globalThis.__maRepoLock=Promise.resolve(createMemoryLock());
+  try {assert.throws(repoLock,/Restart all web and worker/);}
+  finally {delete globalThis.__maRepoLock;}
 });

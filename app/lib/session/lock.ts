@@ -13,7 +13,8 @@ export interface RepoLock {
 type HeldLock = { fd: number; active: boolean };
 const globalLocks = globalThis as unknown as {
   __maFileLocks?: AsyncLocalStorage<Map<string, HeldLock>>;
-  __maRepoLock?: Promise<RepoLock>;
+  __maRepoLock?: Promise<RepoLock>; // Previous Redis/memory driver cached by HMR.
+  __maKernelRepoLock?: Promise<RepoLock>;
 };
 const held = globalLocks.__maFileLocks ??= new AsyncLocalStorage<Map<string, HeldLock>>();
 
@@ -103,5 +104,6 @@ export function createFileLock(options: { directory?: string; acquireTimeoutMs?:
  * NFS/multi-host storage is intentionally unsupported. Fail closed if locking
  * is unavailable. All replicas must be stopped when upgrading the old driver. */
 export function repoLock(): Promise<RepoLock> {
-  return globalLocks.__maRepoLock ??= Promise.resolve(createFileLock());
+  if (globalLocks.__maRepoLock) throw new Error("Restart all web and worker processes to activate the repository file-lock upgrade.");
+  return globalLocks.__maKernelRepoLock ??= Promise.resolve(createFileLock());
 }

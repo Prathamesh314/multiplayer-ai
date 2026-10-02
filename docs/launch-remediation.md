@@ -61,7 +61,9 @@ Repository/activity admission counts durable local file bytes across every room
 and repository owned by an organisation (personal rooms share a per-user limit).
 The default allowance is 10 GiB, with conservative headroom for each operation.
 Git pushes are capped at 128 MiB and 250,000 packed objects (bounding index
-growth) and reserve 160 MiB of allowance; ordinary Git
+growth) and reserve 160 MiB of allowance. A trusted pre-receive hook checks the
+actual quarantined objects/indexes before accepting them, including bases added
+to thin packs; ordinary Git
 mutations reserve 32 MiB, with larger imports/copies checked before writing.
 Owner file locks serialize competing admissions across replicas. Short capacity
 locks reserve temporary disk space across owners, retaining a 2 GiB free-space

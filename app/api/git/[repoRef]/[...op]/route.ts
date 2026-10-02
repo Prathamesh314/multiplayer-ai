@@ -1,3 +1,4 @@
+import { receiveBudgetHooks } from "../../../../lib/storage/receive-budget";
 import { withStorageAdmission, StorageAdmissionError } from "../../../../lib/storage/admission";
 import { withApiLimit } from "../../../../lib/http/api-limit";
 import { acquireStoredRepo } from "../../../../lib/storage/git-cache";
@@ -170,6 +171,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/git/[rep
         "-c", "receive.unpackLimit=0",
         "-c", "core.hooksPath=/dev/null",
         "-c", "gc.auto=0",
+        "-c", "receive.autogc=false",
         "receive-pack", "--stateless-rpc", gated.bare,
       ]
     : ["upload-pack", "--stateless-rpc", gated.bare];
@@ -190,7 +192,9 @@ async function handlePOST(request: Request, context: RouteContext<"/api/git/[rep
       void withStorageAdmission(repoRef, async () => (await repoLock()).withLock(repoRef, async () => {
         let finished!: () => void;
         const done = new Promise<void>(resolve => { finished = resolve; });
-        resolveBody(streamGit(args, { stdin, release: gated.release, gitProtocol: request.headers.get("git-protocol"), onClosed: finished }));
+        const boundedArgs = [...args];
+        boundedArgs[boundedArgs.indexOf("core.hooksPath=/dev/null")] = `core.hooksPath=${await receiveBudgetHooks()}`;
+        resolveBody(streamGit(boundedArgs, { stdin, release: gated.release, gitProtocol: request.headers.get("git-protocol"), onClosed: finished }));
         await done;
       }), 160 * 1024 * 1024).catch(rejectBody);
     }) : await start();
