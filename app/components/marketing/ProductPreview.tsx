@@ -6,12 +6,12 @@ import styles from "./marketing.module.css";
 
 const views = [
   {
-    label: "Team channels",
-    src: "/product/team-chat.png",
+    label: "Team context",
+    src: "/product/team-connections.png",
     width: 1440,
     height: 900,
-    alt: "The updated Multiplayer AI team chat: workspace rail, projects and channels on the left, a shared message timeline in the center, and the member list on the right.",
-    caption: "A place for the whole team. Channels, shared conversations, and project rooms, side by side.",
+    alt: "Multiplayer AI’s Connections view with a project selector, a connected Slack channel, and the Discord setup option.",
+    caption: "Bring selected Slack and Discord channels into your project’s shared context.",
   },
   {
     label: "Code & review",

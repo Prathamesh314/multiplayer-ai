@@ -60,23 +60,25 @@ ffmpeg -ss 184 -i path/to/recording.mp4 -frames:v 1 \
   -vf 'crop=1256:786:588:134' public/product/code-review.png
 ```
 
-### Team chat preview
+### Team context preview
 
-`team-chat.png` is a browser capture of the updated real `/workspace` interface,
+`team-connections.png` is a browser capture of the real Connections view in `/workspace`,
 rendered at 1440 × 900 using the isolated Northstar demo data in
 `tests/chat-ui.browser.mjs`. The component layout and controls are the production
-application; account names and messages are sample content. The original Discord
+application; account names, connection status, and channels are sample content. The original Discord
 reference image and its private conversation are not included in the website.
 
-To validate the chat and regenerate its screenshot against a running build:
+To validate the interface and regenerate its screenshot:
 
 ```sh
 npm run build -- --webpack
-npm run next:start -- --port 3100
-# In another terminal:
-CHAT_UI_SCREENSHOT=public/product/team-chat.png node tests/chat-ui.browser.mjs
+npm run test:ui
 ```
 
-The check intercepts API calls inside an isolated browser profile. It never seeds
+The check starts its own server and saves `multiplayer-ui-connections.png` in
+Node's `os.tmpdir()`. Copy that capture to `public/product/team-connections.png`
+when updating the website preview. It intercepts API calls inside an isolated
+browser profile and never seeds
 or sends messages to the application's database. `CHROME_BIN` can override the
-Chrome executable; `CHAT_UI_BASE_URL` can override the server URL.
+Chrome executable. To test an existing server instead, set `CHAT_UI_BASE_URL`
+and run `node tests/chat-ui.browser.mjs` without `--start-server`.
