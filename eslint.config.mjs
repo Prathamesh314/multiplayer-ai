@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     ".desktop-build/**",
     ".runner-build/**",
     "desktop-dist/**",
+    "artifacts/**",
     "next-env.d.ts",
     // Compiled output for the presence tests.
     ".test-build/**",

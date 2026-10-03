@@ -8,6 +8,7 @@ import { continueWithEmail, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { GoogleCompletion, GoogleSignIn, type PendingGoogleProfile } from "./GoogleAuth";
 
 const MIN_PASSWORD_LENGTH = 10;
 const subscribeToHydration = () => () => {};
@@ -17,7 +18,9 @@ const serverReady = () => false;
 /** Step one collects email + password; step two only appears for new accounts. */
 type Step = "email" | "username";
 
-export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invite" | "closed" }) {
+export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null }: {
+  signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
@@ -37,7 +40,10 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
   const [handle, setHandle] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    const reason = params.get("google_error");
+    return reason === "cancelled" ? "Google sign-in was cancelled. You can try again." : reason === "expired" ? "Google sign-in expired or was already used. Please start again." : reason === "failed" ? "Google sign-in could not be completed. Please try again." : null;
+  });
 
   function done() {
     router.push(next);
@@ -108,7 +114,7 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
           </span>
         </Link>
 
-        {step === "email" ? (
+        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : step === "email" ? (
           <>
             <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
               Your team starts here
@@ -116,6 +122,8 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
             <p className="mt-2 text-[14px] leading-6 text-vs-muted">
               {signupMode === "open" ? "Enter your email and password to sign in or create an account." : signupMode === "closed" ? "Sign in to your existing account. New registrations are currently closed." : invitationToken ? "Sign in or create an account using the email your invitation was sent to." : "Sign in to your account. To join the beta, open the invitation link from your team administrator."}
             </p>
+
+            {googleEnabled && <GoogleSignIn next={next} invitationToken={invitationToken} desktopId={params.get("desktop")} />}
 
             <form onSubmit={submitEmail} className="mt-7 space-y-5">
               <Field label="Email">
@@ -214,7 +222,7 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
         )}
 
         <p className="mt-6 text-center text-[13px] leading-5 text-vs-muted">
-          New accounts need a password of at least {MIN_PASSWORD_LENGTH} characters.
+          {googleProfile || params.get("google") === "desktop-done" ? "Your Google password is never shared with Multiplayer AI." : `Email signups need a password of at least ${MIN_PASSWORD_LENGTH} characters.`}
         </p>
       </div>
       </div>

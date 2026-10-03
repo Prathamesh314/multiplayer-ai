@@ -19,7 +19,16 @@ export async function signupInvitation(email: string, token: unknown, tx?: PoolC
   if (mode === "closed") throw new SignupAdmissionError("New registrations are currently closed. Existing accounts can still sign in.");
   if (typeof token !== "string" || !token.trim()) throw new SignupAdmissionError("Your account has not been created yet. Paste your invitation into the Invitation link or code field to create it.");
   if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) throw new SignupAdmissionError("That invitation is incomplete. Paste the entire invitation link or its 43-character code.");
-  const lookup = async (sql: string) => tx ? (await tx.query(sql, [digest(token), email.trim()])).rows[0] : queryOne<{ id: string }>(sql, [digest(token), email.trim()]);
+  return signupInvitationHash(email, digest(token), tx);
+}
+
+/** Server-only hash from a browser-bound OAuth flow; never accepted from an API body. */
+export async function signupInvitationHash(email: string, tokenHash: Buffer | null, tx?: PoolClient) {
+  const mode = signupMode();
+  if (mode === "open") return null;
+  if (mode === "closed") throw new SignupAdmissionError("New registrations are currently closed. Existing accounts can still sign in.");
+  if (!tokenHash || tokenHash.length !== 32) throw new SignupAdmissionError("Your account has not been created yet. Paste your invitation into the Invitation link or code field to create it.");
+  const lookup = async (sql: string) => tx ? (await tx.query(sql, [tokenHash, email.trim()])).rows[0] : queryOne<{ id: string }>(sql, [tokenHash, email.trim()]);
   const beta = await lookup(`SELECT id FROM signup_invitations WHERE token_hash=$1 AND email=$2
     AND used_at IS NULL AND revoked_at IS NULL AND expires_at>now()${tx ? " FOR UPDATE" : ""}`);
   if (beta) return { kind: "beta" as const, id: beta.id as string };

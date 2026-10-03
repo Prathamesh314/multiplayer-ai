@@ -7,7 +7,7 @@ import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 /** The alphabet the connect_code CHECK allows: no I, O, 0 or 1 to misread. */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-function connectCode(): string {
+export function connectCode(): string {
   const bytes = randomBytes(8);
   let out = "";
   for (let index = 0; index < 8; index += 1) {

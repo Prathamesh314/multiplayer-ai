@@ -55,6 +55,10 @@ jobs:
       - run: npm run test:architecture:postgres
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: npm run test:google-auth
+        env:
+          GOOGLE_AUTH_TEST_POSTGRES: "1"
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:desktop
       - run: node --import tsx --test tests/desktop-downloads.test.mjs
       - run: node --import tsx --test tests/return-path.test.mjs
@@ -63,6 +67,10 @@ jobs:
       - run: npm run test:signup:http
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: npm run test:google-auth:http
+        env:
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+          CHROME_BIN: /usr/bin/google-chrome
       - run: npm run test:team-context:http
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test

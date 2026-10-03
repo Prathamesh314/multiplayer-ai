@@ -53,7 +53,7 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
     "test:runner-workspaces": "npm run test:runner-package && node --import tsx --test tests/runner-workspaces.test.mjs",
-    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:recovery && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit && npm run test:performance && npm run test:live-chat && npm run test:chat-access && npm run test:usage && npm run test:admission && npm run test:release-preflight",
+    "test": "npm run db:test && npm run test:presence && npm run test:repo && npm run test:project-repositories && npm run test:lock && npm run test:prompt && npm run test:knowledge && npm run test:repo-context && npm run test:room-chat && npm run test:tasks && npm run test:memory && npm run test:stream && npm run test:handoff && npm run test:recovery && npm run test:runner-workspaces && npm run test:models && npm run test:storage && npm run test:load:unit && npm run test:performance && npm run test:live-chat && npm run test:chat-access && npm run test:usage && npm run test:admission && npm run test:release-preflight && npm run test:google-auth",
     "test:memory": "node --import tsx tests/memory.test.mjs",
     "eval:memory": "node --import tsx scripts/eval-memory.mjs",
     "memory:reindex": "node scripts/reindex-memory.mjs",
@@ -83,7 +83,9 @@
     "test:admission": "node --import tsx --test tests/signup-admission.test.mjs tests/storage-admission.test.mjs tests/receive-budget.test.mjs tests/invite-beta-cli.test.mjs tests/invitation-link.test.mjs",
     "desktop:preflight": "node desktop/release-preflight.mjs",
     "test:release-preflight": "node --test tests/release-preflight.test.mjs",
-    "test:signup:http": "node --import tsx tests/signup-http.mjs"
+    "test:signup:http": "node --import tsx tests/signup-http.mjs",
+    "test:google-auth": "node --import tsx --test tests/google-auth.test.mjs",
+    "test:google-auth:http": "node --import tsx tests/google-auth-http.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",
@@ -93,6 +95,7 @@
     "bullmq": "^5.34.0",
     "discord.js": "^14.27.0",
     "ioredis": "^5.4.2",
+    "jose": "^6.2.12",
     "next": "16.3.8",
     "node-pty": "^1.1.0",
     "pg": "^8.23.0",
