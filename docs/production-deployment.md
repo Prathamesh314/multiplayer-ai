@@ -44,6 +44,10 @@ publishes host ports (80 and 443); database, Redis, memory, embeddings and both
 web instances are private. Restrict administrative SSH at the host firewall.
 Keep HTTP certificate validation reachable and allow HTTPS to your beta users.
 Caddy saves certificates in persistent volumes and redirects HTTP to HTTPS.
+HTTP/3 stays enabled, but QUIC early data is disabled (`servers { 0rtt off }`)
+so the gateway verifies the client address before forwarding requests. Early
+requests can otherwise lack the IP required by admission checks and produce
+intermittent 403s in browsers. See [Caddy's early-data option](https://caddyserver.com/docs/caddyfile/options#0rtt).
 
 `migrate` runs once after PostgreSQL/Redis health checks and must finish before
 web or worker starts. It exits successfully after applying pending migrations.

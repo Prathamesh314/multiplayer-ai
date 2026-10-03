@@ -46,6 +46,10 @@ async function gateway(ports) {
     '-e', `APP_UPSTREAMS=${ports.map(port => `host.docker.internal:${port}`).join(' ')}`,
     '-v', `${downloads}:/srv/desktop-downloads:ro`,
     '-v', `${resolve('docker/gateway/Caddyfile')}:/etc/caddy/Caddyfile:ro`, 'caddy:2.11.2-alpine'], 8080);
+  const adapted = JSON.parse(await docker(['exec', started.name, 'caddy', 'adapt', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']));
+  for (const server of Object.values(adapted.apps.http.servers)) {
+    assert.equal(server.allow_0rtt, false, 'gateway waits for a verified client address before forwarding to IP-based admission');
+  }
   const base = 'http://'+started.address;
   await eventually(async () => { try { return (await fetch(base+'/health/ready')).status === 404; } catch { return false; } }, 'gateway startup');
   return base;

@@ -1,6 +1,11 @@
 {
     email {$ACME_EMAIL}
     admin off
+    servers {
+        # Rate limiting requires a verified client address. QUIC early data
+        # can arrive before that address is available and cause false 403s.
+        0rtt off
+    }
 }
 
 {$APP_DOMAIN} {
