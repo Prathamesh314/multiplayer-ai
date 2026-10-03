@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 import { continueWithEmail, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
+import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -21,8 +22,7 @@ export function AuthForm({ signupMode = "open" }: { signupMode?: "open" | "invit
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
   // link bounce someone to another origin after they type their password.
-  const rawNext = params.get("next") ?? "/workspace";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/workspace";
+  const next = safeReturnPath(params.get("next"));
 
   const linkedInvitation = params.get("invite") ?? /^\/invite\/([a-zA-Z0-9_-]{43})$/.exec(next)?.[1] ?? "";
   const [pastedInvitation, setPastedInvitation] = useState<{ source: string; value: string } | null>(null);

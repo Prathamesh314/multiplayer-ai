@@ -4,6 +4,7 @@ import { openUserStream } from "../../lib/events/shared-client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchMe, logout } from "../../lib/auth/client";
+import { loginHref } from "../../lib/auth/return-path";
 import type { CurrentUser } from "../../lib/auth/types";
 import {
   acceptInvitation,
@@ -109,7 +110,7 @@ export function OrgWorkspace() {
 
       } catch (cause) {
         if (cancelled) return;
-        if (cause instanceof NotSignedIn) router.replace("/login");
+        if (cause instanceof NotSignedIn) router.replace(loginHref(window.location.pathname + window.location.search));
         else setLoadError(cause instanceof Error ? cause.message : "Could not load your workspace.");
       }
     })();

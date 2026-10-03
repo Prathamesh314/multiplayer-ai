@@ -92,8 +92,11 @@ Initial/reconciliation sync imports the latest **50 messages** per channel.
 ### Desktop authorization
 
 Desktop users open the web workspace from **Connect Slack/Discord**, sign in
-there with their app account, then finish OAuth in that browser. They can return
-to the desktop app and **Refresh status**. This preserves the desktop navigation
+there with their app account, then click **Connect Slack/Discord** in that browser.
+The link preserves their organisation and selected project through sign-in,
+including when they belong to multiple organisations. Finish provider
+authorization and choose channels there, then return to the desktop app and
+**Refresh status**. This preserves the desktop navigation
 sandbox and keeps OAuth state bound to the same signed-in account. Expired,
 replayed, cross-user or cross-provider states cannot complete a connection.
 

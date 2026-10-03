@@ -110,6 +110,7 @@ function ProjectConnections({
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState(0);
+  const [browserProvider, setBrowserProvider] = useState<TeamProvider | null>(null);
   const [picker, setPicker] = useState<{
     provider: TeamProvider;
     channels: SourceChannel[];
@@ -174,11 +175,13 @@ function ProjectConnections({
   const connect = (provider: TeamProvider) =>
     action(provider, async () => {
       if (desktopBridge()?.isDesktop) {
+        const params = new URLSearchParams({ org: orgSlug, connections: project.id });
         window.open(
-          `${location.origin}/workspace?connections=${project.id}`,
+          `${location.origin}/workspace?${params}`,
           "_blank",
           "noopener,noreferrer",
         );
+        setBrowserProvider(provider);
         return;
       }
       const result = await api<{ url: string }>(`${base}/${provider}`, {
@@ -203,6 +206,12 @@ function ProjectConnections({
         <div className="mt-4">
           <ErrorNote>{error}</ErrorNote>
         </div>
+      )}
+      {browserProvider && (
+        <p role="status" className="mt-4 rounded-lg border border-vs-border bg-vs-editor/50 p-3 text-sm leading-6 text-vs-muted">
+          Continue in your browser: sign in if asked, then choose Connect {names[browserProvider]} for this project.
+          After choosing your channels, return here and select Refresh status.
+        </p>
       )}
       {!data ? (
         <p

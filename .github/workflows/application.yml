@@ -57,6 +57,7 @@ jobs:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:desktop
       - run: node --import tsx --test tests/desktop-downloads.test.mjs
+      - run: node --import tsx --test tests/return-path.test.mjs
       - run: npm run test:docker-context
       - run: npm run build -- --webpack
       - run: npm run test:signup:http

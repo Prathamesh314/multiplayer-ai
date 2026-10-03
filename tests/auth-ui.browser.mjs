@@ -79,6 +79,55 @@ try {
   await eventually(()=>evaluate(`location.pathname==='/workspace'`),'existing account login');
   assert.equal(await evaluate(`window.__authRequests[0].invitationToken`),undefined);
   console.log('PASS: existing accounts still sign in without an invitation.');
+
+  // A desktop browser has its own cookie jar. The selected project must survive
+  // signing in there, including when it belongs to a user's second organisation.
+  await send('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{
+    if(!sessionStorage.getItem('connections-flow'))return;
+    const originalFetch=window.fetch.bind(window);
+    const json=(body,status=200)=>Promise.resolve(new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}}));
+    const orgs=['first-team','second-team'].map(slug=>({id:slug,slug,name:slug,myRole:'owner',createdAt:0,image:null}));
+    const project={id:'second-project',orgId:'second-team',slug:'selected-project',name:'Selected project',myRole:'manager',createdAt:0,archivedAt:null};
+    if(sessionStorage.getItem('connections-flow')==='desktop'){
+      window.desktop={isDesktop:true};window.open=url=>{window.__openedConnection=url;return null;};
+    }
+    window.fetch=async(input,init={})=>{
+      const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;
+      if(path==='/api/auth/continue'){
+        const response=await originalFetch(input,init);
+        if(response.ok)sessionStorage.setItem('connections-signed-in','1');return response;
+      }
+      if(path==='/api/orgs')return sessionStorage.getItem('connections-signed-in')?json({orgs}):json({error:'Sign in required'},401);
+      if(path.endsWith('/projects'))return json({projects:path.includes('/second-team/')?[project]:[]});
+      if(path.endsWith('/rooms'))return json({sessions:[]});
+      if(path.endsWith('/usage'))return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
+      if(path.endsWith('/integrations'))return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:sessionStorage.getItem('connections-authorized')?[{id:'fixture-slack',provider:'slack',name:'Selected team Slack',channels:[]}]:[]});
+      if(path.endsWith('/integrations/slack')&&init.method==='POST'){
+        sessionStorage.setItem('connections-authorized','1');sessionStorage.setItem('connections-authorized-path',path);
+        return json({url:location.origin+'/workspace?org=second-team&connections=second-project&connected=slack'});
+      }
+      return originalFetch(input,init);
+    };
+  })()`});
+  await evaluate(`sessionStorage.setItem('connections-flow','desktop');sessionStorage.setItem('connections-signed-in','1')`);
+  await send('Page.navigate',{url:base+'/workspace?org=second-team&connections=second-project'});
+  const selectedProject=()=>evaluate(`document.querySelector('select[aria-label="Project for connections"]')?.value==='second-project'`);
+  await eventually(selectedProject,'selected desktop project');
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);
+  await eventually(()=>evaluate(`!!window.__openedConnection`),'browser handoff');
+  const browserUrl=await evaluate('window.__openedConnection');
+  assert.equal(new URL(browserUrl).searchParams.get('org'),'second-team');
+  assert.equal(new URL(browserUrl).searchParams.get('connections'),'second-project');
+  assert.ok(await evaluate(`document.body.innerText.includes('Continue in your browser')`));
+  await evaluate(`sessionStorage.setItem('connections-flow','browser');sessionStorage.removeItem('connections-signed-in')`);
+  await send('Page.navigate',{url:browserUrl});await ready();
+  assert.equal(await evaluate(`new URL(location.href).searchParams.get('next')`),new URL(browserUrl).pathname+new URL(browserUrl).search);
+  await fill('input[type=email]','existing@example.test');await fill('input[type=password]','test-browser-password');await submit();
+  await eventually(selectedProject,'selected project restored after browser sign-in');
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);
+  await eventually(()=>evaluate(`document.body.innerText.includes('Selected team Slack')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Choose channels')`),'provider callback returns to channel selection');
+  assert.equal(await evaluate(`sessionStorage.getItem('connections-authorized-path')`),'/api/orgs/second-team/projects/selected-project/integrations/slack');
+  console.log('PASS: desktop handoff retains organisation/project through browser login, authorization and channel selection.');
 } finally {
   socket?.close();
   for(const child of [chrome,server])if(child&&child.exitCode===null){child.kill('SIGTERM');await Promise.race([once(child,'exit'),delay(3000)]);}
