@@ -114,6 +114,9 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument",{source:`(${installFixtures.toString()})()`});
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/s/modelroomabc"});
+  // CDP navigation returns before a cold CI browser has created the new body.
+  // Wait for this document and its fixtures before reading page content.
+  await eventually(()=>evaluate('!!document.body && !!window.__model'),"workspace document");
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)})?.click()`);
   await eventually(()=>evaluate('document.body.innerText.includes("Project repositories")'),"empty room");
   assert.equal(await evaluate(`document.querySelector('select[aria-label="Active repository"]').options.length`),1);
@@ -174,4 +177,9 @@ try {
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: unique React panel identities, same-chat draft preservation, cross-chat state isolation, queue routing, empty room, select two repositories, file browsing, switch, repository-scoped publish/sync, desktop/mobile layouts.");
   console.log("Unmocked requests:",await evaluate("window.__model.unknown"));
-} catch (error) { console.log(await debugEvaluate?.(`JSON.stringify({body:document.body.innerText,state:{unknown:window.__model.unknown,requests:window.__model.requests.filter(r=>r.path!=="/api/presence")}})`)); throw error; } finally {socket?.close();chrome.kill();if(server && server.exitCode===null){server.kill();await once(server,"exit").catch(()=>{});}}
+} catch (error) {
+  try { console.log(await debugEvaluate?.(`JSON.stringify({body:document.body?.innerText,state:{unknown:window.__model?.unknown,requests:window.__model?.requests?.filter(r=>r.path!=="/api/presence")}})`)); }
+  catch { console.log("Browser diagnostics unavailable."); }
+  console.log(serverOutput.slice(-4000));
+  throw error;
+} finally {socket?.close();chrome.kill();if(server && server.exitCode===null){server.kill();await once(server,"exit").catch(()=>{});}}
