@@ -247,3 +247,63 @@ body {
   .room-sidebar, .room-explorer-panel { width: 100% !important; max-width: none; flex: 1; }
   .room-main { min-width: 0; }
 }
+
+/* Session chrome follows the desktop reference without changing other pages. */
+.session-workspace {
+  color-scheme: dark;
+  --vs-editor: #141210;
+  --vs-panel: #1c1a18;
+  --vs-chrome: #211f1c;
+  --vs-border: #383530;
+  --vs-fg: #e5e2df;
+  --vs-muted: #a8a39d;
+  --vs-hover: #ffffff09;
+  --vs-active: #2c2926;
+  --vs-accent: #d7bba9;
+  --vs-accent-fg: #211a15;
+  --vs-terminal: #141210;
+  --vs-terminal-head: #181613;
+  --syn-plain: #e7e8ea;
+  --syn-keyword: #6ba7e0;
+  --syn-control: #c58fd6;
+  --syn-string: #d18a5c;
+  --syn-number: #8fbf8a;
+  --syn-comment: #85817a;
+  --syn-function: #d9c67a;
+  --syn-type: #5fbfae;
+  --syn-variable: #8fc4e8;
+  --syn-punct: #9a9ba1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+.session-workspace .room-toolbar { min-height: 40px; padding: 4px 12px; gap: 8px; }
+.session-workspace .room-toolbar-actions { width: auto; gap: 4px; }
+.session-workspace .room-toolbar-actions > button { min-height: 26px; font-size: 12px; padding: 4px 8px; border-radius: 5px; }
+.session-workspace .room-sidebar { display: flex; width: clamp(190px, 14vw, 270px); max-width: 24%; flex: none; }
+.session-workspace .room-main { display: flex; min-width: 360px; }
+.session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }
+.session-workspace .session-panels { min-height: 0; }
+.session-workspace .ai-chat-header { padding: 8px 24px; gap: 8px; }
+.session-workspace .ai-chat-header h2 { font-size: 13px; font-weight: 400; }
+.session-workspace .ai-chat-header > div:first-child > div { margin-top: 3px; font-size: 11px; }
+.session-workspace .ai-composer { padding: 12px 28px 18px; }
+.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 9px; background: #211f1c; }
+.session-workspace .ai-composer textarea { font-size: 14px; min-height: 100px; }
+.session-workspace .ai-composer-footer { border-top: 0; margin-top: 16px; }
+.session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 5px; }
+.session-workspace .human-message { background: #2b201d; }
+.session-workspace .assistant-message > span { display: none; }
+.session-workspace .assistant-message > div > header { margin-bottom: 10px; }
+.session-workspace .assistant-message > div > header > span:first-child { font-size: 12px; font-weight: 400; color: var(--vs-muted); }
+.session-workspace .conversation-markdown h1, .session-workspace .conversation-markdown h2 { font-weight: 700; margin-top: 28px; margin-bottom: 16px; }
+.session-workspace .conversation-markdown p { margin-bottom: 16px; }
+.session-workspace .file-actions { white-space: nowrap; }
+.session-workspace .room-editor-layout > [role="tablist"] > div { border-right: 0; border-top: 0; }
+.session-workspace .room-editor-layout > [role="tablist"] > div:has([aria-selected="true"]) { border-bottom: 2px solid var(--vs-accent); background: transparent; }
+@media (max-width: 1023px) {
+  .session-workspace .room-sidebar { width: 200px !important; max-width: none; flex: 0 0 200px; }
+  .session-workspace .room-explorer-panel { width: 350px !important; max-width: none; flex: 0 0 350px; }
+  .session-workspace .room-main { flex: 1 0 360px; }
+  .session-workspace .ai-composer { padding: 12px; }
+  .session-workspace .conversation-transcript { padding-inline: 20px; }
+}

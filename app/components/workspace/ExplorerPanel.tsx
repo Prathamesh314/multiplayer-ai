@@ -11,9 +11,9 @@ import type { ScanResult } from "../../lib/types";
 import { AlertIcon, ChevronIcon, FileIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { baseName } from "./EditorArea";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
-import { PanelHeader } from "./TeamChatPanel";
 
 type ExplorerPanelProps = {
+  actionsRef?: (node: HTMLDivElement | null) => void;
   result: ScanResult;
   activePath: string | null;
   scanning: boolean;
@@ -34,6 +34,7 @@ type ExplorerPanelProps = {
 };
 
 export function ExplorerPanel({
+  actionsRef,
   result,
   activePath,
   scanning,
@@ -91,31 +92,9 @@ export function ExplorerPanel({
   }, [view, result.git.commit, loadChanges]);
 
   return (
-    <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      <PanelHeader title="Explorer">
-        {view === "files" && onRefresh && <button type="button" aria-label="Refresh files" disabled={scanning} onClick={onRefresh} className="rounded px-1.5 py-0.5 text-[11px] text-vs-muted hover:bg-vs-hover disabled:opacity-50">Refresh</button>}
-        {view === "files" && (
-          <button
-            type="button"
-            onClick={() => setExpanded(new Set())}
-            className="rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            Collapse
-          </button>
-        )}
-        {view === "changes" && (
-          <button
-            type="button"
-            onClick={() => void loadChanges()}
-            className="rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            Refresh
-          </button>
-        )}
-      </PanelHeader>
-
+    <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       {sessionId && (
-        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-1.5">
+        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-2 flex-wrap">
           <TabButton active={view === "files"} onClick={() => setView("files")}>
             All files
           </TabButton>
@@ -127,6 +106,8 @@ export function ExplorerPanel({
               </span>
             )}
           </TabButton>
+          {onRefresh && <button type="button" onClick={view === "changes" ? () => void loadChanges() : onRefresh} disabled={scanning || loadingChanges} aria-label="Refresh files" title="Refresh files" className="rounded px-1 text-vs-muted hover:bg-vs-hover">↻</button>}
+          <div ref={actionsRef} className="file-actions ml-auto flex items-center gap-1" />
         </div>
       )}
 
@@ -207,6 +188,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`flex items-center rounded px-2 py-1 text-sm transition ${
         active ? "bg-vs-hover font-medium text-vs-fg" : "text-vs-muted hover:text-vs-fg"
       }`}
@@ -254,6 +236,7 @@ function ChangesList({
 
   return (
     <div className="vs-scroll min-h-0 flex-1 overflow-auto py-1">
+      <p className="border-b border-vs-border px-3 pb-2 text-sm text-vs-muted">{changes.length} files changed</p>
       {changes.map((change) => {
         const meta = STATUS_META[change.status];
         const deleted = change.status === "D";

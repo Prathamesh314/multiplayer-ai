@@ -9,13 +9,14 @@ import { Modal } from "../ui/Modal";
 type State = HandoffState & { run: AgentRun };
 const button = "rounded-lg border border-vs-border px-3 py-1.5 text-xs font-medium transition hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50";
 
-export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, children }: {
+export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, children, compact = false }: {
   run: AgentRun;
   userId: string | null;
   canEdit: boolean;
   isOwner: boolean;
   onUpdated: (run: AgentRun) => void;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   const [state, setState] = useState<State | null>(null);
   const [open, setOpen] = useState(false);
@@ -82,19 +83,7 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, childre
   const active = current.status === "running" || current.status === "queued";
   const eligible = pending && canEdit && !mine && (!pending.toUserId || pending.toUserId === userId);
   const version = current.controlVersion;
-  return (
-    <section aria-label="Chat control" className="shrink-0 border-b border-vs-border px-4 pb-2 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-vs-success" : "bg-vs-muted"}`} />
-        <span className="min-w-0 flex-1 truncate text-vs-muted" title={`${current.driverName} is driving${active ? " · Turn in progress" : ""}`}>
-          {mine ? "You are driving" : `${current.driverName} is driving`}{active && <span className="ml-2 text-vs-success">Working</span>}
-        </span>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {children}
-          <button className="rounded-md px-2 py-1.5 font-medium text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" onClick={() => setOpen(true)}>{pending ? "View handoff" : mine && canEdit ? "Hand off" : "Handoff history"}</button>
-        </div>
-      </div>
-      {pending && <div className="mt-2 space-y-2 rounded-lg border border-vs-accent/25 bg-vs-panel p-3">
+  const pendingControls = pending && <div className="mt-2 space-y-2 rounded-lg border border-vs-accent/25 bg-vs-panel p-3">
         <p>{pending.fromName} offered control to <strong>{pending.toName ?? "any room editor"}</strong>.</p>
         {pending.note && <p className="whitespace-pre-wrap break-words text-vs-muted">{pending.note}</p>}
         {active && <p className="text-vs-muted">Acceptance unlocks when the current turn safely finishes.</p>}
@@ -103,7 +92,21 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, childre
           {eligible && pending.toUserId && <button className={button} disabled={busy} onClick={() => void act({ action: "decline", handoffId: pending.id, version })}>Decline</button>}
           {mine && <button className={button} disabled={busy} onClick={() => void act({ action: "cancel", handoffId: pending.id, version })}>Cancel offer</button>}
         </div>
-      </div>}
+      </div>;
+  return (
+    <section title={`${current.driverName} is driving`} aria-label="Chat control" className={compact ? "text-xs" : "shrink-0 border-b border-vs-border px-4 pb-2 text-xs"}>
+      <div className="flex flex-wrap items-center gap-2">
+        {!compact && <><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-vs-success" : "bg-vs-muted"}`} />
+        <span className="min-w-0 flex-1 truncate text-vs-muted" title={`${current.driverName} is driving${active ? " · Turn in progress" : ""}`}>
+          {mine ? "You are driving" : `${current.driverName} is driving`}{active && <span className="ml-2 text-vs-success">Working</span>}
+        </span>
+        </>}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {children}
+          <button className="rounded-md px-2 py-1.5 font-medium text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" onClick={() => setOpen(true)}>{compact ? "Handoff" : pending ? "View handoff" : mine && canEdit ? "Hand off" : "Handoff history"}</button>
+        </div>
+      </div>
+      {!compact && pendingControls}
       {error && <p role="alert" className="mt-2 text-vs-danger">{error}</p>}
       {open && <Modal title="Hand off this chat" description="Transfer control between turns. Accepting never starts an agent or spends compute." onClose={() => { if (!busy) setOpen(false); }}>
         {current.controlVersion > 0 && mine && <p className="text-sm text-vs-muted">You have control of this chat. Review the conversation and any uploaded checkpoint before sending your next prompt.</p>}
@@ -120,7 +123,7 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, childre
           <p className="text-xs text-vs-muted">The offer expires in one hour. Access is not granted by a handoff. Only confirmed repository state is transferred.</p>
           <button className="rounded-lg bg-vs-accent px-3 py-2 text-sm font-medium text-vs-accent-fg hover:opacity-90 disabled:opacity-50" disabled={busy || !state} type="submit">{busy ? "Creating offer…" : "Offer handoff"}</button>
         </form>}
-        {pending && <p className="text-sm text-vs-muted">An offer is waiting for {pending.toName ?? "an eligible editor"}. Close this dialog to accept, decline, or cancel it.</p>}
+        {pendingControls}
         <div className="space-y-3 border-t border-vs-border pt-3">
           <h3 className="text-sm font-semibold">Recent handoffs</h3>
           {state?.offers.length === 0 && <p className="text-sm text-vs-muted">No handoffs yet.</p>}

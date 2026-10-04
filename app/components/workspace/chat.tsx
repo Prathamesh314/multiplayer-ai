@@ -5,7 +5,7 @@ import { assignmentDraft } from "../../lib/tasks/composer";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
-import { SendIcon } from "../icons";
+import { PlusIcon, SendIcon } from "../icons";
 
 export type ChatMessage = {
   id: string;
@@ -143,6 +143,9 @@ export function Composer({
   people?: MentionPerson[];
   onAssignTask?: (person: MentionPerson, body: string) => Promise<void>;
 }) {
+  const attachmentInput = useRef<HTMLInputElement>(null);
+  const [attachmentError, setAttachmentError] = useState("");
+  const [readingAttachment, setReadingAttachment] = useState(false);
   const [draft, setDraft] = useState("");
   const [mention, setMention] = useState<MentionState | null>(null);
   const [highlight, setHighlight] = useState(0);
@@ -277,6 +280,7 @@ export function Composer({
   }
 
   async function send() {
+    if (readingAttachment) return;
     if (assignmentBusy.current) return;
     if (assignee && onAssignTask) {
       if (!taskBody) return;
@@ -390,7 +394,7 @@ export function Composer({
     <button
       type="button"
       onClick={send}
-      disabled={assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
+      disabled={readingAttachment || assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
       aria-label={assignee ? "Assign task" : "Send message"}
       className={`flex h-9 shrink-0 items-center justify-center rounded-xl bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-9"}`}
     >
@@ -404,13 +408,31 @@ export function Composer({
         {assignee && <div className="mb-2 flex items-center gap-2 text-xs text-vs-muted"><span>Task for <strong className="text-vs-fg">@{assignee.handle}</strong> · appears in their task inbox</span><button type="button" disabled={assigning} className="ml-auto underline" onClick={() => setSelectedPerson(null)}>Cancel assignment</button></div>}
         {taskMessage && <p role="status" className="mb-2 text-xs text-vs-success">{taskMessage}</p>}
         {taskError && <p role="alert" className="mb-2 text-xs text-vs-danger">{taskError}</p>}
+        {attachmentError && <p role="alert" className="mb-2 text-xs text-vs-danger">{attachmentError}</p>}
+        {tall && <input ref={attachmentInput} type="file" multiple className="hidden" aria-label="Attach text files" onChange={async event => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          setReadingAttachment(true); setAttachmentError("");
+          try {
+            const contents = await Promise.all(files.map(async file => {
+              if (file.size > 100_000) throw new Error(`${file.name} exceeds the 100 KB attachment limit.`);
+              const text = await file.text();
+              if (text.includes("\0") || text.includes("�")) throw new Error(`${file.name} is not a supported UTF-8 text file.`);
+              return `Attached file: ${file.name}\n\n${text}\nEnd of attachment: ${file.name}`;
+            }));
+            setDraft(previous => [previous, ...contents].filter(Boolean).join("\n\n"));
+            taRef.current?.focus();
+          } catch (cause) { setAttachmentError(cause instanceof Error ? cause.message : "Could not read attachment."); }
+          finally { setReadingAttachment(false); }
+        }} />}
         {popover}
         {footer ? (
           <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
             <div className="flex">{textarea}</div>
             <div className="ai-composer-footer mt-3 flex items-center gap-1 border-t border-vs-border pt-2">
               {footer}
-              <div className="ml-auto shrink-0 self-end">{sendButton}</div>
+              {tall && <button type="button" title="Attach text or code files (up to 100 KB each)" aria-label="Attach files" disabled={readingAttachment || assigning} onClick={() => attachmentInput.current?.click()} className="ml-auto rounded p-1.5 text-vs-muted hover:bg-vs-hover"><PlusIcon className="h-4 w-4" /></button>}
+              <div className="shrink-0 self-end">{sendButton}</div>
             </div>
           </div>
         ) : (

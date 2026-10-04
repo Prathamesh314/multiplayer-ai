@@ -10,7 +10,7 @@ import remarkGfm from "remark-gfm";
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
-    <div className="text-[15px] leading-[1.7] text-vs-fg">
+    <div className="conversation-markdown text-[14px] leading-[1.75] text-vs-fg">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -22,10 +22,10 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
             <h2 className="mb-2 mt-4 text-[18px] font-semibold first:mt-0">{children}</h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mb-1.5 mt-3 text-[16px] font-semibold first:mt-0">{children}</h3>
+            <h3 className="mb-1.5 mt-3 text-[16px] font-normal first:mt-0">{children}</h3>
           ),
           h4: ({ children }) => (
-            <h4 className="mb-1.5 mt-3 text-[14px] font-semibold first:mt-0">{children}</h4>
+            <h4 className="mb-1.5 mt-3 text-[14px] font-normal first:mt-0">{children}</h4>
           ),
           ul: ({ children }) => (
             <ul className="my-2 list-disc space-y-1 pl-5 marker:text-vs-muted">{children}</ul>
@@ -57,7 +57,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
             const isBlock = !!className || content.includes("\n");
             if (isBlock) return <code className={className}>{children}</code>;
             return (
-              <code className="rounded bg-vs-hover px-1 py-0.5 font-mono text-[13px] text-vs-fg">
+              <code className="rounded border border-vs-border bg-vs-hover px-1 py-0.5 font-mono text-[13px] text-vs-fg">
                 {children}
               </code>
             );

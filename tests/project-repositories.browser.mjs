@@ -73,13 +73,14 @@ function installFixtures() {
         if(init.method==="POST") {const input={...JSON.parse(init.body),runId:run.id,status:"queued",createdAt:new Date().toISOString()};inputs.push(input);return json({input});}
         return json({inputs});
       }
-      return json({run,messages:[]});
+      return json({run,messages:[{role:"user",body:"Review the repository and explain how the session works."},{role:"assistant",body:"## Session workspace\n\nThe repository is ready. Use `executeAgentRun` to start an agent turn.\n\n### Next steps\n\nSelect a file to inspect its contents, or continue the conversation."}]});
     }
     if(path==="/api/tasks")return json({tasks:[],members:[],hasMore:false});
     if(path.endsWith("/handoffs"))return json({offers:[]});
     if(path.endsWith("/messages"))return json({messages:[]});
     if(path.endsWith("/forkable-runs"))return json({runs:[]});
     if(path.endsWith("/mention-targets"))return json({rooms:[{sessionId:room.id,name:room.name,chats:state.runs.map(run=>({runId:run.id,title:run.title}))}]});
+    if(path === "/api/terminal")return json({enabled:false,reason:"Terminal disabled in browser fixture"});
     if(path === "/api/ai/agents")return json({agents:[],canRun:false,reason:"Connect a runner"});
     if(path === "/api/presence")return json({intervalMs:20000,online:["alice"]});
     if(path === "/api/runner/devices")return json({devices:[]});
@@ -118,25 +119,26 @@ try {
   // Wait for this document and its fixtures before reading page content.
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"workspace document");
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)})?.click()`);
-  await eventually(()=>evaluate('document.body.innerText.includes("Project repositories")'),"empty room");
-  assert.equal(await evaluate(`document.querySelector('select[aria-label="Active repository"]').options.length`),1);
+  await eventually(()=>evaluate('document.body.innerText.includes("Add Project")'),"empty room");
+  await button("Add Project");
   await button("Project repositories");
-  await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("frontend")'),"repository catalog");
+  await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("frontend"))'),"repository catalog");
   await button("Add to room");
   await eventually(()=>evaluate('document.body.innerText.includes("frontend.txt")'),"first repository without primary");
-  assert.equal(await evaluate(`document.querySelector('select[aria-label="Active repository"]').value`),"frontendabcd");
+  assert.equal(await evaluate(`document.querySelectorAll('button[aria-label="New chat in frontend"]').length`),1);
+  await button("Add Project");
   await button("Project repositories");
-  await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Already in this room")'),"selected repository");
+  await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("Already in this room"))'),"selected repository");
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.trim()==='Add to room' && !b.disabled).click()`);
   await eventually(()=>evaluate('document.body.innerText.includes("backend.txt")'),"second repository");
-  assert.equal(await evaluate(`document.querySelector('select[aria-label="Active repository"]').options.length`),2);
+  assert.equal(await evaluate(`document.querySelectorAll('button[aria-label^="New chat in"]').length`),2);
   await button("Publish");
   await eventually(()=>evaluate('window.__model.requests.some(r=>r.path.endsWith("/publish"))'),"publish selected repository");
   assert.equal(await evaluate('window.__model.requests.find(r=>r.path.endsWith("/publish")).search'),"?repoId=backendabcde");
   await button("Get latest");
   await eventually(()=>evaluate('window.__model.requests.some(r=>r.path.endsWith("/sync"))'),"sync selected repository");
   assert.equal(await evaluate('window.__model.requests.find(r=>r.path.endsWith("/sync")).search'),"?repoId=backendabcde");
-  await evaluate(`const picker=document.querySelector('select[aria-label="Active repository"]');picker.value='frontendabcd';picker.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await click('button[aria-label="New chat in frontend"]');
   await eventually(()=>evaluate('document.body.innerText.includes("frontend.txt")'),"switch repositories");
   // Two separate panels for one chat must not share a sibling key. Development
   // React reports this through console.error, not Runtime.exceptionThrown.
@@ -147,18 +149,18 @@ try {
   assert.deepEqual(keyWarnings,[],"opening a chat has no React key warnings");
   const queue='textarea[aria-label="Message working agent"]';
   await type(queue,"Keep this unsent instruction in chat A");
-  await button("Hand off");
+  await button("Handoff");
   await eventually(()=>evaluate('!!document.querySelector("dialog textarea")'),"handoff form");
   await type("dialog textarea","Finish the review before publishing");
   await evaluate('window.__model.runs[0].driverName="Alice refreshed";window.__model.emit("run.control")');
-  await eventually(()=>evaluate(`!!document.querySelector('[aria-label="Chat control"] [title^="Alice refreshed is driving"]')`),"same-chat control refresh");
+  await eventually(()=>evaluate(`!!document.querySelector('[aria-label="Chat control"][title^="Alice refreshed is driving"]')`),"same-chat control refresh");
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(queue)}).value`),"Keep this unsent instruction in chat A","queue draft survives same-chat control refresh");
   assert.equal(await evaluate('document.querySelector("dialog textarea").value'),"Finish the review before publishing","handoff draft survives same-chat refresh");
   await click('button[aria-label="Close Hand off this chat"]');
   await click('button[title^="Queue context B ·"]');
   await eventually(()=>evaluate('document.querySelector(".ai-chat-header h2")?.textContent==="Queue context B"'),"second AI chat");
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(queue)}).value`),"","another chat does not inherit the queue draft");
-  await button("Hand off");
+  await button("Handoff");
   await eventually(()=>evaluate('!!document.querySelector("dialog textarea")'),"second handoff form");
   assert.equal(await evaluate('document.querySelector("dialog textarea").value'),"","another chat does not inherit the handoff draft");
   await click('button[aria-label="Close Hand off this chat"]');
@@ -168,6 +170,16 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat control"]').length`),1);
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat message queue"]').length`),1);
   assert.deepEqual(keyWarnings,[],"chat refresh and switching have no React key warnings");
+  assert.deepEqual(await evaluate(`Array.from(document.querySelector('.file-actions').querySelectorAll('button')).map(button=>button.textContent.trim())`), ["Assign Tasks", "Handoff", "Review"]);
+  await button("Assign Tasks");
+  await eventually(()=>evaluate(`!!document.querySelector('dialog[aria-label="Assign Tasks"]')`),"task assignment dialog");
+  await click('button[aria-label="Close Assign Tasks"]');
+  assert.equal(await evaluate(`document.querySelector('.human-message')?.textContent`),"Review the repository and explain how the session works.");
+  assert.ok(await evaluate(`document.querySelector('.conversation-markdown code')?.textContent.includes('executeAgentRun')`));
+  const widthBefore = await evaluate(`document.querySelector('.room-sidebar').getBoundingClientRect().width`);
+  await evaluate(`document.querySelector('[aria-label="Resize workspace panel"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
+  await delay(100);
+  assert.equal(await evaluate(`document.querySelector('.room-sidebar').getBoundingClientRect().width`),widthBefore+24);
   for (const width of [1440,390]) {
     await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
     assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),`no page overflow at ${width}`);

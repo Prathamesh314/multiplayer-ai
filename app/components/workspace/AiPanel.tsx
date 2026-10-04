@@ -1,6 +1,8 @@
 "use client";
 import { openUserStream } from "../../lib/events/shared-client";
 
+import { createPortal } from "react-dom";
+import { Modal } from "../ui/Modal";
 import { ModelPicker } from "./ModelPicker";
 
 import { useEffect, useRef, useState } from "react";
@@ -40,6 +42,8 @@ import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
 
 type AiPanelProps = {
+  actionsHost?: HTMLDivElement | null;
+  onShowConversation?: () => void;
   sessionId: string;
   /** False for viewers: running an agent edits files. */
   canRun: boolean;
@@ -111,6 +115,8 @@ type Turn = {
 };
 
 export function AiPanel({
+  actionsHost,
+  onShowConversation,
   sessionId,
   canRun,
   isOwner = false,
@@ -130,6 +136,8 @@ export function AiPanel({
   importingRepo,
   onClose,
 }: AiPanelProps) {
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [planMode, setPlanMode] = useState(false);
   const composer = useRef<ComposerHandle>(null);
   const [taskRevision, setTaskRevision] = useState(0);
   const [taskRoster, setTaskRoster] = useState<{ sessionId: string; people: MentionPerson[] } | null>(null);
@@ -251,6 +259,7 @@ export function AiPanel({
               id: uid(),
               role,
               text: message.body,
+              activities: message.role === "tool" ? [message.body] : undefined,
               author: message.authorName ?? null,
               agentName: role === "agent" ? agentName : null,
             };
@@ -500,7 +509,7 @@ export function AiPanel({
       {
         sessionId,
         agentId,
-        prompt,
+        prompt: planMode ? `Plan mode: Analyze the request and propose a plan. Do not edit files or execute commands that change state. Wait for approval before implementing.\n\n${prompt}` : prompt,
         runId: continuing,
         controlVersion: entered?.controlVersion,
         model,
@@ -711,6 +720,8 @@ export function AiPanel({
             />
           </>
         )}
+        <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover aria-pressed:text-vs-accent disabled:opacity-40">ϟ Fast</button>
+        <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover aria-pressed:text-vs-accent">Plan</button>
         {!entered && forkableRuns.length > 0 && (
           <>
             <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
@@ -811,10 +822,16 @@ export function AiPanel({
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
         </div>
       </header>
-      {/* These sibling panels reset per chat, but each needs its own identity. */}
-      {entered && <HandoffPanel key={`handoff-${entered.id}`} run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)}>
-        <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />
-      </HandoffPanel>}
+      {actionsHost && createPortal(<>
+        <button type="button" disabled={!canRun} onClick={() => setAssignOpen(true)} className="rounded px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover disabled:opacity-40">Assign Tasks</button>
+        {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
+        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Draft a review request in the conversation" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Review</button>
+      </>, actionsHost)}
+      {assignOpen && <Modal title="Assign Tasks" description="Type @ and choose a teammate, then describe the task." onClose={() => setAssignOpen(false)}>
+        <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
+        {taskPeople.length === 0 && <p className="text-sm text-vs-muted">No teammates are available to assign. Invite a teammate to this room first.</p>}
+      </Modal>}
+      {entered && <div className="px-4 py-1 text-xs text-vs-muted"><WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} /></div>}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
@@ -950,7 +967,7 @@ function AgentSelector({
           type="button"
           onClick={onRecheck}
           disabled={refreshing}
-          className="text-[11px] uppercase tracking-wide text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
+          className="text-[13px] text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
         >
           {refreshing ? "Checking…" : "Recheck"}
         </button>
@@ -1109,7 +1126,7 @@ function ConnectionCard({
           <button
             type="button"
             onClick={onDismiss}
-            className="text-[11px] uppercase tracking-wide text-vs-muted transition hover:text-vs-fg"
+            className="text-[13px] text-vs-muted transition hover:text-vs-fg"
           >
             Hide
           </button>
@@ -1209,7 +1226,8 @@ function Conversation({ turns }: { turns: Turn[] }) {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-5 py-6">
+    <div className="conversation-transcript mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-5">
+      <details className="text-sm text-vs-muted"><summary className="cursor-pointer">{turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0)} tool calls · {visible.filter(turn => turn.role !== "system").length} messages</summary><p className="mt-2 text-xs">Tool calls reflect available activity in this conversation. Expand a response’s steps to inspect them.</p></details>
       {visible.map((turn) =>
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />
@@ -1273,7 +1291,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
     return (
       <div className="flex flex-col items-end gap-1">
         {author !== "You" && <span className="pr-1 text-[12px] text-vs-muted">{author}</span>}
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-vs-accent px-3.5 py-2 text-[15px] leading-6 text-vs-accent-fg">
+        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-[14px] leading-[1.6] text-vs-fg">
           {turn.text}
         </div>
       </div>
@@ -1284,7 +1302,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
   const hasTrace = !!turn.thinking?.trim() || (turn.activities?.length ?? 0) > 0;
 
   return (
-    <article className="flex min-w-0 gap-3">
+    <article className="assistant-message flex min-w-0 gap-3">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/15 text-vs-accent">
         <SparkleIcon className="h-4 w-4" />
       </span>
@@ -1370,11 +1388,11 @@ function ActivityTrace({
   const trace = thinking?.trim() ?? "";
 
   return (
-    <div className="mb-2 rounded-md border border-vs-border bg-vs-hover/30">
+    <div className="mb-3 text-vs-muted">
       <button
         type="button"
         onClick={() => setUserOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-[11px] uppercase tracking-wide text-vs-muted transition hover:text-vs-fg"
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[13px] text-vs-muted transition hover:text-vs-fg"
       >
         {live ? (
           <SpinnerIcon className="h-3 w-3 text-vs-accent" />
@@ -1382,7 +1400,7 @@ function ActivityTrace({
           <SparkleIcon className="h-3 w-3 text-vs-muted" />
         )}
         <span>{live ? "Working" : "Thought & steps"}</span>
-        {steps.length > 0 && <span className="text-vs-muted/70">· {steps.length} steps</span>}
+        {steps.length > 0 && <span className="text-vs-muted/70">· {steps.length} tool calls</span>}
         <span className="ml-auto">{open ? "▾" : "▸"}</span>
       </button>
       {open && (

@@ -1,13 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
 import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
-import { colorOf, initialsOf } from "../../lib/people";
 import type { ChatMessage, SessionMember } from "../../lib/session/types";
 import { CheckIcon, ChevronIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
-import { TeamChatPanel } from "./TeamChatPanel";
 
 type RoomSidebarProps = {
   sessionId: string;
@@ -26,166 +24,23 @@ type RoomSidebarProps = {
   repos: { id: string; label: string }[];
   enteredRunId: string | null;
   onEnter: (run: AgentRun) => void;
-  onNewRun: () => void;
+  onNewRun: (repoId: string | null) => void;
+  onAddProject: () => void;
+  importing?: boolean;
+  canAdd?: boolean;
   onFork: (run: AgentRun) => void;
   /** Reload the runs after one is renamed. */
   onRenamed: () => void;
 };
 
-/**
- * The room's people column: the team chat and the agent runs, each a
- * collapsible section. Runs are browsed by team member — a tab per person,
- * their sessions beneath it — and entering one opens it in the main chat.
- */
-export function RoomSidebar({
-  sessionId,
-  roomName,
-  members,
-  myUserId,
-  incoming,
-  runs,
-  repos,
-  enteredRunId,
-  onEnter,
-  onNewRun,
-  onFork,
-  onRenamed,
-}: RoomSidebarProps) {
-  // Chat is hidden for now; flip to re-enable the team-chat section.
-  const SHOW_CHAT = false;
-  const [chatOpen, setChatOpen] = useState(true);
-  const [runsOpen, setRunsOpen] = useState(true);
-
-  return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-vs-panel">
-      {SHOW_CHAT && (
-        <>
-          <SectionHeader title="Chat" open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
-          {chatOpen && (
-            <div className="flex min-h-0 flex-1 flex-col border-b border-vs-border">
-              <TeamChatPanel sessionId={sessionId} members={members} incoming={incoming} embedded />
-            </div>
-          )}
-        </>
-      )}
-
-      <SectionHeader
-        title="AI chats"
-        count={runs.filter((run) => !run.archivedAt).length}
-        open={runsOpen}
-        onToggle={() => setRunsOpen((v) => !v)}
-      />
-      {runsOpen && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <AgentRunsBrowser
-            sessionId={sessionId}
-            roomName={roomName}
-            members={members}
-            myUserId={myUserId}
-            runs={runs}
-            repos={repos}
-            enteredRunId={enteredRunId}
-            onEnter={onEnter}
-            onNewRun={onNewRun}
-            onFork={onFork}
-            onRenamed={onRenamed}
-          />
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function SectionHeader({
-  title,
-  count,
-  open,
-  onToggle,
-  action,
-}: {
-  title: string;
-  count?: number;
-  open: boolean;
-  onToggle: () => void;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-vs-border bg-vs-chrome px-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex flex-1 items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
-      >
-        <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
-        {title}
-        {count !== undefined && count > 0 && <span className="text-vs-muted/70">{count}</span>}
-      </button>
-      {open && action}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Runs browsed by person
-// ---------------------------------------------------------------------------
-
-type Person = { id: string; name: string; isSelf: boolean };
-
-function AgentRunsBrowser({
-  sessionId,
-  roomName,
-  members,
-  myUserId,
-  runs,
-  repos,
-  enteredRunId,
-  onEnter,
-  onNewRun,
-  onFork,
-  onRenamed,
-}: {
-  sessionId: string;
-  roomName: string;
-  members: SessionMember[];
-  myUserId: string | null;
-  runs: AgentRun[];
-  repos: { id: string; label: string }[];
-  enteredRunId: string | null;
-  onEnter: (run: AgentRun) => void;
-  onNewRun: () => void;
-  onFork: (run: AgentRun) => void;
-  onRenamed: () => void;
-}) {
-  // Prefer the resolved id; fall back to the roster's isSelf flag if it hasn't
-  // loaded yet. A public-room viewer has no roster row, so the flag alone misses.
-  const myId = myUserId ?? members.find((member) => member.isSelf)?.userId ?? null;
+/** Repository-first navigation, backed by the room's live runs. */
+export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repos, enteredRunId, onEnter, onNewRun, onFork, onRenamed, onAddProject, importing, canAdd = true }: RoomSidebarProps) {
+  const myId = myUserId ?? members.find(member => member.isSelf)?.userId ?? null;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Sub-group a person's chats per repo when the room works on more than one
-  // codebase; with a single repo the list stays flat, exactly as before. A
-  // chat whose repo row was removed still labels its group rather than being
-  // lumped into the room's own repo.
-  const multiRepo = repos.length > 1 || runs.some((run) => run.repoId !== null);
-  const repoLabelOf = (repoId: string | null): string =>
-    repos.find((repo) => repo.id === (repoId ?? ""))?.label ?? "Removed repo";
-  const groupByRepo = (list: AgentRun[]): { key: string; label: string; runs: AgentRun[] }[] => {
-    const grouped = new Map<string, AgentRun[]>();
-    for (const run of list) {
-      const key = run.repoId ?? "";
-      const bucket = grouped.get(key) ?? [];
-      bucket.push(run);
-      grouped.set(key, bucket);
-    }
-    // Picker order first — the room's own repo leads — then any stragglers.
-    const keys = [...repos.map((repo) => repo.id), ...grouped.keys()].filter(
-      (key, index, all) => grouped.has(key) && all.indexOf(key) === index,
-    );
-    return keys.map((key) => ({ key, label: repoLabelOf(key || null), runs: grouped.get(key)! }));
-  };
-
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() => new Set());
   // Copy an `@room/<run-id>` path to reference this chat from another room's
   // composer — the id is what the server resolves, the name is just readable.
   function copyPath(run: AgentRun) {
@@ -198,16 +53,6 @@ function AgentRunsBrowser({
       })
       .catch(() => {});
   }
-  // Folders the viewer has toggled away from their default (mine defaults open,
-  // others closed). Tracking flips rather than absolute open-state means the
-  // default reacts correctly once `myId` resolves, with no seeding effect.
-  const [flipped, setFlipped] = useState<Set<string>>(() => new Set());
-  const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() => new Set());
-  const isFolderOpen = (personId: string) => {
-    const defaultOpen = personId === myId;
-    return flipped.has(personId) ? !defaultOpen : defaultOpen;
-  };
-
   async function commitRename(run: AgentRun) {
     const title = draft.trim();
     setEditingId(null);
@@ -236,61 +81,6 @@ function AgentRunsBrowser({
     else next.add(id);
     return next;
   };
-
-  // A folder for every team member, plus anyone who has run an agent but is no
-  // longer in the roster. Me first, then most-recently-active.
-  const people = useMemo<Person[]>(() => {
-    const map = new Map<string, Person>();
-    for (const member of members)
-      map.set(member.userId, {
-        id: member.userId,
-        name: member.displayName,
-        isSelf: member.userId === myId,
-      });
-    for (const run of runs)
-      if (!map.has(run.driverUserId))
-        // A run-starter with no roster row is still you if the id matches — a
-        // public-room viewer has no session_members row but can start runs.
-        map.set(run.driverUserId, {
-          id: run.driverUserId,
-          name: run.driverName,
-          isSelf: run.driverUserId === myId,
-        });
-
-    const lastRun = new Map<string, number>();
-    for (const run of runs) lastRun.set(run.driverUserId, Math.max(lastRun.get(run.driverUserId) ?? 0, run.createdAt));
-
-    return [...map.values()].sort(
-      (a, b) =>
-        Number(b.isSelf) - Number(a.isSelf) ||
-        (lastRun.get(b.id) ?? 0) - (lastRun.get(a.id) ?? 0) ||
-        a.name.localeCompare(b.name),
-    );
-  }, [members, runs, myId]);
-
-  // Each person's chats, split into live and archived, newest first.
-  const byPerson = useMemo(() => {
-    const map = new Map<string, { active: AgentRun[]; archived: AgentRun[] }>();
-    for (const person of people) map.set(person.id, { active: [], archived: [] });
-    for (const run of runs) {
-      const bucket = map.get(run.driverUserId);
-      if (!bucket) continue;
-      (run.archivedAt ? bucket.archived : bucket.active).push(run);
-    }
-    for (const bucket of map.values()) {
-      bucket.active.sort((a, b) => b.createdAt - a.createdAt);
-      bucket.archived.sort((a, b) => b.createdAt - a.createdAt);
-    }
-    return map;
-  }, [people, runs]);
-
-  if (people.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-4 text-center text-[12px] text-vs-muted">
-        No one has run an agent yet.
-      </div>
-    );
-  }
 
   /** One chat row. `self` unlocks rename/archive; others' rows offer fork. */
   const renderRun = (run: AgentRun, self: boolean) => {
@@ -324,7 +114,7 @@ function AgentRunsBrowser({
       <div
         key={run.id}
         className={`group flex w-full min-w-0 items-center gap-1 rounded-md pr-1 transition ${
-          active ? "bg-vs-accent/10" : "hover:bg-vs-hover"
+          active ? "bg-vs-active" : "hover:bg-vs-hover"
         }`}
       >
         <button
@@ -338,7 +128,7 @@ function AgentRunsBrowser({
           }}
           title={`${run.title ?? "Agent run"} · ${run.agentId} · ${run.status} · ${relativeTime(Math.floor(run.createdAt / 1000))}`}
           className={`flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left ${
-            active ? "text-vs-accent" : archived ? "text-vs-muted" : "text-vs-fg"
+            active ? "text-vs-fg" : archived ? "text-vs-muted" : "text-vs-fg"
           }`}
         >
           {run.status === "running" ? (
@@ -415,90 +205,41 @@ function AgentRunsBrowser({
     );
   };
 
+  const groups = [...repos, ...Array.from(new Set(runs.map(run => run.repoId ?? "")))
+    .filter(id => !repos.some(repo => repo.id === id)).map(id => ({ id, label: "Unavailable repository" }))];
   return (
-    <div className="vs-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1.5">
-      {people.map((person) => {
-        const bucket = byPerson.get(person.id) ?? { active: [], archived: [] };
-        const open = isFolderOpen(person.id);
-        const color = colorOf(person.id);
-        return (
-          <div key={person.id}>
-            <button
-              type="button"
-              onClick={() => setFlipped((s) => toggle(s, person.id))}
-              title={person.name}
-              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-vs-fg transition hover:bg-vs-hover"
-            >
-              <ChevronIcon className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition-transform ${open ? "rotate-90" : ""}`} />
-              <span
-                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${color.chip}`}
-              >
-                {initialsOf(person.name)}
-              </span>
-              {/* Always the person's real name, so the folder reads the same to
-                  everyone; your own is marked "(you)" rather than a viewer-relative "Me". */}
-              <span className={`min-w-0 flex-1 truncate text-[13px] ${person.isSelf ? "font-medium" : ""}`}>
-                {person.name}
-                {person.isSelf && <span className="ml-1 font-normal text-vs-muted">(you)</span>}
-              </span>
-              {bucket.active.length > 0 && (
-                <span className="shrink-0 text-[11px] tabular-nums text-vs-muted/70">{bucket.active.length}</span>
-              )}
-            </button>
-
-            {open && (
-              <div className="ml-3 space-y-0.5 border-l border-vs-border pl-1.5">
-                {person.isSelf && (
-                  <button
-                    type="button"
-                    onClick={onNewRun}
-                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-vs-border px-2 py-1.5 text-[13px] text-vs-muted transition hover:border-vs-accent hover:text-vs-fg"
-                  >
-                    <PlusIcon className="h-3.5 w-3.5" />
-                    New chat
-                  </button>
-                )}
-
-                {bucket.active.length === 0 ? (
-                  <p className="px-2 py-2 text-[12px] text-vs-muted">No chats yet.</p>
-                ) : !multiRepo ? (
-                  bucket.active.map((run) => renderRun(run, person.isSelf))
-                ) : (
-                  groupByRepo(bucket.active).map((group) => (
-                    <div key={group.key || "room"}>
-                      <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
-                        <GitBranchIcon className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{group.label}</span>
-                      </div>
-                      {group.runs.map((run) => renderRun(run, person.isSelf))}
-                    </div>
-                  ))
-                )}
-
-                {/* You manage your own archive; others' archived chats stay hidden. */}
-                {person.isSelf && bucket.archived.length > 0 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setArchivedOpen((s) => toggle(s, person.id))}
-                      className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:text-vs-fg"
-                    >
-                      <ChevronIcon
-                        className={`h-3 w-3 shrink-0 transition-transform ${archivedOpen.has(person.id) ? "rotate-90" : ""}`}
-                      />
-                      Archived
-                      <span className="text-vs-muted/70">{bucket.archived.length}</span>
-                    </button>
-                    {archivedOpen.has(person.id) &&
-                      bucket.archived.map((run) => renderRun(run, person.isSelf))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <aside aria-label="Projects and chats" className="flex h-full min-h-0 flex-col bg-vs-panel">
+      <div className="p-3">
+        <button type="button" onClick={onAddProject} disabled={!canAdd || importing} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-vs-fg hover:bg-vs-hover disabled:opacity-50">
+          {importing ? <SpinnerIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
+          {importing ? "Importing project…" : "Add Project"}
+        </button>
+      </div>
+      <div className="border-t border-vs-border px-4 py-3 text-xs text-vs-muted">Projects</div>
+      <div className="vs-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {groups.map(repo => {
+          const active = runs.filter(run => (run.repoId ?? "") === repo.id && !run.archivedAt);
+          const archived = runs.filter(run => (run.repoId ?? "") === repo.id && run.archivedAt && run.driverUserId === myId);
+          const open = !collapsed.has(repo.id);
+          return <section key={repo.id} className="mb-2">
+            <div className="flex items-center gap-1">
+              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-sm text-vs-muted hover:bg-vs-hover hover:text-vs-fg">
+                <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
+                <GitBranchIcon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{repo.label}</span><span className="text-xs tabular-nums">{active.length}</span>
+              </button>
+              <button type="button" aria-label={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="rounded p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
+            </div>
+            {open && <div className="ml-3 space-y-1">
+              {active.map(run => renderRun(run, run.driverUserId === myId))}
+              {!active.length && <p className="px-3 py-2 text-xs text-vs-muted">No chats yet</p>}
+              {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-xs text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
+            </div>}
+          </section>;
+        })}
+        {!groups.length && <p className="px-3 text-xs leading-5 text-vs-muted">Add a project to start your first AI chat.</p>}
+      </div>
+    </aside>
   );
 }
 
@@ -520,7 +261,7 @@ function IconButton({
       onClick={onClick}
       title={title}
       aria-label={label}
-      className="shrink-0 rounded p-1 text-vs-muted opacity-0 transition hover:bg-vs-hover hover:text-vs-fg group-hover:opacity-100"
+      className="shrink-0 rounded p-1 text-vs-muted opacity-0 transition hover:bg-vs-hover hover:text-vs-fg group-hover:opacity-100 focus-visible:opacity-100"
     >
       {children}
     </button>

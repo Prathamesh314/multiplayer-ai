@@ -34,7 +34,7 @@ export const XtermView = forwardRef<XtermHandle, { id: string }>(function XtermV
       ]);
       if (disposed || !hostRef.current) return;
 
-      const css = getComputedStyle(document.documentElement);
+      const css = getComputedStyle(hostRef.current);
       const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
 
       const term = new Terminal({
