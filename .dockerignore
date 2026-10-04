@@ -23,6 +23,8 @@ desktop/dist
 .DS_Store
 *.pem
 *.key
+**/client_secret*.json
+**/.secrets
 .next-*
 .runner-build
 .load-test-results

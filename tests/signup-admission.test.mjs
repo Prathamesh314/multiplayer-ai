@@ -53,8 +53,14 @@ test('registration admission preserves login and atomically claims private invit
       assert.equal((await acceptInvitationByToken(invitation.token,account.user.id)).ok,true);
       assert.equal((await f.first('SELECT status FROM org_members WHERE org_id=$1 AND user_id=$2',[f.org,account.user.id])).status,'active');
     });
-    await t.test('open mode remains available explicitly for development',async()=>{
-      process.env.SIGNUP_MODE='open';assert.equal((await createUser(input('devuser','dev@example.test'))).ok,true);
+    await t.test('open signup creates accounts without choosing a username',async()=>{
+      process.env.SIGNUP_MODE='open';
+      const accounts=await Promise.all(['first','second'].map(id=>createUser({email:id+'@example.test',password:'test-admission-password',displayName:'同じ名前'})));
+      for(const account of accounts){assert.equal(account.ok,true);assert.match(account.user.handle,/^[a-z0-9][a-z0-9_-]{1,38}$/);}
+      assert.notEqual(accounts[0].user.handle,accounts[1].user.handle);
+      const minimal=await createUser({email:'minimal@example.test',password:'test-admission-password',displayName:''});
+      assert.equal(minimal.ok,true);assert.equal(minimal.user.displayName,'minimal');
+      assert.equal((await authenticate('minimal@example.test','test-admission-password')).id,minimal.user.id);
     });
   } finally {delete process.env.SIGNUP_MODE;await f.close();}
 });

@@ -73,7 +73,6 @@ export function GoogleSignIn({ next, invitationToken, desktopId }: { next: strin
 }
 
 export function GoogleCompletion({ profile, signupMode }: { profile: PendingGoogleProfile; signupMode: "open" | "invite" | "closed" }) {
-  const [handle, setHandle] = useState("");
   const [password, setPassword] = useState("");
   const [invitation, setInvitation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,20 +83,19 @@ export function GoogleCompletion({ profile, signupMode }: { profile: PendingGoog
     event.preventDefault(); setBusy(true); setError(null);
     try {
       const result = await post("/api/auth/google/complete", {
-        handle, password, invitationToken: invitationDetails(invitation)?.token ?? (invitation.trim() || undefined),
+        password, invitationToken: invitationDetails(invitation)?.token ?? (invitation.trim() || undefined),
       });
       // Full navigation removes the consumed server-rendered OAuth profile.
       location.assign(result.next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not finish sign-in."); setBusy(false); }
   }
   return <>
-    <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">{profile.mode === "signup" ? "Pick a username" : profile.mode === "link" ? "Link your Google account" : profile.desktop ? "Sign in to the desktop app" : "Continue with Google"}</h1>
+    <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">{profile.mode === "signup" ? "Finish creating your account" : profile.mode === "link" ? "Link your Google account" : profile.desktop ? "Sign in to the desktop app" : "Continue with Google"}</h1>
     <p className="mt-2 break-words text-sm leading-6 text-vs-muted">Google verified <strong className="font-medium text-vs-fg">{profile.email}</strong>.</p>
     {profile.mode === "link" && <p className="mt-3 text-sm leading-6 text-vs-muted">An account already uses this email. Enter its password once to connect Google and keep your projects.</p>}
     {profile.desktop && <p className="mt-4 rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">This will sign in to the desktop app showing <strong className="font-mono text-vs-fg">{profile.desktopCode}</strong>. Confirm only if you started that request.</p>}
     {blocked ? <div className="mt-5"><ErrorNote>{profile.unavailable ? "This account is unavailable. Contact your administrator." : "New registrations are currently closed. Existing accounts can still sign in."}</ErrorNote></div> :
       <form onSubmit={submit} className="mt-6 space-y-5">
-        {profile.mode === "signup" && <Field label="Username" hint="2–39 lowercase letters, numbers, dashes or underscores."><input autoFocus required autoComplete="username" className={inputClass} value={handle} onChange={event => setHandle(event.target.value.toLowerCase())} /></Field>}
         {profile.mode === "link" && <Field label="Existing account password"><input autoFocus required type="password" autoComplete="current-password" className={inputClass} value={password} onChange={event => setPassword(event.target.value)} /></Field>}
         {profile.mode === "signup" && signupMode === "invite" && <Field label="Invitation link or code" hint="An invitation opened before Google sign-in is already attached. You can paste a newer one here."><input autoComplete="off" autoCapitalize="none" spellCheck={false} className={inputClass} placeholder="Paste your invitation link or code" value={invitation} onChange={event => setInvitation(event.target.value)} /></Field>}
         {error && <ErrorNote>{error}</ErrorNote>}

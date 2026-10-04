@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { memoryFixture } from './helpers/memory-fixture.mjs';
 import { authDigest, googleConfigured, googleConfig, verifyGoogleToken } from '../app/lib/auth/google-provider.ts';
 import { beginGoogleAuth, claimGoogleCallback, saveGoogleProfile, pendingGoogleProfile, completeGoogleAuth,
-  finishExistingGoogleAuth, createGoogleDesktopSignin, redeemGoogleDesktopSignin } from '../app/lib/auth/google-store.ts';
+  finishGoogleBrowserAuth, finishExistingGoogleAuth, createGoogleDesktopSignin, redeemGoogleDesktopSignin } from '../app/lib/auth/google-store.ts';
 import { issueSignupInvitation } from '../app/lib/auth/admission.ts';
 import { authenticate, createUser } from '../app/lib/repo/users.ts';
 import { inviteByEmail, acceptInvitationByToken } from '../app/lib/org/store.ts';
@@ -13,8 +16,8 @@ import nextEnv from '@next/env';
 if (process.env.GOOGLE_AUTH_TEST_POSTGRES === '1') nextEnv.loadEnvConfig(process.cwd());
 import { policyFor } from '../app/lib/http/api-limit.ts';
 
-const envKeys = ['SIGNUP_MODE', 'AUTH_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'];
-const settings = () => { Object.assign(process.env, { SIGNUP_MODE: 'invite', AUTH_PUBLIC_URL: 'https://workspace.example', GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-only-secret' }); };
+const envKeys = ['SIGNUP_MODE', 'AUTH_PUBLIC_URL', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_OAUTH_CREDENTIALS_FILE'];
+const settings = () => { delete process.env.GOOGLE_OAUTH_CREDENTIALS_FILE; Object.assign(process.env, { SIGNUP_MODE: 'invite', AUTH_PUBLIC_URL: 'https://workspace.example', GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-only-secret' }); };
 const restore = values => { for (const [key, value] of Object.entries(values)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } };
 
 test('Google verifies signed identity claims and fixed public origin', async () => {
@@ -50,6 +53,28 @@ test('Google verifies signed identity claims and fixed public origin', async () 
   } finally { restore(before); }
 });
 
+test('Google reads server-only Web client JSON and rejects invalid files without revealing secrets', async () => {
+  const before = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+  const directory = await mkdtemp(join(tmpdir(), 'google-credentials-'));
+  settings();
+  try {
+    const path = join(directory, 'client.json');
+    process.env.GOOGLE_OAUTH_CREDENTIALS_FILE = path;
+    assert.equal(googleConfigured(), false, 'missing file cannot silently fall back to another client');
+    await writeFile(path, JSON.stringify({web: {client_id:'file-client',client_secret:'file-secret',token_uri:'https://attacker.example',redirect_uris:['https://attacker.example']}}));
+    assert.equal(googleConfig().clientId, 'file-client');
+    assert.equal(googleConfig().clientSecret, 'file-secret');
+    assert.equal(googleConfig().redirectUri, 'https://workspace.example/api/auth/google/callback');
+    for (const invalid of ['file-secret INVALID JSON', 'null', '{}', JSON.stringify({installed:{client_id:'desktop-client',client_secret:'file-secret'}}), 'x'.repeat(65537)]) {
+      await writeFile(path, invalid);
+      assert.equal(googleConfigured(), false);
+      assert.throws(googleConfig, error => error.status === 503 && !error.message.includes('file-secret') && !error.message.includes(directory));
+    }
+    delete process.env.GOOGLE_OAUTH_CREDENTIALS_FILE;
+    assert.equal(googleConfig().clientId, 'test-client', 'individual environment values remain supported');
+  } finally { restore(before); await rm(directory, {recursive:true,force:true}); }
+});
+
 test('Google signup, account linking, invitations and desktop transfer', async t => {
   const before = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
   settings();
@@ -83,6 +108,7 @@ test('Google signup, account linking, invitations and desktop transfer', async t
     });
     await t.test('invitation admission remains enforced without creating partial users', async () => {
       const flow = await verified('new@example.test', 'new-subject');
+      assert.equal(await finishGoogleBrowserAuth(flow.token), null);
       await assert.rejects(completeGoogleAuth(flow.token, { handle: 'googleuser' }), /invitation/);
       assert.equal(await f.first("SELECT id FROM users WHERE email='new@example.test'"), undefined);
       const invitationToken = await issueSignupInvitation('different@example.test');
@@ -113,7 +139,9 @@ test('Google signup, account linking, invitations and desktop transfer', async t
       assert.equal(result.user.id, googleUser.id);
       assert.equal(result.user.email, 'google@example.test');
       assert.equal(await finishExistingGoogleAuth(flow.token), null);
+      await assert.rejects(finishGoogleBrowserAuth(flow.token), /expired/);
       const newcomer = await verified('closed@example.test', 'closed-subject');
+      assert.equal(await finishGoogleBrowserAuth(newcomer.token), null);
       await assert.rejects(completeGoogleAuth(newcomer.token, { handle: 'closeduser' }), /closed/);
       process.env.SIGNUP_MODE = 'invite';
     });
@@ -124,6 +152,7 @@ test('Google signup, account linking, invitations and desktop transfer', async t
       const flow = await verified('PASSWORD@example.test', 'linked-subject');
       assert.equal((await pendingGoogleProfile(flow.token)).mode, 'link');
       assert.equal(await finishExistingGoogleAuth(flow.token), null);
+      assert.equal(await finishGoogleBrowserAuth(flow.token), null);
       await assert.rejects(completeGoogleAuth(flow.token, {}), /existing account password/);
       await assert.rejects(completeGoogleAuth(flow.token, { password: 'incorrect' }), /existing account password/);
       const linked = await completeGoogleAuth(flow.token, { password: 'original-test-password' });
@@ -146,6 +175,7 @@ test('Google signup, account linking, invitations and desktop transfer', async t
       await assert.rejects(redeemGoogleDesktopSignin(request.id, verifier), /browser first/);
       const flow = await verified('google@example.test', 'google-subject', { desktopId: request.id });
       assert.equal(await finishExistingGoogleAuth(flow.token), null);
+      assert.equal(await finishGoogleBrowserAuth(flow.token), null);
       const pending = await pendingGoogleProfile(flow.token);
       assert.equal(pending.mode, 'signin'); assert.equal(pending.desktopCode, request.code);
       assert.equal((await completeGoogleAuth(flow.token, {})).next, '/login?google=desktop-done');
@@ -157,6 +187,19 @@ test('Google signup, account linking, invitations and desktop transfer', async t
       await f.db.query("UPDATE google_desktop_signins SET expires_at=now()-interval '1 second' WHERE id=$1", [stale.id]);
       await assert.rejects(beginGoogleAuth({ desktopId: stale.id }));
       await assert.rejects(redeemGoogleDesktopSignin(stale.id, verifier));
+    });
+    await t.test('open browser signup generates a unique handle and admits without an invitation', async () => {
+      process.env.SIGNUP_MODE = 'open';
+      const flows = await Promise.all(['first', 'second'].map(id => verified(id+'@example.test', 'open-'+id)));
+      const results = await Promise.all(flows.map(flow => finishGoogleBrowserAuth(flow.token)));
+      assert.notEqual(results[0].user.handle, results[1].user.handle);
+      for (const result of results) {
+        assert.match(result.user.handle, /^[a-z0-9][a-z0-9_-]{1,38}$/);
+        const stored = await f.first('SELECT password_hash,email_verified_at FROM users WHERE id=$1', [result.user.id]);
+        assert.equal(stored.password_hash, null);
+        assert.ok(stored.email_verified_at);
+      }
+      process.env.SIGNUP_MODE = 'invite';
     });
     await t.test('deleted accounts cannot return through Google', async () => {
       await f.db.query('UPDATE users SET deleted_at=now() WHERE id=$1', [googleUser.id]);

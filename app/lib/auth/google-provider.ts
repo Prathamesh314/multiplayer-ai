@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 
 export class GoogleAuthError extends Error {
@@ -21,8 +22,22 @@ export function authOrigin() {
 
 export function googleConfig() {
   const origin = authOrigin();
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  let clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  let clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const credentialsFile = process.env.GOOGLE_OAUTH_CREDENTIALS_FILE?.trim();
+  if (credentialsFile) {
+    // Accept Google's downloaded Web application JSON. Never take endpoint or
+    // redirect URLs from this file, and never expose its contents in errors.
+    try {
+      const file = statSync(credentialsFile);
+      if (!file.isFile() || file.size > 65536) throw new Error("Invalid credential file");
+      const credentials = JSON.parse(readFileSync(credentialsFile, "utf8"))?.web;
+      clientId = typeof credentials?.client_id === "string" ? credentials.client_id.trim() : "";
+      clientSecret = typeof credentials?.client_secret === "string" ? credentials.client_secret.trim() : "";
+    } catch {
+      throw new GoogleAuthError("Google sign-in is not configured on this server.", 503);
+    }
+  }
   if (!clientId || !clientSecret) throw new GoogleAuthError("Google sign-in is not configured on this server.", 503);
   return { origin, clientId, clientSecret, redirectUri: `${origin}/api/auth/google/callback` };
 }

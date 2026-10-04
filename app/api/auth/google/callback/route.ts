@@ -1,6 +1,6 @@
 import { withApiLimit } from "../../../../lib/http/api-limit";
 import { issueToken } from "../../../../lib/auth/tokens";
-import { claimGoogleCallback, finishExistingGoogleAuth, saveGoogleProfile } from "../../../../lib/auth/google-store";
+import { claimGoogleCallback, finishGoogleBrowserAuth, saveGoogleProfile } from "../../../../lib/auth/google-store";
 import { exchangeGoogleCode, googleConfig } from "../../../../lib/auth/google-provider";
 import { googleCookie, setGoogleCookie, googleRedirect, googleErrorResponse } from "../../../../lib/auth/google-http";
 
@@ -27,7 +27,7 @@ async function handleGET(request: Request) {
     if (!code || code.length > 4096) throw new Error("Missing authorization code");
     const profile = await exchangeGoogleCode(code, flow.code_verifier!, flow.nonce_hash);
     await saveGoogleProfile(token!, profile);
-    const existing = await finishExistingGoogleAuth(token!);
+    const existing = await finishGoogleBrowserAuth(token!);
     if (existing) {
       await issueToken(existing.user.id, { userAgent: request.headers.get("user-agent") });
       await setGoogleCookie("");

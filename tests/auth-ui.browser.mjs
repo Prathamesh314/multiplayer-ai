@@ -2,17 +2,18 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
+const openSignup=process.argv.includes('--open');
 const base=process.env.AUTH_UI_BASE_URL??'http://127.0.0.1:3118';
 const token='a'.repeat(43),email='owner+beta@example.test';
 const link=`${base}/login?invite=${token}&email=${encodeURIComponent(email)}`;
 const directory=await mkdtemp(join(tmpdir(),'multiplayer-auth-ui-'));
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let output='',socket,chrome;
-const server=process.argv.includes('--start-server')?spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',new URL(base).port],{env:{...process.env,SIGNUP_MODE:'invite'},stdio:['ignore','pipe','pipe']}):null;
+const server=process.argv.includes('--start-server')?spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',new URL(base).port],{env:{...process.env,SIGNUP_MODE:openSignup?'open':'invite'},stdio:['ignore','pipe','pipe']}):null;
 for(const stream of [server?.stdout,server?.stderr])stream?.on('data',chunk=>{output=(output+chunk).slice(-4000);});
 async function eventually(task,label){for(let i=0;i<120;i++){if(server?.exitCode!=null)throw Error(output);try{if(await task())return;}catch{}await delay(100);}throw Error('Timed out: '+label);}
 try {
@@ -43,11 +44,11 @@ try {
     const user={id:'fixture-user',email:'existing@example.test',handle:'existing',displayName:'Existing',avatarUrl:null};
     window.EventSource=class{addEventListener(){} removeEventListener(){} close(){}};
     window.fetch=(input,init={})=>{const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;if(!path.startsWith('/api/'))return nativeFetch(input,init);
-      if(path==='/api/auth/continue'||path==='/api/auth/register'){
+      if(path==='/api/auth/login'||path==='/api/auth/register'){
         const body=JSON.parse(init.body);window.__authRequests.push({path,...body});
-        if(body.email==='existing@example.test')return json({status:'existing',user,connectCode:null});
-        if(body.email!==${JSON.stringify(email)}||body.invitationToken!==${JSON.stringify(token)})return json({error:'Paste your invitation into the Invitation link or code field.',field:'invitation'},403);
-        return path.endsWith('/continue')?json({status:'new'}):json({user,connectCode:null},201);
+        if(path==='/api/auth/login')return body.identifier==='existing@example.test'?json({user,connectCode:null}):json({error:'That email and password do not match.'},401);
+        if(!${openSignup}&&(body.email!==${JSON.stringify(email)}||body.invitationToken!==${JSON.stringify(token)}))return json({error:'Paste your invitation into the Invitation link or code field.',field:'invitation'},403);
+        return json({user,connectCode:null},201);
       }
       if(path==='/api/auth/me')return json({user,connectCode:null});
       if(path==='/api/orgs')return json({orgs:[]});
@@ -58,23 +59,32 @@ try {
   })()`});
   await send('Page.reload',{ignoreCache:true});await ready();
   assert.equal(await evaluate(`document.querySelector('input[type=email]').value`),email,'invited email prefilled');
-  assert.equal(await evaluate(`document.querySelector('input[placeholder="Paste your invitation link or code"]').value`),token,'URL credential visible in the invitation field');
+  if(!openSignup)assert.equal(await evaluate(`document.querySelector('input[placeholder="Paste your invitation link or code"]').value`),token,'URL credential visible');
+  assert.equal(await evaluate(`document.querySelector('input[autocomplete=username]')`),null,'no username step');
   await fill('input[type=password]','test-browser-password');await submit();
-  await eventually(()=>evaluate(`document.body.innerText.includes('Pick a username')`),'invitation signup');
-  console.log('PASS: emailed invitation prefills the address and reaches username selection.');
+  await eventually(()=>evaluate(`location.pathname==='/workspace'`),'one-step signup');
+  assert.equal(await evaluate(`window.__authRequests.length`),1,'one signup request');
+  console.log('PASS: emailed invitation prefills the address and creates the account in one step.');
 
-  await send('Page.navigate',{url:base+'/login'});await ready();
+  await send('Page.navigate',{url:base+'/login?mode=signup'});await ready();
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  assert.equal(await evaluate(`document.querySelector('input[autocomplete=new-password]')!==null`),true);
+  assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'mobile signup fits');
+  await writeFile('/tmp/multiplayer-email-signup-'+(openSignup?'open':'invite')+'.png',Buffer.from((await send('Page.captureScreenshot')).data,'base64'));
   await fill('input[type=email]',email);await fill('input[type=password]','test-browser-password');await submit();
-  await eventually(()=>evaluate(`!!document.querySelector('[role=alert]')`),'missing invitation feedback');
-  await fill('input[placeholder="Paste your invitation link or code"]',link);await submit();
-  await eventually(()=>evaluate(`document.body.innerText.includes('Pick a username')`),'recovery by pasting invitation');
-  await fill('input[autocomplete=username]','fixture-owner');await submit();
+  if(!openSignup){
+    await eventually(()=>evaluate(`!!document.querySelector('[role=alert]')`),'missing invitation feedback');
+    await fill('input[placeholder="Paste your invitation link or code"]',link);await submit();
+  }
   await eventually(()=>evaluate(`location.pathname==='/workspace'`),'registered workspace');
-  const registration=await evaluate(`window.__authRequests.find(request=>request.path==='/api/auth/register')`);
-  assert.equal(registration.invitationToken,token);assert.equal(registration.email,email);
-  console.log('PASS: plain login recovers by pasting a full link and retains the token through registration.');
+  const registration=await evaluate(`window.__authRequests.filter(request=>request.path==='/api/auth/register').at(-1)`);
+  assert.equal(registration.invitationToken,openSignup?undefined:token);assert.equal(registration.email,email);
+  assert.equal(registration.handle,undefined,'username is generated on the server');
+  console.log('PASS: email signup needs no username and respects configured admission mode.');
+  await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
 
   await send('Page.navigate',{url:base+'/login'});await ready();
+  assert.equal(await evaluate(`document.querySelector('input[placeholder="Paste your invitation link or code"]')`),null,'login never asks for an invitation');
   await fill('input[type=email]','existing@example.test');await fill('input[type=password]','test-browser-password');await submit();
   await eventually(()=>evaluate(`location.pathname==='/workspace'`),'existing account login');
   assert.equal(await evaluate(`window.__authRequests[0].invitationToken`),undefined);
@@ -93,7 +103,7 @@ try {
     }
     window.fetch=async(input,init={})=>{
       const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;
-      if(path==='/api/auth/continue'){
+      if(path==='/api/auth/login'){
         const response=await originalFetch(input,init);
         if(response.ok)sessionStorage.setItem('connections-signed-in','1');return response;
       }
@@ -129,7 +139,8 @@ try {
   assert.equal(await evaluate(`sessionStorage.getItem('connections-authorized-path')`),'/api/orgs/second-team/projects/selected-project/integrations/slack');
   console.log('PASS: desktop handoff retains organisation/project through browser login, authorization and channel selection.');
 } finally {
+  if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:0,method:'Browser.close'}));
   socket?.close();
   for(const child of [chrome,server])if(child&&child.exitCode===null){child.kill('SIGTERM');await Promise.race([once(child,'exit'),delay(3000)]);}
-  await rm(directory,{recursive:true,force:true});
+  await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});
 }

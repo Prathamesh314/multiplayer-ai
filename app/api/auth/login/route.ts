@@ -14,15 +14,15 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  if (typeof body.identifier !== "string" || typeof body.password !== "string") {
-    return Response.json({ error: "Enter your handle and password." }, { status: 400 });
+  if (!body || typeof body.identifier !== "string" || typeof body.password !== "string") {
+    return Response.json({ error: "Enter your email and password." }, { status: 400 });
   }
 
   const user = await authenticate(body.identifier, body.password);
   if (!user) {
     // One message for both failures: saying which half was wrong tells an
     // attacker which accounts exist.
-    return Response.json({ error: "That handle and password do not match." }, { status: 401 });
+    return Response.json({ error: "That email and password do not match." }, { status: 401 });
   }
 
   await issueToken(user.id, { userAgent: request.headers.get("user-agent") });

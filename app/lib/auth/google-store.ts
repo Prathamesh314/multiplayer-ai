@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 import { connectCode } from "../repo/users";
-import { signupInvitationHash } from "./admission";
+import { SignupAdmissionError, signupInvitationHash } from "./admission";
+import { generatedHandle } from "./handle";
 import { verifyPassword } from "./password";
 import { safeReturnPath } from "./return-path";
 import { authDigest, authSecretValid, googleConfig, GoogleAuthError, type GoogleProfile } from "./google-provider";
@@ -86,49 +87,69 @@ export async function finishExistingGoogleAuth(token: string) {
   });
 }
 
-export async function completeGoogleAuth(token: string | undefined, input: { handle?: unknown; password?: unknown; invitationToken?: unknown }) {
+type GoogleCompletionInput = { handle?: unknown; password?: unknown; invitationToken?: unknown };
+
+/** New browser accounts enter immediately; linking and desktop approval remain explicit. */
+export async function finishGoogleBrowserAuth(token: string) {
+  return finishGoogleAuth(token, {}, true);
+}
+
+export async function completeGoogleAuth(token: string | undefined, input: GoogleCompletionInput) {
+  const result = await finishGoogleAuth(token, input, false);
+  if (!result) throw expired();
+  return result;
+}
+
+async function finishGoogleAuth(token: string | undefined, input: GoogleCompletionInput, automatic: boolean) {
   if (!authSecretValid(token)) throw expired();
-  try {
-    return await transaction(async tx => {
-      const flow = (await tx.query<Flow>("SELECT * FROM google_auth_flows WHERE token_hash=$1 AND stage='verified' AND expires_at>now() FOR UPDATE", [authDigest(token)])).rows[0];
-      if (!flow) throw expired();
-      let user = await identityUser(flow.google_subject, tx);
-      if (!user) {
-        user = (await tx.query<UserRow>("SELECT * FROM users WHERE email=$1 FOR UPDATE", [flow.email])).rows[0];
-        if (user) {
-          // Never silently attach a provider to an account just because emails match.
-          if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
-          if (!user.password_hash || typeof input.password !== "string" || input.password.length > 200 || !await verifyPassword(input.password, user.password_hash)) {
-            throw new GoogleAuthError("Enter your existing account password to link Google. Otherwise, use your original sign-in method.", 401);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await transaction(async tx => {
+        const flow = (await tx.query<Flow>("SELECT * FROM google_auth_flows WHERE token_hash=$1 AND stage='verified' AND expires_at>now() FOR UPDATE", [authDigest(token)])).rows[0];
+        if (!flow) throw expired();
+        if (automatic && flow.desktop_id) return null;
+        let user = await identityUser(flow.google_subject, tx);
+        if (!user) {
+          user = (await tx.query<UserRow>("SELECT * FROM users WHERE email=$1 FOR UPDATE", [flow.email])).rows[0];
+          if (user) {
+            if (automatic) return null;
+            // Never silently attach a provider to an account just because emails match.
+            if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
+            if (!user.password_hash || typeof input.password !== "string" || input.password.length > 200 || !await verifyPassword(input.password, user.password_hash)) {
+              throw new GoogleAuthError("Enter your existing account password to link Google. Otherwise, use your original sign-in method.", 401);
+            }
+            if ((await tx.query("SELECT id FROM user_identities WHERE user_id=$1 AND provider='google'", [user.id])).rows[0]) {
+              throw new GoogleAuthError("This account is already linked to a different Google account.", 409);
+            }
+          } else {
+            const handle = input.handle === undefined ? generatedHandle(flow.display_name, flow.email) : typeof input.handle === "string" ? input.handle.trim().toLowerCase() : "";
+            if (!/^[a-z0-9][a-z0-9_-]{1,38}$/.test(handle)) throw new GoogleAuthError("Use 2–39 characters: lowercase letters, numbers, dashes or underscores.");
+            const invitationHash = authSecretValid(input.invitationToken) ? authDigest(input.invitationToken) : flow.invitation_hash;
+            const invitation = await signupInvitationHash(flow.email, invitationHash, tx);
+            user = (await tx.query<UserRow>(`INSERT INTO users(handle,email,display_name,email_verified_at,connect_code)
+              VALUES ($1,$2,$3,now(),$4) RETURNING *`, [handle, flow.email, flow.display_name || handle, connectCode()])).rows[0];
+            if (invitation?.kind === "beta") await tx.query("UPDATE signup_invitations SET used_at=now(),used_by=$2 WHERE id=$1", [invitation.id, user.id]);
+            if (invitation?.kind === "org") await tx.query("UPDATE org_invitations SET signup_user_id=$2 WHERE id=$1", [invitation.id, user.id]);
           }
-          if ((await tx.query("SELECT id FROM user_identities WHERE user_id=$1 AND provider='google'", [user.id])).rows[0]) {
-            throw new GoogleAuthError("This account is already linked to a different Google account.", 409);
-          }
-        } else {
-          const handle = typeof input.handle === "string" ? input.handle.trim().toLowerCase() : "";
-          if (!/^[a-z0-9][a-z0-9_-]{1,38}$/.test(handle)) throw new GoogleAuthError("Use 2–39 characters: lowercase letters, numbers, dashes or underscores.");
-          const invitationHash = authSecretValid(input.invitationToken) ? authDigest(input.invitationToken) : flow.invitation_hash;
-          const invitation = await signupInvitationHash(flow.email, invitationHash, tx);
-          user = (await tx.query<UserRow>(`INSERT INTO users(handle,email,display_name,email_verified_at,connect_code)
-            VALUES ($1,$2,$3,now(),$4) RETURNING *`, [handle, flow.email, flow.display_name || handle, connectCode()])).rows[0];
-          if (invitation?.kind === "beta") await tx.query("UPDATE signup_invitations SET used_at=now(),used_by=$2 WHERE id=$1", [invitation.id, user.id]);
-          if (invitation?.kind === "org") await tx.query("UPDATE org_invitations SET signup_user_id=$2 WHERE id=$1", [invitation.id, user.id]);
+          await tx.query("INSERT INTO user_identities(user_id,provider,provider_user_id) VALUES ($1,'google',$2)", [user.id, flow.google_subject]);
         }
-        await tx.query("INSERT INTO user_identities(user_id,provider,provider_user_id) VALUES ($1,'google',$2)", [user.id, flow.google_subject]);
-      }
-      if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
-      if (flow.desktop_id) {
-        const approved = await tx.query("UPDATE google_desktop_signins SET user_id=$2 WHERE id=$1 AND user_id IS NULL AND expires_at>now() RETURNING id", [flow.desktop_id, user.id]);
-        if (!approved.rows[0]) throw expired();
-      }
-      await tx.query("DELETE FROM google_auth_flows WHERE token_hash=$1", [flow.token_hash]);
-      return { user: toUser(user), next: flow.desktop_id ? "/login?google=desktop-done" : flow.return_path };
-    });
-  } catch (cause) {
-    if (isUniqueViolation(cause, "users_handle_key")) throw new GoogleAuthError("That username is taken. Choose another.", 409);
-    if (isUniqueViolation(cause)) throw new GoogleAuthError("This account changed during signup. Please try Google sign-in again.", 409);
-    throw cause;
+        if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
+        if (flow.desktop_id) {
+          const approved = await tx.query("UPDATE google_desktop_signins SET user_id=$2 WHERE id=$1 AND user_id IS NULL AND expires_at>now() RETURNING id", [flow.desktop_id, user.id]);
+          if (!approved.rows[0]) throw expired();
+        }
+        await tx.query("DELETE FROM google_auth_flows WHERE token_hash=$1", [flow.token_hash]);
+        return { user: toUser(user), next: flow.desktop_id ? "/login?google=desktop-done" : flow.return_path };
+      });
+    } catch (cause) {
+      if (automatic && cause instanceof SignupAdmissionError) return null;
+      if (attempt < 4 && (isUniqueViolation(cause, "users_connect_code_key") || (input.handle === undefined && isUniqueViolation(cause, "users_handle_key")))) continue;
+      if (isUniqueViolation(cause, "users_handle_key")) throw new GoogleAuthError("That username is taken. Choose another.", 409);
+      if (isUniqueViolation(cause)) throw new GoogleAuthError("This account changed during signup. Please try Google sign-in again.", 409);
+      throw cause;
+    }
   }
+  throw new GoogleAuthError("Could not create your account. Please try again.", 409);
 }
 
 export async function createGoogleDesktopSignin(challenge: unknown) {

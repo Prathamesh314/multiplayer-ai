@@ -1,8 +1,9 @@
 # Google signup and sign-in
 
 Google is an additional login method for every user, not an email allowlist.
-Email/password sign-in remains available. New Google accounts choose a username
-without creating a password. The configured `SIGNUP_MODE` still applies: `invite`
+Email signup collects only an email and password in one form. Usernames are
+generated automatically. New Google accounts enter the workspace immediately
+after Google authentication without choosing a username or creating a password. The configured `SIGNUP_MODE` still applies: `invite`
 requires a current invitation for the verified Google email; `closed` permits
 existing accounts to sign in but blocks new accounts. Google approval itself does
 not join an organisation or grant project access. Organisation invitations still
@@ -18,13 +19,32 @@ go through their existing acceptance page.
    authorized redirect URI `https://cubeclashes.com/api/auth/google/callback`.
    For a different deployment substitute its own HTTPS origin. This server
    redirect flow does not require a JavaScript origin or Google API keys.
-4. Save server-only configuration:
+4. Download the client JSON and save it outside the repository (for example,
+   `/root/multiplayer-deployment-config/google-oauth.json` on the production host).
+   Set server-only configuration in `.env` locally or `.env.production` on the server:
 
    ```dotenv
+   SIGNUP_MODE=open
    AUTH_PUBLIC_URL=https://cubeclashes.com
-   GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=your-web-client-secret
+   GOOGLE_OAUTH_CREDENTIALS_FILE=/absolute/path/to/google-oauth.json
    ```
+
+   Production Compose mounts this host file read-only into both web replicas.
+   Use the server's path, not a path that exists only on your laptop. The file
+   must be readable by the web process; for the production root-run containers,
+   keep it mode `600`. After setting or replacing it, recreate both web services:
+
+   ```sh
+   docker compose --env-file .env.production -f compose.production.yml up -d --no-deps --force-recreate --wait web web2
+   ```
+
+   The downloaded JSON must contain the `web.client_id` and `web.client_secret`
+   fields; Desktop client and service account JSON are not accepted. Alternatively,
+   leave the file path empty and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+   individually. A configured file takes precedence. Neither file contents nor
+   file errors are sent to the browser. Keep a private backup of the JSON: the
+   application's backup archives include the environment's path, not this
+   external credential file.
 
 5. In Testing mode add the Google accounts that will test the app. For general
    customer access, complete Google's applicable branding/consent requirements

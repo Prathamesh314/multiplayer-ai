@@ -9,7 +9,7 @@ export type CurrentUser = {
 
 export type RegisterRequest = {
   invitationToken?: string;
-  handle: string;
+  handle?: string;
   email: string;
   displayName: string;
   password: string;

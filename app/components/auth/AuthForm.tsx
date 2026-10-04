@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
-import { continueWithEmail, register } from "../../lib/auth/client";
+import { login, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
@@ -14,9 +14,6 @@ const MIN_PASSWORD_LENGTH = 10;
 const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
-
-/** Step one collects email + password; step two only appears for new accounts. */
-type Step = "email" | "username";
 
 export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null }: {
   signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null;
@@ -34,10 +31,10 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
   // sign in without an invitation, even when arriving through an old link.
   const invitationToken = invitationDetails(invitationInput)?.token ?? (invitationInput.trim() || undefined);
 
-  const [step, setStep] = useState<Step>("email");
+  const [mode, setMode] = useState<"signin" | "signup">(() => signupMode !== "closed" && (params.get("mode") === "signup" || linkedInvitation) ? "signup" : "signin");
+  const creating = mode === "signup";
   const [email, setEmail] = useState(() => params.get("email") ?? "");
   const [password, setPassword] = useState("");
-  const [handle, setHandle] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(() => {
@@ -50,41 +47,20 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
     router.refresh();
   }
 
-  async function submitEmail(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     setShowPassword(false);
     try {
-      const result = await continueWithEmail({ email: email.trim(), password, invitationToken });
-      if (result.status === "existing") {
-        done();
-        return;
+      if (creating) {
+        await register({ email: email.trim(), password, displayName: "", invitationToken });
+      } else {
+        await login(email.trim(), password);
       }
-      // New email, valid password — move on to pick a username.
-      setStep("username");
-      setBusy(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong.");
-      setBusy(false);
-    }
-  }
-
-  async function submitUsername(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await register({
-        invitationToken,
-        handle: handle.trim(),
-        email: email.trim(),
-        displayName: handle.trim(),
-        password,
-      });
       done();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create your account.");
+      setError(cause instanceof Error ? cause.message : "Could not complete sign-in.");
       setBusy(false);
     }
   }
@@ -114,18 +90,18 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </span>
         </Link>
 
-        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : step === "email" ? (
+        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : (
           <>
             <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
-              Your team starts here
+              {creating ? "Create your account" : "Welcome back"}
             </h1>
             <p className="mt-2 text-[14px] leading-6 text-vs-muted">
-              {signupMode === "open" ? "Enter your email and password to sign in or create an account." : signupMode === "closed" ? "Sign in to your existing account. New registrations are currently closed." : invitationToken ? "Sign in or create an account using the email your invitation was sent to." : "Sign in to your account. To join the beta, open the invitation link from your team administrator."}
+              {creating ? (signupMode === "invite" ? "Use your invited email and choose a password." : "Start building with your team and AI.") : "Sign in to your workspace."}
             </p>
 
             {googleEnabled && <GoogleSignIn next={next} invitationToken={invitationToken} desktopId={params.get("desktop")} />}
 
-            <form onSubmit={submitEmail} className="mt-7 space-y-5">
+            <form onSubmit={submit} className="mt-7 space-y-5">
               <Field label="Email">
                 <input
                   autoFocus
@@ -139,14 +115,15 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 />
               </Field>
 
-              <Field label="Password">
+              <Field label="Password" hint={creating ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}>
                 <div className="relative">
                   <input
                     required
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="current-password"
+                    autoComplete={creating ? "new-password" : "current-password"}
+                    minLength={creating ? MIN_PASSWORD_LENGTH : undefined}
                     className={`${inputClass} pr-10`}
                   />
                   <PasswordToggle shown={showPassword} onToggle={() => setShowPassword((s) => !s)} />
@@ -155,8 +132,8 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
 
               {error && <ErrorNote>{error}</ErrorNote>}
 
-              {signupMode === "invite" && (
-                <Field label="Invitation link or code" hint="Required only when creating a new account. Paste the newest invitation and use the email it was issued to.">
+              {creating && signupMode === "invite" && (
+                <Field label="Invitation link or code" hint="Paste the newest invitation and use the email it was issued to.">
                   <input
                     type="text"
                     value={invitationInput}
@@ -176,54 +153,22 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 </Field>
               )}
 
-              <SubmitButton busy={busy}>Continue</SubmitButton>
-            </form>
-          </>
-        ) : (
-          <>
-            <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
-              Pick a username
-            </h1>
-            <p className="mt-2 text-[14px] leading-6 text-vs-muted">
-              Almost there — choose a username for{" "}
-              <span className="text-vs-fg">{email.trim()}</span>. It&apos;s how teammates will see
-              you.
-            </p>
-
-            <form onSubmit={submitUsername} className="mt-7 space-y-5">
-              <Field label="Username" hint="Lowercase letters, numbers, dashes.">
-                <input
-                  autoFocus
-                  required
-                  value={handle}
-                  onChange={(event) => setHandle(event.target.value.toLowerCase())}
-                  placeholder="prathamesh"
-                  autoComplete="username"
-                  className={inputClass}
-                />
-              </Field>
-
-              {error && <ErrorNote>{error}</ErrorNote>}
-
-              <SubmitButton busy={busy}>Create account &amp; enter</SubmitButton>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setStep("email");
-                  setError(null);
-                }}
-                className="w-full text-center text-sm text-vs-muted underline-offset-2 hover:text-vs-fg hover:underline"
-              >
-                Use a different email
-              </button>
+              <SubmitButton busy={busy}>{creating ? "Create account" : "Sign in"}</SubmitButton>
             </form>
           </>
         )}
 
-        <p className="mt-6 text-center text-[13px] leading-5 text-vs-muted">
-          {googleProfile || params.get("google") === "desktop-done" ? "Your Google password is never shared with Multiplayer AI." : `Email signups need a password of at least ${MIN_PASSWORD_LENGTH} characters.`}
-        </p>
+        {(!googleProfile || params.get("google") === "restart") && params.get("google") !== "desktop-done" && (
+          <p className="mt-6 text-center text-sm leading-6 text-vs-muted">
+            {creating ? "Already have an account? " : signupMode === "closed" ? "New registrations are currently closed." : "New here? "}
+            {(creating || signupMode !== "closed") && <button
+              type="button"
+              disabled={busy}
+              onClick={() => { setMode(creating ? "signin" : "signup"); setError(null); }}
+              className="rounded font-medium text-vs-fg underline-offset-4 hover:underline disabled:opacity-60"
+            >{creating ? "Sign in" : "Create an account"}</button>}
+          </p>
+        )}
       </div>
       </div>
     </main>

@@ -15,11 +15,13 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object") return Response.json({ error: "Expected account details." }, { status: 400 });
+
   const problem = passwordProblem(body.password);
   if (problem) return Response.json({ error: problem, field: "password" }, { status: 400 });
 
-  if (typeof body.handle !== "string" || typeof body.email !== "string") {
-    return Response.json({ error: "A handle and an email are required." }, { status: 400 });
+  if (typeof body.email !== "string" || (body.handle !== undefined && typeof body.handle !== "string")) {
+    return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
   const result = await createUser({

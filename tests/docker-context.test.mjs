@@ -14,7 +14,7 @@ test('Docker COPY excludes secret and runtime canaries, but keeps source and env
     await copyFile(new URL('../.dockerignore',import.meta.url),join(context,'.dockerignore'));
     const excluded=['.env','.env.local','.ssh/id_rsa','.aws/credentials','nested/.env','nested/.env.production',
       '.multiplayer-ai/repos/private.git/config','.runner-build/runner.cjs','.next-handoff-test/private','.desktop-build/settings',
-      'desktop-dist/private','backup.dump','docs/private.local.md','secret.pem'];
+      'desktop-dist/private','backup.dump','docs/private.local.md','secret.pem','client_secret_123.json','nested/client_secret_456.json','.secrets/google.json','nested/.secrets/google.json'];
     const included=['app/source.ts','.env.example','nested/.env.example','db/migrations/fixture.sql'];
     for(const path of [...excluded,...included]) {
       const file=join(context,path);await mkdir(join(file,'..'),{recursive:true});

@@ -1,6 +1,7 @@
 import { SignupAdmissionError, signupInvitation } from "../auth/admission";
 import { randomBytes } from "node:crypto";
 import { hashPassword, verifyPassword } from "../auth/password";
+import { generatedHandle } from "../auth/handle";
 import type { CurrentUser } from "../auth/types";
 import { isUniqueViolation, query, queryOne, transaction } from "../db/client";
 
@@ -33,7 +34,7 @@ const toUser = (row: UserRow): CurrentUser => ({
 });
 
 export type CreateUserInput = {
-  handle: string;
+  handle?: string;
   email: string;
   displayName: string;
   password: string;
@@ -45,9 +46,10 @@ export type CreateUserResult =
   | { ok: false; field: "handle" | "email" | "password" | "invitation"; error: string };
 
 export async function createUser(input: CreateUserInput): Promise<CreateUserResult> {
-  const handle = input.handle.trim().toLowerCase();
+  const automaticHandle = input.handle === undefined;
+  let handle = automaticHandle ? generatedHandle(input.displayName, input.email) : input.handle!.trim().toLowerCase();
   const email = input.email.trim();
-  const displayName = input.displayName.trim() || handle;
+  const displayName = input.displayName.trim() || (automaticHandle ? email.split("@")[0] : handle);
 
   if (!/^[a-z0-9][a-z0-9_-]{1,38}$/.test(handle)) {
     return {
@@ -83,6 +85,7 @@ export async function createUser(input: CreateUserInput): Promise<CreateUserResu
     } catch (cause) {
       if (cause instanceof SignupAdmissionError) return { ok: false, field: "invitation", error: cause.message };
       if (isUniqueViolation(cause, "users_handle_key")) {
+        if (automaticHandle) { handle = generatedHandle(displayName, email); continue; }
         return { ok: false, field: "handle", error: "That handle is taken." };
       }
       if (isUniqueViolation(cause, "users_email_key")) {

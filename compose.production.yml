@@ -73,11 +73,20 @@ x-web: &web
       DESKTOP_DOWNLOAD_CHANNEL: ${DESKTOP_DOWNLOAD_CHANNEL:-preview}
       DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
   restart: unless-stopped
-  environment: *app-environment
+  environment:
+    <<: *app-environment
+    GOOGLE_OAUTH_CREDENTIALS_FILE: ${GOOGLE_OAUTH_CREDENTIALS_FILE:+/run/secrets/google-oauth.json}
   # Both replicas use one built image and one data volume. Migrations run once
   # through the migrate service before either replica or the worker is started.
   command: ["node", "scripts/serve.mjs", "-H", "0.0.0.0", "-p", "3000"]
-  volumes: ["workspace_data:/app/workspaces"]
+  volumes:
+    - workspace_data:/app/workspaces
+    - type: bind
+      source: ${GOOGLE_OAUTH_CREDENTIALS_FILE:-/dev/null}
+      target: /run/secrets/google-oauth.json
+      read_only: true
+      bind:
+        create_host_path: false
   depends_on:
     migrate: { condition: service_completed_successfully }
   healthcheck:

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-export async function googleBrowserCheck({ base, flow, email, authorizeDesktop }) {
+export async function googleBrowserCheck({ base, flow, callbackPath, email, authorizeDesktop }) {
   const directory = await mkdtemp(join(tmpdir(), 'multiplayer-google-browser-'));
   let chrome, socket;
   const eventually = async (task, label) => { for (let count=0; count<150; count++) { try { if (await task()) return; } catch {} await delay(100); } throw Error('Timed out: '+label); };
@@ -19,25 +19,18 @@ export async function googleBrowserCheck({ base, flow, email, authorizeDesktop }
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
     socket = new WebSocket(targets.find(target=>target.type==='page').webSocketDebuggerUrl); await once(socket,'open');
     let sequence=0; const pending=new Map(), errors=[];
-    socket.onmessage=event=>{const message=JSON.parse(event.data); if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails.text); const operation=pending.get(message.id); if(operation){pending.delete(message.id);clearTimeout(operation.timer);message.error?operation.reject(Error(message.error.message)):operation.resolve(message.result);}};
+    socket.onmessage=event=>{const message=JSON.parse(event.data); if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails.text); const operation=pending.get(message.id); if(operation){pending.delete(message.id);clearTimeout(operation.timer);if(message.error)operation.reject(Error(message.error.message));else operation.resolve(message.result);}};
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('CDP timeout: '+method));},15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
     const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result.value;};
-    const fill=async(selector,value)=>{await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(100);};
     const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(text)})?.click()`);
     await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
     const [cookieName, cookieValue] = flow.jar.split('=');
     await send('Network.setCookie', { name: cookieName, value: cookieValue, url: base, path: '/', secure: true, httpOnly: true, sameSite: 'Lax' });
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
-    await send('Page.navigate',{url:base+'/login?google=complete'});
-    await eventually(()=>evaluate(`!!document.querySelector('input[autocomplete=username]')&&!document.querySelector('button[type=submit]').disabled`),'Google username form');
-    assert.equal(await evaluate(`document.querySelector('input[type=password]')===null`),true,'new Google accounts do not need a password');
-    assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify(email)})`));
-    assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'mobile layout fits the viewport');
-    await fill('input[autocomplete=username]','googlebrowser');
-    await button('Create account & sign in');
-    await eventually(()=>evaluate(`location.pathname==='/workspace'`),'Google signup reaches workspace');
+    await send('Page.navigate',{url:base+callbackPath});
+    await eventually(()=>evaluate(`location.pathname==='/workspace'`),'Google signup reaches workspace without another form');
     assert.equal(await evaluate(`fetch('/api/auth/me').then(r=>r.json()).then(body=>body.user.email)`),email);
-    console.log('PASS: mobile Google username form creates the account without a password and enters the workspace.');
+    console.log('PASS: mobile Google signup enters the workspace directly without a username or password.');
 
     await evaluate(`fetch('/api/auth/me',{method:'DELETE'})`);
     await send('Page.addScriptToEvaluateOnNewDocument',{source:'window.desktop={isDesktop:true};window.open=url=>{window.__googleBrowserUrl=url;return null;};'});
