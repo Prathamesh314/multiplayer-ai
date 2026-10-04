@@ -89,7 +89,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
 
     if (editingId === run.id) {
       return (
-        <div key={run.id} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1">
+        <div key={run.id} className="flex min-h-10 min-w-0 items-center gap-3 rounded-md px-2 py-1">
           <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-vs-accent" />
           <input
             autoFocus
@@ -104,7 +104,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
                 setEditingId(null);
               }
             }}
-            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[13px] text-vs-fg outline-none"
+            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[15px] text-vs-fg outline-none"
           />
         </div>
       );
@@ -127,8 +127,8 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
             }
           }}
           title={`${run.title ?? "Agent run"} · ${run.agentId} · ${run.status} · ${relativeTime(Math.floor(run.createdAt / 1000))}`}
-          className={`flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left ${
-            active ? "text-vs-fg" : archived ? "text-vs-muted" : "text-vs-fg"
+          className={`flex min-h-10 min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left ${
+            active ? "text-vs-fg" : "text-vs-muted"
           }`}
         >
           {run.status === "running" ? (
@@ -144,63 +144,65 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[13px]">
+          <span className="min-w-0 flex-1 truncate text-[15px] leading-[22px]">
             {run.title ?? `${run.agentId} run`}
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
         </button>
 
-        <IconButton
-          onClick={() => copyPath(run)}
-          title={`Copy chat path (@${roomName}/…) to reference it from another room`}
-          label="Copy chat path"
-        >
-          {copiedId === run.id ? (
-            <CheckIcon className="h-3.5 w-3.5 text-vs-success" />
-          ) : (
-            <LinkIcon className="h-3.5 w-3.5" />
-          )}
-        </IconButton>
-
-        {self ? (
-          archived ? (
-            <IconButton
-              onClick={() => void toggleArchive(run, false)}
-              title="Restore this chat"
-              label="Restore chat"
-            >
-              <UnarchiveIcon className="h-3.5 w-3.5" />
-            </IconButton>
-          ) : (
-            <>
-              <IconButton
-                onClick={() => {
-                  setDraft(run.title ?? "");
-                  setEditingId(run.id);
-                }}
-                title="Rename"
-                label="Rename chat"
-              >
-                <PencilIcon className="h-3.5 w-3.5" />
-              </IconButton>
-              <IconButton
-                onClick={() => void toggleArchive(run, true)}
-                title="Archive this chat"
-                label="Archive chat"
-              >
-                <ArchiveIcon className="h-3.5 w-3.5" />
-              </IconButton>
-            </>
-          )
-        ) : (
+        <div className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
           <IconButton
-            onClick={() => onFork(run)}
-            title="Fork: start a new chat that imports this chat's context"
-            label="Fork this chat into a new one with its context"
+            onClick={() => copyPath(run)}
+            title={`Copy chat path (@${roomName}/…) to reference it from another room`}
+            label="Copy chat path"
           >
-            <GitBranchIcon className="h-3.5 w-3.5" />
+            {copiedId === run.id ? (
+              <CheckIcon className="h-3.5 w-3.5 text-vs-success" />
+            ) : (
+              <LinkIcon className="h-3.5 w-3.5" />
+            )}
           </IconButton>
-        )}
+
+          {self ? (
+            archived ? (
+              <IconButton
+                onClick={() => void toggleArchive(run, false)}
+                title="Restore this chat"
+                label="Restore chat"
+              >
+                <UnarchiveIcon className="h-3.5 w-3.5" />
+              </IconButton>
+            ) : (
+              <>
+                <IconButton
+                  onClick={() => {
+                    setDraft(run.title ?? "");
+                    setEditingId(run.id);
+                  }}
+                  title="Rename"
+                  label="Rename chat"
+                >
+                  <PencilIcon className="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton
+                  onClick={() => void toggleArchive(run, true)}
+                  title="Archive this chat"
+                  label="Archive chat"
+                >
+                  <ArchiveIcon className="h-3.5 w-3.5" />
+                </IconButton>
+              </>
+            )
+          ) : (
+            <IconButton
+              onClick={() => onFork(run)}
+              title="Fork: start a new chat that imports this chat's context"
+              label="Fork this chat into a new one with its context"
+            >
+              <GitBranchIcon className="h-3.5 w-3.5" />
+            </IconButton>
+          )}
+        </div>
       </div>
     );
   };
@@ -208,31 +210,30 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
   const groups = [...repos, ...Array.from(new Set(runs.map(run => run.repoId ?? "")))
     .filter(id => !repos.some(repo => repo.id === id)).map(id => ({ id, label: "Unavailable repository" }))];
   return (
-    <aside aria-label="Projects and chats" className="flex h-full min-h-0 flex-col bg-vs-panel">
-      <div className="p-3">
-        <button type="button" onClick={onAddProject} disabled={!canAdd || importing} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-vs-fg hover:bg-vs-hover disabled:opacity-50">
-          {importing ? <SpinnerIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
-          {importing ? "Importing project…" : "Add Project"}
+    <aside aria-label="Projects and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
+      <header className="flex min-h-10 shrink-0 items-center justify-between gap-2 px-3 py-1">
+        <h2 className="text-sm font-medium text-vs-muted">Projects</h2>
+        <button type="button" aria-label="Add project" title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1.5 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50">
+          {importing ? <SpinnerIcon className="h-3.5 w-3.5 shrink-0" /> : <PlusIcon className="h-3.5 w-3.5 shrink-0" />}
+          {importing ? "Adding…" : "Add project"}
         </button>
-      </div>
-      <div className="border-t border-vs-border px-4 py-3 text-xs text-vs-muted">Projects</div>
+      </header>
       <div className="vs-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.map(repo => {
           const active = runs.filter(run => (run.repoId ?? "") === repo.id && !run.archivedAt);
           const archived = runs.filter(run => (run.repoId ?? "") === repo.id && run.archivedAt && run.driverUserId === myId);
           const open = !collapsed.has(repo.id);
           return <section key={repo.id} className="mb-2">
-            <div className="flex items-center gap-1">
-              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-sm text-vs-muted hover:bg-vs-hover hover:text-vs-fg">
+            <div className={`flex min-h-9 items-center gap-1 rounded-md ${active.some(run => run.id === enteredRunId) ? "bg-vs-active" : "hover:bg-vs-hover"}`}>
+              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left text-[15px] font-medium leading-[22px] text-vs-muted hover:text-vs-fg">
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
-                <GitBranchIcon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{repo.label}</span><span className="text-xs tabular-nums">{active.length}</span>
+                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-xs font-normal tabular-nums">{active.length}</span>
               </button>
-              <button type="button" aria-label={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="rounded p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
+              <button type="button" aria-label={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 rounded p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
             </div>
-            {open && <div className="ml-3 space-y-1">
+            {open && <div className="ml-2">
               {active.map(run => renderRun(run, run.driverUserId === myId))}
-              {!active.length && <p className="px-3 py-2 text-xs text-vs-muted">No chats yet</p>}
+              {!active.length && <p className="px-3 py-2 text-sm text-vs-muted">No chats yet</p>}
               {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-xs text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
             </div>}
           </section>;
@@ -261,7 +262,7 @@ function IconButton({
       onClick={onClick}
       title={title}
       aria-label={label}
-      className="shrink-0 rounded p-1 text-vs-muted opacity-0 transition hover:bg-vs-hover hover:text-vs-fg group-hover:opacity-100 focus-visible:opacity-100"
+      className="shrink-0 rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
     >
       {children}
     </button>

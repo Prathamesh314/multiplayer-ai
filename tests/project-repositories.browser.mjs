@@ -119,14 +119,14 @@ try {
   // Wait for this document and its fixtures before reading page content.
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"workspace document");
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)})?.click()`);
-  await eventually(()=>evaluate('document.body.innerText.includes("Add Project")'),"empty room");
-  await button("Add Project");
+  await eventually(()=>evaluate('document.body.innerText.includes("Add project")'),"empty room");
+  await button("Add project");
   await button("Project repositories");
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("frontend"))'),"repository catalog");
   await button("Add to room");
   await eventually(()=>evaluate('document.body.innerText.includes("frontend.txt")'),"first repository without primary");
   assert.equal(await evaluate(`document.querySelectorAll('button[aria-label="New chat in frontend"]').length`),1);
-  await button("Add Project");
+  await button("Add project");
   await button("Project repositories");
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("Already in this room"))'),"selected repository");
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.trim()==='Add to room' && !b.disabled).click()`);
