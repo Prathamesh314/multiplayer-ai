@@ -21,7 +21,13 @@ const yaml=`x-app: &app
     AGENT_WORKER: "0"
     MULTIPLAYER_AI_DATA: /app/workspaces
   volumes: ["workspace_data:/app/workspaces"]
+  depends_on:
+    migrate: {condition: service_completed_successfully}
 services:
+  migrate:
+    image: ${image}
+    entrypoint: ["node"]
+    command: ["-e", "process.exit(0)"]
   postgres:
     image: pgvector/pgvector:0.8.6-pg18-trixie
     environment: {POSTGRES_USER: fixture, POSTGRES_PASSWORD: test-only, POSTGRES_DB: fixture}
@@ -49,14 +55,21 @@ await writeFile(composeFile,yaml);await writeFile(envFile,'EXAMPLE_SECRET=fixtur
 const args=project=>['compose','--env-file',envFile,'-f',composeFile,'-p',project];
 const run=async argv=>(await exec('docker',argv,{maxBuffer:8*1024*1024})).stdout.trim();
 try {
-  await run([...args(source),'up','-d','--wait']);
+  // Production removes its one-shot migration container after it succeeds.
+  // Backups must resume existing services even with that dependency absent.
+  await run([...args(source),'run','--rm','--no-deps','-T','migrate']);
+  await run([...args(source),'up','-d','--wait','--no-deps','postgres','redis','web','web2','worker','gateway','mnemosyne']);
   await run([...args(source),'run','--rm','--no-deps','-T','-v',`${resolve('db')}:/app/db:ro`,'web','db/migrate.mjs']);
   await run([...args(source),'run','--rm','--no-deps','-T','-v',`${resolve('tests/helpers/backup-seed.mjs')}:/app/seed.mjs:ro`,'web','/app/seed.mjs']);
   await run([...args(source),'exec','-T','mnemosyne','python3','-c',"import sqlite3; c=sqlite3.connect('/data/memory.db'); c.execute('create table memories(value text)'); c.execute(\"insert into memories values ('Retained team context')\"); c.commit(); c.close()"]);
   const destination=join(directory,'backup');
+  const writers=['gateway','web','web2','worker','mnemosyne'];
+  const writerIds=(await run([...args(source),'ps','--status','running','--quiet',...writers])).split('\n').sort();
   await createBackup({composeFile,envFile,project:source,destination});
   assert.equal((await stat(destination)).mode&0o777,0o700);
-  assert.ok((await run([...args(source),'ps','--status','running','--services'])).includes('worker'),'source writers resume after backup');
+  assert.equal(writerIds.length,writers.length);
+  assert.deepEqual((await run([...args(source),'ps','--status','running','--quiet',...writers])).split('\n').sort(),writerIds,'all original writer containers resume after backup');
+  assert.equal(await run([...args(source),'ps','--all','--quiet','migrate']),'','backup must not rerun the removed migration service');
   const backupBytes=await readFile(join(destination,'configuration.env.enc'));
   assert.ok(!backupBytes.includes(Buffer.from('fixture-secret')));
   const recovered=join(directory,'recovered.env');

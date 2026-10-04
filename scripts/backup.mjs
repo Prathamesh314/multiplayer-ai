@@ -77,6 +77,7 @@ export async function createBackup(options) {
   await mkdir(destination,{mode:0o700});await chmod(destination,0o700);
   const running=(await capture([...profile.args,'ps','--status','running','--services'])).split('\n');
   const stopped=writers.filter(name=>running.includes(name));
+  const stoppedContainers=stopped.length?(await capture([...profile.args,'ps','--status','running','--quiet',...stopped])).split('\n').filter(Boolean):[];
   const manifest={version:1,createdAt:new Date().toISOString(),project:profile.config.name,files:{}};
   const save=async(name,source)=>{manifest.files[name]=await encrypt(source,join(destination,name+'.enc'),name);};
   const saveCommand=async(name,args)=>{
@@ -98,7 +99,10 @@ export async function createBackup(options) {
     console.log('Encrypted coordinated backup verified. Copy it and the separately held encryption key off this host.');
     return manifest;
   } finally {
-    if(stopped.length)await capture([...profile.args,'start',...stopped]);
+    // Resume the exact containers we paused. Compose start resolves depends_on
+    // again and fails when a successful `run --rm migrate` no longer exists.
+    // Docker start preserves the original image/config and never reruns setup.
+    if(stoppedContainers.length)await capture(['start',...stoppedContainers]);
   }
 }
 
