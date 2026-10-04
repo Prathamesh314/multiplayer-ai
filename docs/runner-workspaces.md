@@ -72,11 +72,10 @@ The desktop app bundles its runner. Browser users can install the standalone
 runner from their workspace without cloning this application's source code:
 
 ```sh
-npm install --global https://workspace.example/downloads/multiplayer-ai-runner.tgz
-multiplayer-ai-runner pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multiplayer-ai/workspaces
-multiplayer-ai-runner start --workspaces /path/to/new/worktrees
-multiplayer-ai-runner workspaces
-multiplayer-ai-runner workspaces --json
+npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multiplayer-ai/workspaces
+npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner start --workspaces /path/to/new/worktrees
+npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner workspaces
+npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner workspaces --json
 ```
 
 Pairing saves the location; `start --workspaces` overrides it for that process.

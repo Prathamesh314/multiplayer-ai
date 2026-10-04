@@ -26,7 +26,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   const [devices, setDevices] = useState<RunnerDevice[] | null>(null);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState<"install" | "pair" | null>(null);
+  const [copied, setCopied] = useState<"pair" | "start" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
   // Devices present when the pairing code was minted — anything beyond these
@@ -95,10 +95,30 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   }
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const installCommand = `npm install --global "${origin}/downloads/multiplayer-ai-runner.tgz"`;
+  // npm supplies the downloaded executable's PATH. A global install can fail
+  // on permissions or leave its bin directory outside the user's shell PATH.
+  const runnerCommand = `npx --yes --package="${origin}/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner`;
+  const startCommand = `${runnerCommand} start`;
   const pairCommand = pairing
-    ? `multiplayer-ai-runner pair --server ${origin} --code ${pairing.code}`
+    ? `${runnerCommand} pair --server "${origin}" --code ${pairing.code}`
     : "";
+
+  function commandRow(id: "pair" | "start", label: string, command: string) {
+    return (
+      <div key={id} className="space-y-1">
+        <p className="text-sm text-vs-muted">{label}</p>
+        <div className="flex items-start gap-2">
+          <code className="min-w-0 flex-1 break-all font-mono text-sm text-vs-fg">{command}</code>
+          <GhostButton aria-label={`Copy ${id} command`} onClick={() => {
+            void navigator.clipboard.writeText(command).then(() => {
+              setCopied(id);
+              setTimeout(() => setCopied(null), 1500);
+            }).catch(() => setError("Could not copy. Select and copy the command manually."));
+          }}>{copied === id ? "Copied" : "Copy"}</GhostButton>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Modal
@@ -156,9 +176,13 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
 
       {pairing ? (
         paired ? (
-          <p className="rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px] text-vs-success">
-            Paired — the new machine is in the list above. {desktopBridge()?.pairComputer ? "The desktop runner starts automatically." : <>Run <code className="font-mono">multiplayer-ai-runner start</code> in any terminal to bring it online.</>}
-          </p>
+          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px]">
+            <p className="text-vs-success">Paired — the new machine is in the list above. {desktopBridge()?.pairComputer ? "The desktop runner starts automatically." : "Start the runner below to bring it online."}</p>
+            {!desktopBridge()?.pairComputer && <>
+              {commandRow("start", "Start your computer connection", startCommand)}
+              <p className="text-sm text-vs-muted">Keep this terminal open while you work. Use the same start command whenever you reconnect; you only need to pair once.</p>
+            </>}
+          </div>
         ) : (
           <div className="space-y-2 rounded-lg border border-vs-border bg-vs-editor p-3">
             {desktopBridge()?.pairComputer && (
@@ -171,25 +195,10 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
             )}
             <details open={!desktopBridge()?.pairComputer} className="space-y-3">
               <summary className="cursor-pointer text-sm text-vs-fg">Connect with the standalone runner</summary>
-              <p className="text-sm leading-6 text-vs-muted">Run these commands from any folder. Install Node.js 22 or newer and Git first, plus your AI provider’s CLI. You don’t need the Multiplayer AI source code.</p>
-              {([
-                { id: "install", label: "1. Install once", command: installCommand },
-                { id: "pair", label: "2. Pair this computer", command: pairCommand },
-              ] as const).map(item => (
-                <div key={item.id} className="space-y-1">
-                  <p className="text-sm text-vs-muted">{item.label}</p>
-                  <div className="flex items-start gap-2">
-                    <code className="min-w-0 flex-1 break-all font-mono text-sm text-vs-fg">{item.command}</code>
-                    <GhostButton aria-label={`Copy ${item.id} command`} onClick={() => {
-                      void navigator.clipboard.writeText(item.command).then(() => {
-                        setCopied(item.id);
-                        setTimeout(() => setCopied(null), 1500);
-                      }).catch(() => setError("Could not copy. Select and copy the command manually."));
-                    }}>{copied === item.id ? "Copied" : "Copy"}</GhostButton>
-                  </div>
-                </div>
-              ))}
-              <p className="text-sm leading-6 text-vs-muted">3. Run <code className="font-mono text-vs-fg">multiplayer-ai-runner start</code> and keep the terminal open while you work.</p>
+              <p className="text-sm leading-6 text-vs-muted">Run these commands from any folder. Install Node.js 22 or newer and Git first, plus your AI provider’s CLI. The commands download the runner automatically; no global installation or Multiplayer AI source code is needed.</p>
+              {commandRow("pair", "1. Pair this computer once", pairCommand)}
+              {commandRow("start", "2. Start your computer connection", startCommand)}
+              <p className="text-sm leading-6 text-vs-muted">Keep the terminal open while you work. Run the start command again whenever you reconnect. If your terminal says npx is not found, install Node.js, then open a new terminal.</p>
             </details>
             <p className="text-[12px] text-vs-muted">
               The code is single-use and expires in ten minutes. This list updates the moment

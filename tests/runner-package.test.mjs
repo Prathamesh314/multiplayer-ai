@@ -5,12 +5,13 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {mkdtemp,mkdir,readFile,readdir,rm,symlink,copyFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join,resolve,delimiter} from 'node:path';
+import {dirname,join,resolve,delimiter} from 'node:path';
 
 const run=promisify(execFile);
 const root=resolve(import.meta.dirname,'..');
 
-test('downloaded runner installs without a checkout and pairs/starts from unrelated folders',async () => {
+for (const mode of ['global', 'npx']) {
+test(`downloaded runner via ${mode} pairs/starts from unrelated folders without a checkout`,async () => {
   const directory=await mkdtemp(join(tmpdir(),'mp-runner-package-'));
   const packageBytes=await readFile(join(root,'public/downloads/multiplayer-ai-runner.tgz'));
   const requests=[];
@@ -33,24 +34,32 @@ test('downloaded runner installs without a checkout and pairs/starts from unrela
     await Promise.all([first,second,tools].map(path=>mkdir(path,{recursive:true})));
     const npmCli=process.env.npm_execpath;
     assert.ok(npmCli,'Run through npm run test:runner-package');
-    await run(process.execPath,[npmCli,'install','--global','--prefix',prefix,'--ignore-scripts','--no-audit','--no-fund',`${origin}/downloads/multiplayer-ai-runner.tgz`],{
+    if (mode === 'global') await run(process.execPath,[npmCli,'install','--global','--prefix',prefix,'--ignore-scripts','--no-audit','--no-fund',`${origin}/downloads/multiplayer-ai-runner.tgz`],{
       cwd:first,env:{...process.env,npm_config_cache:join(directory,'npm-cache'),npm_config_registry:'http://127.0.0.1:1'},timeout:30000,
     });
     const binDirectory=process.platform==='win32'?prefix:join(prefix,'bin');
     const installed=join(prefix,...(process.platform==='win32'?[]:['lib']),'node_modules','multiplayer-ai-runner');
-    assert.deepEqual((await readdir(installed)).sort(),['README.md','package.json','runner.cjs']);
-    const manifest=JSON.parse(await readFile(join(installed,'package.json'),'utf8'));
+    const packageDirectory=mode === 'global' ? installed : join(root,'.runner-build/package');
+    assert.deepEqual((await readdir(packageDirectory)).sort(),['README.md','package.json','runner.cjs']);
+    const manifest=JSON.parse(await readFile(join(packageDirectory,'package.json'),'utf8'));
     assert.equal(manifest.dependencies,undefined);
     assert.equal(manifest.scripts,undefined);
     if(process.platform==='win32')await copyFile(process.execPath,join(tools,'node.exe'));
-    else await symlink(process.execPath,join(tools,'node'));
+    else {
+      await symlink(process.execPath,join(tools,'node'));
+      await symlink('/bin/sh',join(tools,'sh'));
+    }
     const config=join(directory,'profile','runner.json');
-    const env={...process.env,PATH:[binDirectory,tools].join(delimiter),RUNNER_CONFIG:config};
+    const env={...process.env,PATH:(mode === 'global' ? [binDirectory,tools] : [tools]).join(delimiter),RUNNER_CONFIG:config,
+      npm_config_cache:join(directory,'npm-cache'),npm_config_registry:'http://127.0.0.1:1',npm_config_audit:'false',npm_config_fund:'false'};
     // On POSIX invoke the installed command by name through PATH. Windows npm
     // provides a .cmd shim; also verify its presence before invoking the entry.
-    const command=process.platform==='win32'?process.execPath:'multiplayer-ai-runner';
-    const extra=process.platform==='win32'?[join(installed,'runner.cjs')]:[];
-    if(process.platform==='win32')assert.ok((await readdir(prefix)).includes('multiplayer-ai-runner.cmd'));
+    const command=mode === 'npx' || process.platform==='win32'?process.execPath:'multiplayer-ai-runner';
+    const extra=mode === 'npx'
+      ? [join(dirname(npmCli),'npx-cli.js'),'--yes',`--package=${origin}/downloads/multiplayer-ai-runner.tgz`,'multiplayer-ai-runner']
+      : process.platform==='win32'?[join(installed,'runner.cjs')]:[];
+    if(mode === 'global' && process.platform==='win32')assert.ok((await readdir(prefix)).includes('multiplayer-ai-runner.cmd'));
+    if(mode === 'npx') await assert.rejects(run('multiplayer-ai-runner',['--version'],{cwd:first,env}),{code:'ENOENT'},'no global runner is available');
     const invoke=(args,cwd=first)=>run(command,[...extra,...args],{cwd,env,timeout:15000});
     assert.match((await invoke(['--help'])).stdout,/Works from any directory/);
     assert.equal((await invoke(['--version'],second)).stdout.trim(),manifest.version);
@@ -80,6 +89,7 @@ test('downloaded runner installs without a checkout and pairs/starts from unrela
     await rm(directory,{recursive:true,force:true});
   }
 });
+}
 
 test('idle packaged runner waits for push and claims immediately on a work signal', {timeout:15000}, async () => {
   const {spawn}=await import('node:child_process');

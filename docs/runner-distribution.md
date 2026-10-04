@@ -18,19 +18,25 @@ starts or builds. Deploy `public/` along with the Next.js build, as with other
 static assets. Custom deployment commands that bypass npm lifecycle hooks must
 run `npm run runner:pack` explicitly. The workspace serves the archive directly;
 no npm registry publication is required. Regenerate it whenever runner code
-changes and reinstall to upgrade an existing standalone installation.
+changes. Existing global installations still work and can be reinstalled to upgrade.
 
-Node.js 22+ and npm are required for this standalone option. npm creates the
-global `multiplayer-ai-runner` command; its prefix must be on PATH. The CLI
+Node.js 22+ and npm/npx are required for this standalone option. The connection
+dialog uses `npx --yes --package="<workspace>/downloads/multiplayer-ai-runner.tgz"
+multiplayer-ai-runner` for both pairing and starting. npm downloads the package
+into its user cache and supplies the executable's PATH for that invocation.
+This avoids global installation permissions and missing global-bin PATH entries.
+Keep the explicit package URL: this package is not published on the npm registry.
+The CLI
 supports `pair`, `start`, `workspaces`, `--help`, and `--version` from any working
 directory. Desktop users do not need Node.js/npm installed separately.
 
 Run `npm run test:runner-package` to serve the real archive from a temporary HTTP
-server, install it in an isolated global prefix with registry access disabled,
-and invoke it from two empty directories, including paths with spaces. The test
-verifies pairing/configuration, heartbeat, job polling and revoked-token exit
+server and exercise both an isolated global installation and the npx flow with
+registry access disabled. The npx case starts with an empty cache and no global
+runner on PATH. Both invoke it from two empty directories, including paths with
+spaces. The test verifies pairing/configuration, heartbeat, push events and revoked-token exit
 using a mock workspace. It never pairs with or changes the real application.
 The PostgreSQL/Chrome suite separately checks the connection dialog and the
 production server's downloadable archive.
 
-Reference: [npm installation from tarball URLs and global binaries](https://docs.npmjs.com/cli/v11/commands/npm-install/).
+Reference: [npm exec and npx package execution](https://docs.npmjs.com/cli/v11/commands/npm-exec/).

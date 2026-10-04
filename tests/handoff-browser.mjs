@@ -647,6 +647,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multiplayer-ai-runner.tgz`));
     assert.ok(instructions.includes('multiplayer-ai-runner start'));
+    assert.ok(instructions.includes(`npx --yes --package="${server}/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner pair`));
+    assert.ok(!instructions.includes('npm install --global'));
+    assert.equal(await sender.evaluate('!!document.querySelector(\'button[aria-label="Copy start command"]\')'), true);
     assert.ok(!instructions.includes('npm run runner'));
     const download = await fetch(`${server}/downloads/multiplayer-ai-runner.tgz`);
     assert.equal(download.status, 200);
