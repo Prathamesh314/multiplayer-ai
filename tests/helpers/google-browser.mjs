@@ -67,8 +67,17 @@ export async function googleBrowserCheck({ base, flow, email, authorizeDesktop }
     await delay(150);
     await writeFile('/tmp/multiplayer-google-login-mobile.png',Buffer.from((await send('Page.captureScreenshot')).data,'base64'));
   } finally {
+    const running = chrome && chrome.exitCode === null && chrome.signalCode === null;
+    const exited = running ? once(chrome, 'exit') : Promise.resolve();
+    // Let Chromium flush and close its profile before removing it. Killing the
+    // launcher alone can leave child processes writing into Default/ on Linux.
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({id:0,method:'Browser.close'}));
+    else if (running) chrome.kill('SIGTERM');
+    if (running && !await Promise.race([exited.then(()=>true),delay(3000).then(()=>false)])) {
+      chrome.kill('SIGKILL');
+      await exited;
+    }
     socket?.close();
-    if(chrome&&chrome.exitCode===null){chrome.kill('SIGTERM');await Promise.race([once(chrome,'exit'),delay(3000)]);}
-    await rm(directory,{recursive:true,force:true});
+    await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});
   }
 }
