@@ -153,7 +153,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
-    async function tab(token, targetRoom = roomId, readySelector = 'select[aria-label="Active repository"]', initScript) {
+    async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Projects and chats"]', initScript) {
       const { browserContextId } = await send("Target.createBrowserContext");
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -189,7 +189,13 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         console.error(await evaluate("document.body.innerText.slice(0, 5000)"), runtimeErrors);
         throw cause;
       }
-      return { command, evaluate, click, selectOption, targetId, sessionId };
+      const selectRepository = label => eventually(() => evaluate(`(() => { const button=Array.from(document.querySelectorAll('.room-sidebar button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify('New chat in '+label)}); if (!button) return false;button.click();return true; })()`), `repository ${label}`);
+      const selectPicker = async (label, value) => {
+        await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="${label}"]')`),label);
+        await evaluate(`document.querySelector('button[aria-label="${label}"]').click()`);
+        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button)return false;button.click();return true;})()`),`picker option ${value}`);
+      };
+      return { command, evaluate, click, selectOption, selectRepository, selectPicker, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
@@ -203,12 +209,18 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     // A human assignment from another person's chat must work independently
     // of AI provider availability and without transferring chat control.
     const assigner = await tab(tokens[1], `${roomId}?run=${chat.id}`);
-    await assigner.click("@ Assign task");
+    await assigner.click("Assign Tasks");
     const aliceHandle = (await sql(`SELECT handle FROM users WHERE id=$1`,[alice])).rows[0].handle;
     const taskText = "Please review the changes in this shared chat.";
-    await eventually(() => assigner.evaluate(`Array.from(document.querySelectorAll('datalist option')).some(o => o.value === ${JSON.stringify(`@${aliceHandle}`)})`), "room member picker");
     const assignerHandle=(await sql('SELECT handle FROM users WHERE id=$1',[bob])).rows[0].handle;
-    assert.equal(await assigner.evaluate(`Array.from(document.querySelectorAll('datalist option')).some(o => o.value === ${JSON.stringify('@'+assignerHandle)})`),false);
+    const taskSelector = 'dialog[aria-label="Assign Tasks"] textarea';
+    const writeAssignment = async (view, text) => {
+      await view.evaluate(`(() => {const input=document.querySelector(${JSON.stringify(taskSelector)});Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    };
+    await writeAssignment(assigner, '@');
+    await eventually(()=>assigner.evaluate(`Array.from(document.querySelectorAll('dialog button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}))`),"room member picker");
+    assert.equal(await assigner.evaluate(`Array.from(document.querySelectorAll('dialog button')).some(button=>button.textContent.includes(${JSON.stringify('@'+assignerHandle+' ·')}))`),false);
+    await assigner.evaluate(`Array.from(document.querySelectorAll('dialog button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')})).click()`);
     // Direct requests cannot bypass the picker, and rejected requests create
     // neither an assignment nor a fresh chat (including UUID casing changes).
     const chatsBeforeSelf=(await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n;
@@ -221,24 +233,17 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
     }
     assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatsBeforeSelf);
-    await assigner.evaluate(`(() => {
-      const form = document.querySelector('section[aria-label="Chat tasks"] form');
-      const input = form.querySelector('input');
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(`@${aliceHandle}`)});
-      input.dispatchEvent(new Event('input',{bubbles:true}));
-      const textarea = form.querySelector('textarea');
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(taskText)});
-      textarea.dispatchEvent(new Event('input',{bubbles:true}));
-    })()`);
+    await writeAssignment(assigner, '@'+aliceHandle+' '+taskText);
     // A failed delivery keeps the draft intact so the user can retry.
     await assigner.command("Network.enable",{});
     await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
-    await assigner.click("Create task");
-    await eventually(() => assigner.evaluate('!!document.querySelector(\'section[aria-label="Chat tasks"] [role="alert"]\')'), "task delivery failure");
-    assert.equal(await assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] textarea\').value'),taskText);
+    await assigner.click("Assign task");
+    await eventually(() => assigner.evaluate('!!document.querySelector(\'dialog[aria-label="Assign Tasks"] [role="alert"]\')'), "task delivery failure");
+    assert.equal(await assigner.evaluate('document.querySelector(\'dialog[aria-label="Assign Tasks"] textarea\').value'),'@'+aliceHandle+' '+taskText);
     await assigner.command("Network.setBlockedURLs",{urls:[]});
-    await assigner.click("Create task");
-    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] [role="status"]\')?.textContent.includes("Task assigned")'), "task assignment confirmation");
+    await assigner.click("Assign task");
+    await eventually(() => assigner.evaluate('document.querySelector(\'dialog[aria-label="Assign Tasks"] [role="status"]\')?.textContent.includes("Task assigned")'), "task assignment confirmation");
+    await assigner.evaluate(`document.querySelector('button[aria-label="Close Assign Tasks"]').click()`);
     const stored = (await sql(`SELECT * FROM room_tasks WHERE run_id=$1`,[chat.id])).rows;
     assert.equal(stored.length,1);
     assert.equal(stored[0].assignee_id,alice);
@@ -261,8 +266,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
     await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] select\')?.value === "done"'), "status refresh in source chat");
-    // @people in the actual composer assigns a human task without running AI.
-    const composerSelector = '.room-main textarea[placeholder="Type @ to assign a task to a teammate…"]';
+    // The File Manager assignment dialog works without running AI.
+    await assigner.click("Assign Tasks");
+    const composerSelector = taskSelector;
     const setComposer = text => assigner.evaluate(`(() => {
       const textarea=document.querySelector(${JSON.stringify(composerSelector)});
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(text)});
@@ -314,8 +320,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         return response;
       };
     })()`);
-    await fresh.selectOption('select[aria-label="Active repository"]', imported.id);
-    const freshSelector='.room-main textarea[placeholder="Type @ to assign a task, or connect an agent…"]';
+    await fresh.selectRepository("Imported storefront");
+    await fresh.click("Assign Tasks");
+    const freshSelector=taskSelector;
     const writeFresh = text => fresh.evaluate(`(() => {
       const textarea=document.querySelector(${JSON.stringify(freshSelector)});
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(textarea,${JSON.stringify(text)});
@@ -360,11 +367,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     for (const view of [assigner,inbox]) await send("Target.closeTarget",{targetId:view.targetId});
     console.log("  ok person tagging from another person's chat, failed-send draft recovery, dashboard assignment, completion, and source deep link");
     for (const view of [sender, recipient]) {
-      await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility() && Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Chats & team" && button.getAttribute("aria-expanded") === "true")'), "Chats & team open by default");
-      await view.click("Chats & team");
-      await eventually(() => view.evaluate('!document.querySelector(".room-sidebar")?.checkVisibility()'), "Chats & team can be hidden");
-      await view.click("Chats & team");
-      await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility()'), "Chats & team can be reopened");
+      await eventually(() => view.evaluate('document.querySelector(".room-sidebar")?.checkVisibility()'), "project sidebar visible");
+      await view.evaluate(`(() => {const button=Array.from(document.querySelectorAll('.room-sidebar button[aria-expanded]')).find(button=>button.textContent.includes('Platform'));if(button.getAttribute('aria-expanded')==='false')button.click();button.click();})()`);
+      await eventually(()=>view.evaluate(`!document.querySelector('button[title^="Browser handoff ·"]')`),"repository collapses");
+      await view.evaluate(`Array.from(document.querySelectorAll('.room-sidebar button[aria-expanded]')).find(button=>button.textContent.includes('Platform')).click()`);
+      await eventually(()=>view.evaluate(`!!document.querySelector('button[title^="Browser handoff ·"]')`),"repository expands");
     }
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: welcome.txt"]\')?.checkVisibility()'), "files visible on initial room open");
     const catalogToken = randomBytes(32).toString("base64url");
@@ -377,11 +384,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     };
     await advertise("test-provider/release-one");
     await recipient.evaluate('window.dispatchEvent(new Event("focus"))');
-    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll(\'select[aria-label="Provider"] option\')).some(option => option.value === "opencode")'), "discovered multi-provider execution option");
-    await recipient.selectOption('select[aria-label="Provider"]', 'opencode');
+    await eventually(() => recipient.evaluate('!!document.querySelector(\'button[aria-label="Provider"]\')'), "discovered multi-provider execution option");
+    await recipient.selectPicker("Provider", 'opencode');
     await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
-    await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-one")'), "runner model discovery in picker");
-    await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-one")).click()');
+    await eventually(() => recipient.evaluate('document.querySelector(".composer-picker")?.textContent.includes("test-provider/release-one")'), "runner model discovery in picker");
+    await recipient.evaluate('Array.from(document.querySelectorAll(".composer-picker button")).find(button => button.textContent.includes("test-provider/release-one")).click()');
     assert.equal(JSON.stringify(await (await request(tokens[0], "/api/ai/agents")).json()).includes("test-provider/release-one"), false, "Runner model catalogs are scoped to their owner");
     await advertise("test-provider/release-two");
     await recipient.evaluate('window.dispatchEvent(new Event("focus"))');
@@ -389,9 +396,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const removed = await request(tokens[1], "/api/ai/run", "POST", { sessionId: roomId, agentId: "opencode", model: "test-provider/release-one", prompt: "Do not execute unavailable models" });
     assert.equal(removed.status, 409);
     await recipient.evaluate('document.querySelector(\'button[aria-label="Choose model"]\').click()');
-    await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("test-provider/release-two")'), "new release appears without a code update");
-    await recipient.evaluate('Array.from(document.querySelectorAll("dialog button")).find(button => button.textContent.includes("test-provider/release-two")).click()');
-    await recipient.selectOption('select[aria-label="Provider"]', 'codex');
+    await eventually(() => recipient.evaluate('document.querySelector(".composer-picker")?.textContent.includes("test-provider/release-two")'), "new release appears without a code update");
+    await recipient.evaluate('Array.from(document.querySelectorAll(".composer-picker button")).find(button => button.textContent.includes("test-provider/release-two")).click()');
+    await recipient.selectPicker("Provider", 'codex');
     await sql(`UPDATE runner_devices SET revoked_at = now() WHERE id = $1`, [catalogDevice]);
     console.log("  ok live model-picker updates, new and retired models, per-user catalog isolation, and unavailable-model refusal");
     const beforeStarter = (await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count;
@@ -414,20 +421,21 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await view.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Browser handoff')).click()");
       await eventually(() => view.evaluate("!!document.querySelector('section[aria-label=\"Chat control\"]')"), "handoff controls");
     }
-    await sender.click("Hand off");
+    await sender.click("Handoff");
     await eventually(() => sender.evaluate("!!document.querySelector('dialog select')"), "handoff dialog");
     await sender.selectOption('dialog select', bob);
     await sender.evaluate(`(() => { const note = document.querySelector('dialog textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Continue the accessible checkout'); note.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await sender.evaluate("document.querySelector('dialog form').requestSubmit()");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('Open handoff')"), "recipient inbox");
     await recipient.click("Open handoff");
+    await recipient.click("Handoff");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('Accept control')"), "recipient offer via live API");
     await recipient.click("Accept control");
-    await eventually(() => recipient.evaluate("document.body.textContent.includes('You are driving')"), "recipient owns chat");
-    await eventually(() => sender.evaluate("document.body.textContent.includes('bob is driving')"), "sender control invalidation");
+    await eventually(() => recipient.evaluate(`document.querySelector('section[aria-label="Chat control"]')?.title.includes('bob is driving')`), "recipient owns chat");
+    await eventually(() => sender.evaluate(`document.querySelector('section[aria-label="Chat control"]')?.title.includes('bob is driving')`), "sender control invalidation");
     console.log("  ok two independent browsers offer and accept a handoff using the real API and event bus");
 
-    await recipient.selectOption('select[aria-label="Active repository"]', imported.id);
+    await recipient.selectRepository("Imported storefront");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('checkout.ts')"), "imported file explorer");
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: .env.example"]\')?.checkVisibility()'), "imported dotfiles visible");
     await recipient.evaluate('document.querySelector(\'button[aria-label="Folder: src/components"]\').click()');
@@ -468,12 +476,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const screenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
       await writeFile(join("/tmp", `handoff-room-${name}.png`), Buffer.from(screenshot.data, "base64"));
     }
-    await recipient.click("Files & changes");
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), "mobile return to explorer");
     await recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\').click()');
     await eventually(() => recipient.evaluate('document.querySelector(".room-file-document")?.checkVisibility()'), "mobile file editor");
     await recipient.command("Page.reload", {});
-    await eventually(() => recipient.evaluate(`document.querySelector('select[aria-label="Active repository"]')?.value === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
+    await eventually(() => recipient.evaluate(`sessionStorage.getItem('room-repository:${roomId}') === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
     console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
     const uploadStarted = performance.now();
     await recipient.evaluate(`(() => {
@@ -489,9 +496,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       input.files = transfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
-    await eventually(() => recipient.evaluate("document.querySelector('select[aria-label=\"Active repository\"]').selectedOptions[0].textContent === 'Browser upload' && document.body.textContent.includes('uploaded.ts')"), "automatic file selection after folder upload");
+    await eventually(() => recipient.evaluate("!!document.querySelector('button[aria-label=\"New chat in Browser upload\"]') && document.body.textContent.includes('uploaded.ts')"), "automatic file selection after folder upload");
     const uploadMs = Math.round(performance.now() - uploadStarted);
-    const browserRepoId = await recipient.evaluate('document.querySelector(\'select[aria-label="Active repository"]\').value');
+    const browserRepoId = await recipient.evaluate(`sessionStorage.getItem('room-repository:${roomId}')`);
     const teammateFile = await request(tokens[0], `/api/sessions/${roomId}/file?repoId=${browserRepoId}&path=bulk/file999.txt`);
     assert.equal(teammateFile.status, 200);
     assert.equal((await teammateFile.json()).text, 'contents 999');
@@ -515,7 +522,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "initial project upload appears without reload");
     await upload(fresh, 1, "Second project", "lib/second.ts", "export const second = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: lib/second.ts"]\')?.checkVisibility()'), "additional import in freshly seeded room");
-    await fresh.selectOption('select[aria-label="Active repository"]', '');
+    await fresh.selectRepository("First project");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
     await fresh.command("Network.enable", {});
     await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/file?*`] });

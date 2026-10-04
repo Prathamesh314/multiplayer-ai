@@ -141,6 +141,58 @@ appropriate ingress controls, monitoring and measured connection/admission limit
 
 ## Data, updates and release gates
 
+### Automatic releases from main
+
+`Application checks` now deploys successful pushes to `main`, and successful
+manual runs of that workflow on `main`. Pull requests run checks only. The
+deployment job depends on the complete checks job, skips superseded commits,
+and serializes releases without cancelling a running deployment. It sends the
+exact checked commit as a Git bundle; production needs no GitHub token.
+
+Configure these repository Actions settings once:
+
+| Setting | Type | Value |
+| --- | --- | --- |
+| `PRODUCTION_DEPLOY_HOST` | Variable | Production SSH hostname/IP |
+| `PRODUCTION_DEPLOY_SSH_KEY` | Secret | Dedicated Ed25519 private deployment key |
+| `PRODUCTION_DEPLOY_KNOWN_HOSTS` | Secret | Host public key verified over an existing trusted connection |
+
+On the host, install `scripts/deploy-ssh-entrypoint.sh` as root-owned executable
+`/usr/local/sbin/multiplayer-ci-deploy`. Add the dedicated **public** key to root's
+`authorized_keys` with `restrict,command="/usr/local/sbin/multiplayer-ci-deploy"`.
+This key accepts only `deploy <40-character SHA>` and a bounded Git bundle on
+stdin; it cannot request an interactive shell, arbitrary SSH commands, forwarding,
+or file transfers. The installed entrypoint is deliberately outside the checkout;
+entrypoint changes need an administrative installation. Access to this key and
+changes on `main` remain privileged because reviewed release code runs on the host.
+
+The host requires `/opt/multiplayer-ai`, the existing `.env.production`, Docker
+Compose, Bash, Git, curl, flock, and timeout. Preserve any ignored
+`compose.https.yml` overrides. Keep `BACKUP_ENCRYPTION_KEY` in the root-only
+`/root/multiplayer-deployment-config/backup-key.env`, with a separate off-host copy.
+
+`scripts/deploy-production.sh` builds commit-tagged web/worker images while the
+old release is live, refuses deployment during active AI work or with less than
+8 GiB available, closes admission, creates an encrypted coordinated backup, runs
+migrations once, and waits for both web replicas. Only the running application
+services are started with `--wait`; successful one-shot setup services are excluded.
+It then checks image versions and public HTTPS pages. There is a short maintenance
+window during backup and activation. Infrastructure sidecars and desktop installers
+continue to have separate upgrade/release procedures.
+
+Failures restore the prior checkout, environment and running services if the
+schema is unchanged. If migrations changed the schema (or it cannot be checked),
+the application stays stopped and the workflow fails with recovery paths; it never
+starts an older image against an unverified schema or silently restores over new
+data. Follow `backup-restore.md` for recovery. After fixing a failure, rerun the
+workflow on the current `main`. Active-work refusals can be retried when work ends.
+
+Release records and the last successful SHA are under
+`/root/multiplayer-deployment-config`; encrypted backups are under
+`/root/multiplayer-backups`. This workflow retains previous images and backups;
+monitor disk usage and copy backups off-host using the existing backup procedure.
+The Actions deployment log and job summary identify the deployed SHA and URL.
+
 Back up PostgreSQL, `workspace_data` and memory data coherently to storage outside
 this host. Test restoration before onboarding valuable repositories. Never run
 `docker compose down -v` on this deployment. Development and production Compose

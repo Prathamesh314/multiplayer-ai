@@ -9,12 +9,11 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: application-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   checks:
+    concurrency:
+      group: application-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     services:
@@ -63,6 +62,7 @@ jobs:
       - run: node --import tsx --test tests/desktop-downloads.test.mjs
       - run: node --import tsx --test tests/return-path.test.mjs
       - run: npm run test:docker-context
+      - run: node --test tests/production-deploy.test.mjs
       - run: npm run build -- --webpack
       - run: npm run test:signup:http
         env:
@@ -101,3 +101,53 @@ jobs:
         run: npm run test:backup
         env:
           BACKUP_TEST_IMAGE: multiplayer-web:ci
+
+  deploy:
+    name: Deploy production
+    needs: checks
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    # Never interrupt a release while it is backing up or migrating data.
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Skip superseded revisions
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping superseded revision $GITHUB_SHA; main is $latest." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Deploy checked revision over restricted SSH
+        if: steps.revision.outputs.current == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.PRODUCTION_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.PRODUCTION_DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS" && test -n "$DEPLOY_HOST"
+          umask 077
+          key="$RUNNER_TEMP/deploy-key"
+          hosts="$RUNNER_TEMP/deploy-known-hosts"
+          bundle="$RUNNER_TEMP/release.bundle"
+          trap 'rm -f "$key" "$hosts" "$bundle"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$hosts"
+          git bundle create "$bundle" HEAD
+          ssh -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+            "root@$DEPLOY_HOST" "deploy $GITHUB_SHA" < "$bundle"
+          echo "Deployed $GITHUB_SHA to https://cubeclashes.com after all application checks passed." >> "$GITHUB_STEP_SUMMARY"

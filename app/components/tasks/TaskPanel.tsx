@@ -15,8 +15,8 @@ async function request<T>(url:string, init?:RequestInit):Promise<T> {
 }
 
 /** Same durable assignments in their source chat and the assignee's inbox. */
-export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion=0}: {
-  userId:string; sessionId?:string; runId?:string; canAssign?:boolean; refreshVersion?:number;
+export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignAction=true,hideWhenEmpty=false,refreshVersion=0}: {
+  userId:string; sessionId?:string; runId?:string; canAssign?:boolean; showAssignAction?:boolean; hideWhenEmpty?:boolean; refreshVersion?:number;
 }) {
   const [tasks,setTasks] = useState<RoomTask[]>([]);
   const [members,setMembers] = useState<TaskMember[]>([]);
@@ -82,10 +82,12 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,refreshVersion
     finally { mutation.current=false; setBusy(false); }
   }
 
+  if (hideWhenEmpty && !loading && !error && tasks.length === 0) return null;
+
   return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-6 rounded-2xl border border-vs-border bg-vs-panel p-5 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="font-semibold">{runId ? "Chat tasks" : "My tasks"}</h2>
-      {runId && canAssign && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-3 py-1 text-vs-accent">@ Assign task</button>}
+      {runId && canAssign && showAssignAction && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-3 py-1 text-vs-accent">@ Assign task</button>}
       {!runId && <span className="text-xs text-vs-muted">Assigned to you across your rooms</span>}
     </div>
     {assigning && <form onSubmit={assign} className="mt-3 space-y-3">

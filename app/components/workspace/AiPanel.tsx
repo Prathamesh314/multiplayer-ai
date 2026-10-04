@@ -3,6 +3,7 @@ import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
 import { Modal } from "../ui/Modal";
+import { ComposerPicker } from "./ComposerPicker";
 import { ModelPicker } from "./ModelPicker";
 
 import { useEffect, useRef, useState } from "react";
@@ -720,8 +721,8 @@ export function AiPanel({
             />
           </>
         )}
-        <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover aria-pressed:text-vs-accent disabled:opacity-40">ϟ Fast</button>
-        <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover aria-pressed:text-vs-accent">Plan</button>
+        <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="composer-control composer-toggle">ϟ Fast</button>
+        <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="composer-control composer-toggle">Plan</button>
         {!entered && forkableRuns.length > 0 && (
           <>
             <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
@@ -742,7 +743,7 @@ export function AiPanel({
               title={`Signed in as ${activeAuth.email ?? "your account"}${
                 activeAuth.plan ? ` · ${planLabel(activeAuth.plan)}` : ""
               } — click to manage`}
-              className="flex min-w-0 shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
+              className="composer-control"
             >
               <StatusDot ok />
               <span className="max-w-[6rem] truncate">
@@ -887,7 +888,7 @@ export function AiPanel({
             {error}
           </p>
         )}
-        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} refreshVersion={taskRevision} /></div>}
+        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
       </div>
 
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
@@ -906,7 +907,6 @@ export function AiPanel({
       ) : entered && !enteredIsMine ? (
         <>
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">You’re watching {entered.driverName}’s chat. Accept a handoff to continue here, or <button className="text-vs-accent underline" onClick={() => onForkEntered(entered)}>fork a new chat</button>.</div>
-        {canRun && <Composer key={`tasks-${entered.id}`} placeholder="Type @ to assign a task to a teammate…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />}
         </>
       ) : entered && ["running", "queued"].includes(entered.status) ? (
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">The agent is working. You can queue another instruction below.</div>
@@ -919,14 +919,12 @@ export function AiPanel({
           narrow
           footer={composerFooter}
           mentions={mentionRooms}
-          people={taskPeople}
-          onAssignTask={canRun ? assignChatTask : undefined}
           placeholder={
             !ready
-              ? canRun ? "Type @ to assign a task, or connect an agent…" : "Connect an agent first…"
+              ? "Connect an agent to start a conversation…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…${canRun ? "  (@ people or chats)" : mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
+                : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
           }
           onSend={ask}
         />
@@ -1539,40 +1537,15 @@ function WatchingCluster({ members }: { members: SessionMember[] }) {
 // Composer footer selectors
 // ---------------------------------------------------------------------------
 
-/** A compact icon + native <select> "chip" for the composer toolbar. */
-function SelectChip({
-  icon,
-  value,
-  onChange,
-  options,
-  title,
-}: {
+/** All composer selectors share the same upward-opening menu. */
+function SelectChip({ icon, value, onChange, options, title }: {
   icon?: React.ReactNode;
   value: string;
   onChange: (value: string) => void;
   options: AgentChoice[];
   title: string;
 }) {
-  return (
-    <label
-      title={title}
-      className="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
-    >
-      {icon}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label={title}
-        className="max-w-[7rem] cursor-pointer truncate bg-transparent text-vs-fg outline-none [&>option]:bg-vs-panel [&>option]:text-vs-fg"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  return <ComposerPicker label={title} icon={icon} value={value} options={options} onChange={onChange} />;
 }
 
 /** Signal-bar glyph for the capacity selector — no equivalent in the icon set. */

@@ -7,7 +7,7 @@
 .workspaceNavigation > header { height: 64px; border-color: var(--vs-border); }
 .workspaceNavigation > header span { font-size: 16px; }
 .profileBar { border: 1px solid var(--vs-border); display: flex; align-items: center; gap: 9px; margin: 8px; padding: 11px 10px; background: var(--vs-panel); border-radius: 9px; }
-.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 35px; height: 35px; border-radius: 50%; background: #534876; color: #e4dcff; font-size: 12px; font-weight: 600; }
+.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 35px; height: 35px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 12px; font-weight: 600; }
 .profileName { min-width: 0; flex: 1; }
 .profileName p { line-height: 1.6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
 .profileName span { line-height: 1.6; display: block; color: var(--vs-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
@@ -31,11 +31,11 @@
 .iconButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 6px; color: var(--vs-muted); cursor: pointer; transition: color .15s, background .15s; }
 .iconButton > svg { width: 19px; height: 19px; }
 .iconButton:hover, .iconButton[aria-expanded="true"] { background: var(--vs-hover); color: var(--vs-fg); }
-.connection { width: 6px; height: 6px; border-radius: 50%; background: #787885; margin-right: 4px; }
-.connected { background: #4da780; }
+.connection { width: 6px; height: 6px; border-radius: 50%; background: var(--vs-muted); margin-right: 4px; }
+.connected { background: var(--vs-success); }
 .conversationBody { position: relative; display: flex; min-height: 0; flex: 1; }
 .messageColumn { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
-.timeline { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 24px 0 18px; scrollbar-color: #3c3c46 transparent; scrollbar-width: thin; }
+.timeline { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 24px 0 18px; scrollbar-color: var(--vs-border) transparent; scrollbar-width: thin; }
 .channelWelcome { margin: 15px 28px 30px; max-width: 640px; }
 .channelWelcome > span { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--vs-active); color: var(--vs-muted); font-size: 42px; margin-bottom: 17px; }
 .channelWelcome h3 { font-size: 28px; font-weight: 700; letter-spacing: -.65px; line-height: 1.25; color: var(--vs-fg); }

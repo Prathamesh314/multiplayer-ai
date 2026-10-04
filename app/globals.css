@@ -1,28 +1,27 @@
 @import "tailwindcss";
 
-/* Shared workspace palette. Respect the OS light preference while keeping
-   the same hierarchy, readable contrast and violet accents in both modes. */
+/* One warm dark palette for projects, sessions, dialogs, and menus. */
 :root {
   color-scheme: dark;
-  --background: #111017;
-  --foreground: #eeedf4;
+  --background: #141210;
+  --foreground: #e5e2df;
 
-  --vs-editor: #16151e;
-  --vs-panel: #1c1a26;
-  --vs-chrome: #111017;
-  --vs-border: #34303f;
-  --vs-fg: #eeedf4;
-  --vs-muted: #aba5ba;
-  --vs-hover: rgb(193 173 244 / 0.075);
-  --vs-active: rgb(193 173 244 / 0.14);
-  --vs-accent: #bfacf2;
-  --vs-accent-fg: #211733;
+  --vs-editor: #141210;
+  --vs-panel: #1c1a18;
+  --vs-chrome: #211f1c;
+  --vs-border: #383530;
+  --vs-fg: #e5e2df;
+  --vs-muted: #a8a39d;
+  --vs-hover: #ffffff09;
+  --vs-active: #2c2926;
+  --vs-accent: #d7bba9;
+  --vs-accent-fg: #211a15;
   --vs-gutter: #54555b;
   --vs-shadow: rgb(0 0 0 / 0.55);
 
   /* A quiet terminal surface with the same chrome as the workspace. */
-  --vs-terminal: #111017;
-  --vs-terminal-head: #1c1a26;
+  --vs-terminal: #141210;
+  --vs-terminal-head: #181613;
 
   /* Git, diff and status colors stay distinct from the action accent. */
   --vs-success: #2fbf6f;
@@ -38,54 +37,13 @@
   --syn-control: #c58fd6;
   --syn-string: #d18a5c;
   --syn-number: #8fbf8a;
-  --syn-comment: #6c7078;
+  --syn-comment: #85817a;
   --syn-function: #d9c67a;
   --syn-type: #5fbfae;
   --syn-variable: #8fc4e8;
   --syn-punct: #9a9ba1;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --background: #f6f5f9;
-    --foreground: #252130;
-
-    --vs-editor: #ffffff;
-    --vs-panel: #f5f3f9;
-    --vs-chrome: #eeebf4;
-    --vs-border: #dcd6e7;
-    --vs-fg: #252130;
-    --vs-muted: #686075;
-    --vs-hover: rgb(105 72 166 / 0.06);
-    --vs-active: rgb(105 72 166 / 0.12);
-    --vs-accent: #7047b8;
-    --vs-accent-fg: #ffffff;
-    --vs-gutter: #6e7681;
-    --vs-shadow: rgb(0 0 0 / 0.08);
-
-    --vs-terminal: #ffffff;
-    --vs-terminal-head: #f0f0f0;
-
-    --vs-success: #16a34a;
-    --vs-success-fg: #ffffff;
-    --vs-danger: #d13438;
-    --vs-danger-fg: #ffffff;
-    --vs-warn: #b7791f;
-    --vs-warn-fg: #ffffff;
-
-    --syn-plain: #3b3b3b;
-    --syn-keyword: #0000ff;
-    --syn-control: #af00db;
-    --syn-string: #a31515;
-    --syn-number: #098658;
-    --syn-comment: #008000;
-    --syn-function: #795e26;
-    --syn-type: #267f99;
-    --syn-variable: #001080;
-    --syn-punct: #6c6c6c;
-  }
-}
 
 @theme inline {
   --color-background: var(--background);
@@ -130,7 +88,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* Kerning + common ligatures so body copy sets cleanly at the larger base size. */
   font-feature-settings: "kern", "liga", "calt";
   text-rendering: optimizeLegibility;
@@ -248,34 +206,8 @@ body {
   .room-main { min-width: 0; }
 }
 
-/* Session chrome follows the desktop reference without changing other pages. */
-.session-workspace {
-  color-scheme: dark;
-  --vs-editor: #141210;
-  --vs-panel: #1c1a18;
-  --vs-chrome: #211f1c;
-  --vs-border: #383530;
-  --vs-fg: #e5e2df;
-  --vs-muted: #a8a39d;
-  --vs-hover: #ffffff09;
-  --vs-active: #2c2926;
-  --vs-accent: #d7bba9;
-  --vs-accent-fg: #211a15;
-  --vs-terminal: #141210;
-  --vs-terminal-head: #181613;
-  --syn-plain: #e7e8ea;
-  --syn-keyword: #6ba7e0;
-  --syn-control: #c58fd6;
-  --syn-string: #d18a5c;
-  --syn-number: #8fbf8a;
-  --syn-comment: #85817a;
-  --syn-function: #d9c67a;
-  --syn-type: #5fbfae;
-  --syn-variable: #8fc4e8;
-  --syn-punct: #9a9ba1;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
-}
+/* Session layout; colors come from the shared workspace palette above. */
+.session-workspace { font-size: 14px; }
 .session-workspace .room-toolbar { min-height: 40px; padding: 4px 12px; gap: 8px; }
 .session-workspace .room-toolbar-actions { width: auto; gap: 4px; }
 .session-workspace .room-toolbar-actions > button { min-height: 26px; font-size: 12px; padding: 4px 8px; border-radius: 5px; }
@@ -287,10 +219,10 @@ body {
 .session-workspace .ai-chat-header h2 { font-size: 13px; font-weight: 400; }
 .session-workspace .ai-chat-header > div:first-child > div { margin-top: 3px; font-size: 11px; }
 .session-workspace .ai-composer { padding: 12px 28px 18px; }
-.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 9px; background: #211f1c; }
+.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 16px; background: var(--vs-chrome); }
 .session-workspace .ai-composer textarea { font-size: 14px; min-height: 100px; }
 .session-workspace .ai-composer-footer { border-top: 0; margin-top: 16px; }
-.session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 5px; }
+.session-workspace .ai-composer button[aria-label="Send message"] { width: 34px; height: 34px; border-radius: 11px; }
 .session-workspace .human-message { background: #2b201d; }
 .session-workspace .assistant-message > span { display: none; }
 .session-workspace .assistant-message > div > header { margin-bottom: 10px; }
@@ -307,3 +239,35 @@ body {
   .session-workspace .ai-composer { padding: 12px; }
   .session-workspace .conversation-transcript { padding-inline: 20px; }
 }
+
+/* Arrow-free composer controls and their upward-opening menus. */
+.composer-control {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-width: 0; max-width: 220px; min-height: 36px; padding: 7px 11px;
+  border: 1px solid transparent; border-radius: 10px; background: var(--vs-hover);
+  color: var(--vs-fg); font-size: 14px; font-weight: 500; line-height: 20px;
+}
+.composer-control:hover, .composer-control[aria-expanded="true"] { background: var(--vs-active); border-color: var(--vs-border); }
+.composer-control:disabled { opacity: .4; }
+.composer-toggle { color: var(--vs-muted); }
+.composer-toggle[aria-pressed="true"] { color: var(--vs-accent); background: color-mix(in srgb, var(--vs-accent) 12%, transparent); border-color: color-mix(in srgb, var(--vs-accent) 22%, transparent); }
+.room-composer-tools { gap: 6px; }
+.room-composer-tools > span { display: none; }
+.composer-picker {
+  position: fixed; z-index: 100; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--vs-border); border-radius: 16px; padding: 6px;
+  background: var(--vs-panel); color: var(--vs-fg);
+  box-shadow: 0 18px 60px var(--vs-shadow), 0 2px 8px #0003;
+  animation: picker-enter 120ms ease-out;
+}
+.composer-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.composer-picker-search { display: flex; align-items: center; gap: 10px; margin: 0 6px 8px; padding: 10px 12px; background: var(--vs-editor); border: 1px solid var(--vs-border); border-radius: 10px; color: var(--vs-muted); }
+.composer-picker-search input { min-width: 0; width: 100%; background: transparent; font-size: 16px; color: var(--vs-fg); }
+.composer-picker-options { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
+.composer-picker-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; text-align: left; font-size: 16px; line-height: 24px; }
+.composer-picker-option:hover, .composer-picker-option:focus-visible { background: var(--vs-hover); }
+.composer-picker-option[aria-selected="true"] { background: var(--vs-active); }
+.composer-picker-description { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--vs-muted); font-family: var(--font-geist-mono), monospace; font-size: 12px; line-height: 18px; }
+.composer-picker-group { padding: 9px 12px 5px; font-size: 13px; color: var(--vs-muted); }
+.composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 12px; line-height: 18px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
+@keyframes picker-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
