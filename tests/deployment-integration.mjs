@@ -57,20 +57,35 @@ async function gateway(ports) {
 
 try {
   // Validate actual Compose output, including the environment and port merging.
-  const config = JSON.parse(await docker(['compose', '--env-file', '/dev/null', '-f', 'compose.production.yml', 'config', '--format', 'json'], {
+  const composeConfig = async (credentialsFile = '') => JSON.parse(await docker(['compose', '--env-file', '/dev/null', '-f', 'compose.production.yml', 'config', '--format', 'json'], {
     env: { ...process.env, POSTGRES_PASSWORD: 'test-only-password', MNEMOSYNE_MCP_TOKEN: secret,
-      PROXY_SHARED_SECRET: secret, APP_DOMAIN: 'example.com', ACME_EMAIL: 'fixture@example.com' },
+      PROXY_SHARED_SECRET: secret, APP_DOMAIN: 'example.com', ACME_EMAIL: 'fixture@example.com', GOOGLE_OAUTH_CREDENTIALS_FILE: credentialsFile },
   }));
+  const config = await composeConfig();
   for (const [name, service] of Object.entries(config.services)) if (name !== 'gateway') assert.equal(service.ports, undefined, `${name} is private`);
   assert.equal(config.services.web.image, config.services.web2.image);
   assert.deepEqual(config.services.web.volumes, config.services.web2.volumes);
-  assert.deepEqual(config.services.web.volumes, config.services.worker.volumes);
+  assert.deepEqual(config.services.web.volumes.filter(volume => volume.type === 'volume'), config.services.worker.volumes);
   for (const name of ['web', 'web2']) {
     assert.equal(config.services[name].environment.API_TRUST_PROXY, '1');
     assert.equal(config.services[name].environment.WEB_CONCURRENCY, '1');
     assert.equal(config.services[name].depends_on.migrate.condition, 'service_completed_successfully');
   }
+  const credentialPath = join(root, 'google-oauth.json');
+  const configured = await composeConfig(credentialPath);
+  for (const [deployment, source, credentialEnv] of [[config, '/dev/null', ''], [configured, credentialPath, '/run/secrets/google-oauth.json']]) {
+    for (const name of ['web', 'web2']) {
+      const service = deployment.services[name];
+      const mount = service.volumes.find(volume => volume.target === '/run/secrets/google-oauth.json');
+      assert.equal(mount.type, 'bind');
+      assert.equal(mount.source, source);
+      assert.equal(mount.read_only, true);
+      assert.equal(service.environment.GOOGLE_OAUTH_CREDENTIALS_FILE, credentialEnv);
+    }
+    assert.equal(deployment.services.worker.volumes.some(volume => volume.target === '/run/secrets/google-oauth.json'), false);
+  }
   console.log('PASS: private backing services, shared Git volume/image and single migration owner.');
+  console.log('PASS: optional Google credential file is mounted read-only in both web replicas, never the worker.');
 
   fixture = await memoryFixture({ postgres: true });
   const databaseUrl = new URL(process.env.DATABASE_URL);
