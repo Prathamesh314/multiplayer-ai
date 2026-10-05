@@ -636,20 +636,21 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sender.click("Cancel");
     await sender.command("Network.enable", {});
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/ai/agents*"] });
-    await sender.click("Set up AI");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer.")'), "AI setup provides next steps");
+    await sender.evaluate('document.querySelector(\'button[aria-label="AI providers"]\').click()');
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect your computer.")'), "AI setup provides next steps");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "AI setup failures surface with a retry");
     await sender.command("Network.setBlockedURLs", { urls: [] });
     await sender.click("Check connections");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/runner/devices*"] });
     await sender.click("Connect your computer");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("The desktop app connects this computer automatically after sign-in")'), "AI setup links to device pairing");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer to send AI messages")'), "AI setup links to device pairing");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
     await sender.command("Network.setBlockedURLs", { urls: [] });
-    await sender.click("Try again");
-    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a computer" && !button.disabled)'), "device loading retry recovers");
-    await sender.click("Connect a computer");
+    await sender.click("Check connection again");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a new computer with commands" && !button.disabled)'), "device loading retry recovers");
+    await sender.evaluate('document.querySelector("dialog details summary").click()');
+    await sender.click("Connect a new computer with commands");
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("multiplayer-ai-runner pair")'), "standalone runner pairing instructions");
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multiplayer-ai-runner.tgz`));
@@ -662,7 +663,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal(download.status, 200);
     const artifact = new Uint8Array(await download.arrayBuffer());
     assert.deepEqual([...artifact.slice(0, 2)], [0x1f, 0x8b], 'download is the actual gzip package');
-    await sender.click("Done");
+    await sender.click("Close");
     await eventually(() => sender.evaluate('!document.querySelector("dialog") && document.querySelector("main h1")?.textContent === "UX workshop"'), "return to project overview");
     for (const [width, height, name] of [[1440, 960, "desktop"], [390, 844, "mobile"]]) {
       await sender.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });

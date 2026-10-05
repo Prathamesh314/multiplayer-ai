@@ -14,8 +14,9 @@ export type { MentionRoomDTO };
 export async function fetchAgents(refresh = false): Promise<AgentsResponse> {
   const response = await fetch(`/api/ai/agents${refresh ? "?refresh=1" : ""}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
-  if (!response.ok) throw new Error("Could not refresh providers.");
+  if (!response.ok) throw new Error("We couldn’t check your AI tools. Check your internet connection and try again.");
   return (await response.json()) as AgentsResponse;
 }
 

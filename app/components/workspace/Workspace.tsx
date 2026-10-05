@@ -53,6 +53,8 @@ import { WelcomeView } from "./WelcomeView";
 import { RoomGuide, type RoomGuideAction } from "./RoomGuide";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
+import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
+import { useComputerConnection } from "../ai/useComputerConnection";
 import { MemoryDialog } from "./MemoryDialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -72,6 +74,9 @@ export function Workspace({
   onAccessLost?: (reason?: string) => void;
 }) {
   const router = useRouter();
+  const computerConnection = useComputerConnection();
+  const navigatingRef = useRef(false);
+  const [navigationPending, setNavigationPending] = useState(false);
 
   // The room's session held in state, not read straight from the prop, so a live
   // role change can refresh it in place — `readOnly` and every capability gate
@@ -310,6 +315,27 @@ export function Workspace({
       chatRepoId),
     [session.id, chatRepoId, savedFile],
   );
+
+  async function navigatePage(destination: "back" | "forward" | "projects") {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    setNavigationPending(true);
+    try {
+      const saved = await saver.flush();
+      if (!saved || [...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) {
+        setError("Your edits are not saved yet. Resolve them before leaving.");
+        return;
+      }
+      if (destination === "projects") router.push("/workspace");
+      else if (destination === "back") router.back();
+      else router.forward();
+    } catch {
+      setError("Could not leave this page. Your edits are still here. Please try again.");
+    } finally {
+      navigatingRef.current = false;
+      setNavigationPending(false);
+    }
+  }
 
   const selectRepository = useCallback(async (next: string | null): Promise<boolean> => {
     if (next === selectedRepoRef.current) return true;
@@ -876,7 +902,9 @@ export function Workspace({
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
         onInvite={() => setInviteOpen(true)}
-        onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/workspace"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
+        onLeave={() => { void navigatePage("projects"); }}
+        onNavigate={direction => { void navigatePage(direction); }}
+        navigationPending={navigationPending}
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
@@ -895,9 +923,10 @@ export function Workspace({
           setRoomRepos(repos); setTreeRevision(value => value + 1);
         }}
       />
+      <ComputerConnectionNotice compact connection={computerConnection} onConnect={() => setHelpDialog("devices")} onSetUpAi={() => setHelpDialog("providers")} />
       {helpDialog === "guide" && <RoomGuide hasRepo={hasRepo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
       {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
-      {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} />}
+      {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} onSetUpAi={() => setHelpDialog("providers")} />}
       {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
         void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
       }} />}
@@ -1011,6 +1040,8 @@ export function Workspace({
                   icon: <SparkleIcon className="h-3.5 w-3.5" />,
                   node: (
                       <AiPanel
+                        computerStatus={computerConnection.status}
+                        onSetUpAi={() => setHelpDialog("providers")}
                         actionsHost={actionsHost}
                         onShowConversation={() => setShowChat(true)}
                         sessionId={session.id}

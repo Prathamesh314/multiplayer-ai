@@ -41,8 +41,11 @@ import { HandoffPanel } from "./HandoffPanel";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
+import type { ComputerStatus } from "../ai/useComputerConnection";
 
 type AiPanelProps = {
+  computerStatus: ComputerStatus;
+  onSetUpAi: () => void;
   actionsHost?: HTMLDivElement | null;
   onShowConversation?: () => void;
   sessionId: string;
@@ -116,6 +119,8 @@ type Turn = {
 };
 
 export function AiPanel({
+  computerStatus,
+  onSetUpAi,
   actionsHost,
   onShowConversation,
   sessionId,
@@ -144,7 +149,8 @@ export function AiPanel({
   const [taskRoster, setTaskRoster] = useState<{ sessionId: string; people: MentionPerson[] } | null>(null);
   const taskRequest = useRef<{ payload: string; id: string } | null>(null);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
-  const [serverCanRun, setServerCanRun] = useState(true);
+  const [serverCanRun, setServerCanRun] = useState(false);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -193,6 +199,7 @@ export function AiPanel({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const run = useRef<RunHandle | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
@@ -239,6 +246,7 @@ export function AiPanel({
   async function loadRun(target: AgentRun) {
     const generation = ++historyGeneration.current;
     setError(null);
+    setHistoryFailed(false);
     liveTurnIdRef.current = null;
     const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
     setTurns([]);
@@ -268,7 +276,8 @@ export function AiPanel({
       );
     } catch {
       if (generation !== historyGeneration.current) return;
-      setError("Could not load that run.");
+      setHistoryFailed(true);
+      setError("We couldn’t load this chat. Check your internet connection and try again. You don’t need a connected computer to read saved messages.");
     }
   }
 
@@ -357,9 +366,11 @@ export function AiPanel({
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => { void fetchAgents().then((response) => {
-      if (cancelled) return;
+    let generation = 0;
+    const refresh = () => { const current = ++generation; void fetchAgents().then((response) => {
+      if (cancelled || current !== generation) return;
       setAgents(response.agents);
+      setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
       // Pre-select a ready agent, so the common case is one click. Codex is the
@@ -370,7 +381,13 @@ export function AiPanel({
         const codex = installed.find((a) => a.id === "codex");
         return codex?.id ?? installed[0]?.id ?? null;
       });
-    }).catch(() => {}); };
+    }).catch(() => {
+      if (!cancelled && current === generation) {
+        setServerCanRun(false);
+        setAgentsError("We couldn’t check your AI tools. Your saved chats are still available. Try again before sending a message.");
+      }
+    }); };
+    refresh();
     const stream = openUserStream(type => { if (type === "devices.changed") refresh(); }, refresh);
     window.addEventListener("focus", refresh);
     return () => {
@@ -378,7 +395,7 @@ export function AiPanel({
       stream.close();
       window.removeEventListener("focus", refresh);
     };
-  }, []);
+  }, [computerStatus]);
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -391,9 +408,10 @@ export function AiPanel({
     try {
       const response = await fetchAgents(true);
       setAgents(response.agents);
+      setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
-    } catch { setError("Could not refresh providers. Your previous choices are preserved."); }
+    } catch { setServerCanRun(false); setAgentsError("We couldn’t check your AI tools. Check your internet connection and try again."); }
     finally { setRefreshing(false); }
   }
 
@@ -643,7 +661,8 @@ export function AiPanel({
   // can run — otherwise a run would just fail with an auth error.
   const authCapable = !!active?.installed && !!activeAuth;
   const needsLogin = authCapable && !activeAuth!.loggedIn;
-  const ready = !!active?.installed && serverCanRun && canRun && !needsLogin;
+  const computerUnavailable = !["connected", "server"].includes(computerStatus);
+  const ready = !!active?.installed && serverCanRun && canRun && !needsLogin && !computerUnavailable;
   const hasConversation = turns.length > 0;
 
   const activeSpec = connected ? agentById(connected) : undefined;
@@ -836,8 +855,8 @@ export function AiPanel({
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
-      {(!ready || showProviders) && (
-        <>
+      {(showProviders || (!entered && !ready && serverCanRun && !computerUnavailable)) && (
+        <div className="vs-scroll max-h-[35%] shrink-0 overflow-y-auto">
         {active?.installed && <p className="px-4 py-2 text-xs leading-5 text-vs-muted">{executionDetail}</p>}
         <AgentSelector
           agents={agents}
@@ -848,14 +867,17 @@ export function AiPanel({
           onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
           onRecheck={recheck}
         />
-        </>
+        </div>
       )}
 
-      {!serverCanRun && blockedReason && (
-        <Note tone="warn">Agents are detected but will not run here. {blockedReason}</Note>
+      {agentsError && (
+        <Note tone="warn">{agentsError} <button type="button" disabled={refreshing} onClick={() => void recheck()} className="ml-1 underline">{refreshing ? "Checking…" : "Try again"}</button></Note>
       )}
-      {serverCanRun && !canRun && (
-        <Note tone="warn">You have read access here, and running an agent edits files.</Note>
+      {!serverCanRun && !agentsError && !computerUnavailable && blockedReason && (
+        <Note tone="warn">Your computer is connected. Set up an AI tool on it before sending a message. <button type="button" onClick={onSetUpAi} className="ml-1 font-medium underline">Set up AI</button></Note>
+      )}
+      {!canRun && (
+        <Note tone="warn">You can read this chat. Ask a project manager for edit access to send AI requests.</Note>
       )}
 
       {active && authCapable && (needsLogin || showAccount || authBusy === active.id) && (
@@ -878,14 +900,16 @@ export function AiPanel({
         ) : (
           <EmptyState
             ready={ready}
+            computerUnavailable={computerUnavailable}
             agentName={active?.name ?? null}
             onExample={prompt => composer.current?.insertPrompt(prompt)}
           />
         )}
         {error && (
-          <p className="mx-3 mb-3 flex items-start gap-2 rounded-md border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-[12px] leading-5 text-vs-danger">
+          <p role="alert" className="mx-3 mb-3 flex flex-wrap items-start gap-2 rounded-md border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
             <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
+            {historyFailed && entered && <button type="button" onClick={() => void loadRun(entered)} className="font-medium underline">Try again</button>}
           </p>
         )}
         {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
@@ -920,8 +944,9 @@ export function AiPanel({
           footer={composerFooter}
           mentions={mentionRooms}
           placeholder={
-            !ready
-              ? "Connect an agent to start a conversation…"
+            !canRun ? "You have read-only access to this chat"
+              : computerUnavailable ? "Connect your computer to send a message…"
+              : !ready ? "Set up AI to send a message…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
                 : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
@@ -1458,10 +1483,12 @@ const EXAMPLES = [
 
 function EmptyState({
   ready,
+  computerUnavailable,
   agentName,
   onExample,
 }: {
   ready: boolean;
+  computerUnavailable: boolean;
   agentName: string | null;
   onExample: (prompt: string) => void;
 }) {
@@ -1472,12 +1499,13 @@ function EmptyState({
       </span>
       <div>
         <p className="text-base font-medium text-vs-fg">
-          {ready ? "What would you like to build?" : "Choose an AI to get started"}
+          {ready ? "What would you like to build?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
         </p>
         <p className="mt-2 max-w-sm text-sm leading-6 text-vs-muted">
           {ready
             ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.`
-            : "Choose a provider above, or open Room guide for setup help. You can browse the files without connecting AI."}
+            : computerUnavailable ? "Use the computer connection button above to get started. You can open your saved conversations and browse files while your computer is offline."
+            : "Set up an AI tool on your computer, then choose it in the message box. Your saved conversations and files are available now."}
         </p>
       </div>
       {ready && (

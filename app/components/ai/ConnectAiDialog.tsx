@@ -101,13 +101,13 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       }
     >
       <div className="rounded-xl border border-vs-border bg-vs-editor p-3 text-sm leading-6 text-vs-muted">
-        <p><strong className="text-vs-fg">1. Connect a computer.</strong> Pair your computer for a hosted workspace, or use the app’s machine when hosting locally.</p>
-        <p><strong className="text-vs-fg">2. Set up a provider.</strong> Use an installed coding CLI and your own login, or install a compatible local model.</p>
-        <p><strong className="text-vs-fg">3. Check and choose.</strong> Refresh below after setup. Models appear in the room’s message box.</p>
+        <p><strong className="text-vs-fg">1. Connect your computer.</strong> Open the desktop app and sign in with this account.</p>
+        <p><strong className="text-vs-fg">2. Choose an AI tool.</strong> Install one of the tools below on that computer and sign in to it with your AI account. You only need one.</p>
+        <p><strong className="text-vs-fg">3. Start chatting.</strong> Check the connection below, then open a project’s room and send your first message.</p>
         {onOpenDevices && <button type="button" onClick={onOpenDevices} className="mt-2 rounded-lg border border-vs-border px-3 py-1.5 font-medium text-vs-fg hover:bg-vs-hover">Connect your computer</button>}
       </div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-vs-muted">{canRun ? "An execution connection is available." : "You can explore files without AI. Connect an execution machine before sending a task."}</p>
+        <p className="text-sm text-vs-muted">{canRun ? "AI tools detected. Choose a model in your chat to get started." : "No AI tool is ready yet. Keep your computer connected while you complete setup."}</p>
         <GhostButton onClick={() => { setError(null); setRefreshing(true); void reload(true); }} disabled={refreshing || busyId !== null}>{refreshing ? "Checking…" : "Check connections"}</GhostButton>
       </div>
       {error && (

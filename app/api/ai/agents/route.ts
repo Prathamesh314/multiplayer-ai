@@ -57,7 +57,7 @@ async function handleGET(request: Request) {
     {
       agents,
       canRun: access.allowed || localIds.size > 0,
-      reason: access.allowed || localIds.size > 0 ? null : "Connect your runner with an installed, signed-in agent.",
+      reason: access.allowed || localIds.size > 0 ? null : "Connect your computer, then install and sign in to an AI tool on it.",
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },
   );

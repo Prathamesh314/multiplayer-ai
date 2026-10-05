@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { publishRoom, syncRoom } from "../../lib/session/client";
 import { canEdit, type Session, type SessionMember } from "../../lib/session/types";
-import { GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons";
+import { ArrowIcon, GitBranchIcon, SparkleIcon, TerminalIcon, UserPlusIcon } from "../icons";
 import { PeopleStack } from "./People";
 
 type TopBarProps = {
@@ -12,6 +12,8 @@ type TopBarProps = {
   session: Session;
   onInvite: () => void;
   onLeave: () => void;
+  onNavigate: (direction: "back" | "forward") => void;
+  navigationPending: boolean;
   folderName: string | null;
   branch: string | null;
   isGit: boolean;
@@ -34,6 +36,8 @@ export function TopBar({
   session,
   onInvite,
   onLeave,
+  onNavigate,
+  navigationPending,
   folderName,
   branch,
   isGit,
@@ -47,9 +51,25 @@ export function TopBar({
   return (
     <header className="room-toolbar flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-vs-border bg-vs-chrome px-4 py-3">
       <div className="flex min-w-0 flex-1 items-center gap-3">
+      <nav aria-label="Page history" className="flex shrink-0 items-center gap-1">
+        {(["back", "forward"] as const).map(direction => (
+          <button
+            key={direction}
+            type="button"
+            aria-label={direction === "back" ? "Go back" : "Go forward"}
+            title={direction === "back" ? "Go back" : "Go forward"}
+            onClick={() => onNavigate(direction)}
+            disabled={navigationPending}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vs-accent disabled:pointer-events-none disabled:opacity-40"
+          >
+            <ArrowIcon direction={direction === "back" ? "left" : "right"} className="h-5 w-5" />
+          </button>
+        ))}
+      </nav>
       <button
         type="button"
         onClick={onLeave}
+        disabled={navigationPending}
         title="Back to projects"
         className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-vs-fg transition hover:bg-vs-hover"
       >

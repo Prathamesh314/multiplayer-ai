@@ -11,10 +11,21 @@ import type { PairingCodeResponse } from "../../api/runner/pairing/route";
 
 export type { RunnerDevice };
 
+export async function fetchComputerConnection(signal?: AbortSignal): Promise<DevicesResponse> {
+  const response = await fetch("/api/runner/devices", {
+    cache: "no-store",
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(response.status === 401
+    ? "Your sign-in has expired. Sign in again to check your computer connection."
+    : "We couldn’t check your computer connection. Check your internet connection and try again.");
+  const data = await response.json() as DevicesResponse;
+  if (!Array.isArray(data.devices)) throw new Error("We couldn’t check your computer connection. Please try again.");
+  return { devices: data.devices, requiresComputer: data.requiresComputer !== false };
+}
+
 export async function fetchDevices(): Promise<RunnerDevice[]> {
-  const response = await fetch("/api/runner/devices", { cache: "no-store" });
-  if (!response.ok) return [];
-  return ((await response.json()) as DevicesResponse).devices;
+  return (await fetchComputerConnection()).devices;
 }
 
 /** Mint a pairing code — shown once, expires in ten minutes, single use. */

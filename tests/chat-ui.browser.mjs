@@ -72,6 +72,7 @@ function installFixtures() {
     const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: {"content-type":"application/json"} }));
     if (path === "/api/orgs") return json({ orgs: [org, {...org, id:"labs", slug:"labs", name:"Side Projects", myRole:"member"}] });
     if (path === "/api/auth/me") return json({user:{id:"alex",handle:"alex",displayName:"Alex Chen",email:"alex@example.test",avatarUrl:null},connectCode:null});
+    if (path === "/api/runner/devices") return json({devices:[],requiresComputer:true});
     if (path === "/api/invitations/accept") return json({error:"This invitation has expired. Ask your administrator for a new invitation."},410);
     if (path === "/api/sessions/locked-room") return json({error:"This room is private. Enter your access code to join."},403);
     if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }

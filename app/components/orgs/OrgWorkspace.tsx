@@ -51,6 +51,8 @@ import { initials } from "./parts";
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
+import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
+import { useComputerConnection, type ComputerConnection } from "../ai/useComputerConnection";
 import { TaskPanel } from "../tasks/TaskPanel";
 import chatStyles from "../chat/chat.module.css";
 
@@ -79,6 +81,7 @@ type Dialog =
 
 export function OrgWorkspace() {
   const router = useRouter();
+  const computerConnection = useComputerConnection();
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [connectCode, setConnectCode] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<Org[] | null>(null);
@@ -155,6 +158,7 @@ export function OrgWorkspace() {
         </main>
       ) : activeOrg ? (
         <OrgPanel
+          computerConnection={computerConnection}
           onConnectAi={() => setDialog({ kind: "connectAi" })}
           onConnectComputer={() => setDialog({ kind: "devices" })}
           key={activeOrg.slug}
@@ -177,6 +181,7 @@ export function OrgWorkspace() {
         />
       ) : (
         <div className="vs-scroll min-w-0 flex-1 overflow-y-auto p-5">
+          {me && <ComputerConnectionNotice connection={computerConnection} onConnect={() => setDialog({ kind: "devices" })} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
           {me && <TaskPanel key={me.id} userId={me.id} />}
           <EmptyState
             loading={orgs === null}
@@ -198,7 +203,7 @@ export function OrgWorkspace() {
         />
       )}
       {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} onOpenDevices={() => setDialog({ kind: "devices" })} />}
-      {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} />}
+      {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
       {dialog?.kind === "joinOrg" && (
         <JoinOrgDialog
           connectCode={connectCode}
@@ -448,6 +453,7 @@ function OrgRail({
 // ---------------------------------------------------------------------------
 
 function OrgPanel({
+  computerConnection,
   onConnectAi,
   onConnectComputer,
   org,
@@ -463,6 +469,7 @@ function OrgPanel({
   onRoomSettings,
   onOpenRoom,
 }: {
+  computerConnection: ComputerConnection;
   onConnectAi: () => void;
   onConnectComputer: () => void;
   org: Org;
@@ -664,6 +671,7 @@ function OrgPanel({
         <ConnectionsPanel org={org} projects={projects??[]} selectedId={connectionProject} onSelect={setConnectionProject}/>
       ) : (
         <ProjectOverview
+          computerConnection={computerConnection}
           onConnectAi={onConnectAi}
           onConnectComputer={onConnectComputer}
           org={org}

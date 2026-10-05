@@ -2,6 +2,29 @@ type IconProps = { className?: string };
 
 const base = "shrink-0";
 
+export function ComputerIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12 17v3m-4 0h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ArrowIcon({ className, direction = "left" }: IconProps & { direction?: "left" | "right" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path
+        d={direction === "left" ? "M19 12H5m7-7-7 7 7 7" : "M5 12h14m-7-7 7 7-7 7"}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>

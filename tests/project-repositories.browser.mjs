@@ -31,8 +31,10 @@ async function eventually(task, label) {
 function installFixtures() {
   const room = { id: "modelroomabc", name: "Alice", joinCode: "ABCD-EFGH", ownerId: "alice", orgId: "org", projectId: "project", visibility: "public", createdAt: 1, repo: null, lastActiveAt: 1, pinned: true, archivedAt: null, myRole: "owner" };
   const repositories = [{id:"11111111-1111-4111-8111-111111111111",name:"frontend"},{id:"22222222-2222-4222-8222-222222222222",name:"backend"}].map(r=>({...r,projectId:"project",defaultBranch:"main",ready:true}));
-  const state = window.__model = { room, repos: [], runs: [], inputs: {}, sources: [], requests: [], unknown: [] };
+  const computer={id:"computer-1",userId:"alice",name:"Alice’s Mac",platform:"darwin",version:"2",lastSeenAt:Date.now(),createdAt:1,revokedAt:null,online:true};
+  const state = window.__model = { room, repos: [], runs: [], inputs: {}, files: {}, failSave: false, devices:[computer], deviceFailure:false, agentsFailure:false, aiReady:true, sources: [], requests: [], unknown: [] };
   state.emit = (type, data={}) => state.sources.filter(source=>source.url.includes(`/sessions/${room.id}/events`)).forEach(source=>source.dispatchEvent(new MessageEvent(type,{data:JSON.stringify({type,...data})})));
+  state.emitDevices = () => state.sources.filter(source=>source.url==="/api/events").forEach(source=>source.dispatchEvent(new MessageEvent("devices.changed",{data:"{}"})));
   window.EventSource = class extends EventTarget {
     constructor(url) { super(); this.url=url;state.sources.push(this);setTimeout(()=>this.dispatchEvent(new MessageEvent("ready",{data:"{}"})),10); }
     close() { state.sources=state.sources.filter(source=>source!==this); }
@@ -44,6 +46,11 @@ function installFixtures() {
     state.requests.push({path,search:u.search,method:init.method ?? "GET",body:init.body});
     const json = body => new Response(JSON.stringify(body), {headers:{"content-type":"application/json"}});
     if (path === "/api/auth/me") return json({user:{id:"alice",handle:"alice",displayName:"Alice",email:"alice@example.test"}});
+    if (path === "/api/orgs") return json({orgs:[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
+    if (path === "/api/invitations") return json({invitations:[]});
+    if (path.endsWith("/projects")) return json({projects:[{id:"project",slug:"project",name:"My project",orgId:"org",myRole:"manager",createdAt:1,archivedAt:null}]});
+    if (path.endsWith("/rooms")) return json({sessions:[room]});
+    if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
     if (path === "/api/sessions/modelroomabc") return json(room);
     if (path.endsWith("/project-repositories")) return json({repositories});
     if (path.endsWith("/repos")) {
@@ -59,6 +66,16 @@ function installFixtures() {
       return json({rootName:repo.rootName,root:{name:repo.rootName,path:"",type:"directory",children:[{name:repo.rootName+".txt",path:repo.rootName+".txt",type:"file",size:10}]},headSha:repo.headSha,sessionBranch:"session/"+repo.id});
     }
     if(path.endsWith("/changes")) return json({changes:[]});
+    if(path.endsWith("/file")) {
+      if(init.method === "PUT") {
+        if(state.failSave) return new Response(JSON.stringify({error:"Save unavailable"}),{status:503,headers:{"content-type":"application/json"}});
+        const file=JSON.parse(init.body);state.files[file.path]=file.text;
+        return json({headSha:"c".repeat(40),conflict:false});
+      }
+      const text=state.files[u.searchParams.get("path")] ?? "Original file contents";
+      return json({text,size:text.length,truncated:false,binary:false});
+    }
+    if(path.endsWith("/activity")) return json({ok:true});
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});
     if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true}]});
     if(path.endsWith("/runs"))return json({runs:state.runs});
@@ -81,9 +98,17 @@ function installFixtures() {
     if(path.endsWith("/forkable-runs"))return json({runs:[]});
     if(path.endsWith("/mention-targets"))return json({rooms:[{sessionId:room.id,name:room.name,chats:state.runs.map(run=>({runId:run.id,title:run.title}))}]});
     if(path === "/api/terminal")return json({enabled:false,reason:"Terminal disabled in browser fixture"});
-    if(path === "/api/ai/agents")return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:true,execution:"runner",models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:true,reason:null});
+    if(path === "/api/ai/agents") {
+      if(state.agentsFailure)return new Response("Temporarily unavailable",{status:503});
+      const ready=state.devices.some(device=>device.online&&device.version==="2")&&state.aiReady;
+      return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it."});
+    }
     if(path === "/api/presence")return json({intervalMs:20000,online:["alice"]});
-    if(path === "/api/runner/devices")return json({devices:[]});
+    if(path === "/api/runner/devices") {
+      if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});
+      return json({devices:state.devices,requiresComputer:true});
+    }
+    if(path === "/api/runner/pairing")return json({code:"RN-ABCD-EFGH",expiresAt:Date.now()+600000});
     state.unknown.push(path);return json({});
   };
 }
@@ -140,6 +165,29 @@ try {
   assert.equal(await evaluate('window.__model.requests.find(r=>r.path.endsWith("/sync")).search'),"?repoId=backendabcde");
   await click('button[aria-label="New chat in frontend"]');
   await eventually(()=>evaluate('document.body.innerText.includes("frontend.txt")'),"switch repositories");
+  // Native history entries exercise Next's back/forward traversal while keeping
+  // this room mounted, including the guard against losing unsaved file edits.
+  await evaluate('history.pushState(null,"","?navigation=previous");history.pushState(null,"","?navigation=current")');
+  await click('button[aria-label="Go back"]');
+  await eventually(()=>evaluate('location.search === "?navigation=previous"'),"back navigation");
+  await click('button[aria-label="Go forward"]');
+  await eventually(()=>evaluate('location.search === "?navigation=current"'),"forward navigation");
+  await click('button[aria-label="File: frontend.txt"]');
+  await eventually(()=>evaluate('!!document.querySelector(".room-file-document textarea")'),"editable file");
+  await evaluate('window.__model.failSave=true');
+  await type('.room-file-document textarea',"Keep my unsaved changes");
+  await click('button[aria-label="Go back"]');
+  await eventually(()=>evaluate('document.body.innerText.includes("Your edits are not saved yet")'),"navigation save failure");
+  assert.equal(await evaluate('location.search'),"?navigation=current","failed save blocks navigation");
+  assert.equal(await evaluate('document.querySelector(".room-file-document textarea").value'),"Keep my unsaved changes","blocked navigation preserves edits");
+  await evaluate('window.__model.failSave=false');
+  await click('button[aria-label="Go back"]');
+  await eventually(()=>evaluate('location.search === "?navigation=previous"'),"retry navigation after save");
+  assert.equal(await evaluate('window.__model.files["frontend.txt"]'),"Keep my unsaved changes","navigation flushes pending edits");
+  await button("Dismiss");
+  await click('button[aria-label="Go forward"]');
+  await eventually(()=>evaluate('location.search === "?navigation=current"'),"forward after saving");
+  await click('button[aria-label="Close frontend.txt"]');
   // Two separate panels for one chat must not share a sibling key. Development
   // React reports this through console.error, not Runtime.exceptionThrown.
   await evaluate(`window.__model.runs=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"].map((id,index)=>({id,sessionId:"modelroomabc",repoId:"frontendabcd",startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Queue context "+(index?"B":"A"),status:"running",baseSha:"a".repeat(40),createdAt:Date.now()+index,startedAt:Date.now(),endedAt:null,archivedAt:null}));window.__model.emit("run.started");`);
@@ -214,9 +262,57 @@ try {
     assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),`no page overflow at ${width}`);
     await writeFile(join(tmpdir(),`multiplayer-project-model-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await evaluate('window.__model.devices=[];window.__model.runs.forEach(run=>run.status="completed");window.__model.emit("run.finished",{runId:window.__model.runs[0].id,status:"completed"});window.__model.emitDevices()');
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"no computer explanation");
+  await click('button[title^="Queue context A ·"]');
+  await eventually(()=>evaluate('document.querySelector(".human-message")?.textContent.includes("Review the repository")'),"saved chat opens without a computer");
+  assert.ok(await evaluate('document.querySelector(".conversation-transcript").getBoundingClientRect().height > 100'),"offline setup does not hide the conversation");
+  assert.ok(await evaluate('document.querySelector(\'button[aria-label="Send message"]\').disabled'),"AI execution needs a computer");
+  await click('button[title="Back to projects"]');
+  await eventually(()=>evaluate('location.pathname==="/workspace" && !!document.querySelector("main h1")'),"workspace overview");
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"workspace connection prompt");
+  assert.ok(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\').getBoundingClientRect().top < document.querySelector("#projects-heading").getBoundingClientRect().top'),"connection prompt appears before projects");
+  await button("Connect computer");
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog a[href="/#download"]\')'),"desktop setup instructions");
+  assert.equal(await evaluate('document.querySelector("dialog details").open'),false,"terminal setup is optional and collapsed");
+  await click('button[aria-label="Close Your computers"]');
+  await evaluate('window.__model.deviceFailure=true;window.__model.emitDevices()');
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="error"'),"network failure is not reported as no computer");
+  await evaluate('window.__model.deviceFailure=false');
+  await click('[aria-label="Computer connection"] button');
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"connection retry recovers");
+  for (const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`connection onboarding fits ${width}`);
+    assert.ok(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\').getBoundingClientRect().height < 300'),`connection text remains readable at ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-computer-setup-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await button("Open my room");
+  await eventually(()=>evaluate('location.pathname==="/s/modelroomabc" && !!document.querySelector(\'button[title^="Queue context A ·"]\')'),"room opens without a computer");
+  await click('button[title^="Queue context A ·"]');
+  await eventually(()=>evaluate('!!document.querySelector(".human-message")'),"history remains readable");
+  await evaluate('window.__model.devices=[{id:"computer-1",userId:"alice",name:"Alice’s Mac",version:"2",online:false,lastSeenAt:Date.now()-60000}];window.__model.emitDevices()');
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="offline"'),"previously connected computer is offline");
+  await button("Reconnect computer");
+  await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
+  await click('button[aria-label="Close Your computers"]');
+  await evaluate('window.__model.devices[0].online=true;window.__model.aiReady=false;window.__model.emitDevices()');
+  await eventually(()=>evaluate('document.body.innerText.includes("Your computer is connected. Set up an AI tool")'),"connected computer needs AI setup");
+  await button("Set up AI");
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Connect your AI"]\')'),"AI setup action");
+  await click('button[aria-label="Close Connect your AI"]');
+  await evaluate('window.__model.aiReady=true;window.__model.emitDevices()');
+  await eventually(()=>evaluate('!document.querySelector(\'button[aria-label="Choose model"]\')?.disabled && !!document.querySelector(\'button[aria-label="Choose model"]\')'),"AI reconnects without reloading the page");
+  await evaluate('window.__model.agentsFailure=true;window.__model.emitDevices()');
+  await eventually(()=>evaluate('document.body.innerText.includes("We couldn’t check your AI tools")'),"AI discovery failure has a message");
+  assert.ok(await evaluate('!!document.querySelector(".human-message")'),"AI discovery failure never hides saved chats");
+  await evaluate('window.__model.agentsFailure=false;window.__model.emitDevices()');
+  await eventually(()=>evaluate('!document.body.innerText.includes("We couldn’t check your AI tools")'),"AI discovery recovers");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
-  console.log("PASS: unique React panel identities, same-chat draft preservation, cross-chat state isolation, queue routing, empty room, select two repositories, file browsing, switch, repository-scoped publish/sync, desktop/mobile layouts.");
+  console.log("PASS: computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
   console.log("Unmocked requests:",await evaluate("window.__model.unknown"));
 } catch (error) {
   try { console.log(await debugEvaluate?.(`JSON.stringify({body:document.body?.innerText,state:{unknown:window.__model?.unknown,requests:window.__model?.requests?.filter(r=>r.path!=="/api/presence")}})`)); }

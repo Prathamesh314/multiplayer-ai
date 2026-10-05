@@ -8,8 +8,11 @@ import type { Project } from "../../lib/project/types";
 import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
+import type { ComputerConnection } from "../ai/useComputerConnection";
 
 type Props = {
+  computerConnection: ComputerConnection;
   onConnectAi: () => void;
   onConnectComputer: () => void;
   org: Org;
@@ -24,7 +27,7 @@ type Props = {
   onOpenRoom: (id: string) => void;
 };
 
-export function ProjectOverview({ org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
+export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
   const [search, setSearch] = useState("");
   const visible = projects?.filter((project) =>
     project.name.toLowerCase().includes(search.trim().toLowerCase()),
@@ -48,6 +51,8 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             </div>
           )}
         </header>
+
+        <ComputerConnectionNotice connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
 
         {me && <TaskPanel key={me.id} userId={me.id} />}
 
@@ -97,9 +102,9 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             <summary className="cursor-pointer rounded-lg py-2 text-sm font-medium text-vs-fg">How this workspace works</summary>
           <ol className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
             {[
-              ["Bring your code", "Open a project’s room and import a folder. Files and chats share one tabbed workspace."],
-              ["Give AI a task", "Connect your AI, describe what you need, and review its changes before publishing."],
-              ["Continue together", "Invite a teammate. Hand off a chat so they can continue with its conversation context."],
+              ["Connect your computer", "Open the desktop app and sign in with this account. Keep it running while AI works."],
+              ["Open your project", "Open your room, add your code, and set up an AI tool on your computer."],
+              ["Start a chat", "Describe a task, review the changes, and hand off to a teammate when you need to."],
             ].map(([title, body], index) => (
               <li key={title} className="flex gap-3 rounded-xl border border-vs-border bg-vs-editor/60 p-4">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-vs-border bg-vs-editor text-xs text-vs-muted">{index + 1}</span>
@@ -108,11 +113,6 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
             ))}
           </ol>
           </details>
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-vs-border pt-5">
-            <span className="mr-auto text-sm text-vs-muted">New here? Set up once, then open a project.</span>
-            <GhostButton onClick={onConnectComputer}>Connect your computer</GhostButton>
-            <GhostButton onClick={onConnectAi}><SparkleIcon className="h-4 w-4" /> Set up AI</GhostButton>
-          </div>
         </section>
 
       </div>
