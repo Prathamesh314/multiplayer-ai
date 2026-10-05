@@ -9,7 +9,7 @@ const digest = (token: string) => createHash("sha256").update(token).digest();
 // The high-entropy secret lives only in the HttpOnly cookie, preventing offline
 // enumeration of six-digit codes from a database dump.
 const codeDigest = (token: string, code: string) => createHmac("sha256", token).update(code).digest();
-const expired = () => new EmailVerificationError("This verification request has expired. Sign in again to request a new code.", 409);
+const expired = () => new EmailVerificationError("This verification request has expired. Sign in again to request a new code.", 409, undefined, "verification_expired");
 type User = { id: string; email: string; email_verified_at: Date | null; deleted_at: Date | null; handle: string; display_name: string; avatar_url: string | null };
 type Challenge = {
   user_id: string; email: string; token_hash: Buffer; code_hash: Buffer; token_expires_at: Date; code_expires_at: Date;
@@ -17,19 +17,19 @@ type Challenge = {
   delivery_status: "pending" | "sent" | "failed";
 };
 const retryAt = (row: Challenge) => Math.max(row.resend_after.getTime(), row.send_count >= 5 ? row.window_started_at.getTime() + 3600000 : 0);
-const state = (row: Challenge): EmailVerificationState => ({ serverTime: Date.now(), email: row.email, codeExpiresAt: row.code_expires_at.getTime(), resendAt: retryAt(row), deliveryStatus: row.delivery_status });
+const state = (row: Challenge): EmailVerificationState => ({ serverTime: Date.now(), email: row.email, codeExpiresAt: row.code_expires_at.getTime(), resendAt: retryAt(row), deliveryStatus: row.delivery_status, attemptsRemaining: Math.max(0, 5 - row.attempts) });
 async function lockUser(tx: PoolClient, userId: string) {
   const user = (await tx.query<User>("SELECT * FROM users WHERE id=$1 FOR UPDATE", [userId])).rows[0];
   if (!user || user.deleted_at) throw expired();
   return user;
 }
 function assertEnabled() {
-  if (!emailVerificationEnabled()) throw new EmailVerificationError("Sign in again to continue.", 409);
+  if (!emailVerificationEnabled()) throw new EmailVerificationError("Sign in again to continue.", 409, undefined, "verification_expired");
 }
 function enforceSendBudget(row?: Challenge) {
   if (!row) return;
   const seconds = Math.ceil((retryAt(row) - Date.now()) / 1000);
-  if (seconds > 0) throw new EmailVerificationError("Please wait before requesting another verification code.", 429, seconds);
+  if (seconds > 0) throw new EmailVerificationError("Please wait before requesting another verification code.", 429, seconds, "resend_limited");
 }
 async function reserve(tx: PoolClient, user: User, token: string, previous?: Challenge, resend = false) {
   enforceSendBudget(previous);
@@ -101,16 +101,16 @@ export async function resendEmailVerification(token?: string) {
 export async function verifyEmailCode(token: string | undefined, code: unknown): Promise<CurrentUser> {
   assertEnabled();
   if (!tokenValid(token)) throw expired();
-  if (typeof code !== "string" || !/^\d{6}$/.test(code)) throw new EmailVerificationError("Enter the six-digit code from your email.");
+  if (typeof code !== "string" || !/^\d{6}$/.test(code)) throw new EmailVerificationError("Enter the six-digit code from your email.", 400, undefined, "invalid_code");
   const candidate = await queryOne<{ user_id: string }>("SELECT user_id FROM email_verifications WHERE token_hash=$1", [digest(token)]);
   if (!candidate) throw expired();
   const result = await transaction(async tx => {
     const user = await lockUser(tx, candidate.user_id);
     const row = (await tx.query<Challenge>("SELECT * FROM email_verifications WHERE user_id=$1 AND token_hash=$2 FOR UPDATE", [user.id, digest(token)])).rows[0];
     if (!row || row.token_expires_at.getTime() <= Date.now() || user.email_verified_at || user.email.toLowerCase() !== row.email.toLowerCase()) throw expired();
-    if (row.delivery_status !== "sent") throw new EmailVerificationError("Your code hasn’t been sent yet. Please request another code.");
-    if (row.code_expires_at.getTime() <= Date.now()) throw new EmailVerificationError("This code has expired. Request a new code.");
-    if (row.attempts >= 5) throw new EmailVerificationError("Too many incorrect codes. Request a new code.", 429);
+    if (row.delivery_status !== "sent") throw new EmailVerificationError("Your code hasn’t been sent yet. Please request another code.", 400, undefined, "delivery_failed");
+    if (row.code_expires_at.getTime() <= Date.now()) throw new EmailVerificationError("This code has expired. Request a new code.", 400, undefined, "code_expired");
+    if (row.attempts >= 5) throw new EmailVerificationError("Too many incorrect codes. Request a new code.", 429, undefined, "attempts_exhausted");
     if (!timingSafeEqual(Buffer.from(row.code_hash), codeDigest(token, code))) {
       await tx.query("UPDATE email_verifications SET attempts=attempts+1 WHERE user_id=$1", [user.id]);
       return { error: row.attempts === 4 ? "Too many incorrect codes. Request a new code." : "That code is incorrect. Please try again.", status: row.attempts === 4 ? 429 : 400 };
@@ -120,7 +120,7 @@ export async function verifyEmailCode(token: string | undefined, code: unknown):
     return { user: { id: user.id, email: user.email, handle: user.handle, displayName: user.display_name, avatarUrl: user.avatar_url } };
   });
   // Throw after committing so failed attempts cannot be rolled back.
-  if (result.error) throw new EmailVerificationError(result.error, result.status);
+  if (result.error) throw new EmailVerificationError(result.error, result.status, undefined, result.status === 429 ? "attempts_exhausted" : "incorrect_code");
   return result.user!;
 }
 

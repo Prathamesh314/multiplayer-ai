@@ -53,7 +53,8 @@ test('email verification is browser-bound, once-only, limited and atomic', async
       await assert.rejects(verifyEmailCode(flow.token,{code}),/six-digit/);
       for(let attempt=0;attempt<5;attempt++)await assert.rejects(verifyEmailCode(flow.token,wrong(code)),/incorrect/);
       assert.equal((await f.first('SELECT attempts FROM email_verifications WHERE user_id=$1',[f.alice])).attempts,5);
-      await assert.rejects(verifyEmailCode(flow.token,code),/Too many/);
+      await assert.rejects(verifyEmailCode(flow.token,code),error=>error.code==='attempts_exhausted');
+      assert.equal((await pendingEmailVerification(flow.token)).attemptsRemaining,0,'reload preserves the exhausted-code state');
       const deliveries=sent.length;
       assert.equal((await startEmailVerification(f.alice,flow.token)).token,flow.token);
       assert.equal(sent.length,deliveries,'repeating login does not reset attempts or send another code');

@@ -38,12 +38,13 @@ try {
   const jar=pendingCookie(created),code=await codeFor(email);assert.ok(jar);assert.match(code,/^\d{6}$/);
   const me=await(await fetch(base+'/api/auth/me',{headers:{cookie:jar}})).json();assert.equal(me.user,null);
   const pendingPage=await(await fetch(base+'/login',{headers:{cookie:jar}})).text();assert.ok(pendingPage.includes('Verify your email'));assert.ok(pendingPage.includes('one-time-code'));assert.ok(!pendingPage.includes('fixture-resend-key'));
-  assert.equal((await request('/api/auth/email/verify',{code},'',second)).status,409);
+  const expired=await request('/api/auth/email/verify',{code},'',second);
+  assert.equal(expired.status,409);assert.equal((await expired.json()).code,'verification_expired');
   assert.equal((await request('/api/auth/email/verify',{code},jar,second,'https://attacker.example')).status,403);
   assert.equal((await request('/api/auth/email/verify',{code},jar,second,'')).status,403);
   const wrong=await request('/api/auth/email/verify',{code:code==='000000'?'000001':'000000'},jar,second);
-  assert.equal(wrong.status,400);assert.equal(authCookie(wrong),undefined);
-  const cooldown=await request('/api/auth/email/resend',{},jar,second);assert.equal(cooldown.status,429);assert.ok(Number(cooldown.headers.get('retry-after'))>0);
+  assert.equal(wrong.status,400);assert.equal(authCookie(wrong),undefined);assert.equal((await wrong.json()).code,'incorrect_code');
+  const cooldown=await request('/api/auth/email/resend',{},jar,second);assert.equal(cooldown.status,429);assert.ok(Number(cooldown.headers.get('retry-after'))>0);assert.equal((await cooldown.json()).code,'resend_limited');
   assert.equal((await request('/api/auth/login',{identifier:email,password:'incorrect'},jar,second)).status,401);
   const unverifiedLogin=await request('/api/auth/login',{identifier:email,password},jar,second);assert.equal(unverifiedLogin.status,202);assert.equal(authCookie(unverifiedLogin),undefined);
   const legacy=await request('/api/auth/continue',{email,password},jar,second);assert.equal(legacy.status,202);assert.equal(authCookie(legacy),undefined);
@@ -62,6 +63,8 @@ try {
 
   await emailBrowserCheck({base,codeFor,releaseCooldown:async email=>{
     await f.db.query("UPDATE email_verifications SET resend_after=now()-interval '1 second' WHERE user_id=(SELECT id FROM users WHERE email=$1)",[email]);
+  },expireRequest:async email=>{
+    await f.db.query("UPDATE email_verifications SET token_expires_at=now()-interval '1 second' WHERE user_id=(SELECT id FROM users WHERE email=$1)",[email]);
   }});
 } finally {
   for(const {child}of servers)if(child.exitCode===null)child.kill('SIGTERM');

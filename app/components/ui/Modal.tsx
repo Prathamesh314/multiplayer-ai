@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { CloseIcon } from "../icons";
+import { AlertIcon, CloseIcon } from "../icons";
 
 type ModalProps = {
   title: string;
@@ -131,11 +131,11 @@ export function GhostButton({
   );
 }
 
-export function ErrorNote({ children }: { children: React.ReactNode }) {
+export function ErrorNote({ children, announce = true }: { children: React.ReactNode; announce?: boolean }) {
   return (
-    <p role="alert" className="flex items-start gap-2 rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
-      <span aria-hidden>⚠</span>
-      {children}
+    <p role={announce ? "alert" : undefined} className="flex items-start gap-2.5 rounded-xl border border-vs-danger/25 bg-vs-danger/5 px-3.5 py-3 text-sm leading-6 text-vs-danger">
+      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{children}</span>
     </p>
   );
 }

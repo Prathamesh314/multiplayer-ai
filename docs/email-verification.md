@@ -45,8 +45,47 @@ code screen. Disabling the setting does not mark anyone's address as verified.
 Existing login sessions remain valid; unverified users are checked at their next
 email/password sign-in. This is address verification, not a code on every login.
 
+## Test the real sender
+
+Run the manual sender test from a checkout with dependencies installed:
+
+```sh
+npm run test:email-sender -- --to you@example.com
+# Or explicitly load production configuration:
+npm run test:email-sender -- --env-file .env.production --to you@example.com
+```
+
+This sends **one real email** using the application's verification template and
+Resend transport. It does not create an account or change verification state;
+the generated test code cannot be used to log in. The test does not require
+`EMAIL_VERIFICATION_ENABLED=true` and is excluded from the automated test suite
+and CI. Never use someone else's address without their permission.
+
+It reports API acceptance and checks delivery for up to 30 seconds (`--wait 0`
+skips waiting; maximum 60). Delivery confirmation means the recipient's mail
+server accepted the message, not that it appeared in the inbox. Check spam too.
+Sending-only Resend keys can send successfully but cannot retrieve status; use
+the Resend dashboard in that case. Recheck a printed message ID without sending
+another email:
+
+```sh
+npm run test:email-sender -- --status <resend-email-id>
+```
+
+Missing configuration, send errors and reported delivery failures exit nonzero.
+An unconfirmed delivery status prints `UNCONFIRMED`; successful submission is
+reported separately. The script never prints credentials, codes or email bodies.
+
 ## Flow and limits
 
+- The UI shows dismissible notifications for sending, resending, sign-in and
+  verification results. Success feedback stays visible after workspace navigation.
+  Delivery failures never show a sent confirmation, even when the pending-account
+  API request succeeds. Persistent inline guidance explains expired codes,
+  exhausted attempts and when a new sign-in is required.
+- Network failures, timeouts and unreadable server responses have recovery
+  messages. Retry buttons respect the server's `Retry-After` value; notifications
+  pause while hovered or keyboard-focused and do not expose provider diagnostics.
 - Codes expire after 10 minutes; the pending browser request expires after one hour.
 - Five incorrect code attempts exhaust that code.
 - Sending is limited to once per minute and five deliveries per account per hour,

@@ -46,9 +46,9 @@ try {
     window.fetch=(input,init={})=>{const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;if(!path.startsWith('/api/'))return nativeFetch(input,init);
       if(path==='/api/auth/login'||path==='/api/auth/register'){
         const body=JSON.parse(init.body);window.__authRequests.push({path,...body});
-        if(path==='/api/auth/login')return body.identifier==='existing@example.test'?json({user,connectCode:null}):json({error:'That email and password do not match.'},401);
+        if(path==='/api/auth/login')return body.identifier==='existing@example.test'?json({status:'authenticated',user,connectCode:null}):json({error:'That email and password do not match.'},401);
         if(!${openSignup}&&(body.email!==${JSON.stringify(email)}||body.invitationToken!==${JSON.stringify(token)}))return json({error:'Paste your invitation into the Invitation link or code field.',field:'invitation'},403);
-        return json({user,connectCode:null},201);
+        return json({status:'authenticated',user,connectCode:null},201);
       }
       if(path==='/api/auth/me')return json({user,connectCode:null});
       if(path==='/api/orgs')return json({orgs:[]});

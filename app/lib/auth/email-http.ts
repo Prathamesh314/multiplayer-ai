@@ -20,7 +20,7 @@ export function assertEmailOrigin(request: Request) {
 }
 export function emailVerificationErrorResponse(cause: unknown) {
   if (cause instanceof SyntaxError) return Response.json({ error: "Expected a valid JSON request." }, { status: 400 });
-  if (cause instanceof EmailVerificationError) return Response.json({ error: cause.message }, {
+  if (cause instanceof EmailVerificationError) return Response.json({ error: cause.message, code: cause.code }, {
     status: cause.status, headers: cause.retryAfter ? { "retry-after": String(cause.retryAfter) } : undefined,
   });
   return Response.json({ error: "Email verification is temporarily unavailable. Please try again." }, { status: 503 });

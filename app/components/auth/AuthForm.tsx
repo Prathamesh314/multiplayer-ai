@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { login, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { EmailVerification } from "./EmailVerification";
+import { AuthRequestError, authErrorMessage } from "../../lib/auth/request";
+import { useToast } from "../ui/Toast";
 import type { EmailVerificationState } from "../../lib/auth/types";
 import { GoogleCompletion, GoogleSignIn, type PendingGoogleProfile } from "./GoogleAuth";
 
@@ -21,6 +23,13 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
   signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null; pendingVerification?: EmailVerificationState | null;
 }) {
   const router = useRouter();
+  const { notify } = useToast();
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  useEffect(() => {
+    if (!retrySeconds) return;
+    const timer = setTimeout(() => setRetrySeconds(value => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [retrySeconds]);
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
   // link bounce someone to another origin after they type their password.
@@ -52,6 +61,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (busy || retrySeconds > 0) return;
     setBusy(true);
     setError(null);
     setShowPassword(false);
@@ -61,11 +71,17 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
         : await login(email.trim(), password);
       if (result.status === "verification_required") {
         setVerification(result.verification); setPassword(""); setBusy(false);
+        if (result.verification.deliveryStatus === "sent") notify({ title: "Check your email", description: "Your verification code is on its way. Check spam if it doesn’t arrive." });
+        else if (result.verification.deliveryStatus === "failed") notify({ tone: "error", title: "We couldn’t send your code", description: "Your account is waiting for verification. Try sending a new code shortly." });
         return;
       }
+      notify({ title: creating ? "Account created" : "Welcome back", description: "You’re signed in." });
       done();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not complete sign-in.");
+      const message = authErrorMessage(cause, "Could not complete sign-in. Please try again.");
+      setError(message);
+      if (cause instanceof AuthRequestError && cause.retryAfter) setRetrySeconds(cause.retryAfter);
+      notify({ tone: "error", title: creating ? "Couldn’t create your account" : "Couldn’t sign you in", description: message });
       setBusy(false);
     }
   }
@@ -137,7 +153,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 </div>
               </Field>
 
-              {error && <ErrorNote>{error}</ErrorNote>}
+              {error && <ErrorNote announce={!!params.get("google_error")}>{error}</ErrorNote>}
 
               {creating && signupMode === "invite" && (
                 <Field label="Invitation link or code" hint="Paste the newest invitation and use the email it was issued to.">
@@ -160,7 +176,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 </Field>
               )}
 
-              <SubmitButton busy={busy}>{creating ? "Create account" : "Sign in"}</SubmitButton>
+              <SubmitButton busy={busy} blocked={retrySeconds > 0}>{busy ? (creating ? "Creating account…" : "Signing in…") : retrySeconds > 0 ? `Try again in ${retrySeconds}s` : creating ? "Create account" : "Sign in"}</SubmitButton>
             </form>
           </>
         )}
@@ -198,14 +214,14 @@ function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => v
   );
 }
 
-function SubmitButton({ busy, children }: { busy: boolean; children: React.ReactNode }) {
+function SubmitButton({ busy, blocked, children }: { busy: boolean; blocked: boolean; children: React.ReactNode }) {
   // Before hydration, a native GET form submission strips the invitation from
   // the URL. Keep submission disabled until React can handle the form.
   const ready = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   return (
     <button
       type="submit"
-      disabled={busy || !ready}
+      disabled={busy || blocked || !ready}
       className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {busy && <SpinnerIcon className="h-4 w-4" />}

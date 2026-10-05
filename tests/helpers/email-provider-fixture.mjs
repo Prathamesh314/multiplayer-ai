@@ -12,7 +12,7 @@ globalThis.fetch=async(input,init)=>{
   assert.equal(body.from,'Multiplayer AI <verify@example.test>');
   const code=/code is (\d{6})/.exec(body.text)?.[1];assert.ok(code);
   await appendFile(process.env.EMAIL_TEST_OUTBOX,JSON.stringify({email:body.to[0],code})+'\n');
-  return body.to[0]==='delivery-fails@example.test'
+  return body.to[0].endsWith('delivery-fails@example.test')
     ? Response.json({error:'secret-provider-error-must-not-leak'},{status:503})
     : Response.json({id:crypto.randomUUID()});
 };

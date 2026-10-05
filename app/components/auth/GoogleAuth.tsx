@@ -7,15 +7,13 @@ import { desktopBridge } from "../../lib/desktop";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { SpinnerIcon } from "../icons";
+import { authRequest } from "../../lib/auth/request";
 
 export type PendingGoogleProfile = NonNullable<Awaited<ReturnType<typeof pendingGoogleProfile>>>;
 const subscribe = () => () => {};
 const client = () => true, server = () => false;
 async function post(path: string, body: unknown) {
-  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const result = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(result?.error ?? "Could not complete Google sign-in. Please try again.");
-  return result;
+  return authRequest<{ id: string; code: string; next: string }>(path, "POST", body);
 }
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 

@@ -1,4 +1,6 @@
 import type { ContinueRequest, ContinueResponse, MeResponse, PasswordAuthResponse } from "./types";
+import { isPasswordAuthResponse } from "./types";
+import { authRequest } from "./request";
 
 async function readError(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -7,13 +9,7 @@ async function readError(response: Response, fallback: string): Promise<string> 
 
 /** Compatibility client: sign in, verify an existing email, or continue registration. */
 export async function continueWithEmail(input: ContinueRequest): Promise<ContinueResponse> {
-  const response = await fetch("/api/auth/continue", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) throw new Error(await readError(response, "Could not continue."));
-  return (await response.json()) as ContinueResponse;
+  return authRequest("/api/auth/continue", "POST", input);
 }
 
 export async function fetchMe(): Promise<MeResponse> {
@@ -29,23 +25,11 @@ export async function register(input: {
   displayName: string;
   password: string;
 }): Promise<PasswordAuthResponse> {
-  const response = await fetch("/api/auth/register", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) throw new Error(await readError(response, "Could not create that account."));
-  return (await response.json()) as PasswordAuthResponse;
+  return authRequest("/api/auth/register", "POST", input, isPasswordAuthResponse);
 }
 
 export async function login(identifier: string, password: string): Promise<PasswordAuthResponse> {
-  const response = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ identifier, password }),
-  });
-  if (!response.ok) throw new Error(await readError(response, "Could not sign you in."));
-  return (await response.json()) as PasswordAuthResponse;
+  return authRequest("/api/auth/login", "POST", { identifier, password }, isPasswordAuthResponse);
 }
 
 export async function logout(): Promise<void> {

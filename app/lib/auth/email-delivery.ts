@@ -1,5 +1,6 @@
+type VerificationErrorCode = "verification_unavailable" | "verification_expired" | "resend_limited" | "invalid_code" | "incorrect_code" | "code_expired" | "attempts_exhausted" | "delivery_failed";
 export class EmailVerificationError extends Error {
-  constructor(message: string, public readonly status = 400, public readonly retryAfter?: number) { super(message); }
+  constructor(message: string, public readonly status = 400, public readonly retryAfter?: number, public readonly code: VerificationErrorCode = "verification_unavailable") { super(message); }
 }
 
 /** Enable explicitly after configuring a verified sender; never infer policy from an API key. */
