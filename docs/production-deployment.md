@@ -224,6 +224,8 @@ Set `SIGNUP_MODE=open` in `.env.production` to allow anyone to create an account
 with email and password, or Google when configured. Recreate both web services
 after changing it. Email signup does not require a username; see
 [Google signup setup](google-sign-in.md) for provider credentials.
+For once-only email codes, configure Resend and enable
+[email verification](email-verification.md).
 
 Production defaults to `SIGNUP_MODE=invite` when no mode is configured. Create the first private invitation
 against the deployed database using `npm run beta:invite -- EMAIL HTTPS_ORIGIN`;

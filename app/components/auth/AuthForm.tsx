@@ -8,6 +8,8 @@ import { login, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { EmailVerification } from "./EmailVerification";
+import type { EmailVerificationState } from "../../lib/auth/types";
 import { GoogleCompletion, GoogleSignIn, type PendingGoogleProfile } from "./GoogleAuth";
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -15,8 +17,8 @@ const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
 
-export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null }: {
-  signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null;
+export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null, pendingVerification = null }: {
+  signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null; pendingVerification?: EmailVerificationState | null;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -33,6 +35,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
 
   const [mode, setMode] = useState<"signin" | "signup">(() => signupMode !== "closed" && (params.get("mode") === "signup" || linkedInvitation) ? "signup" : "signin");
   const creating = mode === "signup";
+  const [verification, setVerification] = useState(pendingVerification);
   const [email, setEmail] = useState(() => params.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -53,10 +56,12 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
     setError(null);
     setShowPassword(false);
     try {
-      if (creating) {
-        await register({ email: email.trim(), password, displayName: "", invitationToken });
-      } else {
-        await login(email.trim(), password);
+      const result = creating
+        ? await register({ email: email.trim(), password, displayName: "", invitationToken })
+        : await login(email.trim(), password);
+      if (result.status === "verification_required") {
+        setVerification(result.verification); setPassword(""); setBusy(false);
+        return;
       }
       done();
     } catch (cause) {
@@ -90,7 +95,9 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </span>
         </Link>
 
-        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : (
+        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : verification ? (
+          <EmailVerification initial={verification} onVerified={done} onBack={address => { setVerification(null); setEmail(address); setMode("signin"); setError(null); }} />
+        ) : (
           <>
             <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
               {creating ? "Create your account" : "Welcome back"}
@@ -158,7 +165,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </>
         )}
 
-        {(!googleProfile || params.get("google") === "restart") && params.get("google") !== "desktop-done" && (
+        {!verification && (!googleProfile || params.get("google") === "restart") && params.get("google") !== "desktop-done" && (
           <p className="mt-6 text-center text-sm leading-6 text-vs-muted">
             {creating ? "Already have an account? " : signupMode === "closed" ? "New registrations are currently closed." : "New here? "}
             {(creating || signupMode !== "closed") && <button

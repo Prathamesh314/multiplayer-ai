@@ -13,7 +13,7 @@ try {
   const url=new URL(process.env.DATABASE_URL);url.searchParams.set('options',globalThis.__maPool.options.options);
   const probe=createServer();probe.listen(0,'127.0.0.1');await once(probe,'listening');const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
   child=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{
-    env:{...process.env,DATABASE_URL:url.href,REDIS_URL:'',API_TRUST_PROXY:'0',SIGNUP_MODE:openSignup?'open':'invite',API_RATE_AUTH_BURST:'100',API_RATE_AUTH_PER_MINUTE:'100',MNEMOSYNE_URL:'',LOCAL_RUNNERS:'0'},stdio:['ignore','pipe','pipe']});
+    env:{...process.env,DATABASE_URL:url.href,REDIS_URL:'',API_TRUST_PROXY:'0',EMAIL_VERIFICATION_ENABLED:'false',SIGNUP_MODE:openSignup?'open':'invite',API_RATE_AUTH_BURST:'100',API_RATE_AUTH_PER_MINUTE:'100',MNEMOSYNE_URL:'',LOCAL_RUNNERS:'0'},stdio:['ignore','pipe','pipe']});
   exit=once(child,'exit');for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{output=(output+chunk).slice(-10000);});
   const base='http://127.0.0.1:'+port;let ready=false;
   for(let i=0;i<100;i++){if(child.exitCode!==null)throw new Error('Server startup failed: '+output);try{ready=(await fetch(base+'/login')).ok;}catch{}if(ready)break;await delay(100);}

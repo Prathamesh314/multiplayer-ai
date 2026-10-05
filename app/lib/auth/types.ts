@@ -27,7 +27,8 @@ export type ContinueRequest = { email: string; password: string; invitationToken
 export type ContinueResponse =
   /** The email is known and the password matched — already signed in. */
   | { status: "existing"; user: CurrentUser; connectCode: string | null }
-  /** The email is new; the password is acceptable. Ask for a username next. */
+  | VerificationRequiredResponse
+  /** The email is new; the password is acceptable. Complete registration next. */
   | { status: "new" };
 
 export type MeResponse = {
@@ -35,3 +36,13 @@ export type MeResponse = {
   /** The code others paste to add this person to an org. */
   connectCode: string | null;
 };
+
+export type EmailVerificationState = {
+  serverTime: number;
+  email: string;
+  codeExpiresAt: number;
+  resendAt: number;
+  deliveryStatus: "pending" | "sent" | "failed";
+};
+export type VerificationRequiredResponse = { status: "verification_required"; verification: EmailVerificationState };
+export type PasswordAuthResponse = { status: "authenticated"; user: CurrentUser; connectCode: string | null } | VerificationRequiredResponse;

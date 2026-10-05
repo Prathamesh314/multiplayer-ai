@@ -1,7 +1,7 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
-import { issueToken } from "../../../lib/auth/tokens";
-import type { LoginRequest, MeResponse } from "../../../lib/auth/types";
-import { authenticate, connectCodeOf } from "../../../lib/repo/users";
+import { finishPasswordAuthentication } from "../../../lib/auth/email-http";
+import type { LoginRequest } from "../../../lib/auth/types";
+import { authenticate } from "../../../lib/repo/users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,9 +25,7 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "That email and password do not match." }, { status: 401 });
   }
 
-  await issueToken(user.id, { userAgent: request.headers.get("user-agent") });
-
-  return Response.json({ user, connectCode: await connectCodeOf(user.id) } satisfies MeResponse);
+  return finishPasswordAuthentication(user, request);
 }
 
 export const POST = withApiLimit("/api/auth/login", handlePOST);

@@ -74,6 +74,13 @@ export async function pendingGoogleProfile(token?: string) {
     desktopCode: flow.desktop_id?.slice(0, 8).toUpperCase() ?? null };
 }
 
+async function confirmGoogleEmail(user: UserRow, email: string, tx: PoolClient) {
+  // A provider's changed email must not verify a different stored address.
+  if (user.email.toLowerCase() !== email.toLowerCase()) return;
+  await tx.query("UPDATE users SET email_verified_at=now() WHERE id=$1 AND email_verified_at IS NULL", [user.id]);
+  await tx.query("DELETE FROM email_verifications WHERE user_id=$1", [user.id]);
+}
+
 /** Returning Google identities can sign in without admitting new users or matching mutable email addresses. */
 export async function finishExistingGoogleAuth(token: string) {
   return transaction(async tx => {
@@ -82,6 +89,7 @@ export async function finishExistingGoogleAuth(token: string) {
     const user = await identityUser(flow.google_subject, tx);
     if (!user) return null;
     if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
+    await confirmGoogleEmail(user, flow.email, tx);
     await tx.query("DELETE FROM google_auth_flows WHERE token_hash=$1", [flow.token_hash]);
     return { user: toUser(user), next: flow.return_path };
   });
@@ -134,6 +142,7 @@ async function finishGoogleAuth(token: string | undefined, input: GoogleCompleti
           await tx.query("INSERT INTO user_identities(user_id,provider,provider_user_id) VALUES ($1,'google',$2)", [user.id, flow.google_subject]);
         }
         if (user.deleted_at) throw new GoogleAuthError("This account is unavailable.", 403);
+        await confirmGoogleEmail(user, flow.email, tx);
         if (flow.desktop_id) {
           const approved = await tx.query("UPDATE google_desktop_signins SET user_id=$2 WHERE id=$1 AND user_id IS NULL AND expires_at>now() RETURNING id", [flow.desktop_id, user.id]);
           if (!approved.rows[0]) throw expired();

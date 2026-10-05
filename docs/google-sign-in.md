@@ -70,6 +70,8 @@ When a previously unlinked Google identity matches an existing app email, the
 user must prove ownership with that app account's password before linking.
 Google-only accounts cannot be linked to a second Google identity this way.
 Deleted accounts remain blocked. Password login continues to work after linking.
+Google also marks the matching stored email as verified, so enabled
+[email verification](email-verification.md) does not ask for an additional code.
 
 ## Desktop flow
 
