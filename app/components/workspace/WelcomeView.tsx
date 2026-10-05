@@ -21,6 +21,7 @@ type WelcomeViewProps = {
   seeding: SeedProgress | null;
   onOpenPicker: () => void;
   onOpenInput: () => void;
+  onStartEmpty: () => void;
 };
 
 export function WelcomeView({
@@ -35,6 +36,7 @@ export function WelcomeView({
   seeding,
   onOpenPicker,
   onOpenInput,
+  onStartEmpty,
 }: WelcomeViewProps) {
   return (
     <div className="vs-scroll flex min-h-0 flex-1 overflow-y-auto p-5 sm:p-8">
@@ -67,20 +69,21 @@ export function WelcomeView({
             <div>
               <p className="mb-3 text-xs font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
               <h1 className="font-display text-2xl font-semibold tracking-tight text-vs-fg sm:text-3xl">
-                {readOnly ? "Waiting for the project’s files" : hasFolder ? "Select a file to start editing" : "Bring your code. Start something together."}
+                {readOnly ? "Waiting for a project" : hasFolder ? "Select a file to start editing" : "Start a conversation or bring your code"}
               </h1>
               <p className="mt-1.5 text-base leading-6 text-vs-muted">
-                {readOnly ? "You have view-only access. Ask a room editor to add a folder; its files and chats will appear here." : hasRepo
+                {readOnly ? "You have view-only access. Ask a room editor to start an empty project or import a folder; its chats and files will appear here." : hasRepo
                   ? "Choose a file in Files & changes. It opens beside your AI chat as another tab."
-                  : "Choose a project folder, or drop one here. We’ll add its files to this room so you and your teammates can explore and work on them."}
+                  : "Ask questions, brainstorm, or write with AI in an empty project. You can also import a folder if you want to work with existing code."}
               </p>
             </div>
             {!hasRepo && !readOnly && (
               <div className="flex flex-wrap items-center justify-center gap-2">
+                <button type="button" onClick={onStartEmpty} className="rounded-lg bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90">Start empty project</button>
                 <button
                   type="button"
                   onClick={onOpenPicker}
-                  className="rounded bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90"
+                  className="rounded-lg border border-vs-border px-4 py-2 text-base font-medium transition hover:bg-vs-hover"
                 >
                   Add a project folder
                 </button>
@@ -88,7 +91,7 @@ export function WelcomeView({
             )}
             {!hasRepo && !readOnly && <>
               <ol className="grid w-full gap-3 text-left text-sm sm:grid-cols-3">
-                {[["Add files", "A plain folder works too. Git setup isn’t required."], ["Ask your AI", "Connect a provider and give it a small first task."], ["Review together", "Inspect Changes, then invite a teammate or hand off."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-3"><span className="text-xs text-vs-muted">0{index + 1}</span><p className="mt-2 font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-vs-muted">{body}</p></li>)}
+                {[["Choose a starting point", "Start empty or import a folder. Files are optional."], ["Set up AI", "Connect your computer and choose your AI in the message box."], ["Start chatting", "Ask anything, explore an idea, or build something together."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-3"><span className="text-xs text-vs-muted">0{index + 1}</span><p className="mt-2 font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-vs-muted">{body}</p></li>)}
               </ol>
               <p className="max-w-lg text-xs leading-5 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
               {supportsPicker && <details className="text-sm text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="mt-2 rounded border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Use browser upload instead</button></details>}

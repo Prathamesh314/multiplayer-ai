@@ -84,9 +84,10 @@ type AiPanelProps = {
    * while composing fresh.
    */
   repoOptions: { id: string; label: string }[];
+  hasFiles?: boolean;
   repoId: string | null;
   onRepoChange: (repoId: string | null) => void;
-  /** Open the folder picker to import a new repo into the room. */
+  /** Add an empty project or import a folder into the room. */
   onImportRepo: () => void;
   importingRepo: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
@@ -136,6 +137,7 @@ export function AiPanel({
   onForkEntered,
   onNewRun,
   repoOptions,
+  hasFiles = true,
   repoId,
   onRepoChange,
   onImportRepo,
@@ -692,10 +694,10 @@ export function AiPanel({
   ];
 
   // The repo the next fresh chat works on. "__import__" is the picker's action
-  // row: choosing it opens the folder picker instead of selecting anything.
+  // row: choosing it opens project creation instead of selecting anything.
   const repoChoices: AgentChoice[] = [
     ...repoOptions,
-    { id: "__import__", label: importingRepo ? "Importing…" : "Import new project…" },
+    { id: "__import__", label: importingRepo ? "Importing…" : "Add project…" },
   ];
 
   const composerFooter =
@@ -900,6 +902,7 @@ export function AiPanel({
         ) : (
           <EmptyState
             ready={ready}
+            hasFiles={hasFiles}
             computerUnavailable={computerUnavailable}
             agentName={active?.name ?? null}
             onExample={prompt => composer.current?.insertPrompt(prompt)}
@@ -1483,15 +1486,22 @@ const EXAMPLES = [
 
 function EmptyState({
   ready,
+  hasFiles,
   computerUnavailable,
   agentName,
   onExample,
 }: {
   ready: boolean;
+  hasFiles: boolean;
   computerUnavailable: boolean;
   agentName: string | null;
   onExample: (prompt: string) => void;
 }) {
+  const examples = hasFiles ? EXAMPLES.map((prompt, index) => ({ prompt, label: ["Understand this project", "Review potential bugs", "Plan an improvement"][index] })) : [
+    { label: "Brainstorm an idea", prompt: "Help me brainstorm an idea. Ask me what I have in mind first." },
+    { label: "Learn something new", prompt: "Help me understand a topic. Ask me what I would like to learn about." },
+    { label: "Help me write", prompt: "Help me write something. Ask me what I am writing and who it is for." },
+  ];
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-vs-accent/10 text-vs-accent">
@@ -1499,25 +1509,25 @@ function EmptyState({
       </span>
       <div>
         <p className="text-base font-medium text-vs-fg">
-          {ready ? "What would you like to build?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
+          {ready ? hasFiles ? "What would you like to build?" : "What would you like to talk about?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
         </p>
         <p className="mt-2 max-w-sm text-sm leading-6 text-vs-muted">
           {ready
-            ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.`
+            ? hasFiles ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed. You can also ask AI to build something from scratch.`
             : computerUnavailable ? "Use the computer connection button above to get started. You can open your saved conversations and browse files while your computer is offline."
             : "Set up an AI tool on your computer, then choose it in the message box. Your saved conversations and files are available now."}
         </p>
       </div>
       {ready && (
         <div className="flex w-full max-w-sm flex-col gap-2">
-          {EXAMPLES.map((example) => (
+          {examples.map((example) => (
             <button
-              key={example}
+              key={example.label}
               type="button"
-              onClick={() => onExample(example)}
+              onClick={() => onExample(example.prompt)}
               className="rounded-lg border border-vs-border px-3 py-2 text-left text-sm text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
             >
-              {example === EXAMPLES[0] ? "Understand this project" : example === EXAMPLES[1] ? "Review potential bugs" : "Plan an improvement"}
+              {example.label}
             </button>
           ))}
           <p className="mt-1 text-xs leading-5 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>

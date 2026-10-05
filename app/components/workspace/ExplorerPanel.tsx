@@ -137,12 +137,13 @@ export function ExplorerPanel({
 
           <div className="vs-scroll min-h-0 flex-1 overflow-auto">
             {result.stats.files === 0 && !error && !scanning && <div className="m-3 rounded-xl border border-dashed border-vs-border p-4 text-sm leading-6 text-vs-muted">
-              <p className="font-medium text-vs-fg">No files in this repository yet</p>
+              <p className="font-medium text-vs-fg">No files yet — you can start chatting</p>
               {repositories.length > 0 && onSelectRepository && <div className="my-3 space-y-1">
                 <p className="text-xs">Other repositories in this room:</p>
                 {repositories.map(repository => <button type="button" key={repository.id} onClick={() => onSelectRepository(repository.id)} className="block w-full truncate rounded-lg border border-vs-border px-2 py-1 text-left text-xs text-vs-fg hover:bg-vs-hover">Open {repository.label}</button>)}
               </div>}
-              <p className="mt-1">{onImport ? "Import a local folder to start browsing and editing." : "Ask a room editor to import the project files."} A GitHub link alone does not download code.</p>
+              <p className="mt-1">Files are optional. Use the conversation to ask questions, or ask AI to create your first files here.</p>
+              {onImport && <p className="mt-1">Have existing code? Import a folder as a separate project.</p>}
               {onImport && <button type="button" onClick={onImport} className="mt-3 rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-medium text-vs-accent-fg">Import project files</button>}
             </div>}
             <ExplorerTree

@@ -45,8 +45,7 @@ import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
 import { TerminalPanel } from "./TerminalPanel";
-import { Modal } from "../ui/Modal";
-import { ProjectRepositoryPicker } from "./ProjectRepositoryPicker";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
@@ -94,6 +93,7 @@ export function Workspace({
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [startEmptyProject, setStartEmptyProject] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
 
@@ -191,6 +191,10 @@ export function Workspace({
   const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
   const [importProgress, setImportProgress] = useState<SeedProgress | null>(null);
   const [importingRepo, setImportingRepo] = useState(false);
+  function openAddProject(empty = false) {
+    setStartEmptyProject(empty);
+    setAddProjectOpen(true);
+  }
   const importInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let cancelled = false;
@@ -872,7 +876,7 @@ export function Workspace({
     if (action === "providers" || action === "devices") setHelpDialog(action);
     else if (action === "invite") setInviteOpen(true);
     else if (action === "files") {
-      if (!readOnly) void openImportPicker();
+      if (!hasRepo && !readOnly) openAddProject();
       else setMobilePane("files");
     } else if (action === "team") {
       setShowTeam(true);
@@ -930,17 +934,17 @@ export function Workspace({
       {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
         void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
       }} />}
-      {addProjectOpen && <Modal title="Add Project" description="Import a local folder or add a shared project repository." onClose={() => setAddProjectOpen(false)}>
-        <button type="button" disabled={importingRepo} onClick={() => { setAddProjectOpen(false); void openImportPicker(); }} className="rounded-md border border-vs-border px-3 py-2 text-sm hover:bg-vs-hover">Import folder</button>
-        {session.projectId && !readOnly && <ProjectRepositoryPicker sessionId={session.id}
-          selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
-          onAttached={async imported => {
-            setRoomRepos(previous => [...previous.filter(item => item.id !== imported.id), imported]);
-            if (!await selectRepository(imported.id)) throw new Error("Repository added. Save your edits before switching to it.");
-            setEnteredRun(null); setMobilePane("files"); setAddProjectOpen(false);
-          }} />}
-
-      </Modal>}
+      {addProjectOpen && !readOnly && <AddProjectDialog sessionId={session.id}
+        sharedProject={!!session.projectId} startEmpty={startEmptyProject}
+        selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
+        onClose={() => setAddProjectOpen(false)}
+        onImport={() => { setAddProjectOpen(false); void openImportPicker(); }}
+        onAdded={async (added, empty) => {
+          setRoomRepos(previous => [...previous.filter(item => item.id !== added.id), added]);
+          if (!await selectRepository(added.id)) throw new Error("Project added. Close this dialog and save your edits before opening it from the sidebar.");
+          setEnteredRun(null); setForkFromRunId(null); setShowChat(true);
+          setMobilePane(empty ? "chat" : "files"); setAddProjectOpen(false);
+        }} />}
       {error && hasRepo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
       {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
         <span className="min-w-0 flex-1 truncate"><strong>{offer.sender}</strong> offered you a handoff · {offer.title ?? "AI chat"}</span>
@@ -990,7 +994,7 @@ export function Workspace({
                 enteredRunId={enteredRun?.id ?? null}
                 onEnter={target => void enterRun(target)}
                 onNewRun={next => { void selectRepository(next).then(selected => { if (selected) startNewRun(); }); }}
-                onAddProject={() => session.projectId ? setAddProjectOpen(true) : void openImportPicker()}
+                onAddProject={() => openAddProject()}
                 importing={importingRepo}
                 canAdd={!readOnly}
                 onFork={startFork}
@@ -1000,7 +1004,7 @@ export function Workspace({
             {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}
 
         {!hasRepo ? (
-          // Before a repo exists: the folder upload / open flow fills the room.
+          // Choose an empty project or import files before opening the workspace.
           <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
             <WelcomeView
               readOnly={readOnly}
@@ -1014,6 +1018,7 @@ export function Workspace({
               hasRepo={hasRepo}
               onOpenPicker={openPicker}
               onOpenInput={() => inputRef.current?.click()}
+              onStartEmpty={() => openAddProject(true)}
             />
           </div>
         ) : (
@@ -1057,9 +1062,10 @@ export function Workspace({
                         onForkEntered={startFork}
                         onNewRun={startNewRun}
                         repoOptions={repoOptions}
+                        hasFiles={result ? result.stats.files > 0 : undefined}
                         repoId={chatRepoId}
                         onRepoChange={next => void selectRepository(next)}
-                        onImportRepo={() => void openImportPicker()}
+                        onImportRepo={() => openAddProject()}
                         importingRepo={importingRepo}
                       />
                   ),

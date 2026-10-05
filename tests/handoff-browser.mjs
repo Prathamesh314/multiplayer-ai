@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
@@ -122,6 +122,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const created = await request(tokens[0], `/api/sessions/${roomId}/repos`, "POST", { name: "Imported storefront" });
     assert.equal(created.status, 200);
     const imported = (await created.json()).repo;
+    assert.equal((await request(tokens[0], `/api/sessions/${roomId}/repos`, "POST", { name: "Imported storefront", empty: true })).status, 409, "empty creation never finalizes an unfinished import");
     const seedUrl = `/api/sessions/${roomId}/repos/${imported.id}/seed`;
     const seedBody = { files: [
       { path: "src/checkout.ts", data: Buffer.from("export const checkout = 'ready';\n").toString("base64") },
@@ -133,6 +134,30 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const importedFile = await request(tokens[1], `/api/sessions/${roomId}/file?repoId=${imported.id}&path=src/checkout.ts`);
     assert.match((await importedFile.json()).text, /ready/);
     console.log("  ok actual import API, finalization retry, and imported-file read");
+
+    const emptyRoomId = "emptyproject";
+    await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Conversation room','ABCD-VWXY',$2)`, [emptyRoomId, bob]);
+    await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner'),($1,$3,'viewer','owner')`, [emptyRoomId, bob, alice]);
+    const emptyEndpoint = `/api/sessions/${emptyRoomId}/repos`;
+    for (const body of [{name:"",empty:true},{name:"x".repeat(101),empty:true},{name:"Invalid",empty:"yes"},{name:"Invalid",empty:true,projectRepositoryId:randomUUID()}]) {
+      assert.equal((await request(tokens[1], emptyEndpoint, "POST", body)).status, 400);
+    }
+    assert.equal((await request(tokens[0], emptyEndpoint, "POST", {name:"Forbidden",empty:true})).status, 403);
+    assert.equal((await request("not-a-session", emptyEndpoint, "POST", {name:"Forbidden",empty:true})).status, 401);
+    const emptyResponse = await request(tokens[1], emptyEndpoint, "POST", {name:"  Ideas and questions  ",empty:true});
+    assert.equal(emptyResponse.status, 200);
+    const emptyRepo = (await emptyResponse.json()).repo;
+    assert.equal(emptyRepo.rootName, "Ideas and questions");
+    assert.equal(emptyRepo.upstreamUrl, null);
+    assert.equal(emptyRepo.projectRepositoryId, null);
+    assert.ok(emptyRepo.seededAt && emptyRepo.headSha);
+    assert.equal((await request(tokens[1], emptyEndpoint, "POST", {name:emptyRepo.rootName,empty:true})).status, 409);
+    const emptyTree = await request(tokens[0], `/api/sessions/${emptyRoomId}/tree?repoId=${emptyRepo.id}`);
+    assert.equal(emptyTree.status, 200);
+    assert.deepEqual((await emptyTree.json()).root.children, []);
+    assert.equal((await (await request(tokens[1], emptyEndpoint)).json()).repos[0].id, emptyRepo.id);
+    assert.equal((await request(tokens[1], `/api/sessions/${roomId}/tree?repoId=${emptyRepo.id}`)).status, 404);
+    console.log("  ok empty project API: zero files, persistence, name validation, duplicate protection, and viewer/anonymous refusal");
 
     chrome = spawn(process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
       "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
@@ -542,6 +567,33 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const deviceToken = randomBytes(32).toString("base64url");
     await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,last_seen_at,supports_inputs) VALUES ($1,'Simulated Bob runner',$2,'2',ARRAY['codex'],now(),true)`, [bob, createHash("sha256").update(deviceToken).digest()]);
     const runnerRequest = (path, body) => fetch(`${server}${path}`, { method: "POST", headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    let emptyRunId;
+    for (const makeFile of [false, true]) {
+      const prompt = makeFile ? "Save our idea as a note." : "Help me brainstorm a weekend plan.";
+      const stream = await request(tokens[1], "/api/ai/run", "POST", {sessionId:emptyRoomId,repoId:emptyRepo.id,agentId:"codex",prompt,turnId:randomUUID(),...(emptyRunId ? {runId:emptyRunId,controlVersion:0} : {})});
+      assert.equal(stream.status, 200);
+      const streamText = stream.text();
+      const {job} = await (await runnerRequest("/api/runner/claim", {version:"2",waitMs:0})).json();
+      assert.equal(job.repoId, emptyRepo.id);
+      emptyRunId = job.runId;
+      const runnerGit = new RunnerGit(server, deviceToken, join(directory, "empty-project-runner"));
+      const resultSha = await runnerGit.withWorkspace(job, async workspace => {
+        assert.deepEqual((await readdir(workspace.path)).filter(name=>name!==".git"), [], "no uploaded or template files are required");
+        if(makeFile) await writeFile(join(workspace.path,"notes.txt"),"Take a walk and sketch ideas.\n");
+        return workspace.commitAndPush("Conversation note", job.author);
+      });
+      if(!makeFile) assert.equal(resultSha, null, "normal conversation completes without file changes");
+      const report={code:0,resultSha,output:makeFile?"Saved your note.":"Let’s plan a relaxing weekend.",errOutput:"",ms:5};
+      assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/complete`,report)).status,200);
+      assert.match(await streamText,/"t":"exit"/);
+      const saved=await (await request(tokens[1],`/api/sessions/${emptyRoomId}/runs/${emptyRunId}`)).json();
+      assert.equal(saved.run.repoId,emptyRepo.id);
+      assert.ok(saved.messages.some(message=>message.body.includes(report.output)), "conversation is saved without an uploaded folder");
+    }
+    assert.equal((await (await request(tokens[1],`/api/sessions/${emptyRoomId}/file?repoId=${emptyRepo.id}&path=notes.txt`)).json()).text,"Take a walk and sketch ideas.\n");
+    const emptyView=await tab(tokens[1],`${emptyRoomId}?run=${emptyRunId}`);
+    await eventually(()=>emptyView.evaluate('document.body.textContent.includes("Let’s plan a relaxing weekend.") && document.body.textContent.includes("Saved your note.")'),"empty project conversation survives reopening");
+    console.log("  ok empty project runs: no-file conversation, saved history, follow-up file creation, and reopening through real APIs");
     const denied = await request(tokens[0], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 0, prompt: "Stale driver" });
     assert.equal(denied.status, 409);
     for (let index = 0; index < 2; index += 1) {

@@ -76,7 +76,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
               <GitBranchIcon className="mx-auto h-7 w-7 text-vs-muted" />
               <h3 className="mt-4 text-lg font-semibold">Great work starts with a project</h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-vs-muted">
-                {canManageOrg(org.myRole) ? "Create a project, then import code into a room. Your team can review and publish changes together." : "Ask an organisation admin to add you to a project so you can get started."}
+                {canManageOrg(org.myRole) ? "Create a project, then start an empty workspace for conversation or import a folder to work with code." : "Ask an organisation admin to add you to a project so you can get started."}
               </p>
               {canManageOrg(org.myRole) && <div className="mt-5 flex justify-center"><PrimaryButton onClick={onNewProject}><PlusIcon className="h-4 w-4" /> Create your first project</PrimaryButton></div>}
             </div>

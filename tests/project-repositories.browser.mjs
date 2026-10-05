@@ -55,7 +55,14 @@ function installFixtures() {
     if (path.endsWith("/project-repositories")) return json({repositories});
     if (path.endsWith("/repos")) {
       if (init.method === "POST") {
-        const shared = repositories.find(r=>r.id===JSON.parse(init.body).projectRepositoryId);
+        const body=JSON.parse(init.body);
+        if(body.empty) {
+          if(state.failCreate)return new Response(JSON.stringify({error:"Could not create the project. Please try again."}),{status:503,headers:{"content-type":"application/json"}});
+          if(state.repos.some(repo=>repo.rootName===body.name))return new Response(JSON.stringify({error:"A project with that name is already in this room. Choose another name."}),{status:409,headers:{"content-type":"application/json"}});
+          const repo={id:"emptyproject",sessionId:room.id,rootName:body.name,projectRepositoryId:null,headSha:"e".repeat(40),baseSha:"e".repeat(40),seededAt:1,createdAt:1,createdBy:"alice",empty:true};
+          state.repos.push(repo);return json({repo});
+        }
+        const shared = repositories.find(r=>r.id===body.projectRepositoryId);
         const repo = {id:shared.name==="frontend"?"frontendabcd":"backendabcde",sessionId:room.id,rootName:shared.name,projectRepositoryId:shared.id,headSha:"a".repeat(40),baseSha:"a".repeat(40),seededAt:1,createdAt:1,createdBy:"alice"};
         state.repos.push(repo);return json({repo});
       }
@@ -63,7 +70,7 @@ function installFixtures() {
     }
     if(path.endsWith("/tree")) {
       const repo=state.repos.find(r=>r.id===u.searchParams.get("repoId"));
-      return json({rootName:repo.rootName,root:{name:repo.rootName,path:"",type:"directory",children:[{name:repo.rootName+".txt",path:repo.rootName+".txt",type:"file",size:10}]},headSha:repo.headSha,sessionBranch:"session/"+repo.id});
+      return json({rootName:repo.rootName,root:{name:repo.rootName,path:"",type:"directory",children:repo.empty?[]:[{name:repo.rootName+".txt",path:repo.rootName+".txt",type:"file",size:10}]},headSha:repo.headSha,sessionBranch:"session/"+repo.id});
     }
     if(path.endsWith("/changes")) return json({changes:[]});
     if(path.endsWith("/file")) {
@@ -145,6 +152,10 @@ try {
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"workspace document");
   const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)})?.click()`);
   await eventually(()=>evaluate('!!document.querySelector(\'button[aria-label="Add project"]\')'),"empty room");
+  await button("Start empty project");
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Start empty project"] input\')'),"empty project available without any repository");
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("dialog button")).find(button=>button.textContent==="Create project").disabled'),true,"empty project needs a name");
+  await button("Cancel");
   await click('button[aria-label="Add project"]');
   await button("Project repositories");
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("frontend"))'),"repository catalog");
@@ -310,9 +321,37 @@ try {
   assert.ok(await evaluate('!!document.querySelector(".human-message")'),"AI discovery failure never hides saved chats");
   await evaluate('window.__model.agentsFailure=false;window.__model.emitDevices()');
   await eventually(()=>evaluate('!document.body.innerText.includes("We couldn’t check your AI tools")'),"AI discovery recovers");
+  await click('button[aria-label="Add project"]');
+  await click('button[aria-label="Start empty project"]');
+  await type('dialog input',"Ideas and questions");
+  await evaluate('window.__model.failCreate=true');
+  await button("Create project");
+  await eventually(()=>evaluate('!!document.querySelector("dialog [role=alert]")'),"empty project creation error is visible");
+  assert.equal(await evaluate('document.querySelector("dialog input").value'),"Ideas and questions","failed creation preserves the name");
+  await evaluate('window.__model.failCreate=false');
+  await button("Create project");
+  await eventually(()=>evaluate('!document.querySelector("dialog") && document.body.textContent.includes("What would you like to talk about?")'),"empty project opens a conversation");
+  assert.equal(await evaluate('window.__model.repos.filter(repo=>repo.empty).length'),1);
+  assert.ok(await evaluate('!!document.querySelector(\'button[aria-label="New chat in Ideas and questions"]\')'));
+  assert.ok(await evaluate('document.body.textContent.includes("Files are optional")'));
+  await button("Brainstorm an idea");
+  assert.ok(await evaluate('document.querySelector(".ai-composer textarea").value.includes("brainstorm")'));
+  assert.equal(await evaluate('document.querySelector(\'button[aria-label="Send message"]\').disabled'),false,"no files are required to send a prompt");
+  assert.equal(await evaluate('window.__model.requests.filter(r=>r.path==="/api/ai/run").length'),0,"starters never send automatically");
+  assert.equal(await evaluate('window.__model.requests.filter(r=>r.path.endsWith("/seed")).length'),0,"empty project needs no upload");
+  for(const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`empty conversation fits ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-empty-project-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await click('button[aria-label="Add project"]');await click('button[aria-label="Start empty project"]');
+  await type('dialog input',"Ideas and questions");await button("Create project");
+  await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Choose another name")'),"duplicate name has actionable feedback");
+  await button("Cancel");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
-  console.log("PASS: computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
+  console.log("PASS: empty-project creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
   console.log("Unmocked requests:",await evaluate("window.__model.unknown"));
 } catch (error) {
   try { console.log(await debugEvaluate?.(`JSON.stringify({body:document.body?.innerText,state:{unknown:window.__model?.unknown,requests:window.__model?.requests?.filter(r=>r.path!=="/api/presence")}})`)); }

@@ -237,7 +237,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
             </div>}
           </section>;
         })}
-        {!groups.length && <p className="px-3 text-xs leading-5 text-vs-muted">Add a project to start your first AI chat.</p>}
+        {!groups.length && <p className="px-3 text-sm leading-6 text-vs-muted">Start an empty project to chat, or import a folder using Add project above.</p>}
       </div>
     </aside>
   );

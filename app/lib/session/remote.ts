@@ -147,6 +147,24 @@ export async function fetchRoomRepos(sessionId: string): Promise<RoomRepo[]> {
   return body.repos ?? [];
 }
 
+/** Start a ready-to-chat workspace without uploading or attaching any files. */
+export async function createEmptyRoomRepo(sessionId: string, name: string): Promise<RoomRepo> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), empty: true }),
+    });
+  } catch {
+    throw new Error("Could not reach the server. Check your connection and try again.");
+  }
+  if (!response.ok) throw new Error(await readError(response, "Could not create the empty project. Please try again."));
+  const { repo } = (await response.json()) as { repo: RoomRepo };
+  if (!repo?.headSha || !repo.seededAt) throw new Error("The project is not ready yet. Refresh the page and try again.");
+  return repo;
+}
+
 /**
  * Imports a scanned folder as a new repo in the room: allocates the record,
  * then streams the files into it and commits. Returns the finished repo.
