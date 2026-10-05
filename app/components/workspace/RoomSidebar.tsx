@@ -5,7 +5,7 @@ import type { AgentRun } from "../../lib/ai/runs";
 import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
 import type { ChatMessage, SessionMember } from "../../lib/session/types";
-import { CheckIcon, ChevronIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { CheckIcon, ChevronIcon, FolderPlusIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
 
 type RoomSidebarProps = {
   sessionId: string;
@@ -213,9 +213,8 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
     <aside aria-label="Projects and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
       <header className="flex min-h-10 shrink-0 items-center justify-between gap-2 px-3 py-1">
         <h2 className="text-sm font-medium text-vs-muted">Projects</h2>
-        <button type="button" aria-label="Add project" title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1.5 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50">
-          {importing ? <SpinnerIcon className="h-3.5 w-3.5 shrink-0" /> : <PlusIcon className="h-3.5 w-3.5 shrink-0" />}
-          {importing ? "Adding…" : "Add project"}
+        <button type="button" aria-label="Add project" aria-busy={importing} title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-50">
+          {importing ? <SpinnerIcon className="h-5 w-5" /> : <FolderPlusIcon className="h-5 w-5" />}
         </button>
       </header>
       <div className="vs-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -229,7 +228,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
                 <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-xs font-normal tabular-nums">{active.length}</span>
               </button>
-              <button type="button" aria-label={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 rounded p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
+              <button type="button" aria-label={`New chat in ${repo.label}`} title={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-40"><PlusIcon className="h-5 w-5" /></button>
             </div>
             {open && <div className="ml-2">
               {active.map(run => renderRun(run, run.driverUserId === myId))}
