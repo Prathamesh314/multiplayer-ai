@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isPasswordAuthResponse, isVerificationState, type EmailVerificationState } from "../../lib/auth/types";
 import { AuthRequestError, authErrorMessage, authRequest } from "../../lib/auth/request";
 import { ErrorNote, Field, inputClass } from "../ui/Modal";
@@ -9,11 +9,17 @@ import { CheckIcon, SpinnerIcon } from "../icons";
 
 const deliveryError = "We couldn’t send your code. Your account still needs verification. Please try sending a new code shortly.";
 const countdown = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 export function EmailVerification({ initial, onVerified, onBack }: {
   initial: EmailVerificationState; onVerified: () => void; onBack: (email: string) => void;
 }) {
   const { notify } = useToast();
+  // A restored challenge is server-rendered. Do not accept clicks until React
+  // has attached the handlers, or a fast resend click can silently disappear.
+  const ready = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   const [verification, setVerification] = useState(initial);
   const [now, setNow] = useState(initial.serverTime);
   const clock = useRef({ server: initial.serverTime, client: 0 });
@@ -31,7 +37,7 @@ export function EmailVerification({ initial, onVerified, onBack }: {
   const resendSeconds = Math.max(retrySeconds, Math.ceil((verification.resendAt - now) / 1000), 0);
   const expired = verification.codeExpiresAt <= now;
   const exhausted = verification.attemptsRemaining === 0;
-  const canVerify = !busy && !requestExpired && !retrySeconds && !exhausted && !expired && code.length === 6 && verification.deliveryStatus === "sent";
+  const canVerify = ready && !busy && !requestExpired && !retrySeconds && !exhausted && !expired && code.length === 6 && verification.deliveryStatus === "sent";
 
   function report(cause: unknown, title: string) {
     const message = authErrorMessage(cause);
@@ -61,7 +67,7 @@ export function EmailVerification({ initial, onVerified, onBack }: {
     } catch (cause) { report(cause, "Couldn’t verify your email"); setBusy(null); }
   }
   async function resend() {
-    if (busy || requestExpired || resendSeconds > 0) return;
+    if (!ready || busy || requestExpired || resendSeconds > 0) return;
     setBusy("resend"); setError(null);
     try {
       const result = await authRequest("/api/auth/email/resend", "POST", undefined,
@@ -75,7 +81,7 @@ export function EmailVerification({ initial, onVerified, onBack }: {
     finally { setBusy(null); }
   }
   async function back() {
-    if (busy) return;
+    if (!ready || busy) return;
     setBusy("back"); setError(null);
     try { await authRequest("/api/auth/email/pending", "DELETE"); onBack(verification.email); }
     catch (cause) { report(cause, "Couldn’t return to sign-in"); setBusy(null); }
@@ -102,14 +108,14 @@ export function EmailVerification({ initial, onVerified, onBack }: {
       {error && error.message !== guidance && <div id="email-code-error"><ErrorNote announce={false}>{error.message}</ErrorNote></div>}
       <button type="submit" disabled={!canVerify}
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60">
-        {busy === "verify" && <SpinnerIcon className="h-4 w-4" />}{busy === "verify" ? "Verifying…" : retrySeconds > 0 ? `Try again in ${countdown(retrySeconds)}` : "Verify & sign in"}
+        {busy === "verify" && <SpinnerIcon className="h-4 w-4" />}{!ready ? "Loading verification…" : busy === "verify" ? "Verifying…" : retrySeconds > 0 ? `Try again in ${countdown(retrySeconds)}` : "Verify & sign in"}
       </button>
     </form>
     <div className="mt-5 space-y-3 text-center text-sm">
-      <button type="button" onClick={resend} disabled={!!busy || requestExpired || resendSeconds > 0} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-vs-fg transition hover:bg-vs-hover disabled:text-vs-muted">
+      <button type="button" onClick={resend} disabled={!ready || !!busy || requestExpired || resendSeconds > 0} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-vs-fg transition hover:bg-vs-hover disabled:text-vs-muted">
         {busy === "resend" && <SpinnerIcon className="h-4 w-4" />}{busy === "resend" ? "Sending…" : resendSeconds > 0 ? `Resend code in ${countdown(resendSeconds)}` : "Resend code"}
       </button>
-      <button type="button" onClick={back} disabled={!!busy} className="block min-h-10 w-full rounded-lg text-vs-muted transition hover:text-vs-fg disabled:opacity-60">{busy === "back" ? "Returning to sign-in…" : "Back to sign in"}</button>
+      <button type="button" onClick={back} disabled={!ready || !!busy} className="block min-h-10 w-full rounded-lg text-vs-muted transition hover:text-vs-fg disabled:opacity-60">{busy === "back" ? "Returning to sign-in…" : "Back to sign in"}</button>
     </div>
   </>;
 }

@@ -53,6 +53,11 @@ export async function emailBrowserCheck({ base, codeFor, releaseCooldown, expire
     await eventually(()=>evaluate(`document.body.innerText.includes('try again in a moment')`),'friendly proxy failure');
     assert.equal(await evaluate(`document.body.innerText.includes('upstream-secret')`),false);
     await releaseCooldown(email);
+    await send('Emulation.setScriptExecutionDisabled',{value:true});
+    await send('Page.reload');
+    await eventually(()=>evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Resend code')`),'server-rendered restored challenge');
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Resend code').disabled`),true,'resend waits for hydration');
+    await send('Emulation.setScriptExecutionDisabled',{value:false});
     await send('Page.reload');
     await eventually(()=>evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Resend code'&&!b.disabled)`),'pending challenge survives reload');
     await button('Resend code');
