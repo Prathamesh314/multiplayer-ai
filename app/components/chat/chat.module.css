@@ -1,16 +1,16 @@
 /* A Discord-inspired shell, scoped to the team workspace. */
 .workspace { background: var(--vs-editor); color: var(--vs-fg); }
-.workspaceRail { width: 72px; border-right: 0; gap: 12px; padding-top: 18px; }
-.workspaceRail > div:first-child { background: var(--vs-panel); color: var(--vs-fg); border-radius: 16px; width: 46px; height: 46px; }
+.workspaceRail { width: 64px; border-right: 0; gap: 10px; padding-top: 14px; }
+.workspaceRail > div:first-child { background: var(--vs-panel); color: var(--vs-fg); border-radius: 14px; width: 40px; height: 40px; }
 .workspaceNavigation { background: var(--vs-chrome); }
 .workspaceNavigation :global([aria-current="page"]) { background: var(--vs-active); color: var(--vs-accent); }
-.workspaceNavigation > header { height: 64px; border-color: var(--vs-border); }
-.workspaceNavigation > header span { font-size: 16px; }
-.profileBar { border: 1px solid var(--vs-border); display: flex; align-items: center; gap: 9px; margin: 8px; padding: 11px 10px; background: var(--vs-panel); border-radius: 9px; }
-.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 35px; height: 35px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 12px; font-weight: 600; }
+.workspaceNavigation > header { height: 40px; border-color: var(--vs-border); }
+.workspaceNavigation > header span { font-size: 13px; }
+.profileBar { border: 1px solid var(--vs-border); display: flex; align-items: center; gap: 8px; margin: 6px; padding: 8px; background: var(--vs-panel); border-radius: 8px; }
+.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 11px; font-weight: 600; }
 .profileName { min-width: 0; flex: 1; }
-.profileName p { line-height: 1.6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
-.profileName span { line-height: 1.6; display: block; color: var(--vs-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.profileName p { line-height: 1.5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
+.profileName span { line-height: 1.5; display: block; color: var(--vs-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .channelGroup { padding-top: 22px; }
 .groupHeading { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 6px; color: var(--vs-muted); }
 .groupHeading > button:first-child { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 28px; }
@@ -28,8 +28,8 @@
 .conversationHeader h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 650; letter-spacing: -.25px; }
 .topic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--vs-border); margin-left: 7px; padding-left: 18px; color: var(--vs-muted); font-size: 12px; }
 .headerActions { display: flex; align-items: center; gap: 12px; margin-left: auto; flex-shrink: 0; }
-.iconButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 6px; color: var(--vs-muted); cursor: pointer; transition: color .15s, background .15s; }
-.iconButton > svg { width: 19px; height: 19px; }
+.iconButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; color: var(--vs-muted); cursor: pointer; transition: color .15s, background .15s; }
+.iconButton > svg { width: 16px; height: 16px; }
 .iconButton:hover, .iconButton[aria-expanded="true"] { background: var(--vs-hover); color: var(--vs-fg); }
 .connection { width: 6px; height: 6px; border-radius: 50%; background: var(--vs-muted); margin-right: 4px; }
 .connected { background: var(--vs-success); }

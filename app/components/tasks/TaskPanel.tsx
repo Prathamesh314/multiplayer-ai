@@ -84,11 +84,11 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignActi
 
   if (hideWhenEmpty && !loading && !error && tasks.length === 0) return null;
 
-  return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-6 rounded-2xl border border-vs-border bg-vs-panel p-5 text-sm">
+  return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-5 rounded-2xl border border-vs-border bg-vs-panel p-4 text-xs">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="font-semibold">{runId ? "Chat tasks" : "My tasks"}</h2>
-      {runId && canAssign && showAssignAction && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-3 py-1 text-vs-accent">@ Assign task</button>}
-      {!runId && <span className="text-xs text-vs-muted">Assigned to you across your rooms</span>}
+      <h2 className="text-sm font-semibold">{runId ? "Chat tasks" : "My tasks"}</h2>
+      {runId && canAssign && showAssignAction && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-2.5 py-1 text-vs-accent">@ Assign task</button>}
+      {!runId && <span className="text-[11px] text-vs-muted">Assigned to you across your rooms</span>}
     </div>
     {assigning && <form onSubmit={assign} className="mt-3 space-y-3">
       <label className="block">Assign to another room member

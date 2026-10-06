@@ -520,17 +520,17 @@ function OrgPanel({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
-      <div className="flex shrink-0 items-center justify-between border-b border-vs-border px-4 py-3 lg:hidden">
-        <span className="truncate text-sm font-semibold">{org.name}</span>
-        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm">{showNavigation ? "Close navigation" : "Projects & connections"}</button>
+      <div className="flex shrink-0 items-center justify-between border-b border-vs-border px-3 py-2 lg:hidden">
+        <span className="truncate text-xs font-semibold">{org.name}</span>
+        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-2.5 py-1 text-xs">{showNavigation ? "Close navigation" : "Projects & connections"}</button>
       </div>
       <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-[296px] lg:border-b-0 lg:border-r`}>
-        <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-4">
+        <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-3">
           <div className="flex min-w-0 items-center gap-2">
             {org.image && (
               <img src={org.image} alt={org.name} className="h-5 w-5 rounded object-cover" />
             )}
-            <span className="min-w-0 truncate text-[14px] font-semibold">{org.name}</span>
+            <span className="min-w-0 truncate text-[13px] font-semibold">{org.name}</span>
           </div>
           {canManageOrg(org.myRole) && (
             <div className="flex shrink-0 items-center gap-0.5">
@@ -538,50 +538,50 @@ function OrgPanel({
                 type="button"
                 onClick={onOpenSettings}
                 title="Organisation settings"
-                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
-                <SettingsIcon className="h-4 w-4" />
+                <SettingsIcon className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
                 onClick={onOpenAdmin}
                 title="Organisation admin"
-                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
-                <ShieldIcon className="h-4 w-4" />
+                <ShieldIcon className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
                 onClick={onInvite}
                 title="Invite people"
-                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
-                <UserPlusIcon className="h-4 w-4" />
+                <UserPlusIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
         </header>
 
         <UsageBadge orgSlug={org.slug} />
-        <button type="button" onClick={() => { setConnectionsOpen(false); setShowNavigation(false); }} aria-current={!connectionsOpen ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${!connectionsOpen ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
-          <GitBranchIcon className="h-4 w-4" /> Project overview
+        <button type="button" onClick={() => { setConnectionsOpen(false); setShowNavigation(false); }} aria-current={!connectionsOpen ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${!connectionsOpen ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
+          <GitBranchIcon className="h-3.5 w-3.5" /> Project overview
         </button>
-        <button type="button" onClick={()=>{setConnectionsOpen(true);setShowNavigation(false);}} aria-current={connectionsOpen?'page':undefined} className={`mx-3 mt-1 flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${connectionsOpen?'bg-vs-active text-vs-fg':'text-vs-muted hover:bg-vs-hover'}`}><UsersIcon className="h-4 w-4"/> Connections <span className="ml-auto text-xs text-vs-muted">Slack · Discord</span></button>
+        <button type="button" onClick={()=>{setConnectionsOpen(true);setShowNavigation(false);}} aria-current={connectionsOpen?'page':undefined} className={`mx-3 mt-1 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${connectionsOpen?'bg-vs-active text-vs-fg':'text-vs-muted hover:bg-vs-hover'}`}><UsersIcon className="h-3.5 w-3.5"/> Connections <span className="ml-auto text-[11px] text-vs-muted">Slack · Discord</span></button>
 
         {invitations.length > 0 && (
           <div className="border-b border-vs-border p-2">
             {invitations.map((invite) => (
               <div
                 key={invite.id}
-                className="rounded-lg border border-vs-accent/40 bg-vs-accent/10 p-2 text-sm"
+                className="rounded-lg border border-vs-accent/40 bg-vs-accent/10 p-2 text-xs"
               >
-                <p className="leading-5">
+                <p className="leading-4">
                   {invite.invitedByName} invited you as {invite.role}.
                 </p>
                 <button
                   type="button"
                   onClick={() => onAcceptInvite(invite.id)}
-                  className="mt-1.5 rounded bg-vs-accent px-2 py-1 text-[12px] font-medium text-vs-accent-fg"
+                  className="mt-1.5 rounded bg-vs-accent px-2 py-1 text-[11px] font-medium text-vs-accent-fg"
                 >
                   Accept
                 </button>
@@ -592,7 +592,7 @@ function OrgPanel({
 
         <div className="vs-scroll min-h-0 flex-1 overflow-y-auto pb-3">
           <div className="flex items-center justify-between px-4 pb-1 pt-3">
-            <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
               Projects
             </h2>
             {canManageOrg(org.myRole) && (
@@ -601,7 +601,7 @@ function OrgPanel({
                 onClick={onNewProject}
                 title="New project"
                 aria-label="New project"
-                className="rounded-md p-1.5 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+                className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
               </button>
@@ -618,7 +618,7 @@ function OrgPanel({
                 value={roomSearch}
                 onChange={(event) => setRoomSearch(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Escape") setRoomSearch(""); }}
-                className="min-w-0 flex-1 bg-transparent py-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted [&::-webkit-search-cancel-button]:hidden"
+                className="min-w-0 flex-1 bg-transparent py-1.5 text-xs text-vs-fg outline-none placeholder:text-vs-muted [&::-webkit-search-cancel-button]:hidden"
               />
               {roomSearch && <button type="button" aria-label="Clear room search" onClick={() => setRoomSearch("")} className="rounded p-0.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
             </div>
@@ -626,13 +626,13 @@ function OrgPanel({
 
           <div className="px-2">
             {projectError ? (
-              <p role="alert" className="px-2 py-2 text-sm text-vs-danger">Could not load projects. Retry from the project overview.</p>
+              <p role="alert" className="px-2 py-2 text-xs text-vs-danger">Could not load projects. Retry from the project overview.</p>
             ) : projects === null ? (
-              <p className="flex items-center gap-2 px-2 py-2 text-sm text-vs-muted">
+              <p className="flex items-center gap-2 px-2 py-2 text-xs text-vs-muted">
                 <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
               </p>
             ) : projects.length === 0 ? (
-              <p className="px-2 py-2 text-sm leading-5 text-vs-muted">
+              <p className="px-2 py-2 text-xs leading-4 text-vs-muted">
                 No projects yet.{" "}
                 {canManageOrg(org.myRole)
                   ? "Create a project, then add your code in a room."
@@ -737,10 +737,10 @@ function ProjectRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <ChevronIcon
-            className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition ${expanded ? "rotate-90" : ""}`}
+            className={`h-3 w-3 shrink-0 text-vs-muted transition ${expanded ? "rotate-90" : ""}`}
           />
-          <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-          <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{project.name}</span>
+          <GitBranchIcon className="h-3 w-3 shrink-0 text-vs-muted" />
+          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
         </button>
         <button
           type="button"
@@ -750,7 +750,7 @@ function ProjectRow({
               ? "View members & manage roles"
               : "View project members"
           }
-          className="flex shrink-0 items-center gap-1 rounded-md border border-vs-border px-1.5 py-0.5 text-[11px] font-medium text-vs-muted transition hover:bg-vs-active hover:text-vs-fg"
+          className="flex shrink-0 items-center gap-1 rounded-md border border-vs-border px-1.5 py-0.5 text-[10px] font-medium text-vs-muted transition hover:bg-vs-active hover:text-vs-fg"
         >
           <UsersIcon className="h-3 w-3" />
           Members
@@ -760,13 +760,13 @@ function ProjectRow({
       {expanded && (
         <ul className="ml-4 border-l border-vs-border pl-2">
           {rooms === null ? (
-            <li className="px-2 py-1 text-[12px] text-vs-muted">Loading…</li>
+            <li className="px-2 py-1 text-[11px] text-vs-muted">Loading…</li>
           ) : rooms.length === 0 ? (
-            <li className="px-2 py-1 text-[12px] text-vs-muted">
+            <li className="px-2 py-1 text-[11px] text-vs-muted">
               No rooms yet — yours is created when this list loads.
             </li>
           ) : visibleRooms?.length === 0 ? (
-            <li role="status" className="px-2 py-2 text-[12px] text-vs-muted">No rooms match your search.</li>
+            <li role="status" className="px-2 py-2 text-[11px] text-vs-muted">No rooms match your search.</li>
           ) : (
             visibleRooms?.map((room) => (
               <li
@@ -776,7 +776,7 @@ function ProjectRow({
                 <button
                   type="button"
                   onClick={() => onOpenRoom(room.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-[14px]"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[12.5px]"
                 >
                   {room.visibility === "private" ? (
                     <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
@@ -820,25 +820,25 @@ function EmptyState({
       {loading ? (
         <SpinnerIcon className="h-5 w-5 text-vs-muted" />
       ) : (
-        <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-6 sm:p-12">
-          <SparkleIcon className="mb-6 h-8 w-8 text-vs-muted" />
-          <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
-          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Build together, from the first prompt.</h1>
-          <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
+        <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-5 sm:p-9">
+          <SparkleIcon className="mb-4 h-6 w-6 text-vs-muted" />
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Build together, from the first prompt.</h1>
+          <p className="mt-2 text-xs leading-5 text-vs-muted">
             Start a task with AI, share the conversation, and let a teammate pick up where you left off.
             First, create an organisation—a home for your team’s projects—or join an existing one.
           </p>
-          <ol className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
-            {["Create your team’s home", "Add a project and its code", "Build, review, and hand off"].map((step, index) => <li key={step} className="rounded-xl border border-vs-border bg-vs-editor/60 p-3"><span className="mb-2 block text-xs font-semibold text-vs-accent">0{index + 1}</span>{step}</li>)}
+          <ol className="mt-5 grid gap-2.5 text-xs sm:grid-cols-3">
+            {["Create your team’s home", "Add a project and its code", "Build, review, and hand off"].map((step, index) => <li key={step} className="rounded-xl border border-vs-border bg-vs-editor/60 p-2.5"><span className="mb-1.5 block text-[11px] font-semibold text-vs-accent">0{index + 1}</span>{step}</li>)}
           </ol>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-2.5">
             <PrimaryButton onClick={onCreate}>
-              <PlusIcon className="h-4 w-4" /> New organisation
+              <PlusIcon className="h-3.5 w-3.5" /> New organisation
             </PrimaryButton>
             <GhostButton onClick={onJoin}>
-              <UserPlusIcon className="h-4 w-4" /> Join an organisation
+              <UserPlusIcon className="h-3.5 w-3.5" /> Join an organisation
               {inviteCount > 0 && (
-                <span className="rounded-full bg-vs-accent px-1.5 text-[11px] font-semibold text-vs-accent-fg">
+                <span className="rounded-full bg-vs-accent px-1.5 text-[10px] font-semibold text-vs-accent-fg">
                   {inviteCount}
                 </span>
               )}
@@ -867,7 +867,7 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   const atCap = usage.concurrency.used >= usage.concurrency.limit && usage.concurrency.limit > 0;
 
   return (
-    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-2.5 text-[12px] text-vs-muted">
+    <div className="flex items-center gap-3 border-b border-vs-border px-3 py-2 text-[11px] text-vs-muted">
       <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
         <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-vs-warn" : "bg-vs-success"}`} />
         {usage.concurrency.used}/{usage.concurrency.limit} running
