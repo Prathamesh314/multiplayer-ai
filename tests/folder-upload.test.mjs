@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {mkdtemp,rm,writeFile,readFile,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {objectGit,objectText,putBlobs} from '../app/lib/git/objects.ts';
+import {objectGit,objectText,putBlobs,commitTree} from '../app/lib/git/objects.ts';
 import {createRepo,writeSeedBatch,finishSeed} from '../app/lib/session/repo.ts';
 import {barePath,workPath} from '../app/lib/session/paths.ts';
 import {scanFileList} from '../app/lib/scan.ts';
@@ -12,6 +12,42 @@ import {importRoomRepo} from '../app/lib/session/remote.ts';
 
 const encoded = (path,bytes) => ({path,data:Buffer.from(bytes).toString('base64')});
 const blobHash = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+
+test('empty projects store complete Git history for backups and clones',async () => {
+  const root=await mkdtemp(join(tmpdir(),'mp-empty-upload-'));
+  const previous=process.env.MULTIPLAYER_AI_DATA;
+  process.env.MULTIPLAYER_AI_DATA=root;
+  try {
+    const id='emptyfixture';
+    await createRepo(id);
+    const seeded=await finishSeed(id,'Empty project');
+    assert.equal(await objectText(barePath(id),['ls-tree',seeded.headSha]),'');
+    await objectGit(barePath(id),['fsck','--full','--strict']);
+    const clone=join(root,'clone.git');
+    await objectGit(root,['clone','--bare','--no-local',barePath(id),clone]);
+    await objectGit(clone,['fsck','--full','--strict']);
+    assert.equal(await objectText(clone,['rev-parse','HEAD']),seeded.headSha);
+  } finally {
+    if(previous===undefined)delete process.env.MULTIPLAYER_AI_DATA;else process.env.MULTIPLAYER_AI_DATA=previous;
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('committing an empty index persists its tree in SHA-1 and SHA-256 repositories',async () => {
+  const root=await mkdtemp(join(tmpdir(),'mp-empty-tree-'));
+  try {
+    for(const format of ['sha1','sha256']) {
+      const bare=join(root,format+'.git');
+      await objectGit(root,['init','--bare','-b','main',`--object-format=${format}`,bare]);
+      const index={GIT_INDEX_FILE:join(bare,'import.index')};
+      await objectGit(bare,['read-tree','--empty'],undefined,index);
+      const tree=await objectText(bare,['write-tree'],undefined,index);
+      const sha=await commitTree(bare,tree,[],'Empty project');
+      await objectGit(bare,['update-ref','refs/heads/main',sha]);
+      await objectGit(bare,['fsck','--full','--strict']);
+    }
+  } finally {await rm(root,{recursive:true,force:true});}
+});
 
 test('10,000-file import preserves every blob, retries, ignores and bare-only storage',async () => {
   const root=await mkdtemp(join(tmpdir(),'mp-upload-test-'));
