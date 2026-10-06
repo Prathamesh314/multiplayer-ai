@@ -49,12 +49,12 @@ export function AddProjectDialog({ sessionId, sharedProject, selected, startEmpt
     {empty ? <Field label="Project name" hint="Use it for questions, brainstorming, writing, or building something from scratch.">
       <input autoFocus className={inputClass} value={name} maxLength={100} disabled={busy || !!created} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void create(); } }} placeholder="Ideas and questions" />
     </Field> : <>
-      <div className="space-y-3">
-        <button type="button" aria-label="Start empty project" onClick={() => setEmpty(true)} className="flex w-full items-start gap-3 rounded-xl border border-vs-border bg-vs-editor p-4 text-left transition hover:border-vs-accent hover:bg-vs-hover focus-visible:outline-2 focus-visible:outline-vs-accent">
-          <SparkleIcon className="mt-0.5 h-5 w-5 shrink-0 text-vs-accent" /><span><span className="block text-base font-medium">Start empty project</span><span className="mt-1 block text-sm leading-6 text-vs-muted">Just chat with AI. No folder or repository needed.</span></span>
+      <div className="space-y-2.5">
+        <button type="button" aria-label="Start empty project" onClick={() => setEmpty(true)} className="flex w-full items-start gap-2.5 rounded-xl border border-vs-border bg-vs-editor p-3 text-left transition hover:border-vs-accent hover:bg-vs-hover focus-visible:outline-2 focus-visible:outline-vs-accent">
+          <SparkleIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-accent" /><span><span className="block text-sm font-medium">Start empty project</span><span className="mt-0.5 block text-xs leading-5 text-vs-muted">Just chat with AI. No folder or repository needed.</span></span>
         </button>
-        <button type="button" aria-label="Import folder" onClick={onImport} className="flex w-full items-start gap-3 rounded-xl border border-vs-border bg-vs-editor p-4 text-left transition hover:border-vs-accent hover:bg-vs-hover focus-visible:outline-2 focus-visible:outline-vs-accent">
-          <FolderUpIcon className="mt-0.5 h-5 w-5 shrink-0 text-vs-muted" /><span><span className="block text-base font-medium">Import folder</span><span className="mt-1 block text-sm leading-6 text-vs-muted">Work with files already on your computer.</span></span>
+        <button type="button" aria-label="Import folder" onClick={onImport} className="flex w-full items-start gap-2.5 rounded-xl border border-vs-border bg-vs-editor p-3 text-left transition hover:border-vs-accent hover:bg-vs-hover focus-visible:outline-2 focus-visible:outline-vs-accent">
+          <FolderUpIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-muted" /><span><span className="block text-sm font-medium">Import folder</span><span className="mt-0.5 block text-xs leading-5 text-vs-muted">Work with files already on your computer.</span></span>
         </button>
       </div>
       {sharedProject && <ProjectRepositoryPicker sessionId={sessionId} selected={selected} onAttached={repo => onAdded(repo, false)} />}

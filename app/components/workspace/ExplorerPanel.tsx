@@ -94,14 +94,14 @@ export function ExplorerPanel({
   return (
     <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       {sessionId && (
-        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-2 flex-wrap">
+        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-1.5 flex-wrap">
           <TabButton active={view === "files"} onClick={() => setView("files")}>
             All files
           </TabButton>
           <TabButton active={view === "changes"} onClick={() => setView("changes")}>
             Changes
             {changes && changes.length > 0 && (
-              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[11px] text-vs-accent">
+              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[10px] text-vs-accent">
                 {changes.length}
               </span>
             )}
@@ -115,7 +115,7 @@ export function ExplorerPanel({
       {changesError && view === "changes" && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{changesError}</p>}
       {view === "files" ? (
         <>
-          <div className="shrink-0 px-2 py-2">
+          <div className="shrink-0 px-2 py-1.5">
             <label className="relative flex items-center">
               <SearchIcon className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-vs-muted" />
               <input
@@ -123,28 +123,28 @@ export function ExplorerPanel({
                 onChange={(event) => setQuery(event.target.value)}
                 aria-label="Filter files"
                 placeholder="Find a file or folder…"
-                className="w-full rounded border border-vs-border bg-vs-editor py-1.5 pl-7 pr-7 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
+                className="w-full rounded border border-vs-border bg-vs-editor py-1 pl-7 pr-7 text-xs text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent"
               />
               {query && <button type="button" aria-label="Clear file filter" onClick={() => setQuery("")} className="absolute right-2 text-vs-muted hover:text-vs-fg">×</button>}
             </label>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[12px] font-semibold uppercase tracking-wide text-vs-fg">
+          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-vs-fg">
             <span className="truncate" title={result.rootName}>{result.rootName}</span>
-            <span className="ml-auto shrink-0 text-[11px] font-normal normal-case text-vs-muted">{humanCount(result.stats.files)} {result.stats.files === 1 ? "file" : "files"}</span>
+            <span className="ml-auto shrink-0 text-[10px] font-normal normal-case text-vs-muted">{humanCount(result.stats.files)} {result.stats.files === 1 ? "file" : "files"}</span>
             {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
           </div>
 
           <div className="vs-scroll min-h-0 flex-1 overflow-auto">
-            {result.stats.files === 0 && !error && !scanning && <div className="m-3 rounded-xl border border-dashed border-vs-border p-4 text-sm leading-6 text-vs-muted">
+            {result.stats.files === 0 && !error && !scanning && <div className="m-3 rounded-xl border border-dashed border-vs-border p-3 text-xs leading-5 text-vs-muted">
               <p className="font-medium text-vs-fg">No files yet — you can start chatting</p>
-              {repositories.length > 0 && onSelectRepository && <div className="my-3 space-y-1">
-                <p className="text-xs">Other repositories in this room:</p>
-                {repositories.map(repository => <button type="button" key={repository.id} onClick={() => onSelectRepository(repository.id)} className="block w-full truncate rounded-lg border border-vs-border px-2 py-1 text-left text-xs text-vs-fg hover:bg-vs-hover">Open {repository.label}</button>)}
+              {repositories.length > 0 && onSelectRepository && <div className="my-2.5 space-y-1">
+                <p className="text-[11px]">Other repositories in this room:</p>
+                {repositories.map(repository => <button type="button" key={repository.id} onClick={() => onSelectRepository(repository.id)} className="block w-full truncate rounded-lg border border-vs-border px-2 py-1 text-left text-[11px] text-vs-fg hover:bg-vs-hover">Open {repository.label}</button>)}
               </div>}
               <p className="mt-1">Files are optional. Use the conversation to ask questions, or ask AI to create your first files here.</p>
               {onImport && <p className="mt-1">Have existing code? Import a folder as a separate project.</p>}
-              {onImport && <button type="button" onClick={onImport} className="mt-3 rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-medium text-vs-accent-fg">Import project files</button>}
+              {onImport && <button type="button" onClick={onImport} className="mt-2.5 rounded-lg bg-vs-accent px-2.5 py-1 text-[11px] font-medium text-vs-accent-fg">Import project files</button>}
             </div>}
             <ExplorerTree
               root={result.root}
@@ -190,7 +190,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex items-center rounded px-2 py-1 text-sm transition ${
+      className={`flex items-center rounded px-1.5 py-0.5 text-xs transition ${
         active ? "bg-vs-hover font-medium text-vs-fg" : "text-vs-muted hover:text-vs-fg"
       }`}
     >
@@ -229,7 +229,7 @@ function ChangesList({
 
   if (!changes || changes.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-vs-muted">
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-vs-muted">
         No changes since the session started.
       </div>
     );
@@ -237,7 +237,7 @@ function ChangesList({
 
   return (
     <div className="vs-scroll min-h-0 flex-1 overflow-auto py-1">
-      <p className="border-b border-vs-border px-3 pb-2 text-sm text-vs-muted">{changes.length} files changed</p>
+      <p className="border-b border-vs-border px-3 pb-2 text-xs text-vs-muted">{changes.length} files changed</p>
       {changes.map((change) => {
         const meta = STATUS_META[change.status];
         const deleted = change.status === "D";
@@ -249,11 +249,11 @@ function ChangesList({
             disabled={deleted}
             onClick={() => onOpenFile(change.path)}
             title={change.path}
-            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[14px] transition ${
+            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] transition ${
               change.path === activePath ? "bg-vs-active" : "hover:bg-vs-hover"
             } ${deleted ? "cursor-default opacity-60" : ""}`}
           >
-            <span className={`w-3 shrink-0 text-center font-mono text-[12px] font-semibold ${meta.className}`}>
+            <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${meta.className}`}>
               {meta.label}
             </span>
             <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
@@ -288,7 +288,7 @@ function RepoInfo({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
       >
         <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         Repository
@@ -298,7 +298,7 @@ function RepoInfo({
       </button>
 
       {open && (
-        <div className="space-y-2 px-3 pb-3 text-[12px] text-vs-muted">
+        <div className="space-y-2 px-3 pb-3 text-[11px] text-vs-muted">
           <p className="flex items-center gap-1.5">
             {git.isGit ? (
               <>
@@ -388,7 +388,7 @@ function CopyStructureButton({ result }: { result: ScanResult }) {
     <button
       type="button"
       onClick={copy}
-      className="w-full rounded border border-vs-border py-1 text-[12px] text-vs-fg transition hover:bg-vs-hover"
+      className="w-full rounded border border-vs-border py-1 text-[11px] text-vs-fg transition hover:bg-vs-hover"
     >
       {copied ? "Copied structure" : "Copy structure"}
     </button>
@@ -408,7 +408,7 @@ function Row({
 }) {
   return (
     <div className="min-w-0" title={title}>
-      <dt className="text-[11px] uppercase tracking-wide">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-wide">{label}</dt>
       <dd className={`truncate text-vs-fg ${mono ? "font-mono" : ""}`}>{value}</dd>
     </div>
   );

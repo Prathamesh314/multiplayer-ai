@@ -48,27 +48,27 @@ export function Modal({
         }}
         className={`ui-dialog fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-hidden rounded-2xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-[0_24px_64px_rgb(0_0_0_/_0.5)] backdrop:bg-black/60 backdrop:backdrop-blur-sm`}
       >
-        <header className="flex items-start gap-4 border-b border-vs-border px-5 py-5 sm:px-6">
+        <header className="flex items-start gap-3 border-b border-vs-border px-4 py-3.5 sm:px-5">
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-xl font-semibold tracking-tight">{title}</h2>
+            <h2 className="font-display text-sm font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p id={descriptionId} className="mt-2 text-sm leading-6 text-vs-muted">{description}</p>
+              <p id={descriptionId} className="mt-1 text-[11px] leading-4 text-vs-muted">{description}</p>
             )}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={`Close ${title}`}
-            className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
-            <CloseIcon className="h-4 w-4" />
+            <CloseIcon className="h-3.5 w-3.5" />
           </button>
         </header>
 
-        <div className="ui-dialog-body vs-scroll space-y-5 px-5 py-5 sm:px-6">{children}</div>
+        <div className="ui-dialog-body vs-scroll space-y-4 px-4 py-4 sm:px-5">{children}</div>
 
         {footer && (
-          <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-vs-border bg-vs-editor/40 px-5 py-4 sm:px-6">
+          <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-vs-border bg-vs-editor/40 px-4 py-3 sm:px-5">
             {footer}
           </footer>
         )}
@@ -87,17 +87,17 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-vs-fg">
+      <span className="text-xs font-medium text-vs-fg">
         {label}
       </span>
       {children}
-      {hint && <span className="mt-2 block text-xs leading-5 text-vs-muted">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-[11px] leading-4 text-vs-muted">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  "mt-2 min-h-11 w-full rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-base text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
+  "mt-1.5 min-h-9 w-full rounded-lg border border-vs-border bg-vs-editor px-2.5 py-2 text-sm text-vs-fg outline-none placeholder:text-vs-muted focus:border-vs-accent";
 
 export function PrimaryButton({
   children,
@@ -108,7 +108,7 @@ export function PrimaryButton({
     <button
       type="button"
       {...props}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-sm font-semibold text-vs-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-semibold text-vs-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>
@@ -124,7 +124,7 @@ export function GhostButton({
     <button
       type="button"
       {...props}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-vs-border px-4 py-2.5 text-sm font-medium transition hover:border-vs-muted/50 hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-vs-border px-3 py-1.5 text-xs font-medium transition hover:border-vs-muted/50 hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>
@@ -133,8 +133,8 @@ export function GhostButton({
 
 export function ErrorNote({ children, announce = true }: { children: React.ReactNode; announce?: boolean }) {
   return (
-    <p role={announce ? "alert" : undefined} className="flex items-start gap-2.5 rounded-xl border border-vs-danger/25 bg-vs-danger/5 px-3.5 py-3 text-sm leading-6 text-vs-danger">
-      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+    <p role={announce ? "alert" : undefined} className="flex items-start gap-2.5 rounded-xl border border-vs-danger/25 bg-vs-danger/5 px-3 py-2.5 text-xs leading-5 text-vs-danger">
+      <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{children}</span>
     </p>
   );
