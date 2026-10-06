@@ -954,6 +954,7 @@ export function Workspace({
       <input
         ref={inputRef}
         type="file"
+        aria-label="Upload initial project folder"
         multiple
         webkitdirectory=""
         directory=""
@@ -964,6 +965,7 @@ export function Workspace({
       <input
         ref={importInputRef}
         type="file"
+        aria-label="Import project folder"
         multiple
         webkitdirectory=""
         directory=""
