@@ -171,9 +171,12 @@ Compose, Bash, Git, curl, flock, and timeout. Preserve any ignored
 `compose.https.yml` overrides. Keep `BACKUP_ENCRYPTION_KEY` in the root-only
 `/root/multiplayer-deployment-config/backup-key.env`, with a separate off-host copy.
 
-`scripts/deploy-production.sh` builds commit-tagged web/worker images while the
-old release is live, refuses deployment during active AI work or with less than
-8 GiB available, closes admission, creates an encrypted coordinated backup, runs
+`scripts/deploy-production.sh` removes unused Docker images and trims unused
+build cache to 2 GB before checking disk space. Images referenced by containers
+are preserved, so the current release remains available for rollback throughout
+the update. It builds commit-tagged web/worker images while the old release is
+live, refuses deployment during active AI work or with less than 8 GiB available
+after cleanup, closes admission, creates an encrypted coordinated backup, runs
 migrations once, and waits for both web replicas. Only the running application
 services are started with `--wait`; successful one-shot setup services are excluded.
 It then checks image versions and public HTTPS pages. There is a short maintenance
@@ -189,8 +192,14 @@ workflow on the current `main`. Active-work refusals can be retried when work en
 
 Release records and the last successful SHA are under
 `/root/multiplayer-deployment-config`; encrypted backups are under
-`/root/multiplayer-backups`. This workflow retains previous images and backups;
-monitor disk usage and copy backups off-host using the existing backup procedure.
+`/root/multiplayer-backups`. After the new release passes its health checks, the
+workflow removes unused images again, keeping only the latest web/worker release
+and images still referenced by other containers. It never prunes containers,
+volumes, application data, or backups. A cleanup failure after activation fails
+the job with a clear message but leaves the verified release running. Older
+releases must be rebuilt from their Git revision if needed later; encrypted
+backups and release configuration records are retained. Monitor disk usage and
+copy backups off-host using the existing backup procedure.
 The Actions deployment log and job summary identify the deployed SHA and URL.
 
 Back up PostgreSQL, `workspace_data` and memory data coherently to storage outside
@@ -202,8 +211,9 @@ For an update, drain active work, back up state, pull the reviewed revision,
 update `APP_VERSION`, build the new images, then stop `gateway web web2 worker`.
 Remove the stopped `migrate` container with `docker compose ... rm -f migrate`,
 then `docker compose ... up -d`. This ensures the migration service runs for the
-new revision before traffic resumes. Keep previous images and a pre-migration
-backup. An old image alone cannot undo an incompatible database migration.
+new revision before traffic resumes. Keep the previous images until the new
+release passes verification, and retain a pre-migration backup. An old image
+alone cannot undo an incompatible database migration.
 This initial procedure has a maintenance window; it is not zero-downtime deploy.
 
 Desktop installers are released separately. Set the three `DESKTOP_DOWNLOAD_*`
