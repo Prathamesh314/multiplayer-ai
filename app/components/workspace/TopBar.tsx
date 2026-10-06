@@ -49,9 +49,9 @@ export function TopBar({
   repoId, hasRepository, sharedRepository, beforePublish, onPublished,
 }: TopBarProps) {
   return (
-    <header className="room-toolbar flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-vs-border bg-vs-chrome px-4 py-3">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-      <nav aria-label="Page history" className="flex shrink-0 items-center gap-1">
+    <header className="room-toolbar flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-vs-border bg-vs-chrome px-3 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <nav aria-label="Page history" className="flex shrink-0 items-center gap-0.5">
         {(["back", "forward"] as const).map(direction => (
           <button
             key={direction}
@@ -60,9 +60,9 @@ export function TopBar({
             title={direction === "back" ? "Go back" : "Go forward"}
             onClick={() => onNavigate(direction)}
             disabled={navigationPending}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vs-accent disabled:pointer-events-none disabled:opacity-40"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vs-accent disabled:pointer-events-none disabled:opacity-40"
           >
-            <ArrowIcon direction={direction === "back" ? "left" : "right"} className="h-5 w-5" />
+            <ArrowIcon direction={direction === "back" ? "left" : "right"} className="h-4 w-4" />
           </button>
         ))}
       </nav>
@@ -71,9 +71,9 @@ export function TopBar({
         onClick={onLeave}
         disabled={navigationPending}
         title="Back to projects"
-        className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-vs-fg transition hover:bg-vs-hover"
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-1.5 text-xs font-semibold text-vs-fg transition hover:bg-vs-hover"
       >
-        <SparkleIcon className="h-4 w-4 text-vs-accent" />
+        <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
         <span className="whitespace-nowrap">
           multiplayer<span className="text-vs-muted">-ai</span>
         </span>
@@ -82,24 +82,24 @@ export function TopBar({
       <span aria-hidden="true" className="text-vs-muted/50">/</span>
       <span
         title={`Session ${session.id}`}
-        className="min-w-0 max-w-56 truncate text-sm font-medium text-vs-fg"
+        className="min-w-0 max-w-56 truncate text-xs font-medium text-vs-fg"
       >
         {session.name}
       </span>
 
       </div>
-      <div className="room-toolbar-actions vs-scroll ml-auto flex max-w-full items-center gap-2">
+      <div className="room-toolbar-actions vs-scroll ml-auto flex max-w-full items-center gap-1.5">
       {canOpenFolder && (
         <button
           type="button"
           onClick={onOpenFolder}
-          className="shrink-0 rounded px-2 py-0.5 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
         >
           Open folder…
         </button>
       )}
 
-      <div className="hidden min-w-0 max-w-48 items-center gap-2 rounded-lg bg-vs-panel px-3 py-2 text-xs text-vs-muted xl:flex">
+      <div className="hidden min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-vs-panel px-2 py-1 text-[11px] text-vs-muted xl:flex">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -117,15 +117,15 @@ export function TopBar({
 
       <div className="hidden px-1 sm:block"><PeopleStack members={members} /></div>
 
-      <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Room guide</button>
-      <button type="button" onClick={onOpenMemory} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Memory</button>
+      <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-2 py-1 text-xs hover:bg-vs-hover">Room guide</button>
+      <button type="button" onClick={onOpenMemory} className="shrink-0 rounded-lg border border-vs-border px-2 py-1 text-xs hover:bg-vs-hover">Memory</button>
 
       <button
         type="button"
         onClick={onInvite}
-        className="flex shrink-0 items-center gap-1.5 rounded bg-vs-accent px-2.5 py-1 text-sm font-medium text-vs-accent-fg transition hover:opacity-90"
+        className="flex shrink-0 items-center gap-1 rounded bg-vs-accent px-2 py-1 text-xs font-medium text-vs-accent-fg transition hover:opacity-90"
       >
-        <UserPlusIcon className="h-3.5 w-3.5" />
+        <UserPlusIcon className="h-3 w-3" />
         Invite
       </button>
 
@@ -135,7 +135,7 @@ export function TopBar({
           active={terminalOpen}
           onClick={onToggleTerminal}
         >
-          <TerminalIcon className="h-4 w-4" />
+          <TerminalIcon className="h-3.5 w-3.5" />
         </ToggleButton>
       </div>
       </div>
@@ -180,7 +180,7 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
         onClick={() => run("sync")}
         disabled={busy !== null || !shared}
         title="Get the selected repository’s latest shared changes"
-        className="rounded px-2 py-1 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+        className="rounded px-1.5 py-0.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
       >
         {busy === "sync" ? "Syncing…" : "Get latest"}
       </button>
@@ -189,14 +189,14 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
         onClick={() => run("publish")}
         disabled={busy !== null}
         title="Share saved changes in the selected repository with project members. Review Changes first."
-        className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-sm text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
+        className="flex items-center gap-1 rounded border border-vs-border px-1.5 py-0.5 text-xs text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
       >
         <GitBranchIcon className="h-3 w-3" />
         {busy === "publish" ? "Publishing…" : shared ? "Publish" : "Share repository"}
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[12px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
+          className={`max-w-64 truncate text-[10px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}

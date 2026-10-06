@@ -104,7 +104,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
                 setEditingId(null);
               }
             }}
-            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[15px] text-vs-fg outline-none"
+            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[13px] text-vs-fg outline-none"
           />
         </div>
       );
@@ -113,7 +113,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
     return (
       <div
         key={run.id}
-        className={`group flex w-full min-w-0 items-center gap-1 rounded-md pr-1 transition ${
+        className={`group flex w-full min-w-0 items-center gap-1 rounded-lg pr-1 transition ${
           active ? "bg-vs-active" : "hover:bg-vs-hover"
         }`}
       >
@@ -127,7 +127,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
             }
           }}
           title={`${run.title ?? "Agent run"} · ${run.agentId} · ${run.status} · ${relativeTime(Math.floor(run.createdAt / 1000))}`}
-          className={`flex min-h-10 min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left ${
+          className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left ${
             active ? "text-vs-fg" : "text-vs-muted"
           }`}
         >
@@ -144,7 +144,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[15px] leading-[22px]">
+          <span className="min-w-0 flex-1 truncate text-[12.5px] leading-[18px]">
             {run.title ?? `${run.agentId} run`}
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
@@ -211,10 +211,10 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
     .filter(id => !repos.some(repo => repo.id === id)).map(id => ({ id, label: "Unavailable repository" }))];
   return (
     <aside aria-label="Projects and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
-      <header className="flex min-h-10 shrink-0 items-center justify-between gap-2 px-3 py-1">
-        <h2 className="text-sm font-medium text-vs-muted">Projects</h2>
-        <button type="button" aria-label="Add project" aria-busy={importing} title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-50">
-          {importing ? <SpinnerIcon className="h-5 w-5" /> : <FolderPlusIcon className="h-5 w-5" />}
+      <header className="flex min-h-8 shrink-0 items-center justify-between gap-2 px-3 py-1">
+        <h2 className="text-xs font-medium text-vs-muted">Projects</h2>
+        <button type="button" aria-label="Add project" aria-busy={importing} title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-50">
+          {importing ? <SpinnerIcon className="h-4 w-4" /> : <FolderPlusIcon className="h-4 w-4" />}
         </button>
       </header>
       <div className="vs-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -223,21 +223,21 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
           const archived = runs.filter(run => (run.repoId ?? "") === repo.id && run.archivedAt && run.driverUserId === myId);
           const open = !collapsed.has(repo.id);
           return <section key={repo.id} className="mb-2">
-            <div className={`flex min-h-9 items-center gap-1 rounded-md ${active.some(run => run.id === enteredRunId) ? "bg-vs-active" : "hover:bg-vs-hover"}`}>
-              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left text-[15px] font-medium leading-[22px] text-vs-muted hover:text-vs-fg">
+            <div className="flex min-h-7 items-center gap-1 rounded-lg hover:bg-vs-hover">
+              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12.5px] font-medium leading-[18px] text-vs-muted hover:text-vs-fg">
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
-                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-xs font-normal tabular-nums">{active.length}</span>
+                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-[11px] font-normal tabular-nums">{active.length}</span>
               </button>
-              <button type="button" aria-label={`New chat in ${repo.label}`} title={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-40"><PlusIcon className="h-5 w-5" /></button>
+              <button type="button" aria-label={`New chat in ${repo.label}`} title={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
             </div>
-            {open && <div className="ml-2">
+            {open && <div className="ml-2 mt-1">
               {active.map(run => renderRun(run, run.driverUserId === myId))}
-              {!active.length && <p className="px-3 py-2 text-sm text-vs-muted">No chats yet</p>}
-              {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-xs text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
+              {!active.length && <p className="px-3 py-2 text-xs text-vs-muted">No chats yet</p>}
+              {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-[11px] text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
             </div>}
           </section>;
         })}
-        {!groups.length && <p className="px-3 text-sm leading-6 text-vs-muted">Start an empty project to chat, or import a folder using Add project above.</p>}
+        {!groups.length && <p className="px-3 text-xs leading-5 text-vs-muted">Start an empty project to chat, or import a folder using Add project above.</p>}
       </div>
     </aside>
   );
@@ -300,7 +300,7 @@ function UnarchiveIcon({ className }: { className?: string }) {
 function DiffStat({ added, removed }: { added: number | null; removed: number | null }) {
   if (!added && !removed) return null;
   return (
-    <span className="shrink-0 font-mono text-[11px] tabular-nums">
+    <span className="shrink-0 font-mono text-[10px] tabular-nums">
       {added ? <span className="text-vs-success">+{added}</span> : null}
       {removed ? <span className="ml-1 text-vs-danger">-{removed}</span> : null}
     </span>

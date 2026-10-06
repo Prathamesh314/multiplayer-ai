@@ -384,7 +384,7 @@ export function Composer({
       disabled={assigning}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
-      className={`vs-scroll flex-1 resize-none bg-transparent text-[15px] text-vs-fg outline-none placeholder:text-vs-muted ${
+      className={`vs-scroll flex-1 resize-none bg-transparent text-[12px] text-vs-fg outline-none placeholder:text-vs-muted ${
         tall ? "max-h-64 min-h-24" : "max-h-28 min-h-5"
       }`}
     />
@@ -396,7 +396,7 @@ export function Composer({
       onClick={send}
       disabled={readingAttachment || assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
       aria-label={assignee ? "Assign task" : "Send message"}
-      className={`flex h-9 shrink-0 items-center justify-center rounded-xl bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-9"}`}
+      className={`flex h-7 shrink-0 items-center justify-center rounded-lg bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-7"}`}
     >
       {assignee ? (assigning ? "Assigning…" : "Assign task") : <SendIcon className="h-3.5 w-3.5" />}
     </button>

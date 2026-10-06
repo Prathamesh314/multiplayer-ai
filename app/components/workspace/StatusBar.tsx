@@ -33,7 +33,7 @@ export function StatusBar({
   const git = result?.git;
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-3 text-[11px] text-vs-muted sm:text-[12px]">
+    <footer className="flex h-6 shrink-0 items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-2.5 text-[10px] text-vs-muted sm:text-[11px]">
       {git?.isGit ? (
         <span className="hidden max-w-64 items-center gap-1 truncate text-vs-fg sm:flex" title={git.commit ?? undefined}>
           <GitBranchIcon className="h-3.5 w-3.5" />

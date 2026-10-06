@@ -810,8 +810,8 @@ export function AiPanel({
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       <header className={`ai-chat-header flex min-w-0 shrink-0 items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-vs-muted">
+          <h2 className="truncate text-[13px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
             {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
             {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
@@ -823,7 +823,7 @@ export function AiPanel({
             <button
               type="button"
               onClick={onNewRun}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <PlusIcon className="h-3 w-3" />
               New
@@ -833,15 +833,15 @@ export function AiPanel({
               type="button"
               onClick={() => onForkEntered(entered)}
               title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
               Copy chat
             </button>
           ))}
-        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover">Providers</button>
+        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[11px] text-vs-muted hover:bg-vs-hover">Providers</button>
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
-        {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+        {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
         </div>
       </header>
       {actionsHost && createPortal(<>
@@ -1503,15 +1503,15 @@ function EmptyState({
     { label: "Help me write", prompt: "Help me write something. Ask me what I am writing and who it is for." },
   ];
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-vs-accent/10 text-vs-accent">
-        <SparkleIcon className="h-6 w-6" />
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-vs-accent/10 text-vs-accent">
+        <SparkleIcon className="h-[18px] w-[18px]" />
       </span>
       <div>
-        <p className="text-base font-medium text-vs-fg">
+        <p className="text-sm font-medium text-vs-fg">
           {ready ? hasFiles ? "What would you like to build?" : "What would you like to talk about?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
         </p>
-        <p className="mt-2 max-w-sm text-sm leading-6 text-vs-muted">
+        <p className="mt-1.5 max-w-sm text-xs leading-5 text-vs-muted">
           {ready
             ? hasFiles ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed. You can also ask AI to build something from scratch.`
             : computerUnavailable ? "Use the computer connection button above to get started. You can open your saved conversations and browse files while your computer is offline."
@@ -1519,18 +1519,18 @@ function EmptyState({
         </p>
       </div>
       {ready && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
+        <div className="flex w-full max-w-sm flex-col gap-1.5">
           {examples.map((example) => (
             <button
               key={example.label}
               type="button"
               onClick={() => onExample(example.prompt)}
-              className="rounded-lg border border-vs-border px-3 py-2 text-left text-sm text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
+              className="rounded-lg border border-vs-border px-2.5 py-1.5 text-left text-xs text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
             >
               {example.label}
             </button>
           ))}
-          <p className="mt-1 text-xs leading-5 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
+          <p className="mt-1 text-[11px] leading-4 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
         </div>
       )}
     </div>
