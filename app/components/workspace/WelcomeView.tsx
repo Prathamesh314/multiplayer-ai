@@ -67,7 +67,7 @@ export function WelcomeView({
           <>
             <span className="rounded-xl border border-vs-border bg-vs-panel p-3"><FolderUpIcon className="h-6 w-6 text-vs-accent" /></span>
             <div>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
+              <p className="mb-2 text-[13px] font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
               <h1 className="font-display text-xl font-semibold tracking-tight text-vs-fg sm:text-2xl">
                 {readOnly ? "Waiting for a project" : hasFolder ? "Select a file to start editing" : "Start a conversation or bring your code"}
               </h1>
@@ -91,9 +91,9 @@ export function WelcomeView({
             )}
             {!hasRepo && !readOnly && <>
               <ol className="grid w-full gap-2.5 text-left text-xs sm:grid-cols-3">
-                {[["Choose a starting point", "Start empty or import a folder. Files are optional."], ["Set up AI", "Connect your computer and choose your AI in the message box."], ["Start chatting", "Ask anything, explore an idea, or build something together."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-2.5"><span className="text-[11px] text-vs-muted">0{index + 1}</span><p className="mt-1.5 font-medium">{title}</p><p className="mt-1 text-[11px] leading-4 text-vs-muted">{body}</p></li>)}
+                {[["Choose a starting point", "Start empty or import a folder. Files are optional."], ["Set up AI", "Connect your computer and choose your AI in the message box."], ["Start chatting", "Ask anything, explore an idea, or build something together."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-2.5"><span className="text-[13px] text-vs-muted">0{index + 1}</span><p className="mt-1.5 font-medium">{title}</p><p className="mt-1 text-[13px] leading-4 text-vs-muted">{body}</p></li>)}
               </ol>
-              <p className="max-w-lg text-[11px] leading-4 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
+              <p className="max-w-lg text-[13px] leading-4 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
               {supportsPicker && <details className="text-xs text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="mt-2 rounded border border-vs-border px-2.5 py-1.5 text-vs-fg hover:bg-vs-hover">Use browser upload instead</button></details>}
             </>}
           </>

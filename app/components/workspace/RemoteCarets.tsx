@@ -7,11 +7,11 @@ import type { FilePresence } from "./usePeople";
  * Other people's carets, drawn where they actually are.
  *
  * The geometry has to match `CodeEditor` exactly or the markers drift: the same
- * 20px line box, the same 8px top padding, and `ch` units for the column, which
+ * 22px line box, the same 8px top padding, and `ch` units for the column, which
  * are exact because the editor is monospace. These constants are the coupling —
  * change the editor's leading and this must change with it.
  */
-const LINE_HEIGHT = 20;
+const LINE_HEIGHT = 22;
 const TOP_PADDING = 8;
 
 export function RemoteCarets({ people }: { people: FilePresence[] }) {
@@ -38,7 +38,7 @@ export function RemoteCarets({ people }: { people: FilePresence[] }) {
               style={{ height: LINE_HEIGHT }}
             />
             <span
-              className={`absolute whitespace-nowrap rounded px-1 py-px text-[10px] font-semibold leading-[12px] ${color.chip}`}
+              className={`absolute whitespace-nowrap rounded px-1 py-px text-[12px] font-semibold leading-[14px] ${color.chip}`}
               style={
                 labelAbove
                   ? { bottom: LINE_HEIGHT - 6, left: -1 }

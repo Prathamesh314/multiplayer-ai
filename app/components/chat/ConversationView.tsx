@@ -30,7 +30,7 @@ function Avatar({ userId, name }: { userId: string; name: string }) {
   const color = colorOf(userId);
   return (
     <span
-      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold ${color.chip}`}
+      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold ${color.chip}`}
     >
       {initialsOf(name)}
     </span>

@@ -39,6 +39,7 @@ import type { Buffer } from "./EditorArea";
 import { EditorArea } from "./EditorArea";
 import { ExplorerPanel } from "./ExplorerPanel";
 import { InviteDialog } from "./InviteDialog";
+import { ShareChatDialog } from "./ShareChatDialog";
 import { Resizer } from "./Resizer";
 import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
@@ -905,6 +906,7 @@ export function Workspace({
         onOpenMemory={() => setMemoryOpen(true)}
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
+        inviteLabel={enteredRun ? "Share chat" : "Invite"}
         onInvite={() => setInviteOpen(true)}
         onLeave={() => { void navigatePage("projects"); }}
         onNavigate={direction => { void navigatePage(direction); }}
@@ -1130,14 +1132,14 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} min={140} max={600} />
                   <div style={{ height: terminalHeight, maxHeight: "60%" }} className="flex min-h-0 shrink-0">
-                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[11px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
+                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[13px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
                   </div>
                 </>
               ) : (
                 <button
                   type="button"
                   onClick={() => setTerminalOpen(true)}
-                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
+                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[14px] text-vs-muted transition hover:text-vs-fg"
                 >
                   <TerminalIcon className="h-3.5 w-3.5" />
                   Terminal
@@ -1162,7 +1164,9 @@ export function Workspace({
         }}
       />
 
-      {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}
+      {inviteOpen && (enteredRun
+        ? <ShareChatDialog key={enteredRun.id} run={enteredRun} onClose={() => setInviteOpen(false)} />
+        : <InviteDialog session={session} onClose={() => setInviteOpen(false)} />)}
     </div>
   );
 }

@@ -104,7 +104,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
                 setEditingId(null);
               }
             }}
-            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[13px] text-vs-fg outline-none"
+            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[15px] text-vs-fg outline-none"
           />
         </div>
       );
@@ -144,7 +144,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[12.5px] leading-[18px]">
+          <span className="min-w-0 flex-1 truncate text-[14.5px] leading-[20px]">
             {run.title ?? `${run.agentId} run`}
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
@@ -224,16 +224,16 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
           const open = !collapsed.has(repo.id);
           return <section key={repo.id} className="mb-2">
             <div className="flex min-h-7 items-center gap-1 rounded-lg hover:bg-vs-hover">
-              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12.5px] font-medium leading-[18px] text-vs-muted hover:text-vs-fg">
+              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[14.5px] font-medium leading-[20px] text-vs-muted hover:text-vs-fg">
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
-                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-[11px] font-normal tabular-nums">{active.length}</span>
+                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-[13px] font-normal tabular-nums">{active.length}</span>
               </button>
               <button type="button" aria-label={`New chat in ${repo.label}`} title={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
             </div>
             {open && <div className="ml-2 mt-1">
               {active.map(run => renderRun(run, run.driverUserId === myId))}
               {!active.length && <p className="px-3 py-2 text-xs text-vs-muted">No chats yet</p>}
-              {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-[11px] text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
+              {!!archived.length && <><button type="button" aria-expanded={archivedOpen.has(repo.id)} onClick={() => setArchivedOpen(value => toggle(value, repo.id))} className="px-2 py-1 text-[13px] text-vs-muted">{archivedOpen.has(repo.id) ? "▾" : "›"} Archived · {archived.length}</button>{archivedOpen.has(repo.id) && archived.map(run => renderRun(run, true))}</>}
             </div>}
           </section>;
         })}
@@ -300,7 +300,7 @@ function UnarchiveIcon({ className }: { className?: string }) {
 function DiffStat({ added, removed }: { added: number | null; removed: number | null }) {
   if (!added && !removed) return null;
   return (
-    <span className="shrink-0 font-mono text-[10px] tabular-nums">
+    <span className="shrink-0 font-mono text-[12px] tabular-nums">
       {added ? <span className="text-vs-success">+{added}</span> : null}
       {removed ? <span className="ml-1 text-vs-danger">-{removed}</span> : null}
     </span>

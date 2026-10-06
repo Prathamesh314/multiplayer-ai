@@ -5,28 +5,28 @@
 .workspaceNavigation { background: var(--vs-chrome); }
 .workspaceNavigation :global([aria-current="page"]) { background: var(--vs-active); color: var(--vs-accent); }
 .workspaceNavigation > header { height: 40px; border-color: var(--vs-border); }
-.workspaceNavigation > header span { font-size: 13px; }
+.workspaceNavigation > header span { font-size: 15px; }
 .profileBar { border: 1px solid var(--vs-border); display: flex; align-items: center; gap: 8px; margin: 6px; padding: 8px; background: var(--vs-panel); border-radius: 8px; }
-.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 11px; font-weight: 600; }
+.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 13px; font-weight: 600; }
 .profileName { min-width: 0; flex: 1; }
-.profileName p { line-height: 1.5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
-.profileName span { line-height: 1.5; display: block; color: var(--vs-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.profileName p { line-height: 1.5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; }
+.profileName span { line-height: 1.5; display: block; color: var(--vs-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
 .channelGroup { padding-top: 22px; }
 .groupHeading { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 6px; color: var(--vs-muted); }
-.groupHeading > button:first-child { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 28px; }
+.groupHeading > button:first-child { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 28px; }
 .groupHeading > button:hover { color: var(--vs-fg); }
-.channelRow { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px; border-radius: 8px; text-align: left; color: var(--vs-muted); font-size: 14px; cursor: pointer; transition: background .15s, color .15s; }
+.channelRow { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px; border-radius: 8px; text-align: left; color: var(--vs-muted); font-size: 16px; cursor: pointer; transition: background .15s, color .15s; }
 .channelRow:hover { color: var(--vs-fg); background: var(--vs-hover); }
 .channelRow[aria-current="page"] { color: var(--vs-fg); background: var(--vs-active); }
 .channelRow[aria-current="page"]::before { content: ""; position: absolute; width: 3px; height: 15px; border-radius: 0 3px 3px 0; background: var(--vs-accent); left: -8px; }
-.channelHash { width: 22px; flex-shrink: 0; color: var(--vs-muted); font-size: 23px; font-weight: 400; line-height: 1; text-align: center; }
-.channelUnread { min-width: 18px; border-radius: 12px; background: var(--vs-accent); color: var(--vs-accent-fg); text-align: center; padding: 1px 5px; font-size: 12px; font-weight: 600; }
+.channelHash { width: 22px; flex-shrink: 0; color: var(--vs-muted); font-size: 25px; font-weight: 400; line-height: 1; text-align: center; }
+.channelUnread { min-width: 18px; border-radius: 12px; background: var(--vs-accent); color: var(--vs-accent-fg); text-align: center; padding: 1px 5px; font-size: 14px; font-weight: 600; }
 .conversation { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--vs-editor); color: var(--vs-fg); }
 .conversationHeader { display: flex; height: 64px; flex-shrink: 0; align-items: center; gap: 11px; padding: 0 24px; border-bottom: 1px solid var(--vs-border); box-shadow: 0 1px 4px #0001; }
-.channelSymbol { color: var(--vs-muted); font-size: 28px; font-weight: 400; line-height: 1; }
+.channelSymbol { color: var(--vs-muted); font-size: 30px; font-weight: 400; line-height: 1; }
 .channelSymbol svg { width: 22px; height: 22px; }
-.conversationHeader h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 650; letter-spacing: -.25px; }
-.topic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--vs-border); margin-left: 7px; padding-left: 18px; color: var(--vs-muted); font-size: 12px; }
+.conversationHeader h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 19px; font-weight: 650; letter-spacing: -.25px; }
+.topic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--vs-border); margin-left: 7px; padding-left: 18px; color: var(--vs-muted); font-size: 14px; }
 .headerActions { display: flex; align-items: center; gap: 12px; margin-left: auto; flex-shrink: 0; }
 .iconButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; color: var(--vs-muted); cursor: pointer; transition: color .15s, background .15s; }
 .iconButton > svg { width: 16px; height: 16px; }
@@ -37,65 +37,65 @@
 .messageColumn { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
 .timeline { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 24px 0 18px; scrollbar-color: var(--vs-border) transparent; scrollbar-width: thin; }
 .channelWelcome { margin: 15px 28px 30px; max-width: 640px; }
-.channelWelcome > span { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--vs-active); color: var(--vs-muted); font-size: 42px; margin-bottom: 17px; }
-.channelWelcome h3 { font-size: 28px; font-weight: 700; letter-spacing: -.65px; line-height: 1.25; color: var(--vs-fg); }
-.channelWelcome p { font-size: 13px; color: var(--vs-muted); line-height: 1.7; margin-top: 10px; }
-.dateDivider { display: flex; align-items: center; gap: 12px; padding: 0 24px; margin: 25px 0 17px; color: var(--vs-muted); font-size: 12px; font-weight: 600; }
+.channelWelcome > span { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--vs-active); color: var(--vs-muted); font-size: 44px; margin-bottom: 17px; }
+.channelWelcome h3 { font-size: 30px; font-weight: 700; letter-spacing: -.65px; line-height: 1.25; color: var(--vs-fg); }
+.channelWelcome p { font-size: 15px; color: var(--vs-muted); line-height: 1.7; margin-top: 10px; }
+.dateDivider { display: flex; align-items: center; gap: 12px; padding: 0 24px; margin: 25px 0 17px; color: var(--vs-muted); font-size: 14px; font-weight: 600; }
 .dateDivider::before, .dateDivider::after { content: ""; flex: 1; height: 1px; background: var(--vs-border); }
 .message { display: flex; gap: 15px; position: relative; margin-top: 17px; padding: 3px 28px 3px 24px; border-left: 3px solid transparent; }
 .message:hover { background: var(--vs-hover); }
 .messageAvatar { width: 40px; flex-shrink: 0; }
 .messageContent { min-width: 0; max-width: 86ch; flex: 1; }
 .messageContent header { display: flex; align-items: baseline; gap: 9px; margin-bottom: 2px; }
-.messageContent header > span { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.messageContent time, .messageContent small { color: var(--vs-muted); font-size: 12px; font-weight: 400; flex-shrink: 0; }
-.messageContent p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.75; color: var(--vs-fg); }
+.messageContent header > span { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.messageContent time, .messageContent small { color: var(--vs-muted); font-size: 14px; font-weight: 400; flex-shrink: 0; }
+.messageContent p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.75; color: var(--vs-fg); }
 .messageContent mark { background: var(--vs-active); color: var(--vs-accent); padding: 1px 3px; border-radius: 3px; }
 .groupedMessage { margin-top: 0; padding-top: 1px; padding-bottom: 1px; }
-.groupedTime { display: block; padding-top: 5px; font-size: 11px; color: var(--vs-muted); white-space: nowrap; opacity: 0; }
+.groupedTime { display: block; padding-top: 5px; font-size: 13px; color: var(--vs-muted); white-space: nowrap; opacity: 0; }
 .message:hover .groupedTime { opacity: 1; }
 .pendingMessage { opacity: .6; }
 .mentionedMessage { background: color-mix(in srgb, var(--vs-accent) 7%, transparent); border-left-color: var(--vs-accent); }
 .mentionedMessage:hover { background: var(--vs-active); }
-.loadEarlier { display: block; margin: 0 auto 20px; padding: 7px 15px; background: var(--vs-panel); border: 1px solid var(--vs-border); border-radius: 6px; color: var(--vs-accent); font-size: 12px; cursor: pointer; }
+.loadEarlier { display: block; margin: 0 auto 20px; padding: 7px 15px; background: var(--vs-panel); border: 1px solid var(--vs-border); border-radius: 6px; color: var(--vs-accent); font-size: 14px; cursor: pointer; }
 .loadEarlier:disabled { opacity: .5; }
-.loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 200px; color: var(--vs-muted); font-size: 13px; }
-.noResults { padding: 24px; color: var(--vs-muted); font-size: 13px; }
-.error { padding: 32px; color: var(--vs-danger); font-size: 14px; }
-.sendError { padding: 10px 24px; color: var(--vs-danger); font-size: 12px; }
+.loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 200px; color: var(--vs-muted); font-size: 15px; }
+.noResults { padding: 24px; color: var(--vs-muted); font-size: 15px; }
+.error { padding: 32px; color: var(--vs-danger); font-size: 16px; }
+.sendError { padding: 10px 24px; color: var(--vs-danger); font-size: 14px; }
 .memberList { width: 228px; flex-shrink: 0; border-left: 1px solid var(--vs-border); padding: 22px 13px; background: var(--vs-panel); overflow-y: auto; }
 .memberListHeading { display: flex; align-items: center; justify-content: space-between; margin: 0 6px 12px; }
-.memberListHeading h3 { color: var(--vs-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.memberListHeading h3 { color: var(--vs-muted); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
 .memberListHeading .iconButton { width: 24px; height: 24px; }
 .memberListHeading .iconButton svg { width: 14px; height: 14px; }
 .memberList ul { margin: 0; padding: 0; list-style: none; }
 .memberList li { display: flex; gap: 10px; align-items: center; padding: 10px 6px; border-radius: 6px; }
 .memberList li:hover { background: var(--vs-hover); }
-.memberList li > span:first-child { width: 33px; height: 33px; font-size: 11px; }
+.memberList li > span:first-child { width: 33px; height: 33px; font-size: 13px; }
 .memberList li > div { flex: 1; min-width: 0; }
-.memberList li > div > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vs-fg); font-size: 12px; font-weight: 500; }
-.memberList small { font-size: 12px; color: var(--vs-muted); }
-.memberList li p { color: var(--vs-muted); font-size: 12px; margin-top: 2px; }
+.memberList li > div > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vs-fg); font-size: 14px; font-weight: 500; }
+.memberList small { font-size: 14px; color: var(--vs-muted); }
+.memberList li p { color: var(--vs-muted); font-size: 14px; margin-top: 2px; }
 .ownerBadge { color: var(--vs-warn); }
-.memberNote { color: var(--vs-muted); font-size: 12px; padding: 8px; line-height: 1.6; }
+.memberNote { color: var(--vs-muted); font-size: 14px; padding: 8px; line-height: 1.6; }
 .composer { flex-shrink: 0; padding: 0 24px 13px; }
 .composerBox { display: flex; align-items: flex-end; gap: 12px; min-height: 62px; padding: 12px 14px 12px 18px; background: var(--vs-panel); border: 1px solid var(--vs-hover); border-radius: 14px; }
 .composerBox:focus-within { border-color: var(--vs-accent); }
-.composerBox textarea { display: block; min-width: 0; min-height: 30px; max-height: 160px; flex: 1; resize: none; background: transparent; border: 0; outline: 0; box-shadow: none; padding-top: 4px; color: var(--vs-fg); font-size: 15px; line-height: 24px; }
+.composerBox textarea { display: block; min-width: 0; min-height: 30px; max-height: 160px; flex: 1; resize: none; background: transparent; border: 0; outline: 0; box-shadow: none; padding-top: 4px; color: var(--vs-fg); font-size: 17px; line-height: 26px; }
 .composerBox textarea::placeholder { color: var(--vs-muted); }
 .composerBox textarea:focus-visible { outline: none; }
 .composerBox > button { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 7px; background: var(--vs-accent); color: var(--vs-accent-fg); cursor: pointer; }
 .composerBox > button svg { width: 17px; height: 17px; }
 .composerBox > button:disabled { background: transparent; color: var(--vs-muted); cursor: default; }
-.composerHint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 4px 0; color: var(--vs-muted); font-size: 11px; }
+.composerHint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 4px 0; color: var(--vs-muted); font-size: 13px; }
 .composerHint kbd { font-family: inherit; font-weight: 600; color: var(--vs-muted); }
 .composerHint > span > span { margin: 0 7px; }
 .searchBar { display: flex; gap: 12px; align-items: center; min-width: 0; padding: 9px 22px; background: var(--vs-panel); border-bottom: 1px solid var(--vs-border); }
 .searchBar:focus-within { border-bottom-color: var(--vs-accent); }
 .searchBar > svg { width: 16px; height: 16px; color: var(--vs-muted); flex-shrink: 0; }
-.searchBar input { min-width: 0; flex: 1; color: var(--vs-fg); background: transparent; outline: 0; font-size: 12px; }
+.searchBar input { min-width: 0; flex: 1; color: var(--vs-fg); background: transparent; outline: 0; font-size: 14px; }
 .searchBar input::placeholder { color: var(--vs-muted); }
-.searchBar > span { color: var(--vs-muted); font-size: 12px; white-space: nowrap; }
+.searchBar > span { color: var(--vs-muted); font-size: 14px; white-space: nowrap; }
 @media (max-width: 1200px) {
   .memberList { width: 195px; }
   .topic { display: none; }
@@ -111,27 +111,27 @@
   .workspaceRail button { max-width: 38px; max-height: 38px; }
   .workspaceNavigation { left: 56px; width: min(290px, calc(100vw - 56px)); }
   .conversationHeader { height: 56px; padding: 0 15px; gap: 8px; }
-  .conversationHeader h2 { font-size: 14px; }
-  .channelSymbol { font-size: 24px; }
+  .conversationHeader h2 { font-size: 16px; }
+  .channelSymbol { font-size: 26px; }
   .headerActions { gap: 5px; }
   .connection { display: none; }
   .memberList { position: absolute; z-index: 10; inset: 0 0 0 auto; width: min(230px, 90%); box-shadow: -12px 0 30px #0006; }
   .channelWelcome { margin: 8px 18px 24px; }
-  .channelWelcome h3 { font-size: 23px; overflow-wrap: anywhere; }
-  .channelWelcome > span { width: 48px; height: 48px; font-size: 32px; }
-  .channelWelcome p { font-size: 12px; }
+  .channelWelcome h3 { font-size: 25px; overflow-wrap: anywhere; }
+  .channelWelcome > span { width: 48px; height: 48px; font-size: 34px; }
+  .channelWelcome p { font-size: 14px; }
   .message { padding-left: 12px; padding-right: 14px; gap: 10px; }
   .messageAvatar, .messageAvatar > span { width: 32px; }
-  .messageAvatar > span { height: 32px; font-size: 11px; }
-  .messageContent p { font-size: 14px; }
+  .messageAvatar > span { height: 32px; font-size: 13px; }
+  .messageContent p { font-size: 16px; }
   .messageContent header { gap: 7px; }
-  .messageContent header > span { font-size: 12px; }
-  .messageContent time { font-size: 11px; }
-  .dateDivider { padding: 0 15px; font-size: 11px; }
+  .messageContent header > span { font-size: 14px; }
+  .messageContent time { font-size: 13px; }
+  .dateDivider { padding: 0 15px; font-size: 13px; }
   .composer { padding: 0 12px 10px; }
   .composerBox { padding: 9px 10px 9px 12px; min-height: 52px; gap: 5px; }
-  .composerBox textarea { font-size: 16px; }
-  .composerHint { font-size: 11px; }
+  .composerBox textarea { font-size: 18px; }
+  .composerHint { font-size: 13px; }
   .searchBar { padding: 8px 12px; gap: 8px; }
   .searchBar > span { display: none; }
 }

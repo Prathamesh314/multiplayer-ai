@@ -111,14 +111,14 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </span>
         </Link>
 
-        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : verification ? (
+        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[30px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : verification ? (
           <EmailVerification initial={verification} onVerified={done} onBack={address => { setVerification(null); setEmail(address); setMode("signin"); setError(null); }} />
         ) : (
           <>
-            <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
+            <h1 className="font-display mt-6 text-[30px] font-semibold tracking-tight">
               {creating ? "Create your account" : "Welcome back"}
             </h1>
-            <p className="mt-2 text-[14px] leading-6 text-vs-muted">
+            <p className="mt-2 text-[16px] leading-6 text-vs-muted">
               {creating ? (signupMode === "invite" ? "Use your invited email and choose a password." : "Start building with your team and AI.") : "Sign in to your workspace."}
             </p>
 

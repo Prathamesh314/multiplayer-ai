@@ -45,6 +45,15 @@ function installFixtures() {
     if (!path.startsWith("/api/")) return nativeFetch(input, init);
     state.requests.push({path,search:u.search,method:init.method ?? "GET",body:init.body});
     const json = body => new Response(JSON.stringify(body), {headers:{"content-type":"application/json"}});
+    if(path.startsWith('/api/shared-chats/')&&path.endsWith('/invitations')) {
+      state.invitations??=[];
+      if(init.method==='POST'){
+        const input=JSON.parse(init.body),invitation={id:crypto.randomUUID(),email:input.email,role:input.role,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+604800000).toISOString(),acceptedAt:null,revokedAt:null};
+        state.invitations.push(invitation);return json({invitation,token:'g'.repeat(43)});
+      }
+      if(init.method==='DELETE'){state.invitations.find(item=>item.id===JSON.parse(init.body).id).revokedAt=new Date().toISOString();return json({ok:true});}
+      return json({invitations:state.invitations});
+    }
     if (path === "/api/auth/me") return json({user:{id:"alice",handle:"alice",displayName:"Alice",email:"alice@example.test"}});
     if (path === "/api/orgs") return json({orgs:[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
     if (path === "/api/invitations") return json({invitations:[]});
@@ -206,6 +215,19 @@ try {
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`),"working chat queue");
   assert.deepEqual(keyWarnings,[],"opening a chat has no React key warnings");
+  await button('Share chat');
+  await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),"guest invitation dialog");
+  await type('dialog input[type=email]','guest@example.test');
+  await click('button[aria-label="Guest permission"]');
+  await click('[role="option"][value="commenter"]');
+  await button('Create invitation link');
+  await eventually(()=>evaluate('!!document.querySelector("#chat-invite-link")'),"guest invitation created");
+  assert.match(await evaluate('document.querySelector("#chat-invite-link").value'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#invite=/);
+  assert.equal(await evaluate('window.__model.invitations[0].role'),'commenter');
+  await button('Remove access');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Access removed")'),"guest access removed");
+  assert.equal(await evaluate('document.querySelector("#chat-invite-link")'),null);
+  await button('Done');
   const queue='textarea[aria-label="Message working agent"]';
   await type(queue,"Keep this unsent instruction in chat A");
   await button("Handoff");
@@ -247,7 +269,7 @@ try {
   await click('button[aria-label="Choose model"]');
   await eventually(()=>evaluate(`!!document.querySelector('.composer-picker [role="option"]')`),"model popover");
   assert.ok(await evaluate(`(()=>{const trigger=document.querySelector('button[aria-label="Choose model"]').getBoundingClientRect();const popup=document.querySelector('.composer-picker').getBoundingClientRect();return popup.bottom < trigger.top && popup.top >= 0 && popup.right <= innerWidth;})()`),"model menu opens above composer within viewport");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.composer-picker-option')).fontSize`),"16px");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.composer-picker-option')).fontSize`),"18px");
   await type('input[aria-label="Search models"]',"Beta");
   assert.equal(await evaluate(`document.querySelectorAll('.composer-picker [role="option"]').length`),1,"model search filters live inventory");
   await click('.composer-picker [role="option"]');

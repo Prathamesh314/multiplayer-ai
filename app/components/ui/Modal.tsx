@@ -52,7 +52,7 @@ export function Modal({
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-sm font-semibold tracking-tight">{title}</h2>
             {description && (
-              <p id={descriptionId} className="mt-1 text-[11px] leading-4 text-vs-muted">{description}</p>
+              <p id={descriptionId} className="mt-1 text-[13px] leading-4 text-vs-muted">{description}</p>
             )}
           </div>
           <button
@@ -91,7 +91,7 @@ export function Field({
         {label}
       </span>
       {children}
-      {hint && <span className="mt-1.5 block text-[11px] leading-4 text-vs-muted">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-[13px] leading-4 text-vs-muted">{hint}</span>}
     </label>
   );
 }

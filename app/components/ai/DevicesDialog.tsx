@@ -152,7 +152,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
           {!error && !connection.error && <SpinnerIcon className="h-5 w-5 text-vs-muted" />}
         </div>
       ) : devices.length === 0 && !pairing ? (
-        <p className="py-2 text-[13px] text-vs-muted">
+        <p className="py-2 text-[15px] text-vs-muted">
           No computer connected yet. This page updates automatically when your computer comes online.
         </p>
       ) : (
@@ -167,8 +167,8 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
                 title={device.online ? "Online" : "Offline"}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] text-vs-fg">{device.name}</p>
-                <p className="text-[12px] text-vs-muted">
+                <p className="truncate text-[16px] text-vs-fg">{device.name}</p>
+                <p className="text-[14px] text-vs-muted">
                   {device.online
                     ? device.version === "2" ? "Connected" : "Update needed"
                     : device.lastSeenAt
@@ -188,7 +188,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
 
       {pairing ? (
         paired ? (
-          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px]">
+          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[15px]">
             <p role="status" className="text-vs-success">{paired.online && paired.version === "2" ? "Computer connected. You can now set up AI and continue your chats." : "Computer paired. Waiting for its connection to start…"}</p>
             {!desktop && <>
               {commandRow("start", "Start your computer connection", startCommand)}
@@ -217,7 +217,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
               {commandRow("start", "2. Start your computer connection", startCommand)}
               <p className="text-sm leading-6 text-vs-muted">Keep the terminal open while you work. Run the start command again whenever you reconnect. If your terminal says npx is not found, install Node.js, then open a new terminal.</p>
             </details>
-            <p className="text-[12px] text-vs-muted">
+            <p className="text-[14px] text-vs-muted">
               The code is single-use and expires in ten minutes. This list updates the moment
               the machine connects.
             </p>

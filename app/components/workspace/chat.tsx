@@ -25,7 +25,7 @@ export function Avatar({
   size?: "sm" | "md";
   selected?: boolean;
 }) {
-  const dimensions = size === "sm" ? "h-6 w-6 text-[11px]" : "h-8 w-8 text-[12px]";
+  const dimensions = size === "sm" ? "h-6 w-6 text-[13px]" : "h-8 w-8 text-[14px]";
 
   return (
     <span className="relative inline-flex shrink-0">
@@ -70,9 +70,9 @@ export function MessageList({
             <div className="min-w-0 flex-1">
               <header className="flex items-baseline gap-2">
                 <span className="truncate text-sm font-semibold text-vs-fg">{author.name}</span>
-                <span className="shrink-0 text-[11px] text-vs-muted">{message.time}</span>
+                <span className="shrink-0 text-[13px] text-vs-muted">{message.time}</span>
               </header>
-              <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-5 text-vs-fg/90">
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-[16px] leading-5 text-vs-fg/90">
                 {message.text}
               </p>
             </div>
@@ -340,11 +340,11 @@ export function Composer({
 
   const popover = popoverOpen && (
     <div className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
-      <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
+      <div className="border-b border-vs-border px-2.5 py-1.5 text-[13px] uppercase tracking-wider text-vs-muted">
         {mention?.stage === "room" ? (onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
-        <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
+        <p className="px-2.5 py-2 text-[14px] text-vs-muted">No chats yet in this room.</p>
       ) : (
       <ul className="vs-scroll max-h-56 overflow-y-auto py-1">
         {items.map((item, index) => (
@@ -356,12 +356,12 @@ export function Composer({
               }}
               onClick={() => pick(item.id)}
               onMouseEnter={() => setHighlight(index)}
-              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[15px] ${
                 index === highlight ? "bg-vs-hover text-vs-fg" : "text-vs-fg/90"
               }`}
             >
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              {item.sub && <span className="shrink-0 text-[11px] text-vs-muted">{item.sub}</span>}
+              {item.sub && <span className="shrink-0 text-[13px] text-vs-muted">{item.sub}</span>}
             </button>
           </li>
         ))}
@@ -384,7 +384,7 @@ export function Composer({
       disabled={assigning}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
-      className={`vs-scroll flex-1 resize-none bg-transparent text-[12px] text-vs-fg outline-none placeholder:text-vs-muted ${
+      className={`vs-scroll flex-1 resize-none bg-transparent text-[14px] text-vs-fg outline-none placeholder:text-vs-muted ${
         tall ? "max-h-64 min-h-24" : "max-h-28 min-h-5"
       }`}
     />

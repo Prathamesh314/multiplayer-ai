@@ -810,8 +810,8 @@ export function AiPanel({
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       <header className={`ai-chat-header flex min-w-0 shrink-0 items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[13px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
+          <h2 className="truncate text-[15px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
             {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
             {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
@@ -823,7 +823,7 @@ export function AiPanel({
             <button
               type="button"
               onClick={onNewRun}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <PlusIcon className="h-3 w-3" />
               New
@@ -833,13 +833,13 @@ export function AiPanel({
               type="button"
               onClick={() => onForkEntered(entered)}
               title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
               Copy chat
             </button>
           ))}
-        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[11px] text-vs-muted hover:bg-vs-hover">Providers</button>
+        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[13px] text-vs-muted hover:bg-vs-hover">Providers</button>
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
         </div>
@@ -926,7 +926,7 @@ export function AiPanel({
           <button
             type="button"
             onClick={() => run.current?.cancel()}
-            className="ml-auto rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover hover:text-vs-fg"
+            className="ml-auto rounded border border-vs-border px-2 py-0.5 text-[14px] transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Detach
           </button>
@@ -988,12 +988,12 @@ function AgentSelector({
   return (
     <div className="shrink-0 border-b border-vs-border px-2 py-2">
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">Agent</span>
+        <span className="text-[13px] font-semibold uppercase tracking-wider text-vs-muted">Agent</span>
         <button
           type="button"
           onClick={onRecheck}
           disabled={refreshing}
-          className="text-[13px] text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
+          className="text-[15px] text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
         >
           {refreshing ? "Checking…" : "Recheck"}
         </button>
@@ -1028,32 +1028,32 @@ function AgentSelector({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[14px] font-medium text-vs-fg">{agent.name}</span>
+                    <span className="truncate text-[16px] font-medium text-vs-fg">{agent.name}</span>
                     {agent.installed && <StatusDot ok={!agent.auth || agent.auth.loggedIn} />}
                   </span>
-                  <span className="block truncate text-[11px] text-vs-muted">
+                  <span className="block truncate text-[13px] text-vs-muted">
                     {agentSubtitle(agent)}
                   </span>
                 </span>
                 {agent.installed ? (
                   selected ? (
                     agent.auth && !agent.auth.loggedIn ? (
-                      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-vs-accent">
+                      <span className="shrink-0 text-[13px] font-medium uppercase tracking-wide text-vs-accent">
                         Sign in
                       </span>
                     ) : (
-                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-vs-accent">
+                      <span className="flex shrink-0 items-center gap-1 text-[13px] font-medium text-vs-accent">
                         <CheckIcon className="h-3 w-3" />
                         Connected
                       </span>
                     )
                   ) : (
-                    <span className="shrink-0 text-[11px] text-vs-muted opacity-0 transition group-hover:opacity-100">
+                    <span className="shrink-0 text-[13px] text-vs-muted opacity-0 transition group-hover:opacity-100">
                       Select
                     </span>
                   )
                 ) : (
-                  <span className="shrink-0 text-[11px] uppercase tracking-wide text-vs-accent">
+                  <span className="shrink-0 text-[13px] uppercase tracking-wide text-vs-accent">
                     {installFor === agent.id ? "Hide" : "Install"}
                   </span>
                 )}
@@ -1065,10 +1065,10 @@ function AgentSelector({
 
       {detail && !detail.installed && (
         <div className="mt-1.5 space-y-1.5 rounded-lg border border-vs-border bg-vs-editor p-2">
-          <p className="text-[12px] leading-4 text-vs-fg">{detail.blurb}</p>
+          <p className="text-[14px] leading-4 text-vs-fg">{detail.blurb}</p>
           <CopyLine command={detail.install.command} />
           {detail.install.alternative && <CopyLine command={detail.install.alternative} />}
-          <p className="text-[11px] leading-4 text-vs-muted">
+          <p className="text-[13px] leading-4 text-vs-muted">
             Run it in a terminal, then press Recheck.{" "}
             <a
               href={detail.install.docs}
@@ -1145,14 +1145,14 @@ function ConnectionCard({
   return (
     <div className="shrink-0 space-y-2 border-b border-vs-border bg-vs-editor px-3 py-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
+        <span className="text-[13px] font-semibold uppercase tracking-wider text-vs-muted">
           {agentName} account
         </span>
         {loggedIn && !busy && (
           <button
             type="button"
             onClick={onDismiss}
-            className="text-[13px] text-vs-muted transition hover:text-vs-fg"
+            className="text-[15px] text-vs-muted transition hover:text-vs-fg"
           >
             Hide
           </button>
@@ -1161,7 +1161,7 @@ function ConnectionCard({
 
       {busy ? (
         <div className="space-y-2">
-          <p className="flex items-center gap-2 text-[12px] text-vs-fg">
+          <p className="flex items-center gap-2 text-[14px] text-vs-fg">
             <SpinnerIcon className="h-3.5 w-3.5 text-vs-accent" />
             Signing in… complete it in the browser window that opened.
           </p>
@@ -1170,20 +1170,20 @@ function ConnectionCard({
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="block truncate text-[12px] text-vs-accent underline-offset-2 hover:underline"
+              className="block truncate text-[14px] text-vs-accent underline-offset-2 hover:underline"
             >
               Open the sign-in page ↗
             </a>
           )}
           {log.trim() && (
-            <pre className="vs-scroll max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-vs-border bg-vs-panel p-2 font-mono text-[11px] leading-4 text-vs-muted">
+            <pre className="vs-scroll max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-vs-border bg-vs-panel p-2 font-mono text-[13px] leading-4 text-vs-muted">
               {log.trim()}
             </pre>
           )}
           <button
             type="button"
             onClick={onCancel}
-            className="rounded border border-vs-border px-2 py-0.5 text-[12px] text-vs-fg transition hover:bg-vs-hover"
+            className="rounded border border-vs-border px-2 py-0.5 text-[14px] text-vs-fg transition hover:bg-vs-hover"
           >
             Cancel
           </button>
@@ -1191,10 +1191,10 @@ function ConnectionCard({
       ) : loggedIn ? (
         <div className="flex items-center gap-2">
           <StatusDot ok />
-          <span className="min-w-0 flex-1 text-[12px] leading-4 text-vs-fg">
+          <span className="min-w-0 flex-1 text-[14px] leading-4 text-vs-fg">
             Signed in as <span className="font-medium">{auth?.email ?? "your account"}</span>
             {auth?.plan && (
-              <span className="ml-1.5 rounded bg-vs-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-vs-accent">
+              <span className="ml-1.5 rounded bg-vs-accent/15 px-1.5 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-vs-accent">
                 {planLabel(auth.plan)}
               </span>
             )}
@@ -1202,21 +1202,21 @@ function ConnectionCard({
           <button
             type="button"
             onClick={onSignOut}
-            className="shrink-0 rounded border border-vs-border px-2 py-0.5 text-[12px] text-vs-fg transition hover:bg-vs-hover"
+            className="shrink-0 rounded border border-vs-border px-2 py-0.5 text-[14px] text-vs-fg transition hover:bg-vs-hover"
           >
             Sign out
           </button>
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-[12px] leading-4 text-vs-muted">
+          <p className="text-[14px] leading-4 text-vs-muted">
             Sign in with your {agentName} subscription to run agents on your existing plan — no API
             key, no per-token billing. Sign-in opens in your browser; the token stays with the CLI.
           </p>
           <button
             type="button"
             onClick={onSignIn}
-            className="flex items-center gap-1.5 rounded-md bg-vs-accent px-2.5 py-1.5 text-[12px] font-medium text-vs-accent-fg transition hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-md bg-vs-accent px-2.5 py-1.5 text-[14px] font-medium text-vs-accent-fg transition hover:opacity-90"
           >
             <SparkleIcon className="h-3.5 w-3.5" />
             Sign in with {agentName}
@@ -1225,7 +1225,7 @@ function ConnectionCard({
       )}
 
       {error && (
-        <p className="flex items-start gap-1.5 text-[12px] leading-4 text-vs-danger">
+        <p className="flex items-start gap-1.5 text-[14px] leading-4 text-vs-danger">
           <AlertIcon className="mt-0.5 h-3 w-3 shrink-0" />
           {error}
         </p>
@@ -1316,8 +1316,8 @@ function TurnBubble({ turn }: { turn: Turn }) {
     const author = turn.author ?? "You";
     return (
       <div className="flex flex-col items-end gap-1">
-        {author !== "You" && <span className="pr-1 text-[12px] text-vs-muted">{author}</span>}
-        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-[14px] leading-[1.6] text-vs-fg">
+        {author !== "You" && <span className="pr-1 text-[14px] text-vs-muted">{author}</span>}
+        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-[16px] leading-[1.6] text-vs-fg">
           {turn.text}
         </div>
       </div>
@@ -1334,7 +1334,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
       </span>
       <div className="min-w-0 flex-1">
         <header className="mb-1 flex items-center gap-2">
-          <span className="truncate text-[14px] font-semibold text-vs-fg">
+          <span className="truncate text-[16px] font-semibold text-vs-fg">
             {turn.agentName ?? "Agent"}
           </span>
           {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
@@ -1350,7 +1350,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
           />
         )}
         {turn.streaming && !hasReply ? (
-          hasTrace ? null : <p className="text-[15px] leading-6 text-vs-muted">Thinking…</p>
+          hasTrace ? null : <p className="text-[17px] leading-6 text-vs-muted">Thinking…</p>
         ) : (
           <Markdown text={turn.text} />
         )}
@@ -1360,11 +1360,11 @@ function TurnBubble({ turn }: { turn: Turn }) {
             className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60"
           >
             <summary
-              className={`cursor-pointer px-3 py-1.5 text-[12px] ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
+              className={`cursor-pointer px-3 py-1.5 text-[14px] ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
             >
               {turn.failed ? "Run failed — agent log" : "Agent log"}
             </summary>
-            <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-4 text-vs-muted">
+            <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[13px] leading-4 text-vs-muted">
               {turn.errText.trim()}
             </pre>
           </details>
@@ -1384,7 +1384,7 @@ function LiveTimer({ startedAt, running }: { startedAt: number; running: boolean
   }, [running]);
   const secs = Math.max(0, Math.round((now - startedAt) / 1000));
   return (
-    <span className="shrink-0 tabular-nums text-[11px] text-vs-muted" title="Elapsed">
+    <span className="shrink-0 tabular-nums text-[13px] text-vs-muted" title="Elapsed">
       {secs}s
     </span>
   );
@@ -1418,7 +1418,7 @@ function ActivityTrace({
       <button
         type="button"
         onClick={() => setUserOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-[13px] text-vs-muted transition hover:text-vs-fg"
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[15px] text-vs-muted transition hover:text-vs-fg"
       >
         {live ? (
           <SpinnerIcon className="h-3 w-3 text-vs-accent" />
@@ -1432,7 +1432,7 @@ function ActivityTrace({
       {open && (
         <div className="space-y-1.5 border-t border-vs-border px-2 py-1.5">
           {trace && (
-            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[12px] italic leading-5 text-vs-muted">
+            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[14px] italic leading-5 text-vs-muted">
               {trace}
             </p>
           )}
@@ -1441,7 +1441,7 @@ function ActivityTrace({
               {steps.map((step, i) => (
                 <li
                   key={`${i}-${step}`}
-                  className="flex items-center gap-1.5 font-mono text-[11.5px] leading-4 text-vs-fg"
+                  className="flex items-center gap-1.5 font-mono text-[13.5px] leading-4 text-vs-fg"
                 >
                   <span className="h-1 w-1 shrink-0 rounded-full bg-vs-accent" />
                   <span className="truncate">{step}</span>
@@ -1462,13 +1462,13 @@ function SystemLine({ text }: { text: string }) {
     return (
       <div className="flex items-center gap-2 px-1">
         <span className="h-px flex-1 bg-vs-border" />
-        <span className="shrink-0 text-[11px] text-vs-muted">{text}</span>
+        <span className="shrink-0 text-[13px] text-vs-muted">{text}</span>
         <span className="h-px flex-1 bg-vs-border" />
       </div>
     );
   }
   return (
-    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md bg-vs-hover/50 px-3 py-2 font-mono text-[12px] leading-5 text-vs-muted">
+    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md bg-vs-hover/50 px-3 py-2 font-mono text-[14px] leading-5 text-vs-muted">
       {text}
     </p>
   );
@@ -1530,7 +1530,7 @@ function EmptyState({
               {example.label}
             </button>
           ))}
-          <p className="mt-1 text-[11px] leading-4 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
+          <p className="mt-1 text-[13px] leading-4 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
         </div>
       )}
     </div>
@@ -1559,14 +1559,14 @@ function WatchingCluster({ members }: { members: SessionMember[] }) {
             <span
               key={member.userId}
               title={member.displayName}
-              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ring-2 ring-vs-panel ${color.chip}`}
+              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-semibold ring-2 ring-vs-panel ${color.chip}`}
             >
               {initialsOf(member.displayName)}
             </span>
           );
         })}
       </span>
-      {extra > 0 && <span className="text-[11px] text-vs-muted">+{extra}</span>}
+      {extra > 0 && <span className="text-[13px] text-vs-muted">+{extra}</span>}
     </span>
   );
 }
@@ -1624,13 +1624,13 @@ function CopyLine({ command }: { command: string }) {
       type="button"
       onClick={copy}
       title="Copy"
-      className="flex w-full items-center gap-1.5 rounded border border-vs-border bg-vs-panel px-2 py-1 text-left font-mono text-[11px] text-vs-fg transition hover:bg-vs-hover"
+      className="flex w-full items-center gap-1.5 rounded border border-vs-border bg-vs-panel px-2 py-1 text-left font-mono text-[13px] text-vs-fg transition hover:bg-vs-hover"
     >
       <span className="min-w-0 flex-1 truncate">{command}</span>
       {copied ? (
         <CheckIcon className="h-3 w-3 shrink-0 text-vs-success" />
       ) : (
-        <span className="shrink-0 text-[10px] uppercase text-vs-muted">copy</span>
+        <span className="shrink-0 text-[12px] uppercase text-vs-muted">copy</span>
       )}
     </button>
   );
@@ -1647,7 +1647,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 function Note({ children, tone }: { children: React.ReactNode; tone: "warn" }) {
   return (
     <p
-      className={`flex items-start gap-2 border-b border-vs-border px-3 py-2 text-[12px] leading-5 text-vs-fg ${
+      className={`flex items-start gap-2 border-b border-vs-border px-3 py-2 text-[14px] leading-5 text-vs-fg ${
         tone === "warn" ? "bg-vs-warn/10" : ""
       }`}
     >

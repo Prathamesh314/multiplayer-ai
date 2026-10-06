@@ -4,7 +4,8 @@ import type { Org } from "../../lib/org/types";
 import type { Project } from "../../lib/project/types";
 import type { SourceChannel, TeamProvider } from "../../lib/integrations/types";
 import { desktopBridge } from "../../lib/desktop";
-import { ChevronIcon, LinkIcon, SpinnerIcon } from "../icons";
+import { FolderIcon, LinkIcon, SpinnerIcon } from "../icons";
+import { ComposerPicker } from "../workspace/ComposerPicker";
 import {
   ErrorNote,
   GhostButton,
@@ -54,7 +55,7 @@ export function ConnectionsPanel({
   return (
     <main className="app-page vs-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8 lg:py-10">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">
+        <p className="text-[13px] font-medium uppercase tracking-[0.18em] text-vs-muted">
           Project context
         </p>
         <h1 className="font-display mt-2 text-xl font-semibold tracking-tight">
@@ -65,27 +66,23 @@ export function ConnectionsPanel({
           Discord channels so AI can refer to your discussions and link back to
           the source.
         </p>
-        <label className="mt-5 block max-w-sm text-xs font-medium">
-          Project
-          <div className="relative mt-1.5">
-            <select
-              aria-label="Project for connections"
+        <div className="mt-5 max-w-sm">
+          <p className="text-sm font-medium text-vs-muted">Project</p>
+          <div className="mt-1.5">
+            <ComposerPicker
+              label="Project for connections"
               value={project?.id ?? ""}
-              onChange={(event) => onSelect(event.target.value)}
-              className="min-h-9 w-full appearance-none rounded-lg border border-vs-border bg-vs-editor py-2 pl-2.5 pr-8 text-xs text-vs-fg outline-none focus:border-vs-accent"
-            >
-              {!projects.length && (
-                <option value="">No projects available</option>
-              )}
-              {projects.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <ChevronIcon className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-vs-muted" />
+              onChange={onSelect}
+              options={projects.length
+                ? projects.map((item) => ({ id: item.id, label: item.name }))
+                : [{ id: "", label: "No projects available" }]}
+              icon={<FolderIcon className="h-4 w-4 shrink-0 text-vs-muted" />}
+              className="connections-project-picker"
+              placement="auto"
+              disabled={!projects.length}
+            />
           </div>
-        </label>
+        </div>
         {project ? (
           <ProjectConnections
             key={project.id}
@@ -277,7 +274,7 @@ function ProjectConnections({
                           <span className="truncate">#{channel.name}</span>
                           <LinkIcon className="h-3 w-3 shrink-0" />
                         </a>
-                        <p className="mt-1 text-[11px] leading-4 text-vs-muted">
+                        <p className="mt-1 text-[13px] leading-4 text-vs-muted">
                           {channel.error ??
                             (channel.syncedAt
                               ? !channel.verifiedAt ||

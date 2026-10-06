@@ -62,9 +62,9 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
             clearShareCode();
             setState({ kind: "ready", session });
             return;
-          } catch {
-            // A stale or tampered link falls through to the locked screen
-            // rather than reporting a different failure.
+          } catch (cause) {
+            if (!cancelled) setState({kind:"locked",reason:cause instanceof Error?cause.message:"This invitation couldn’t be opened. Ask the host for a new link."});
+            return;
           }
         }
 
@@ -163,9 +163,9 @@ function LockedScreen({
         <h1 className="font-display mt-4 text-xl font-semibold tracking-tight">
           This session is locked
         </h1>
-        <p className="mt-1.5 text-[14px] leading-6 text-vs-muted">{reason}</p>
+        <p className="mt-1.5 text-[16px] leading-6 text-vs-muted">{reason}</p>
 
-        <p className="mt-4 font-mono text-[12px] text-vs-muted">/s/{sessionId}</p>
+        <p className="mt-4 font-mono text-[14px] text-vs-muted">/s/{sessionId}</p>
 
         <label className="mt-4 block text-sm font-medium uppercase tracking-wide text-vs-muted">
           Access code

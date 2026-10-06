@@ -109,7 +109,7 @@ export function CreateSessionDialog({
       </Field>
 
       <div>
-        <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+        <span className="text-[14px] font-semibold uppercase tracking-wider text-vs-muted">
           Project folder
         </span>
 
@@ -131,13 +131,13 @@ export function CreateSessionDialog({
             <FolderIcon open className="h-4 w-4 text-sky-500 dark:text-sky-400" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-base">{chosen.name}</span>
-              <span className="block text-[12px] text-vs-muted">{chosen.detail}</span>
+              <span className="block text-[14px] text-vs-muted">{chosen.detail}</span>
             </span>
             <CheckIcon className="h-4 w-4 text-vs-success" />
             <button
               type="button"
               onClick={() => setSource(null)}
-              className="rounded px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="rounded px-2 py-1 text-[14px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               Change
             </button>
@@ -176,7 +176,7 @@ export function CreateSessionDialog({
         )}
       </div>
 
-      <p className="text-[12px] leading-5 text-vs-muted">
+      <p className="text-[14px] leading-5 text-vs-muted">
         Folders are read in your browser — nothing is uploaded to a server.
       </p>
 

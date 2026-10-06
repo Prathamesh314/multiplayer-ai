@@ -11,6 +11,7 @@ type TopBarProps = {
   onOpenGuide: () => void;
   session: Session;
   onInvite: () => void;
+  inviteLabel?: string;
   onLeave: () => void;
   onNavigate: (direction: "back" | "forward") => void;
   navigationPending: boolean;
@@ -35,6 +36,7 @@ export function TopBar({
   onOpenGuide,
   session,
   onInvite,
+  inviteLabel = "Invite",
   onLeave,
   onNavigate,
   navigationPending,
@@ -99,7 +101,7 @@ export function TopBar({
         </button>
       )}
 
-      <div className="hidden min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-vs-panel px-2 py-1 text-[11px] text-vs-muted xl:flex">
+      <div className="hidden min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-vs-panel px-2 py-1 text-[13px] text-vs-muted xl:flex">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -126,7 +128,7 @@ export function TopBar({
         className="flex shrink-0 items-center gap-1 rounded bg-vs-accent px-2 py-1 text-xs font-medium text-vs-accent-fg transition hover:opacity-90"
       >
         <UserPlusIcon className="h-3 w-3" />
-        Invite
+        {inviteLabel}
       </button>
 
       <div className="flex items-center gap-0.5">
@@ -196,7 +198,7 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[10px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
+          className={`max-w-64 truncate text-[12px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}

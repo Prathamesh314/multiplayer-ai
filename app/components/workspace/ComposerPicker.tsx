@@ -6,8 +6,8 @@ import { CheckIcon, SearchIcon } from "../icons";
 
 export type ComposerOption = { id: string; label: string; description?: string; group?: string };
 
-/** Shared, keyboard-accessible picker anchored above its composer button. */
-export function ComposerPicker({ label, value, options, onChange, icon, searchable = false, header, footer, emptyLabel = "No options available." }: {
+/** Shared, keyboard-accessible picker; composer menus open above by default. */
+export function ComposerPicker({ label, value, options, onChange, icon, searchable = false, header, footer, emptyLabel = "No options available.", className = "", placement = "top", disabled = false }: {
   label: string;
   value: string;
   options: ComposerOption[];
@@ -17,6 +17,9 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
   header?: ReactNode;
   footer?: ReactNode;
   emptyLabel?: string;
+  className?: string;
+  placement?: "top" | "auto";
+  disabled?: boolean;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -38,11 +41,14 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
       const anchor = trigger.current?.getBoundingClientRect();
       if (!anchor) return;
       const width = Math.min(searchable ? 380 : 300, window.innerWidth - 24);
+      const above = Math.max(0, anchor.top - 22);
+      const below = Math.max(0, window.innerHeight - anchor.bottom - 22);
+      const openAbove = placement === "top" || above >= below;
       setPosition({
         width,
         left: Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12)),
-        bottom: window.innerHeight - anchor.top + 10,
-        maxHeight: Math.max(0, Math.min(480, anchor.top - 22)),
+        ...(openAbove ? { bottom: window.innerHeight - anchor.top + 10 } : { top: anchor.bottom + 10 }),
+        maxHeight: Math.min(480, openAbove ? above : below),
       });
     }
     place();
@@ -52,10 +58,10 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, searchable]);
+  }, [open, searchable, placement]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || position.visibility === "hidden") return;
     const first = panel.current?.querySelector<HTMLElement>('input, [role="option"][aria-selected="true"], [role="option"]');
     // Prefer the selected option for a non-searchable menu.
     (searchable ? first : panel.current?.querySelector<HTMLElement>('[aria-selected="true"]') ?? first)?.focus();
@@ -71,10 +77,10 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("focusin", focusOutside);
     };
-  }, [open, searchable]);
+  }, [open, searchable, position.visibility]);
 
   return <>
-    <button ref={trigger} type="button" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} title={`${label}: ${selected?.label ?? (value || "Choose an option")}`} className="composer-control" onClick={() => { setQuery(""); setOpen(!open); }} onKeyDown={event => {
+    <button ref={trigger} type="button" disabled={disabled} aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} title={`${label}: ${selected?.label ?? (value || "Choose an option")}`} className={`composer-control ${className}`} onClick={() => { setQuery(""); setOpen(!open); }} onKeyDown={event => {
       if (["ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); setQuery(""); setOpen(true); }
     }}>
       {icon}<span className="truncate">{selected?.label ?? (value ? `Unavailable: ${value}` : label)}</span>

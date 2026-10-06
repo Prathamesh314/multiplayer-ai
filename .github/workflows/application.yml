@@ -54,6 +54,13 @@ jobs:
       - run: npm run test:architecture:postgres
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: npm run test:sharing
+        env:
+          SHARING_TEST_POSTGRES: "1"
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: node --import tsx tests/db-limits-postgres.mjs
+        env:
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:google-auth
         env:
           GOOGLE_AUTH_TEST_POSTGRES: "1"
@@ -90,6 +97,10 @@ jobs:
           CHROME_BIN: /usr/bin/google-chrome
       - run: npm run test:auth-ui
         env:
+          CHROME_BIN: /usr/bin/google-chrome
+      - run: npm run test:sharing:http
+        env:
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
           CHROME_BIN: /usr/bin/google-chrome
       - run: node tests/marketing-downloads.browser.mjs --start-server
         env:

@@ -1,6 +1,7 @@
 import { withApiLimit } from "../../../../lib/http/api-limit";
 import { currentUser } from "../../../../lib/auth/tokens";
 import { events } from "../../../../lib/events";
+import { getOrgMembership } from "../../../../lib/org/store";
 import {
   addMember,
   getSession,
@@ -65,6 +66,11 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
     );
   }
 
+  if (session.orgId) {
+    const membership = await getOrgMembership(session.orgId,user.id);
+    if (membership?.status !== "active") return Response.json({error:"This link is for organization members. Ask the host to open the AI chat and use Share chat to invite you as a guest."},{status:403});
+  }
+
   // Redeeming a viewer link must never demote an existing editor or owner.
   const existing = await roleOf(id, user.id);
   if (!existing || outranks(granted, existing)) {
@@ -73,7 +79,9 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
     await (await events()).publish(id, { type: "members.changed", at: Date.now() });
   }
 
-  return Response.json((await getSession(id, user.id)) ?? session);
+  const joined = await getSession(id,user.id);
+  if (!joined?.myRole) return Response.json({error:"Your account cannot access this room. Ask its owner to check your membership."},{status:403});
+  return Response.json(joined);
 }
 
 export const POST = withApiLimit("/api/sessions/[id]/join", handlePOST);

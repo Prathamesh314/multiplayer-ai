@@ -26,7 +26,7 @@ export function PeopleStack({ members }: { members: SessionMember[] }) {
         ))}
       </div>
       {extra > 0 && (
-        <span className="ml-1.5 text-[12px] text-vs-muted" title={`${extra} more`}>
+        <span className="ml-1.5 text-[14px] text-vs-muted" title={`${extra} more`}>
           +{extra}
         </span>
       )}
@@ -43,7 +43,7 @@ function PersonChip({ member }: { member: SessionMember }) {
       title={`${member.displayName} · ${member.role}${member.online ? " · online" : " · away"}`}
     >
       <span
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ring-2 ring-vs-chrome ${color.chip} ${
+        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-semibold ring-2 ring-vs-chrome ${color.chip} ${
           member.online ? "" : "opacity-40"
         }`}
       >
@@ -95,7 +95,7 @@ export function EditingBadge({
       {people.slice(0, 3).map((person) => (
         <span
           key={person.userId}
-          className={`inline-flex h-4 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold ${colorOf(person.userId).chip}`}
+          className={`inline-flex h-4 items-center gap-1 rounded-full px-1.5 text-[12px] font-semibold ${colorOf(person.userId).chip}`}
         >
           <span className="h-1 w-1 animate-pulse rounded-full bg-current opacity-80" />
           {firstNameOf(person.name)}

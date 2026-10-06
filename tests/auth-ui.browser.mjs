@@ -121,7 +121,7 @@ try {
   })()`});
   await evaluate(`sessionStorage.setItem('connections-flow','desktop');sessionStorage.setItem('connections-signed-in','1')`);
   await send('Page.navigate',{url:base+'/workspace?org=second-team&connections=second-project'});
-  const selectedProject=()=>evaluate(`document.querySelector('select[aria-label="Project for connections"]')?.value==='second-project'`);
+  const selectedProject=()=>evaluate(`document.querySelector('button[aria-label="Project for connections"]')?.textContent.trim()==='Selected project'`);
   await eventually(selectedProject,'selected desktop project');
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);
   await eventually(()=>evaluate(`!!window.__openedConnection`),'browser handoff');

@@ -52,6 +52,21 @@
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-bricolage);
 
+  /* Raise the shared type scale by 2px without scaling rem-based layout sizes. */
+  --text-xs: 0.875rem;
+  --text-sm: 1rem;
+  --text-base: 1.125rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.625rem;
+  --text-3xl: 2rem;
+  --text-4xl: 2.375rem;
+  --text-5xl: 3.125rem;
+  --text-6xl: 3.875rem;
+  --text-7xl: 4.625rem;
+  --text-8xl: 6.125rem;
+  --text-9xl: 8.125rem;
+
   --color-vs-editor: var(--vs-editor);
   --color-vs-panel: var(--vs-panel);
   --color-vs-chrome: var(--vs-chrome);
@@ -89,6 +104,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--text-base);
   /* Kerning + common ligatures so body copy sets cleanly at the larger base size. */
   font-feature-settings: "kern", "liga", "calt";
   text-rendering: optimizeLegibility;
@@ -124,7 +140,7 @@ body {
 .ai-chat-header { padding: 16px 20px 10px; }
 .ai-composer { padding: 12px 20px 16px; }
 .ai-composer-footer { flex-wrap: wrap; row-gap: 8px; }
-.ai-composer textarea { min-width: 0; line-height: 1.55; font-size: 12px; }
+.ai-composer textarea { min-width: 0; line-height: 1.55; font-size: 14px; }
 .room-explorer-panel { background: var(--vs-panel); }
 @container (max-width: 560px) {
   .ai-chat-header { flex-wrap: wrap; padding: 12px; }
@@ -208,26 +224,26 @@ body {
 
 /* Session layout; colors come from the shared workspace palette above. Sized
    to Conductor's density — small text, tight chrome, little wasted padding. */
-.session-workspace { font-size: 12px; }
+.session-workspace { font-size: 14px; }
 .session-workspace .room-toolbar { min-height: 32px; padding: 3px 10px; gap: 6px; }
 .session-workspace .room-toolbar-actions { width: auto; gap: 3px; }
-.session-workspace .room-toolbar-actions > button { min-height: 22px; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.session-workspace .room-toolbar-actions > button { min-height: 22px; font-size: 13px; padding: 2px 6px; border-radius: 4px; }
 .session-workspace .room-sidebar { display: flex; width: clamp(190px, 14vw, 270px); max-width: 24%; flex: none; }
 .session-workspace .room-main { display: flex; min-width: 360px; }
 .session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }
 .session-workspace .session-panels { min-height: 0; }
 .session-workspace .ai-chat-header { padding: 6px 16px; gap: 6px; }
-.session-workspace .ai-chat-header h2 { font-size: 12px; font-weight: 400; }
-.session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 10px; }
+.session-workspace .ai-chat-header h2 { font-size: 14px; font-weight: 400; }
+.session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 12px; }
 .session-workspace .ai-composer { padding: 10px 20px 14px; }
 .session-workspace .ai-composer > div > .rounded-2xl { border-radius: 14px; background: var(--vs-chrome); }
-.session-workspace .ai-composer textarea { font-size: 12px; min-height: 80px; }
+.session-workspace .ai-composer textarea { font-size: 14px; min-height: 80px; }
 .session-workspace .ai-composer-footer { border-top: 0; margin-top: 12px; }
 .session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 7px; }
 .session-workspace .human-message { background: #2b201d; }
 .session-workspace .assistant-message > span { display: none; }
 .session-workspace .assistant-message > div > header { margin-bottom: 8px; }
-.session-workspace .assistant-message > div > header > span:first-child { font-size: 11px; font-weight: 400; color: var(--vs-muted); }
+.session-workspace .assistant-message > div > header > span:first-child { font-size: 13px; font-weight: 400; color: var(--vs-muted); }
 .session-workspace .conversation-markdown h1, .session-workspace .conversation-markdown h2 { font-weight: 700; margin-top: 24px; margin-bottom: 14px; }
 .session-workspace .conversation-markdown p { margin-bottom: 14px; }
 .session-workspace .file-actions { white-space: nowrap; }
@@ -248,10 +264,15 @@ body {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   min-width: 0; max-width: 220px; min-height: 25px; padding: 3px 6px;
   border: 1px solid transparent; border-radius: 6px; background: transparent;
-  color: var(--vs-fg); font-size: 11.5px; font-weight: 500; line-height: 16px;
+  color: var(--vs-fg); font-size: 13.5px; font-weight: 500; line-height: 18px;
 }
 .composer-control:hover, .composer-control[aria-expanded="true"] { background: var(--vs-hover); }
 .composer-control:disabled { opacity: .4; }
+.composer-control.connections-project-picker {
+  max-width: 100%; min-height: 40px; justify-content: flex-start; gap: 8px;
+  padding: 8px 12px; border-color: var(--vs-border); border-radius: 10px;
+  font-size: 16px; line-height: 22px;
+}
 .composer-toggle { color: var(--vs-muted); }
 .composer-toggle[aria-pressed="true"] { color: var(--vs-accent); background: color-mix(in srgb, var(--vs-accent) 12%, transparent); border-color: color-mix(in srgb, var(--vs-accent) 22%, transparent); }
 .room-composer-tools { gap: 2px; }
@@ -263,14 +284,14 @@ body {
   box-shadow: 0 18px 60px var(--vs-shadow), 0 2px 8px #0003;
   animation: picker-enter 120ms ease-out;
 }
-.composer-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.composer-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; font-size: 16px; font-weight: 600; flex-shrink: 0; }
 .composer-picker-search { display: flex; align-items: center; gap: 10px; margin: 0 6px 8px; padding: 10px 12px; background: var(--vs-editor); border: 1px solid var(--vs-border); border-radius: 10px; color: var(--vs-muted); }
-.composer-picker-search input { min-width: 0; width: 100%; background: transparent; font-size: 16px; color: var(--vs-fg); }
+.composer-picker-search input { min-width: 0; width: 100%; background: transparent; font-size: 18px; color: var(--vs-fg); }
 .composer-picker-options { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
-.composer-picker-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; text-align: left; font-size: 16px; line-height: 24px; }
+.composer-picker-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; text-align: left; font-size: 18px; line-height: 26px; }
 .composer-picker-option:hover, .composer-picker-option:focus-visible { background: var(--vs-hover); }
 .composer-picker-option[aria-selected="true"] { background: var(--vs-active); }
-.composer-picker-description { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--vs-muted); font-family: var(--font-geist-mono), monospace; font-size: 12px; line-height: 18px; }
-.composer-picker-group { padding: 9px 12px 5px; font-size: 13px; color: var(--vs-muted); }
-.composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 12px; line-height: 18px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
+.composer-picker-description { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--vs-muted); font-family: var(--font-geist-mono), monospace; font-size: 14px; line-height: 20px; }
+.composer-picker-group { padding: 9px 12px 5px; font-size: 15px; color: var(--vs-muted); }
+.composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 14px; line-height: 20px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
 @keyframes picker-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
