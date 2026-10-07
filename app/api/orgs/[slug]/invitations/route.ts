@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../lib/http/api-limit";
+import { publicOrigin, PublicOriginError } from "../../../../lib/http/public-origin";
 import { findByConnectCode } from "../../../../lib/repo/users";
 import { forbidden, orgAccess, orgDenied } from "../../../../lib/org/auth";
 import { inviteByConnectCode, inviteByEmail } from "../../../../lib/org/store";
@@ -56,12 +57,19 @@ async function handlePOST(request: Request, context: RouteContext<"/api/orgs/[sl
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return Response.json({ error: "That does not look like an email address." }, { status: 400 });
     }
+    // Validate before creating/replacing an invitation so a configuration error
+    // never revokes a usable link and replaces it with an unreachable one.
+    let origin: string;
+    try { origin = publicOrigin(request); }
+    catch (cause) {
+      if (cause instanceof PublicOriginError) return Response.json({ error: cause.message }, { status: 503 });
+      throw cause;
+    }
     const outcome = await inviteByEmail(result.org.id, email, role, result.user.id);
     if (!outcome.ok) return Response.json({ error: outcome.error }, { status: 409 });
 
     // The link is assembled here so the token is only ever handled server-side
     // until it reaches the browser that requested it.
-    const origin = new URL(request.url).origin;
     const link = `${origin}/invite/${outcome.token}`;
     return Response.json({ link, expiresAt: outcome.expiresAt }, { status: 201 });
   }

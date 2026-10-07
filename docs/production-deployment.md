@@ -24,6 +24,8 @@ chmod 600 .env.production
 ```
 
 Edit `.env.production`: set `APP_DOMAIN` to the hostname without a scheme,
+`AUTH_PUBLIC_URL` to the matching public HTTPS origin (for example,
+`https://cubeclashes.com`, used for invitation links even without Google sign-in),
 `ACME_EMAIL` to the certificate contact, and generate three **different** secrets
 with `openssl rand -hex 32`. Fill `POSTGRES_PASSWORD`, `PROXY_SHARED_SECRET` and
 `MNEMOSYNE_MCP_TOKEN`. Hex passwords avoid connection-URL escaping problems.
