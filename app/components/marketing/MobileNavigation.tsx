@@ -29,6 +29,7 @@ export function MobileNavigation() {
       >
         <a href="#product">Product</a>
         <a href="#how-it-works">How it works</a>
+        <Link href="/docs">Docs</Link>
         <a href="#faq">FAQ</a>
         <a href="#download">Get the app</a>
         <Link href="/workspace">Open workspace ↗</Link>

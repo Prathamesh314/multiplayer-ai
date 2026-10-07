@@ -33,9 +33,19 @@ const tool=path.basename(process.argv[1]),args=process.argv.slice(2),root=proces
 fs.appendFileSync(path.join(root,'commands'),JSON.stringify({tool,args,version:process.env.APP_VERSION})+'\\n');
 const scenario=process.env.SCENARIO;
 if(tool==='git' && args[0]==='rev-parse')console.log('${revision}');
-if(tool==='df')console.log('Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 99999999 0 99999999 0% /');
+if(tool==='df') {
+  const available=scenario==='disk-full'||scenario==='reclaim-space'&&!fs.existsSync(path.join(root,'cache-cleaned'))?8090308:99999999;
+  console.log('Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 99999999 0 '+available+' 0% /');
+}
 if(tool==='curl' && scenario==='health-failure')process.exit(22);
 if(tool==='docker') {
+  if(args[0]==='image' && args[1]==='prune') {
+    if(scenario==='cleanup-failure'||scenario==='post-cleanup-failure'&&fs.existsSync(path.join(root,'activated')))process.exit(1);
+  }
+  if(args[0]==='builder' && args[1]==='prune') {
+    if(scenario==='cache-failure')process.exit(1);
+    fs.writeFileSync(path.join(root,'cache-cleaned'),'1');
+  }
   if(args[0]==='inspect')console.log(args.at(-1)==='worker-id'?'multiplayer-worker:old':'multiplayer-web:${revision}');
   if(args[0]==='run') {
     const output=args[args.indexOf('--output')+1];
@@ -43,6 +53,7 @@ if(tool==='docker') {
     if(scenario==='backup-failure')process.exit(1);
   }
   if(args[0]==='compose') {
+    if(args.includes('up'))fs.writeFileSync(path.join(root,'activated'),'1');
     if(args.includes('ps') && args.includes('-q'))console.log(args.at(-1)+'-id');
     if(args.includes('build') && scenario==='build-failure')process.exit(1);
     if(args.includes('exec') && args.includes('postgres')) {
@@ -62,7 +73,7 @@ if(tool==='docker') {
       encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, DEPLOY_STATE_DIR: state, DEPLOY_BACKUP_DIR: backups, FIXTURE_ROOT: root, SCENARIO: scenario },
     });
     const commands = readFileSync(join(root, 'commands'), 'utf8').trim().split('\n').map(JSON.parse);
-    return { ...result, commands, env: readFileSync(join(root, '.env.production'), 'utf8') };
+    return { ...result, commands, env: readFileSync(join(root, '.env.production'), 'utf8'), deployed: (() => { try { return readFileSync(join(state,'deployed-revision'),'utf8').trim(); } catch { return null; } })() };
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -81,7 +92,43 @@ test('production release builds pinned images, backs up, migrates once, then che
   assert.deepEqual(commands[startup].args.slice(-4), ['web', 'web2', 'worker', 'gateway']);
   assert.ok(commands[startup].args.includes('--no-deps'));
   assert.equal(commands.filter(c => c.tool === 'curl').length, 3);
+  const imagePrunes = commands.flatMap((c,i) => c.args[0] === 'image' && c.args[1] === 'prune' ? [i] : []);
+  assert.equal(imagePrunes.length, 2);
+  assert.ok(imagePrunes[0] < build, 'free disk while the previous containers still protect their images');
+  assert.ok(imagePrunes[1] > commands.findLastIndex(c => c.tool === 'curl'), 'remove previous images only after the new release is verified');
+  for(const index of imagePrunes) assert.deepEqual(commands[index].args,['image','prune','--all','--force']);
+  for(const c of commands.filter(c=>c.args[0]==='builder')) assert.deepEqual(c.args,['builder','prune','--all','--force','--keep-storage','2GB']);
+  assert.equal(commands.some(c=>['system','container','volume'].includes(c.args[0])&&c.args.includes('prune')),false,'never prune data or protective containers');
   assert.match(result.env, new RegExp(`APP_VERSION=${revision}`));
+  assert.equal(result.deployed,revision);
+});
+
+test('reclaims disposable Docker storage before applying the unchanged disk-space threshold', () => {
+  const result=release('reclaim-space');
+  assert.equal(result.status,0,result.stderr);
+  assert.match(result.stdout,/Free disk after cleanup/);
+});
+
+for(const scenario of ['disk-full','cleanup-failure','cache-failure']) {
+  test(`${scenario} stops before builds or downtime and preserves the current release`, () => {
+    const result=release(scenario);
+    assert.notEqual(result.status,0);
+    assert.equal(result.deployed,null);
+    assert.match(result.env,/APP_VERSION=old/);
+    assert.equal(result.commands.some(c=>c.args.includes('build')||c.args.includes('stop')||c.args.includes('scripts/backup.mjs')),false);
+    if(scenario==='disk-full')assert.match(result.stderr,/Not enough disk space.*application data and backups were preserved/);
+    if(scenario==='cleanup-failure')assert.equal(result.commands.some(c=>c.args[0]==='builder'),false,'an image cleanup error cannot be masked by a successful cache cleanup');
+  });
+}
+
+test('post-deployment cleanup failure reports maintenance without rolling back a verified release', () => {
+  const result=release('post-cleanup-failure');
+  assert.notEqual(result.status,0);
+  assert.equal(result.deployed,revision);
+  assert.match(result.env,new RegExp(`APP_VERSION=${revision}`));
+  assert.match(result.stderr,/is healthy, but Docker cleanup failed/);
+  assert.equal(result.commands.some(c=>c.args.includes('checkout')),false);
+  assert.deepEqual(result.commands.at(-1).args, ['image', 'prune', '--all', '--force']);
 });
 
 for (const scenario of ['build-failure', 'busy', 'backup-failure', 'migration-failure', 'health-failure']) {

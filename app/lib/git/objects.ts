@@ -58,6 +58,9 @@ export async function putBlobs(bare: string, index: Partial<NodeJS.ProcessEnv>, 
     files.map((file, i) => `100644 ${hashes[i]}\t${file.path}\0`).join(""), index);
 }
 export async function commitTree(bare: string, tree: string, parents: string[], message: string, author?: { name: string; email: string }) {
+  // write-tree can return Git's virtual empty tree without storing its bytes.
+  // Persist it before committing so empty projects pass fsck and backup checks.
+  await objectText(bare, ["mktree"], "");
   return objectText(bare, ["commit-tree", tree, ...parents.flatMap(sha => ["-p", sha]), "-m", message], undefined,
     author ? { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email } : undefined);
 }

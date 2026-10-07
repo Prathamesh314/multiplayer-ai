@@ -157,6 +157,7 @@ test('Google signup, account linking, invitations and desktop transfer', async t
       await assert.rejects(completeGoogleAuth(flow.token, { password: 'incorrect' }), /existing account password/);
       const linked = await completeGoogleAuth(flow.token, { password: 'original-test-password' });
       assert.equal(linked.user.id, created.user.id);
+      assert.ok((await f.first('SELECT email_verified_at FROM users WHERE id=$1', [created.user.id])).email_verified_at, 'linking confirms the matching email through Google');
       assert.ok(await authenticate('password@example.test', 'original-test-password'));
       const other = await verified('password@example.test', 'another-google-subject');
       await assert.rejects(completeGoogleAuth(other.token, { password: 'original-test-password' }), /different Google account/);

@@ -46,22 +46,26 @@
 
 
 @theme inline {
-  /* Type scale. Seven steps, named for the job rather than the pixel count, so
-     a component asks for "chrome" or "body" instead of inventing a number.
-     This replaces 228 arbitrary `text-[Npx]` values across the app. */
-  --text-micro: 11px;      /* badges, counters, keyboard hints */
-  --text-chrome: 12px;     /* toolbars, labels, metadata */
-  --text-ui: 13px;         /* dense UI body */
-  --text-body: 14px;       /* default reading size */
-  --text-lead: 16px;       /* emphasis body, dialog intros */
-  --text-title: 20px;      /* section and dialog titles */
-  --text-display: 28px;    /* page titles — the ceiling inside the app */
-
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-bricolage);
+
+  /* Shared type scale. Font sizes stay independent of rem-based layout dimensions. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+  --text-7xl: 4.5rem;
+  --text-8xl: 6rem;
+  --text-9xl: 8rem;
 
   --color-vs-editor: var(--vs-editor);
   --color-vs-panel: var(--vs-panel);
@@ -96,59 +100,12 @@
   --color-syn-punct: var(--syn-punct);
 }
 
-/* ---------------------------------------------------------------------------
-   Control system.
-
-   App chrome (toolbars, headers, menus) is dense and quiet: one control height,
-   one radius, one type size. Variants change *weight*, never geometry — so a
-   row of mixed controls still aligns on a single baseline and corner radius.
-
-   Before this existed, TopBar alone used four radii, five padding pairs and
-   three type sizes, which is what made the interface read as unfinished.
-   --------------------------------------------------------------------------- */
-:root {
-  --ui-control-h: 28px;
-  --ui-radius-control: 6px;
-  --ui-radius-surface: 10px;
-  --ui-text-chrome: 12px;
-  --ui-gap: 6px;
-}
-
-.ui-control {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: var(--ui-control-h); padding: 0 9px;
-  border: 1px solid transparent; border-radius: var(--ui-radius-control);
-  font-size: var(--ui-text-chrome); font-weight: 500; line-height: 1;
-  white-space: nowrap; flex-shrink: 0; color: var(--vs-muted);
-}
-.ui-control:hover:not(:disabled) { background: var(--vs-hover); color: var(--vs-fg); }
-.ui-control:disabled { opacity: .45; }
-
-/* Quiet by default; outline only where an action needs to be findable at a
-   glance; solid reserved for the single primary action in a region. */
-.ui-control--outline { border-color: var(--vs-border); color: var(--vs-fg); }
-.ui-control--solid { background: var(--vs-accent); color: var(--vs-accent-fg); font-weight: 600; }
-.ui-control--solid:hover:not(:disabled) { background: var(--vs-accent); color: var(--vs-accent-fg); opacity: .9; }
-.ui-control--strong { color: var(--vs-fg); font-weight: 600; }
-.ui-control--icon { padding: 0; width: var(--ui-control-h); justify-content: center; }
-.ui-control[aria-pressed="true"] { background: var(--vs-active); color: var(--vs-fg); }
-
-/* Read-only context (paths, branches, counts) — same metrics, no affordance. */
-.ui-readout {
-  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
-  height: var(--ui-control-h); padding: 0 9px;
-  border-radius: var(--ui-radius-control); background: var(--vs-hover);
-  font-size: var(--ui-text-chrome); line-height: 1; color: var(--vs-muted);
-}
-
-/* Separates groups without drawing a full border. */
-.ui-divider { width: 1px; height: 16px; flex-shrink: 0; background: var(--vs-border); }
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  /* Kerning + common ligatures so body copy sets cleanly at the larger base size. */
+  font-size: var(--text-base);
+  /* Kerning + common ligatures so body copy stays clear at the shared base size. */
   font-feature-settings: "kern", "liga", "calt";
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -173,18 +130,17 @@ body {
 .ui-dialog[open] { display: flex; flex-direction: column; animation: dialog-enter 160ms ease-out; }
 .ui-dialog > header, .ui-dialog > footer { flex-shrink: 0; }
 .ui-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.ui-dialog-body :where(input:not([type="checkbox"]):not([type="radio"]), select) { min-height: 40px; }
+.ui-dialog-body :where(input:not([type="checkbox"]):not([type="radio"]), select) { min-height: 36px; }
 .ui-dialog-body :where(p, label) { overflow-wrap: anywhere; }
 @keyframes dialog-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 .room-toolbar { min-height: 64px; }
-/* Control geometry belongs to `.ui-control`, not to a descendant selector in a
-   global sheet — overriding it here is what let four radii coexist in one bar. */
+.room-toolbar-actions > button, .room-toolbar-actions > div > button { min-height: 34px; border-radius: 8px; }
 .room-main { container-type: inline-size; }
 .ai-chat-header { padding: 16px 20px 10px; }
 .ai-composer { padding: 12px 20px 16px; }
 .ai-composer-footer { flex-wrap: wrap; row-gap: 8px; }
-.ai-composer textarea { min-width: 0; line-height: 1.65; }
+.ai-composer textarea { min-width: 0; line-height: 1.55; font-size: 12px; }
 .room-explorer-panel { background: var(--vs-panel); }
 @container (max-width: 560px) {
   .ai-chat-header { flex-wrap: wrap; padding: 12px; }
@@ -266,28 +222,30 @@ body {
   .room-main { min-width: 0; }
 }
 
-/* Session layout; colors come from the shared workspace palette above. */
-.session-workspace { font-size: 14px; }
-.session-workspace .room-toolbar { min-height: 44px; padding: 0 12px; gap: 12px; }
-.session-workspace .room-toolbar-actions { width: auto; gap: 6px; }
+/* Session layout; colors come from the shared workspace palette above. Sized
+   to Conductor's density — small text, tight chrome, little wasted padding. */
+.session-workspace { font-size: 12px; }
+.session-workspace .room-toolbar { min-height: 32px; padding: 3px 10px; gap: 6px; }
+.session-workspace .room-toolbar-actions { width: auto; gap: 3px; }
+.session-workspace .room-toolbar-actions > button { min-height: 22px; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
 .session-workspace .room-sidebar { display: flex; width: clamp(190px, 14vw, 270px); max-width: 24%; flex: none; }
 .session-workspace .room-main { display: flex; min-width: 360px; }
 .session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }
 .session-workspace .session-panels { min-height: 0; }
-.session-workspace .ai-chat-header { padding: 8px 24px; gap: 8px; }
-.session-workspace .ai-chat-header h2 { font-size: 13px; font-weight: 400; }
-.session-workspace .ai-chat-header > div:first-child > div { margin-top: 3px; font-size: 11px; }
-.session-workspace .ai-composer { padding: 12px 28px 18px; }
-.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 16px; background: var(--vs-chrome); }
-.session-workspace .ai-composer textarea { font-size: 14px; min-height: 100px; }
-.session-workspace .ai-composer-footer { border-top: 0; margin-top: 16px; }
-.session-workspace .ai-composer button[aria-label="Send message"] { width: 34px; height: 34px; border-radius: 11px; }
+.session-workspace .ai-chat-header { padding: 6px 16px; gap: 6px; }
+.session-workspace .ai-chat-header h2 { font-size: 12px; font-weight: 400; }
+.session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 10px; }
+.session-workspace .ai-composer { padding: 10px 20px 14px; }
+.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 14px; background: var(--vs-chrome); }
+.session-workspace .ai-composer textarea { font-size: 12px; min-height: 80px; }
+.session-workspace .ai-composer-footer { border-top: 0; margin-top: 12px; }
+.session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 7px; }
 .session-workspace .human-message { background: #2b201d; }
 .session-workspace .assistant-message > span { display: none; }
-.session-workspace .assistant-message > div > header { margin-bottom: 10px; }
-.session-workspace .assistant-message > div > header > span:first-child { font-size: 12px; font-weight: 400; color: var(--vs-muted); }
-.session-workspace .conversation-markdown h1, .session-workspace .conversation-markdown h2 { font-weight: 700; margin-top: 28px; margin-bottom: 16px; }
-.session-workspace .conversation-markdown p { margin-bottom: 16px; }
+.session-workspace .assistant-message > div > header { margin-bottom: 8px; }
+.session-workspace .assistant-message > div > header > span:first-child { font-size: 11px; font-weight: 400; color: var(--vs-muted); }
+.session-workspace .conversation-markdown h1, .session-workspace .conversation-markdown h2 { font-weight: 700; margin-top: 24px; margin-bottom: 14px; }
+.session-workspace .conversation-markdown p { margin-bottom: 14px; }
 .session-workspace .file-actions { white-space: nowrap; }
 .session-workspace .room-editor-layout > [role="tablist"] > div { border-right: 0; border-top: 0; }
 .session-workspace .room-editor-layout > [role="tablist"] > div:has([aria-selected="true"]) { border-bottom: 2px solid var(--vs-accent); background: transparent; }
@@ -295,25 +253,34 @@ body {
   .session-workspace .room-sidebar { width: 200px !important; max-width: none; flex: 0 0 200px; }
   .session-workspace .room-explorer-panel { width: 350px !important; max-width: none; flex: 0 0 350px; }
   .session-workspace .room-main { flex: 1 0 360px; }
-  .session-workspace .ai-composer { padding: 12px; }
-  .session-workspace .conversation-transcript { padding-inline: 20px; }
+  .session-workspace .ai-composer { padding: 10px; }
+  .session-workspace .conversation-transcript { padding-inline: 16px; }
 }
 
-/* Arrow-free composer controls and their upward-opening menus. */
+/* Arrow-free composer controls and their upward-opening menus. Flat by
+   default — a background only appears on hover/open — so the footer reads
+   as quiet text-and-icon labels rather than a row of buttons. */
 .composer-control {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  min-width: 0; max-width: 220px; min-height: 36px; padding: 7px 11px;
-  border: 1px solid transparent; border-radius: 10px; background: var(--vs-hover);
-  color: var(--vs-fg); font-size: 14px; font-weight: 500; line-height: 20px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 0; max-width: 220px; min-height: 25px; padding: 3px 6px;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--vs-fg); font-size: 11.5px; font-weight: 500; line-height: 18px;
 }
-.composer-control:hover, .composer-control[aria-expanded="true"] { background: var(--vs-active); border-color: var(--vs-border); }
+.composer-control:hover, .composer-control[aria-expanded="true"] { background: var(--vs-hover); }
 .composer-control:disabled { opacity: .4; }
+.composer-control.picker-field {
+  max-width: 100%; min-height: 36px; justify-content: flex-start; gap: 8px;
+  padding: 7px 11px; border-color: var(--vs-border); border-radius: 10px;
+  background: var(--vs-editor); font-size: var(--text-sm); line-height: 20px;
+}
+.composer-control.picker-field:hover, .composer-control.picker-field[aria-expanded="true"] { background: var(--vs-active); border-color: var(--vs-muted); }
+.composer-control:focus-visible { outline: 2px solid var(--vs-accent); outline-offset: 2px; }
 .composer-toggle { color: var(--vs-muted); }
 .composer-toggle[aria-pressed="true"] { color: var(--vs-accent); background: color-mix(in srgb, var(--vs-accent) 12%, transparent); border-color: color-mix(in srgb, var(--vs-accent) 22%, transparent); }
-.room-composer-tools { gap: 6px; }
+.room-composer-tools { gap: 2px; }
 .room-composer-tools > span { display: none; }
 .composer-picker {
-  position: fixed; z-index: 100; display: flex; flex-direction: column; overflow: hidden;
+  position: fixed; inset: auto; margin: 0; z-index: 100; display: flex; flex-direction: column; overflow: hidden;
   border: 1px solid var(--vs-border); border-radius: 16px; padding: 6px;
   background: var(--vs-panel); color: var(--vs-fg);
   box-shadow: 0 18px 60px var(--vs-shadow), 0 2px 8px #0003;
@@ -323,10 +290,10 @@ body {
 .composer-picker-search { display: flex; align-items: center; gap: 10px; margin: 0 6px 8px; padding: 10px 12px; background: var(--vs-editor); border: 1px solid var(--vs-border); border-radius: 10px; color: var(--vs-muted); }
 .composer-picker-search input { min-width: 0; width: 100%; background: transparent; font-size: 16px; color: var(--vs-fg); }
 .composer-picker-options { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
-.composer-picker-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; text-align: left; font-size: 16px; line-height: 24px; }
+.composer-picker-option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; text-align: left; font-size: 16px; line-height: 26px; }
 .composer-picker-option:hover, .composer-picker-option:focus-visible { background: var(--vs-hover); }
 .composer-picker-option[aria-selected="true"] { background: var(--vs-active); }
-.composer-picker-description { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--vs-muted); font-family: var(--font-geist-mono), monospace; font-size: 12px; line-height: 18px; }
+.composer-picker-description { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--vs-muted); font-size: 12px; line-height: 20px; }
 .composer-picker-group { padding: 9px 12px 5px; font-size: 13px; color: var(--vs-muted); }
-.composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 12px; line-height: 18px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
+.composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 12px; line-height: 20px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
 @keyframes picker-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }

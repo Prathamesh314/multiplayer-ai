@@ -39,10 +39,15 @@ import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } f
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { BriefingCard } from "../collaboration/BriefingCard";
+import { CollaborationControls } from "../collaboration/CollaborationControls";
 import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
+import type { ComputerStatus } from "../ai/useComputerConnection";
 
 type AiPanelProps = {
+  computerStatus: ComputerStatus;
+  onSetUpAi: () => void;
   actionsHost?: HTMLDivElement | null;
   onShowConversation?: () => void;
   sessionId: string;
@@ -81,9 +86,10 @@ type AiPanelProps = {
    * while composing fresh.
    */
   repoOptions: { id: string; label: string }[];
+  hasFiles?: boolean;
   repoId: string | null;
   onRepoChange: (repoId: string | null) => void;
-  /** Open the folder picker to import a new repo into the room. */
+  /** Start without files or import a folder into the workspace. */
   onImportRepo: () => void;
   importingRepo: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
@@ -116,6 +122,8 @@ type Turn = {
 };
 
 export function AiPanel({
+  computerStatus,
+  onSetUpAi,
   actionsHost,
   onShowConversation,
   sessionId,
@@ -131,6 +139,7 @@ export function AiPanel({
   onForkEntered,
   onNewRun,
   repoOptions,
+  hasFiles = true,
   repoId,
   onRepoChange,
   onImportRepo,
@@ -144,7 +153,8 @@ export function AiPanel({
   const [taskRoster, setTaskRoster] = useState<{ sessionId: string; people: MentionPerson[] } | null>(null);
   const taskRequest = useRef<{ payload: string; id: string } | null>(null);
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
-  const [serverCanRun, setServerCanRun] = useState(true);
+  const [serverCanRun, setServerCanRun] = useState(false);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -193,6 +203,7 @@ export function AiPanel({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const run = useRef<RunHandle | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
@@ -239,6 +250,7 @@ export function AiPanel({
   async function loadRun(target: AgentRun) {
     const generation = ++historyGeneration.current;
     setError(null);
+    setHistoryFailed(false);
     liveTurnIdRef.current = null;
     const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
     setTurns([]);
@@ -268,7 +280,8 @@ export function AiPanel({
       );
     } catch {
       if (generation !== historyGeneration.current) return;
-      setError("Could not load that run.");
+      setHistoryFailed(true);
+      setError("We couldn’t load this chat. Check your internet connection and try again. You don’t need a connected computer to read saved messages.");
     }
   }
 
@@ -357,9 +370,11 @@ export function AiPanel({
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => { void fetchAgents().then((response) => {
-      if (cancelled) return;
+    let generation = 0;
+    const refresh = () => { const current = ++generation; void fetchAgents().then((response) => {
+      if (cancelled || current !== generation) return;
       setAgents(response.agents);
+      setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
       // Pre-select a ready agent, so the common case is one click. Codex is the
@@ -370,7 +385,13 @@ export function AiPanel({
         const codex = installed.find((a) => a.id === "codex");
         return codex?.id ?? installed[0]?.id ?? null;
       });
-    }).catch(() => {}); };
+    }).catch(() => {
+      if (!cancelled && current === generation) {
+        setServerCanRun(false);
+        setAgentsError("We couldn’t check your AI tools. Your saved chats are still available. Try again before sending a message.");
+      }
+    }); };
+    refresh();
     const stream = openUserStream(type => { if (type === "devices.changed") refresh(); }, refresh);
     window.addEventListener("focus", refresh);
     return () => {
@@ -378,7 +399,7 @@ export function AiPanel({
       stream.close();
       window.removeEventListener("focus", refresh);
     };
-  }, []);
+  }, [computerStatus]);
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -391,9 +412,10 @@ export function AiPanel({
     try {
       const response = await fetchAgents(true);
       setAgents(response.agents);
+      setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
-    } catch { setError("Could not refresh providers. Your previous choices are preserved."); }
+    } catch { setServerCanRun(false); setAgentsError("We couldn’t check your AI tools. Check your internet connection and try again."); }
     finally { setRefreshing(false); }
   }
 
@@ -643,7 +665,8 @@ export function AiPanel({
   // can run — otherwise a run would just fail with an auth error.
   const authCapable = !!active?.installed && !!activeAuth;
   const needsLogin = authCapable && !activeAuth!.loggedIn;
-  const ready = !!active?.installed && serverCanRun && canRun && !needsLogin;
+  const computerUnavailable = !["connected", "server"].includes(computerStatus);
+  const ready = !!active?.installed && serverCanRun && canRun && !needsLogin && !computerUnavailable;
   const hasConversation = turns.length > 0;
 
   const activeSpec = connected ? agentById(connected) : undefined;
@@ -673,10 +696,10 @@ export function AiPanel({
   ];
 
   // The repo the next fresh chat works on. "__import__" is the picker's action
-  // row: choosing it opens the folder picker instead of selecting anything.
+  // row: choosing it opens project creation instead of selecting anything.
   const repoChoices: AgentChoice[] = [
     ...repoOptions,
-    { id: "__import__", label: importingRepo ? "Importing…" : "Import new project…" },
+    { id: "__import__", label: importingRepo ? "Importing…" : "Add repository…" },
   ];
 
   const composerFooter =
@@ -787,22 +810,22 @@ export function AiPanel({
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
-      <header className={`ai-chat-header flex min-w-0 shrink-0 items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
+      <header className={`ai-chat-header flex min-w-0 shrink-0 flex-wrap items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-vs-muted">
+          <h2 className="truncate text-[13px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
             {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
             {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
         {entered &&
           (enteredIsMine ? (
             <button
               type="button"
               onClick={onNewRun}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <PlusIcon className="h-3 w-3" />
               New
@@ -812,21 +835,22 @@ export function AiPanel({
               type="button"
               onClick={() => onForkEntered(entered)}
               title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
             >
               <GitBranchIcon className="h-3 w-3" />
               Copy chat
             </button>
           ))}
-        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-2 py-1 text-xs text-vs-muted hover:bg-vs-hover">Providers</button>
+        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[11px] text-vs-muted hover:bg-vs-hover">Providers</button>
+        {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
-        {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+        {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
         </div>
       </header>
       {actionsHost && createPortal(<>
         <button type="button" disabled={!canRun} onClick={() => setAssignOpen(true)} className="rounded px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover disabled:opacity-40">Assign Tasks</button>
         {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
-        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Draft a review request in the conversation" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Review</button>
+        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Ask AI to draft a code review; this does not request teammate approval" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Ask AI to review</button>
       </>, actionsHost)}
       {assignOpen && <Modal title="Assign Tasks" description="Type @ and choose a teammate, then describe the task." onClose={() => setAssignOpen(false)}>
         <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
@@ -836,8 +860,8 @@ export function AiPanel({
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
-      {(!ready || showProviders) && (
-        <>
+      {(showProviders || (!entered && !ready && serverCanRun && !computerUnavailable)) && (
+        <div className="vs-scroll max-h-[35%] shrink-0 overflow-y-auto">
         {active?.installed && <p className="px-4 py-2 text-xs leading-5 text-vs-muted">{executionDetail}</p>}
         <AgentSelector
           agents={agents}
@@ -848,14 +872,17 @@ export function AiPanel({
           onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
           onRecheck={recheck}
         />
-        </>
+        </div>
       )}
 
-      {!serverCanRun && blockedReason && (
-        <Note tone="warn">Agents are detected but will not run here. {blockedReason}</Note>
+      {agentsError && (
+        <Note tone="warn">{agentsError} <button type="button" disabled={refreshing} onClick={() => void recheck()} className="ml-1 underline">{refreshing ? "Checking…" : "Try again"}</button></Note>
       )}
-      {serverCanRun && !canRun && (
-        <Note tone="warn">You have read access here, and running an agent edits files.</Note>
+      {!serverCanRun && !agentsError && !computerUnavailable && blockedReason && (
+        <Note tone="warn">Your computer is connected. Set up an AI tool on it before sending a message. <button type="button" onClick={onSetUpAi} className="ml-1 font-medium underline">Set up AI</button></Note>
+      )}
+      {!canRun && (
+        <Note tone="warn">You can read this chat. Ask a project manager for edit access to send AI requests.</Note>
       )}
 
       {active && authCapable && (needsLogin || showAccount || authBusy === active.id) && (
@@ -872,20 +899,24 @@ export function AiPanel({
         />
       )}
 
+      {entered && <BriefingCard key={`briefing-${entered.id}`} runId={entered.id} expanded={!enteredIsMine} />}
       <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
           <Conversation turns={turns} />
         ) : (
           <EmptyState
             ready={ready}
+            hasFiles={hasFiles}
+            computerUnavailable={computerUnavailable}
             agentName={active?.name ?? null}
             onExample={prompt => composer.current?.insertPrompt(prompt)}
           />
         )}
         {error && (
-          <p className="mx-3 mb-3 flex items-start gap-2 rounded-md border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-chrome leading-5 text-vs-danger">
+          <p role="alert" className="mx-3 mb-3 flex flex-wrap items-start gap-2 rounded-md border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm leading-5 text-vs-danger">
             <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
+            {historyFailed && entered && <button type="button" onClick={() => void loadRun(entered)} className="font-medium underline">Try again</button>}
           </p>
         )}
         {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
@@ -899,7 +930,7 @@ export function AiPanel({
           <button
             type="button"
             onClick={() => run.current?.cancel()}
-            className="ml-auto rounded border border-vs-border px-2 py-0.5 text-chrome transition hover:bg-vs-hover hover:text-vs-fg"
+            className="ml-auto rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Detach
           </button>
@@ -920,8 +951,9 @@ export function AiPanel({
           footer={composerFooter}
           mentions={mentionRooms}
           placeholder={
-            !ready
-              ? "Connect an agent to start a conversation…"
+            !canRun ? "You have read-only access to this chat"
+              : computerUnavailable ? "Connect your computer to send a message…"
+              : !ready ? "Set up AI to send a message…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
                 : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
@@ -960,12 +992,12 @@ function AgentSelector({
   return (
     <div className="shrink-0 border-b border-vs-border px-2 py-2">
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-micro font-semibold uppercase tracking-wider text-vs-muted">Agent</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">Agent</span>
         <button
           type="button"
           onClick={onRecheck}
           disabled={refreshing}
-          className="text-ui text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
+          className="text-[13px] text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
         >
           {refreshing ? "Checking…" : "Recheck"}
         </button>
@@ -1000,32 +1032,32 @@ function AgentSelector({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-body font-medium text-vs-fg">{agent.name}</span>
+                    <span className="truncate text-[14px] font-medium text-vs-fg">{agent.name}</span>
                     {agent.installed && <StatusDot ok={!agent.auth || agent.auth.loggedIn} />}
                   </span>
-                  <span className="block truncate text-micro text-vs-muted">
+                  <span className="block truncate text-[11px] text-vs-muted">
                     {agentSubtitle(agent)}
                   </span>
                 </span>
                 {agent.installed ? (
                   selected ? (
                     agent.auth && !agent.auth.loggedIn ? (
-                      <span className="shrink-0 text-micro font-medium uppercase tracking-wide text-vs-accent">
+                      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-vs-accent">
                         Sign in
                       </span>
                     ) : (
-                      <span className="flex shrink-0 items-center gap-1 text-micro font-medium text-vs-accent">
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-vs-accent">
                         <CheckIcon className="h-3 w-3" />
                         Connected
                       </span>
                     )
                   ) : (
-                    <span className="shrink-0 text-micro text-vs-muted opacity-0 transition group-hover:opacity-100">
+                    <span className="shrink-0 text-[11px] text-vs-muted opacity-0 transition group-hover:opacity-100">
                       Select
                     </span>
                   )
                 ) : (
-                  <span className="shrink-0 text-micro uppercase tracking-wide text-vs-accent">
+                  <span className="shrink-0 text-[11px] uppercase tracking-wide text-vs-accent">
                     {installFor === agent.id ? "Hide" : "Install"}
                   </span>
                 )}
@@ -1037,10 +1069,10 @@ function AgentSelector({
 
       {detail && !detail.installed && (
         <div className="mt-1.5 space-y-1.5 rounded-lg border border-vs-border bg-vs-editor p-2">
-          <p className="text-chrome leading-4 text-vs-fg">{detail.blurb}</p>
+          <p className="text-[12px] leading-4 text-vs-fg">{detail.blurb}</p>
           <CopyLine command={detail.install.command} />
           {detail.install.alternative && <CopyLine command={detail.install.alternative} />}
-          <p className="text-micro leading-4 text-vs-muted">
+          <p className="text-[11px] leading-4 text-vs-muted">
             Run it in a terminal, then press Recheck.{" "}
             <a
               href={detail.install.docs}
@@ -1117,14 +1149,14 @@ function ConnectionCard({
   return (
     <div className="shrink-0 space-y-2 border-b border-vs-border bg-vs-editor px-3 py-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-micro font-semibold uppercase tracking-wider text-vs-muted">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
           {agentName} account
         </span>
         {loggedIn && !busy && (
           <button
             type="button"
             onClick={onDismiss}
-            className="text-ui text-vs-muted transition hover:text-vs-fg"
+            className="text-[13px] text-vs-muted transition hover:text-vs-fg"
           >
             Hide
           </button>
@@ -1133,7 +1165,7 @@ function ConnectionCard({
 
       {busy ? (
         <div className="space-y-2">
-          <p className="flex items-center gap-2 text-chrome text-vs-fg">
+          <p className="flex items-center gap-2 text-[12px] text-vs-fg">
             <SpinnerIcon className="h-3.5 w-3.5 text-vs-accent" />
             Signing in… complete it in the browser window that opened.
           </p>
@@ -1142,20 +1174,20 @@ function ConnectionCard({
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="block truncate text-chrome text-vs-accent underline-offset-2 hover:underline"
+              className="block truncate text-[12px] text-vs-accent underline-offset-2 hover:underline"
             >
               Open the sign-in page ↗
             </a>
           )}
           {log.trim() && (
-            <pre className="vs-scroll max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-vs-border bg-vs-panel p-2 font-mono text-micro leading-4 text-vs-muted">
+            <pre className="vs-scroll max-h-24 overflow-auto whitespace-pre-wrap break-words rounded border border-vs-border bg-vs-panel p-2 font-mono text-[11px] leading-4 text-vs-muted">
               {log.trim()}
             </pre>
           )}
           <button
             type="button"
             onClick={onCancel}
-            className="rounded border border-vs-border px-2 py-0.5 text-chrome text-vs-fg transition hover:bg-vs-hover"
+            className="rounded border border-vs-border px-2 py-0.5 text-[12px] text-vs-fg transition hover:bg-vs-hover"
           >
             Cancel
           </button>
@@ -1163,10 +1195,10 @@ function ConnectionCard({
       ) : loggedIn ? (
         <div className="flex items-center gap-2">
           <StatusDot ok />
-          <span className="min-w-0 flex-1 text-chrome leading-4 text-vs-fg">
+          <span className="min-w-0 flex-1 text-[12px] leading-4 text-vs-fg">
             Signed in as <span className="font-medium">{auth?.email ?? "your account"}</span>
             {auth?.plan && (
-              <span className="ml-1.5 rounded bg-vs-accent/15 px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-vs-accent">
+              <span className="ml-1.5 rounded bg-vs-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-vs-accent">
                 {planLabel(auth.plan)}
               </span>
             )}
@@ -1174,21 +1206,21 @@ function ConnectionCard({
           <button
             type="button"
             onClick={onSignOut}
-            className="shrink-0 rounded border border-vs-border px-2 py-0.5 text-chrome text-vs-fg transition hover:bg-vs-hover"
+            className="shrink-0 rounded border border-vs-border px-2 py-0.5 text-[12px] text-vs-fg transition hover:bg-vs-hover"
           >
             Sign out
           </button>
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-chrome leading-4 text-vs-muted">
+          <p className="text-[12px] leading-4 text-vs-muted">
             Sign in with your {agentName} subscription to run agents on your existing plan — no API
             key, no per-token billing. Sign-in opens in your browser; the token stays with the CLI.
           </p>
           <button
             type="button"
             onClick={onSignIn}
-            className="flex items-center gap-1.5 rounded-md bg-vs-accent px-2.5 py-1.5 text-chrome font-medium text-vs-accent-fg transition hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-md bg-vs-accent px-2.5 py-1.5 text-[12px] font-medium text-vs-accent-fg transition hover:opacity-90"
           >
             <SparkleIcon className="h-3.5 w-3.5" />
             Sign in with {agentName}
@@ -1197,7 +1229,7 @@ function ConnectionCard({
       )}
 
       {error && (
-        <p className="flex items-start gap-1.5 text-chrome leading-4 text-vs-danger">
+        <p className="flex items-start gap-1.5 text-[12px] leading-4 text-vs-danger">
           <AlertIcon className="mt-0.5 h-3 w-3 shrink-0" />
           {error}
         </p>
@@ -1288,8 +1320,8 @@ function TurnBubble({ turn }: { turn: Turn }) {
     const author = turn.author ?? "You";
     return (
       <div className="flex flex-col items-end gap-1">
-        {author !== "You" && <span className="pr-1 text-chrome text-vs-muted">{author}</span>}
-        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-body leading-[1.6] text-vs-fg">
+        {author !== "You" && <span className="pr-1 text-[12px] text-vs-muted">{author}</span>}
+        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-[14px] leading-[1.6] text-vs-fg">
           {turn.text}
         </div>
       </div>
@@ -1306,7 +1338,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
       </span>
       <div className="min-w-0 flex-1">
         <header className="mb-1 flex items-center gap-2">
-          <span className="truncate text-body font-semibold text-vs-fg">
+          <span className="truncate text-[14px] font-semibold text-vs-fg">
             {turn.agentName ?? "Agent"}
           </span>
           {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
@@ -1322,7 +1354,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
           />
         )}
         {turn.streaming && !hasReply ? (
-          hasTrace ? null : <p className="text-lead leading-6 text-vs-muted">Thinking…</p>
+          hasTrace ? null : <p className="text-[15px] leading-6 text-vs-muted">Thinking…</p>
         ) : (
           <Markdown text={turn.text} />
         )}
@@ -1332,11 +1364,11 @@ function TurnBubble({ turn }: { turn: Turn }) {
             className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60"
           >
             <summary
-              className={`cursor-pointer px-3 py-1.5 text-chrome ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
+              className={`cursor-pointer px-3 py-1.5 text-[12px] ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
             >
               {turn.failed ? "Run failed — agent log" : "Agent log"}
             </summary>
-            <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-micro leading-4 text-vs-muted">
+            <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-4 text-vs-muted">
               {turn.errText.trim()}
             </pre>
           </details>
@@ -1356,7 +1388,7 @@ function LiveTimer({ startedAt, running }: { startedAt: number; running: boolean
   }, [running]);
   const secs = Math.max(0, Math.round((now - startedAt) / 1000));
   return (
-    <span className="shrink-0 tabular-nums text-micro text-vs-muted" title="Elapsed">
+    <span className="shrink-0 tabular-nums text-[11px] text-vs-muted" title="Elapsed">
       {secs}s
     </span>
   );
@@ -1390,7 +1422,7 @@ function ActivityTrace({
       <button
         type="button"
         onClick={() => setUserOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-ui text-vs-muted transition hover:text-vs-fg"
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-[13px] text-vs-muted transition hover:text-vs-fg"
       >
         {live ? (
           <SpinnerIcon className="h-3 w-3 text-vs-accent" />
@@ -1404,7 +1436,7 @@ function ActivityTrace({
       {open && (
         <div className="space-y-1.5 border-t border-vs-border px-2 py-1.5">
           {trace && (
-            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-chrome italic leading-5 text-vs-muted">
+            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[12px] italic leading-5 text-vs-muted">
               {trace}
             </p>
           )}
@@ -1434,13 +1466,13 @@ function SystemLine({ text }: { text: string }) {
     return (
       <div className="flex items-center gap-2 px-1">
         <span className="h-px flex-1 bg-vs-border" />
-        <span className="shrink-0 text-micro text-vs-muted">{text}</span>
+        <span className="shrink-0 text-[11px] text-vs-muted">{text}</span>
         <span className="h-px flex-1 bg-vs-border" />
       </div>
     );
   }
   return (
-    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md bg-vs-hover/50 px-3 py-2 font-mono text-chrome leading-5 text-vs-muted">
+    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md bg-vs-hover/50 px-3 py-2 font-mono text-[12px] leading-5 text-vs-muted">
       {text}
     </p>
   );
@@ -1458,41 +1490,51 @@ const EXAMPLES = [
 
 function EmptyState({
   ready,
+  hasFiles,
+  computerUnavailable,
   agentName,
   onExample,
 }: {
   ready: boolean;
+  hasFiles: boolean;
+  computerUnavailable: boolean;
   agentName: string | null;
   onExample: (prompt: string) => void;
 }) {
+  const examples = hasFiles ? EXAMPLES.map((prompt, index) => ({ prompt, label: ["Understand this project", "Review potential bugs", "Plan an improvement"][index] })) : [
+    { label: "Brainstorm an idea", prompt: "Help me brainstorm an idea. Ask me what I have in mind first." },
+    { label: "Learn something new", prompt: "Help me understand a topic. Ask me what I would like to learn about." },
+    { label: "Help me write", prompt: "Help me write something. Ask me what I am writing and who it is for." },
+  ];
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-vs-accent/10 text-vs-accent">
-        <SparkleIcon className="h-6 w-6" />
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-vs-accent/10 text-vs-accent">
+        <SparkleIcon className="h-[18px] w-[18px]" />
       </span>
       <div>
-        <p className="text-base font-medium text-vs-fg">
-          {ready ? "What would you like to build?" : "Choose an AI to get started"}
+        <p className="text-sm font-medium text-vs-fg">
+          {ready ? hasFiles ? "What would you like to build?" : "What would you like to talk about?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
         </p>
-        <p className="mt-2 max-w-sm text-sm leading-6 text-vs-muted">
+        <p className="mt-1.5 max-w-sm text-xs leading-5 text-vs-muted">
           {ready
-            ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.`
-            : "Choose a provider above, or open Room guide for setup help. You can browse the files without connecting AI."}
+            ? hasFiles ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed. You can also ask AI to build something from scratch.`
+            : computerUnavailable ? "Use the computer connection button above to get started. You can open your saved conversations and browse files while your computer is offline."
+            : "Set up an AI tool on your computer, then choose it in the message box. Your saved conversations and files are available now."}
         </p>
       </div>
       {ready && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
-          {EXAMPLES.map((example) => (
+        <div className="flex w-full max-w-sm flex-col gap-1.5">
+          {examples.map((example) => (
             <button
-              key={example}
+              key={example.label}
               type="button"
-              onClick={() => onExample(example)}
-              className="rounded-lg border border-vs-border px-3 py-2 text-left text-sm text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
+              onClick={() => onExample(example.prompt)}
+              className="rounded-lg border border-vs-border px-2.5 py-1.5 text-left text-xs text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
             >
-              {example === EXAMPLES[0] ? "Understand this project" : example === EXAMPLES[1] ? "Review potential bugs" : "Plan an improvement"}
+              {example.label}
             </button>
           ))}
-          <p className="mt-1 text-xs leading-5 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
+          <p className="mt-1 text-[11px] leading-4 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
         </div>
       )}
     </div>
@@ -1521,14 +1563,14 @@ function WatchingCluster({ members }: { members: SessionMember[] }) {
             <span
               key={member.userId}
               title={member.displayName}
-              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-micro font-semibold ring-2 ring-vs-panel ${color.chip}`}
+              className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ring-2 ring-vs-panel ${color.chip}`}
             >
               {initialsOf(member.displayName)}
             </span>
           );
         })}
       </span>
-      {extra > 0 && <span className="text-micro text-vs-muted">+{extra}</span>}
+      {extra > 0 && <span className="text-[11px] text-vs-muted">+{extra}</span>}
     </span>
   );
 }
@@ -1586,13 +1628,13 @@ function CopyLine({ command }: { command: string }) {
       type="button"
       onClick={copy}
       title="Copy"
-      className="flex w-full items-center gap-1.5 rounded border border-vs-border bg-vs-panel px-2 py-1 text-left font-mono text-micro text-vs-fg transition hover:bg-vs-hover"
+      className="flex w-full items-center gap-1.5 rounded border border-vs-border bg-vs-panel px-2 py-1 text-left font-mono text-[11px] text-vs-fg transition hover:bg-vs-hover"
     >
       <span className="min-w-0 flex-1 truncate">{command}</span>
       {copied ? (
         <CheckIcon className="h-3 w-3 shrink-0 text-vs-success" />
       ) : (
-        <span className="shrink-0 text-micro uppercase text-vs-muted">copy</span>
+        <span className="shrink-0 text-[10px] uppercase text-vs-muted">copy</span>
       )}
     </button>
   );
@@ -1609,7 +1651,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 function Note({ children, tone }: { children: React.ReactNode; tone: "warn" }) {
   return (
     <p
-      className={`flex items-start gap-2 border-b border-vs-border px-3 py-2 text-chrome leading-5 text-vs-fg ${
+      className={`flex items-start gap-2 border-b border-vs-border px-3 py-2 text-[12px] leading-5 text-vs-fg ${
         tone === "warn" ? "bg-vs-warn/10" : ""
       }`}
     >

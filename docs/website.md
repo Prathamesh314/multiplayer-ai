@@ -12,26 +12,26 @@ and FAQs, including without JavaScript.
 
 ## Downloads
 
-At the product owner's request, downloads initially use **fake placeholder URLs**:
+The homepage reads configured HTTPS installer URLs from the server-side build
+variables `DESKTOP_DOWNLOAD_MAC_URL` (Apple Silicon),
+`DESKTOP_DOWNLOAD_MAC_INTEL_URL`, `DESKTOP_DOWNLOAD_WINDOWS_URL`, and
+`DESKTOP_DOWNLOAD_LINUX_URL`. Missing or invalid values show **Coming soon**;
+there are no placeholder download links. `DESKTOP_DOWNLOAD_CHECKSUMS_URL` links
+to the published checksum file when available. Rebuild after changing them.
 
-- `https://example.com/downloads/Multiplayer-AI.dmg`
-- `https://example.com/downloads/Multiplayer-AI-Setup.exe`
-- `https://example.com/downloads/Multiplayer-AI.AppImage`
+`DESKTOP_DOWNLOAD_CHANNEL=release` identifies release installers; otherwise the
+page displays the preview signing notice. The desktop client connects to an
+existing HTTPS workspace and includes its runner. Git and an installed,
+configured AI CLI remain prerequisites. See [desktop-release.md](desktop-release.md)
+for packaging and release operations.
 
-These do not serve installers. The site labels each as a demo link and explains
-that installers have not been published. Replace them with approved public
-releases using these server-side build environment variables:
+## Public documentation
 
-- `DESKTOP_DOWNLOAD_MAC_URL`
-- `DESKTOP_DOWNLOAD_WINDOWS_URL`
-- `DESKTOP_DOWNLOAD_LINUX_URL`
-
-Only HTTPS URLs without embedded credentials are accepted. An empty or invalid
-value uses the labeled placeholder. Rebuild/redeploy after updating the variables;
-the landing page is statically rendered. A configured platform drops its demo
-label independently of the other platforms. Use a download selection page if a
-platform has multiple CPU architectures. Release requirements remain in
-[desktop-release.md](desktop-release.md).
+The homepage header, mobile menu, footer, and Docs section link to `/docs`.
+The public handbook includes prerequisites, platform installation, AI setup,
+workspace features, collaboration, and troubleshooting. See
+[user-documentation.md](user-documentation.md) for its content map, image
+provenance, and maintenance commands.
 
 ## Actual product screenshots
 

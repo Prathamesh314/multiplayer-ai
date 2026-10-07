@@ -39,20 +39,22 @@ import type { Buffer } from "./EditorArea";
 import { EditorArea } from "./EditorArea";
 import { ExplorerPanel } from "./ExplorerPanel";
 import { InviteDialog } from "./InviteDialog";
+import { ShareChatDialog } from "./ShareChatDialog";
 import { Resizer } from "./Resizer";
 import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
 import { TerminalPanel } from "./TerminalPanel";
-import { Modal } from "../ui/Modal";
-import { ProjectRepositoryPicker } from "./ProjectRepositoryPicker";
+import { AddRepositoryDialog } from "./AddRepositoryDialog";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
 import { RoomGuide, type RoomGuideAction } from "./RoomGuide";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
+import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
+import { useComputerConnection } from "../ai/useComputerConnection";
 import { MemoryDialog } from "./MemoryDialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -72,6 +74,9 @@ export function Workspace({
   onAccessLost?: (reason?: string) => void;
 }) {
   const router = useRouter();
+  const computerConnection = useComputerConnection();
+  const navigatingRef = useRef(false);
+  const [navigationPending, setNavigationPending] = useState(false);
 
   // The room's session held in state, not read straight from the prop, so a live
   // role change can refresh it in place — `readOnly` and every capability gate
@@ -88,7 +93,8 @@ export function Workspace({
   const inputRef = useRef<HTMLInputElement>(null);
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
-  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [addRepositoryOpen, setAddRepositoryOpen] = useState(false);
+  const [startEmptyProject, setStartEmptyProject] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
 
@@ -186,6 +192,10 @@ export function Workspace({
   const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
   const [importProgress, setImportProgress] = useState<SeedProgress | null>(null);
   const [importingRepo, setImportingRepo] = useState(false);
+  function openAddRepository(empty = false) {
+    setStartEmptyProject(empty);
+    setAddRepositoryOpen(true);
+  }
   const importInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +320,27 @@ export function Workspace({
       chatRepoId),
     [session.id, chatRepoId, savedFile],
   );
+
+  async function navigatePage(destination: "back" | "forward" | "projects") {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    setNavigationPending(true);
+    try {
+      const saved = await saver.flush();
+      if (!saved || [...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) {
+        setError("Your edits are not saved yet. Resolve them before leaving.");
+        return;
+      }
+      if (destination === "projects") router.push("/workspace");
+      else if (destination === "back") router.back();
+      else router.forward();
+    } catch {
+      setError("Could not leave this page. Your edits are still here. Please try again.");
+    } finally {
+      navigatingRef.current = false;
+      setNavigationPending(false);
+    }
+  }
 
   const selectRepository = useCallback(async (next: string | null): Promise<boolean> => {
     if (next === selectedRepoRef.current) return true;
@@ -846,7 +877,7 @@ export function Workspace({
     if (action === "providers" || action === "devices") setHelpDialog(action);
     else if (action === "invite") setInviteOpen(true);
     else if (action === "files") {
-      if (!readOnly) void openImportPicker();
+      if (!hasRepo && !readOnly) openAddRepository();
       else setMobilePane("files");
     } else if (action === "team") {
       setShowTeam(true);
@@ -875,8 +906,11 @@ export function Workspace({
         onOpenMemory={() => setMemoryOpen(true)}
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
+        inviteLabel={enteredRun ? "Share chat" : "Invite"}
         onInvite={() => setInviteOpen(true)}
-        onLeave={() => { void saver.flush().then(saved => { if (saved && ![...buffersRef.current.values()].some(buffer => buffer.text !== buffer.original)) router.push("/workspace"); else setError("Your edits are not saved yet. Resolve them before leaving."); }); }}
+        onLeave={() => { void navigatePage("projects"); }}
+        onNavigate={direction => { void navigatePage(direction); }}
+        navigationPending={navigationPending}
         folderName={result?.rootName ?? null}
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
@@ -895,23 +929,24 @@ export function Workspace({
           setRoomRepos(repos); setTreeRevision(value => value + 1);
         }}
       />
+      <ComputerConnectionNotice compact connection={computerConnection} onConnect={() => setHelpDialog("devices")} onSetUpAi={() => setHelpDialog("providers")} />
       {helpDialog === "guide" && <RoomGuide hasRepo={hasRepo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
       {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
-      {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} />}
+      {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} onSetUpAi={() => setHelpDialog("providers")} />}
       {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
         void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
       }} />}
-      {addProjectOpen && <Modal title="Add Project" description="Import a local folder or add a shared project repository." onClose={() => setAddProjectOpen(false)}>
-        <button type="button" disabled={importingRepo} onClick={() => { setAddProjectOpen(false); void openImportPicker(); }} className="rounded-md border border-vs-border px-3 py-2 text-sm hover:bg-vs-hover">Import folder</button>
-        {session.projectId && !readOnly && <ProjectRepositoryPicker sessionId={session.id}
-          selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
-          onAttached={async imported => {
-            setRoomRepos(previous => [...previous.filter(item => item.id !== imported.id), imported]);
-            if (!await selectRepository(imported.id)) throw new Error("Repository added. Save your edits before switching to it.");
-            setEnteredRun(null); setMobilePane("files"); setAddProjectOpen(false);
-          }} />}
-
-      </Modal>}
+      {addRepositoryOpen && !readOnly && <AddRepositoryDialog sessionId={session.id}
+        sharedProject={!!session.projectId} startEmpty={startEmptyProject}
+        selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
+        onClose={() => setAddRepositoryOpen(false)}
+        onImport={() => { setAddRepositoryOpen(false); void openImportPicker(); }}
+        onAdded={async (added, empty) => {
+          setRoomRepos(previous => [...previous.filter(item => item.id !== added.id), added]);
+          if (!await selectRepository(added.id)) throw new Error("Repository added. Close this dialog and save your edits before opening it from the sidebar.");
+          setEnteredRun(null); setForkFromRunId(null); setShowChat(true);
+          setMobilePane(empty ? "chat" : "files"); setAddRepositoryOpen(false);
+        }} />}
       {error && hasRepo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
       {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
         <span className="min-w-0 flex-1 truncate"><strong>{offer.sender}</strong> offered you a handoff · {offer.title ?? "AI chat"}</span>
@@ -921,6 +956,7 @@ export function Workspace({
       <input
         ref={inputRef}
         type="file"
+        aria-label="Upload initial folder"
         multiple
         webkitdirectory=""
         directory=""
@@ -931,6 +967,7 @@ export function Workspace({
       <input
         ref={importInputRef}
         type="file"
+        aria-label="Import repository folder"
         multiple
         webkitdirectory=""
         directory=""
@@ -945,7 +982,7 @@ export function Workspace({
       />
 
       <div className="session-panels vs-scroll flex min-h-0 flex-1 overflow-x-auto">
-            {/* Projects and their associated AI chats. */}
+            {/* Repositories and their associated AI chats. */}
             <div
               style={{ width: teamChatWidth }}
               className={`room-sidebar min-h-0 shrink-0 flex-col border-r border-vs-border ${mobilePane === "team" ? "flex" : "hidden"} ${showTeam ? "lg:flex" : "lg:hidden"}`}
@@ -961,7 +998,7 @@ export function Workspace({
                 enteredRunId={enteredRun?.id ?? null}
                 onEnter={target => void enterRun(target)}
                 onNewRun={next => { void selectRepository(next).then(selected => { if (selected) startNewRun(); }); }}
-                onAddProject={() => session.projectId ? setAddProjectOpen(true) : void openImportPicker()}
+                onAddRepository={() => openAddRepository()}
                 importing={importingRepo}
                 canAdd={!readOnly}
                 onFork={startFork}
@@ -971,7 +1008,7 @@ export function Workspace({
             {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}
 
         {!hasRepo ? (
-          // Before a repo exists: the folder upload / open flow fills the room.
+          // Start without files or import a repository before opening the workspace.
           <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
             <WelcomeView
               readOnly={readOnly}
@@ -985,6 +1022,7 @@ export function Workspace({
               hasRepo={hasRepo}
               onOpenPicker={openPicker}
               onOpenInput={() => inputRef.current?.click()}
+              onStartEmpty={() => openAddRepository(true)}
             />
           </div>
         ) : (
@@ -1011,6 +1049,8 @@ export function Workspace({
                   icon: <SparkleIcon className="h-3.5 w-3.5" />,
                   node: (
                       <AiPanel
+                        computerStatus={computerConnection.status}
+                        onSetUpAi={() => setHelpDialog("providers")}
                         actionsHost={actionsHost}
                         onShowConversation={() => setShowChat(true)}
                         sessionId={session.id}
@@ -1026,9 +1066,10 @@ export function Workspace({
                         onForkEntered={startFork}
                         onNewRun={startNewRun}
                         repoOptions={repoOptions}
+                        hasFiles={result ? result.stats.files > 0 : undefined}
                         repoId={chatRepoId}
                         onRepoChange={next => void selectRepository(next)}
-                        onImportRepo={() => void openImportPicker()}
+                        onImportRepo={() => openAddRepository()}
                         importingRepo={importingRepo}
                       />
                   ),
@@ -1039,7 +1080,7 @@ export function Workspace({
                   <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                     <div className="max-w-xs space-y-3">
                       <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
-                      <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                      <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your repository files"}</p>
                       <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
                       {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
                     </div>
@@ -1079,7 +1120,7 @@ export function Workspace({
                     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                       <div className="max-w-xs space-y-3">
                         <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
-                        <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                        <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your repository files"}</p>
                         <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
                         {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
                       </div>
@@ -1091,14 +1132,14 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} min={140} max={600} />
                   <div style={{ height: terminalHeight, maxHeight: "60%" }} className="flex min-h-0 shrink-0">
-                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-micro text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
+                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[11px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
                   </div>
                 </>
               ) : (
                 <button
                   type="button"
                   onClick={() => setTerminalOpen(true)}
-                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-chrome text-vs-muted transition hover:text-vs-fg"
+                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
                 >
                   <TerminalIcon className="h-3.5 w-3.5" />
                   Terminal
@@ -1123,7 +1164,9 @@ export function Workspace({
         }}
       />
 
-      {inviteOpen && <InviteDialog session={session} onClose={() => setInviteOpen(false)} />}
+      {inviteOpen && (enteredRun
+        ? <ShareChatDialog key={enteredRun.id} run={enteredRun} onClose={() => setInviteOpen(false)} />
+        : <InviteDialog session={session} onClose={() => setInviteOpen(false)} />)}
     </div>
   );
 }

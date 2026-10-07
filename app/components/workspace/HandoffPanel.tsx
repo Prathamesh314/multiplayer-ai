@@ -1,10 +1,12 @@
 "use client";
+import { ComposerPicker } from "./ComposerPicker";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
 import type { HandoffAction, HandoffState } from "../../lib/ai/handoff";
 import { openSessionStream } from "../../lib/events/client";
 import { Modal } from "../ui/Modal";
+import { BriefingCard } from "../collaboration/BriefingCard";
 
 type State = HandoffState & { run: AgentRun };
 const button = "rounded-lg border border-vs-border px-3 py-1.5 text-xs font-medium transition hover:bg-vs-hover disabled:cursor-not-allowed disabled:opacity-50";
@@ -109,15 +111,16 @@ export function HandoffPanel({ run, userId, canEdit, isOwner, onUpdated, childre
       {!compact && pendingControls}
       {error && <p role="alert" className="mt-2 text-vs-danger">{error}</p>}
       {open && <Modal title="Hand off this chat" description="Transfer control between turns. Accepting never starts an agent or spends compute." onClose={() => { if (!busy) setOpen(false); }}>
+        <BriefingCard runId={run.id} expanded onUseForHandoff={mine && canEdit && !pending ? setNote : undefined} />
         {current.controlVersion > 0 && mine && <p className="text-sm text-vs-muted">You have control of this chat. Review the conversation and any uploaded checkpoint before sending your next prompt.</p>}
         {mine && canEdit && !pending && <form className="space-y-4" onSubmit={event => { event.preventDefault(); void act({ action: "offer", toUserId: recipient || null, note, version }); }}>
           <label className="block text-sm">Recipient
-            <select aria-label="Handoff recipient" className="mt-1 w-full rounded-lg border border-vs-border bg-vs-editor p-2" value={recipient} onChange={event => setRecipient(event.target.value)} disabled={!state || busy}>
-              <option value="">Any room editor</option>
-              {state?.recipients.filter(person => person.id !== userId).map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
-            </select>
+            <ComposerPicker label="Handoff recipient" variant="field" className="mt-1 w-full" value={recipient} onChange={setRecipient} disabled={!state || busy} searchable searchLabel="Search room editors" options={[
+              { id: "", label: "Any room editor" },
+              ...(state?.recipients.filter(person => person.id !== userId).map(person => ({ id: person.id, label: person.name })) ?? []),
+            ]} />
           </label>
-          <label className="block text-sm">Where should they pick up?
+          <label className="block text-sm">Additional handoff note (optional)
             <textarea className="mt-1 min-h-28 w-full rounded-lg border border-vs-border bg-vs-editor p-2" value={note} maxLength={1000} onChange={event => setNote(event.target.value)} placeholder="What is done, what remains, and anything to watch out for…" />
           </label>
           <p className="text-xs text-vs-muted">The offer expires in one hour. Access is not granted by a handoff. Only confirmed repository state is transferred.</p>

@@ -27,94 +27,7 @@ async function eventually(task, label) {
   throw new Error(`Timed out: ${label}`);
 }
 
-function installFixtures() {
-  const members = [
-    { userId: "alex", handle: "alex", displayName: "Alex Chen", avatarUrl: null, role: "owner" },
-    { userId: "priya", handle: "priya", displayName: "Priya Shah", avatarUrl: null, role: "member" },
-    { userId: "sam", handle: "sam", displayName: "Sam Rivera", avatarUrl: null, role: "member" },
-    { userId: "jordan", handle: "jordan", displayName: "Jordan Lee", avatarUrl: null, role: "member" },
-    { userId: "maya", handle: "maya", displayName: "Maya Patel", avatarUrl: null, role: "member" },
-  ];
-  const org = { id: "northstar", slug: "northstar", name: "Northstar Studio", image: "", myRole: "owner", createdAt: 0 };
-  const channels = ["general", "product-design", "engineering", "shipping", "ideas-and-feedback"].map((name, index) => ({ id: name, name, kind: "channel", visibility: "public", unread: index === 2 ? 3 : 0, lastMessageAt: null, lastPreview: null, otherUserId: null }));
-  const dms = members.slice(1, 4).map(member => ({ id: `dm-${member.userId}`, name: member.displayName, kind: "dm", visibility: "private", unread: 0, lastMessageAt: null, lastPreview: null, otherUserId: member.userId }));
-  const message = (id, userId, body, at) => {
-    const user = members.find(member => member.userId === userId);
-    return { id, userId, userName: user.displayName, handle: user.handle, body, createdAt: new Date(at).getTime() };
-  };
-  const messages = [
-    message("m1", "priya", "The new checkout flow is ready for a look. I’ve kept the empty-cart state simple and added a clearer order summary.", "2026-09-28T10:30:00"),
-    message("m2", "priya", "You can find the changes in my project room whenever you have a minute.", "2026-09-28T10:31:00"),
-    message("m3", "sam", "Just went through it. The spacing feels much better — especially on the smaller screen.", "2026-09-28T10:38:00"),
-    message("m4", "alex", "Let’s use this channel to keep the design and engineering decisions together. Small updates are welcome, too.", "2026-09-29T09:10:00"),
-    message("m5", "jordan", "One thought: can we keep the quantity validation close to the input? It will make the error easier to fix.", "2026-09-29T09:16:00"),
-    message("m6", "priya", "@alex the validation changes are in. I’ve also left the full context in the AI chat so you can pick up the review.", "2026-09-29T09:22:00"),
-    message("m7", "maya", "Nice. I’ll check the keyboard flow and focus states this afternoon.", "2026-09-29T09:25:00"),
-    message("m8", "alex", "Sounds good. Let’s review the changes together before we publish. Thanks, everyone!", "2026-09-29T09:28:00"),
-  ];
-  window.__chatFixture = { failNext: false, sent: [], unknown: [], messages, streams: [], sendDelay: 0 };
-  const integration = {id:'slack-connection',provider:'slack',name:'Northstar Slack',channels:[{id:'engineering',name:'engineering',url:'https://app.slack.com/client/T1/C1',verifiedAt:new Date().toISOString(),syncedAt:new Date().toISOString(),messageCount:15,error:null}]};
-  let connected=true;
-  class FixtureEventSource extends EventTarget {
-    constructor(url) {
-      super(); this.url = url;
-      window.__chatFixture.streams.push(this);
-      setTimeout(() => { this.onopen?.(new Event("open")); this.dispatchEvent(new MessageEvent("ready", {data: "{}"})); }, 30);
-    }
-    close() { window.__chatFixture.streams = window.__chatFixture.streams.filter(item => item !== this); }
-  }
-  window.EventSource = FixtureEventSource;
-  const nativeFetch = window.fetch.bind(window);
-  window.fetch = async (input, init = {}) => {
-    const url = new URL(typeof input === "string" ? input : input.url, location.origin);
-    if (!url.pathname.startsWith("/api/")) return nativeFetch(input, init);
-    const path = url.pathname;
-    const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: {"content-type":"application/json"} }));
-    if (path === "/api/orgs") return json({ orgs: [org, {...org, id:"labs", slug:"labs", name:"Side Projects", myRole:"member"}] });
-    if (path === "/api/auth/me") return json({user:{id:"alex",handle:"alex",displayName:"Alex Chen",email:"alex@example.test",avatarUrl:null},connectCode:null});
-    if (path === "/api/invitations/accept") return json({error:"This invitation has expired. Ask your administrator for a new invitation."},410);
-    if (path === "/api/sessions/locked-room") return json({error:"This room is private. Enter your access code to join."},403);
-    if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }
-    if (path === "/api/invitations") return json({invitations:[]});
-    if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
-    if (path.endsWith("/projects")) return json({projects:[{id:"checkout",orgId:org.id,slug:"checkout",name:"Northstar Checkout",source:"local",githubRepo:null,defaultBranch:"main",upstreamUrl:null,myRole:"manager",createdAt:0,archivedAt:null}]});
-    if (path.endsWith("/rooms")) return json({sessions:[{id:"alex-room",name:"Checkout · Alex",ownerId:"alex",visibility:"public"},{id:"priya-room",name:"Checkout · Priya",ownerId:"priya",visibility:"public"}]});
-    if (path === "/api/tasks") return json({tasks:[],members:[],hasMore:false});
-    if (path.endsWith('/integrations')) return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:connected?[integration]:[]});
-    if (path.endsWith('/integrations/slack')) {
-      if(init.method==='DELETE'){connected=false;return json({ok:true});}
-      if(init.method==='PUT'){
-        if(window.__chatFixture.failNext){window.__chatFixture.failNext=false;return json({error:'Could not save channels. Try again.'},503);}
-        const {channelIds,shareWithProject}=JSON.parse(init.body);
-        if(!shareWithProject)return json({error:'Sharing confirmation is required.'},400);
-        integration.channels=channelIds.map(id=>({id,name:id,url:'https://app.slack.com/client/T1/'+id,verifiedAt:null,syncedAt:null,messageCount:0,error:null}));return json({ok:true});
-      }
-      return json({channels:['engineering','product-design'].map(id=>({id,name:id,url:'https://app.slack.com/client/T1/'+id}))});
-    }
-    if (path === "/api/chat/conversations") return json({conversations:[...channels,...dms]});
-    if (path.endsWith("/read")) return json({ok:true});
-    if (path.endsWith("/messages")) {
-      const conversationId = path.split("/")[4];
-      if (init.method === "POST") {
-        if (window.__chatFixture.failNext) {window.__chatFixture.failNext = false; return json({error:"Could not send. Try again."},503);}
-        if (window.__chatFixture.sendDelay) await new Promise(resolve=>setTimeout(resolve,window.__chatFixture.sendDelay));
-        const body = JSON.parse(init.body).body;
-        const saved = message(`sent-${window.__chatFixture.sent.length}`,"alex",body,new Date().toISOString());
-        window.__chatFixture.sent.push(saved);messages.push(saved);
-        for (const stream of window.__chatFixture.streams) stream.dispatchEvent(new MessageEvent("chat.message", {data:JSON.stringify({type:"chat.message",conversationId,message:saved})}));
-        return json(saved,201);
-      }
-      if (url.searchParams.has("before")) return json({messages:[message("earlier","sam","Earlier context: keep the first release focused on the checkout experience.","2026-09-27T09:00:00")],hasMore:false});
-      return json({messages:conversationId.startsWith("dm-") ? [] : messages,hasMore:!conversationId.startsWith("dm-")});
-    }
-    if (path.startsWith("/api/chat/conversations/")) {
-      const item=[...channels,...dms].find(item=>item.id===path.split("/")[4]);
-      return json({conversation:{...item,orgId:org.id,topic:item.kind==="channel" ? "A shared space for thoughtful product decisions." : null,members:item.kind==="dm" ? members.filter(member=>member.userId==="alex" || member.userId===item.otherUserId) : members,myRole:"owner"}});
-    }
-    window.__chatFixture.unknown.push(path);
-    return json({error:`Unmocked fixture: ${path}`},404);
-  };
-}
+import { installFixtures } from "./helpers/team-browser-fixture.mjs";
 
 let socket;
 try {
@@ -136,14 +49,25 @@ try {
   const type=async(selector,value)=>{await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(80);};
   await send("Page.enable");await send("Runtime.enable");
   await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
-  const screenshot=async name=>writeFile(join(tmpdir(), `multiplayer-ui-${name}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  const screenshot=async name=>{
+    await evaluate('Promise.all(Array.from(document.querySelectorAll(".composer-picker")).flatMap(el=>el.getAnimations()).map(animation=>animation.finished.catch(()=>{})))');
+    await writeFile(join(tmpdir(), `multiplayer-ui-${name}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  };
   const viewport=async(width,height=900)=>{await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});await delay(200);};
   const fits=async label=>assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"),label);
   const escape=async()=>{await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});};
+  const mouseClick=async selector=>{
+    await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest'})`);
+    let point;
+    await eventually(async()=>{point=await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)}),r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;return el.contains(document.elementFromPoint(x,y))?{x,y}:null;})()`);return point;},`unobscured ${selector}`);
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
+  };
   await send("Page.addScriptToEvaluateOnNewDocument",{source:`(${installFixtures.toString()})()`});
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/workspace"});
   await eventually(()=>evaluate('!!document.querySelector("#projects-heading") && !!document.querySelector("main article")'),"project overview");
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Collaboration inbox"]\')?.textContent.includes("You’re caught up.")'),"collaboration inbox loaded without errors");
   assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
   assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--vs-editor").trim()`),"#141210","project overview shares the session palette");
   await evaluate("document.fonts.ready");await screenshot("projects");
@@ -156,11 +80,60 @@ try {
   for(let i=0;i<12;i++)await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Tab",code:"Tab",windowsVirtualKeyCode:9});
   assert.ok(await evaluate('document.querySelector("dialog").contains(document.activeElement)'),"keyboard focus stays in modal");
   await screenshot("settings-mobile");
-  await viewport(320,400);
+  await viewport(320,300);
   assert.ok(await evaluate('(()=>{const body=document.querySelector(".ui-dialog-body");const footer=document.querySelector("dialog footer");return body.scrollHeight>body.clientHeight && body.clientHeight>0 && body.scrollWidth<=body.clientWidth && footer.getBoundingClientRect().bottom<=innerHeight;})()'),"short dialogs keep actions visible and scroll the form");
   await click('dialog button[type=submit]');
   await eventually(()=>evaluate('!document.querySelector("dialog")'),"settings save preserved");
   await viewport(1440);
+  // Real pointer/keyboard interaction catches menus rendered behind a native
+  // modal, which calling element.click() would silently bypass.
+  await click('button[title="View members & manage roles"]');
+  await eventually(()=>evaluate('!!document.querySelector(\'button[aria-label="Role for Priya Shah"]\')'),'project members');
+  assert.equal(await evaluate('document.querySelectorAll("dialog select, dialog datalist").length'),0);
+  assert.equal(await evaluate('!!document.querySelector(\'button[aria-label="Role for Alex Chen"]\')'),false,'self role stays read-only');
+  await mouseClick('button[aria-label="Role for Priya Shah"]');
+  await eventually(()=>evaluate('!!document.querySelector("dialog .composer-picker:popover-open")'),'picker above modal');
+  assert.ok(await evaluate(`(()=>{const p=document.querySelector('.composer-picker').getBoundingClientRect(),t=document.querySelector('button[aria-label="Role for Priya Shah"]').getBoundingClientRect();return p.bottom<t.top&&p.top>=0;})()`),'member menu opens upward');
+  await screenshot('project-members-picker');
+  await escape();
+  assert.ok(await evaluate('!!document.querySelector("dialog[open]") && !document.querySelector(".composer-picker")'),'Escape closes picker without closing parent');
+  assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),'Role for Priya Shah');
+  await mouseClick('button[aria-label="Role for Priya Shah"]');
+  await mouseClick('.composer-picker [role="option"][value="editor"]');
+  await eventually(()=>evaluate('document.querySelector(\'button[aria-label="Role for Priya Shah"]\')?.textContent==="Editor"'),'project role saved');
+  assert.equal(await evaluate('window.__chatFixture.memberWrites.at(-1).role'),'editor');
+  await evaluate('window.__chatFixture.failNext=true');
+  await mouseClick('button[aria-label="Role for Priya Shah"]');
+  await mouseClick('.composer-picker [role="option"][value="viewer"]');
+  await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Could not change that role")'),'role failure visible');
+  assert.equal(await evaluate('document.querySelector(\'button[aria-label="Role for Priya Shah"]\').textContent'),'Editor','failed save retains the saved role');
+  await mouseClick('button[aria-label="Role for new project members"]');
+  await eventually(()=>evaluate('document.activeElement?.getAttribute("role")==="option"'),'keyboard focus enters member picker');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'End',code:'End',windowsVirtualKeyCode:35});
+  assert.equal(await evaluate('document.activeElement.value'),'viewer','End focuses the last role');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+  await eventually(()=>evaluate('!document.querySelector(".composer-picker")'),'keyboard selection closes menu');
+  assert.equal(await evaluate('document.querySelector(\'button[aria-label="Role for new project members"]\').textContent'),'Viewer');
+  await evaluate('Array.from(document.querySelectorAll("dialog li")).find(li=>li.textContent.includes("Sam Rivera")).querySelector("button").click()');
+  await eventually(()=>evaluate('window.__chatFixture.memberWrites.some(write=>write.userId==="sam"&&write.role==="viewer")'),'new member uses chosen role');
+  for (const width of [390,320]) {
+    await viewport(width,560);
+    await mouseClick('button[aria-label="Role for new project members"]');
+    assert.ok(await evaluate(`(()=>{const p=document.querySelector('.composer-picker').getBoundingClientRect();return p.left>=0&&p.right<=innerWidth&&p.top>=0&&p.bottom<=innerHeight;})()`),`picker fits viewport ${width}`);
+    await fits(`member dialog at ${width}`);
+    if(width===390)await screenshot('project-members-mobile');
+    await escape();
+  }
+  await viewport(1440);
+  await escape();
+  await click('button[title="Organisation admin"]');
+  await eventually(()=>evaluate('!!document.querySelector(\'button[aria-label="Role for Priya Shah"]\')'),'organisation members');
+  await mouseClick('button[aria-label="Role for Priya Shah"]');
+  await mouseClick('.composer-picker [role="option"][value="admin"]');
+  await eventually(()=>evaluate('document.querySelector(\'button[aria-label="Role for Priya Shah"]\')?.textContent==="Admin"'),'organisation role saved');
+  await escape();
+  console.log('PASS: modern role pickers support pointer/keyboard, modal focus, failed saves, member creation and mobile bounds.');
   await click('button[title="New project"]');
   await eventually(()=>evaluate('!!document.querySelector("dialog[open] input")'),"new project dialog");
   await escape();

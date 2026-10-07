@@ -91,7 +91,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-chrome text-vs-muted">
+          <span className="mr-auto text-[12px] text-vs-muted">
             {agents === null ? "" : `${readyCount} execution option${readyCount === 1 ? "" : "s"} detected`}
           </span>
           <PrimaryButton onClick={onClose} disabled={busyId !== null}>
@@ -101,13 +101,14 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       }
     >
       <div className="rounded-xl border border-vs-border bg-vs-editor p-3 text-sm leading-6 text-vs-muted">
-        <p><strong className="text-vs-fg">1. Connect a computer.</strong> Pair your computer for a hosted workspace, or use the app’s machine when hosting locally.</p>
-        <p><strong className="text-vs-fg">2. Set up a provider.</strong> Use an installed coding CLI and your own login, or install a compatible local model.</p>
-        <p><strong className="text-vs-fg">3. Check and choose.</strong> Refresh below after setup. Models appear in the room’s message box.</p>
+        <p className="mb-2">Reading shared conversations and leaving permitted comments works in your browser without this setup.</p>
+        <p><strong className="text-vs-fg">1. Connect your computer.</strong> Open the desktop app and sign in with this account.</p>
+        <p><strong className="text-vs-fg">2. Choose an AI tool.</strong> Install Git and one of the tools below on that computer, then sign in to the tool with your AI account. You only need one AI tool.</p>
+        <p><strong className="text-vs-fg">3. Start chatting.</strong> Check the connection below, then open a project’s room and send your first message.</p>
         {onOpenDevices && <button type="button" onClick={onOpenDevices} className="mt-2 rounded-lg border border-vs-border px-3 py-1.5 font-medium text-vs-fg hover:bg-vs-hover">Connect your computer</button>}
       </div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-vs-muted">{canRun ? "An execution connection is available." : "You can explore files without AI. Connect an execution machine before sending a task."}</p>
+        <p className="text-sm text-vs-muted">{canRun ? "AI tools detected. Choose a model in your chat to get started." : "No AI tool is ready yet. Keep your computer connected while you complete setup."}</p>
         <GhostButton onClick={() => { setError(null); setRefreshing(true); void reload(true); }} disabled={refreshing || busyId !== null}>{refreshing ? "Checking…" : "Check connections"}</GhostButton>
       </div>
       {error && (
@@ -129,13 +130,13 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
               <li key={agent.id} className="rounded-lg border border-vs-border px-3.5 py-3">
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 text-body font-medium text-vs-fg">
+                    <p className="flex items-center gap-2 text-[14px] font-medium text-vs-fg">
                       {agent.name}
-                      <span className="text-chrome font-normal text-vs-muted">{agent.vendor}</span>
+                      <span className="text-[12px] font-normal text-vs-muted">{agent.vendor}</span>
                       {ready && <CheckIcon className="h-3.5 w-3.5 text-vs-success" />}
                     </p>
-                    <p className="mt-0.5 text-chrome leading-5 text-vs-muted">{agent.blurb}</p>
-                    <p className="mt-0.5 text-chrome text-vs-muted">
+                    <p className="mt-0.5 text-[12px] leading-5 text-vs-muted">{agent.blurb}</p>
+                    <p className="mt-0.5 text-[12px] text-vs-muted">
                       {!agent.installed
                         ? "Not installed"
                         : agent.auth
@@ -161,7 +162,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
 
                 {!agent.installed && (
                   <div className="mt-2 flex items-center gap-2">
-                    <code className="flex-1 truncate rounded-md border border-vs-border bg-vs-editor px-2.5 py-1.5 font-mono text-chrome text-vs-fg">
+                    <code className="flex-1 truncate rounded-md border border-vs-border bg-vs-editor px-2.5 py-1.5 font-mono text-[12px] text-vs-fg">
                       {agent.install.command}
                     </code>
                     <GhostButton
@@ -178,7 +179,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
                 )}
 
                 {busyId === agent.id && loginLog && (
-                  <pre className="vs-scroll mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-vs-border bg-vs-editor p-2 font-mono text-micro leading-4 text-vs-muted">
+                  <pre className="vs-scroll mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-vs-border bg-vs-editor p-2 font-mono text-[11px] leading-4 text-vs-muted">
                     {loginLog}
                   </pre>
                 )}

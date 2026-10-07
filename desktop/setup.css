@@ -1,6 +1,6 @@
 :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111017; color: #eeedf4; }
 * { box-sizing: border-box; }
-body { margin: 0; background: radial-gradient(ellipse at top right, #bfacf210, transparent 65%); min-height: 100vh; }
+body { margin: 0; font-size: 16px; background: radial-gradient(ellipse at top right, #bfacf210, transparent 65%); min-height: 100vh; }
 main { max-width: 800px; padding: 48px 36px; margin: auto; }
 header { display: flex; align-items: center; gap: 14px; font-weight: 650; }
 small { display: block; color: #aba5ba; font-size: 12px; letter-spacing: .12em; margin-top: 6px; }

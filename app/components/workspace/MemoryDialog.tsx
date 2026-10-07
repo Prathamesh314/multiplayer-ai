@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Modal, GhostButton, PrimaryButton, ErrorNote, inputClass } from "../ui/Modal";
+import { ComposerPicker } from "./ComposerPicker";
 
 type Record = {
   id: string; kind: "fact" | "episode" | "procedure"; text: string;
@@ -89,10 +90,10 @@ export function MemoryDialog({ roomId, readOnly, onClose, onOpenRun }: {
           {memory.source_run_id && <GhostButton onClick={() => onOpenRun(memory.source_run_id!)}>Open source chat</GhostButton>}
           {!readOnly && memory.status==='proposed' && <>
             {memory.kind!=='episode' && <label className="block text-sm">Replaces an earlier decision (optional)
-              <select value={replacement} onChange={event=>setReplacement(event.target.value)} className={inputClass}>
-                <option value="">No replacement</option>
-                {records?.filter(row=>row.status==='approved' && row.kind===memory.kind && row.id!==memory.id).map(row=><option key={row.id} value={row.id}>{row.text.slice(0,100)}</option>)}
-              </select>
+              <ComposerPicker label="Replacement memory" variant="field" className="mt-1.5 w-full" value={replacement} onChange={setReplacement} disabled={busy} searchable searchLabel="Search decisions" options={[
+                { id: "", label: "No replacement" },
+                ...(records?.filter(row=>row.status==='approved' && row.kind===memory.kind && row.id!==memory.id).map(row=>({ id: row.id, label: row.text.slice(0,100) })) ?? []),
+              ]} />
             </label>}
             <PrimaryButton disabled={busy || (memory.publish_gated && !memory.published_at)} onClick={()=>{void action(async()=>{
               await request(`${base}/${memory.id}`,"PATCH",{status:'approved',revision:memory.revision,...(replacement?{supersedes:replacement}:{})});
@@ -105,17 +106,17 @@ export function MemoryDialog({ roomId, readOnly, onClose, onOpenRun }: {
             event.preventDefault();void action(async()=>{const value=await request<{memory:Record}>(base,"POST",{kind,text:draft,sourceMemoryId:memory.id});select(value.memory.id);});
           }}>
             <label className="block text-sm">Create a reusable memory
-              <select value={kind} onChange={event=>setKind(event.target.value as typeof kind)} className={inputClass}><option value="fact">Fact / decision</option><option value="procedure">Procedure</option></select>
+              <ComposerPicker label="Memory type" variant="field" className="mt-1.5 w-full" value={kind} onChange={value=>setKind(value as typeof kind)} disabled={busy} options={[{ id: "fact", label: "Fact / decision" }, { id: "procedure", label: "Procedure" }]} />
             </label>
             <label className="block text-sm">What should the team remember?<textarea required maxLength={4000} value={draft} onChange={event=>setDraft(event.target.value)} className={inputClass}/></label>
             <PrimaryButton type="submit" disabled={busy || !draft.trim()}>Save proposal</PrimaryButton>
           </form>}
           {!readOnly && memory.kind!=='episode' && memory.status==='approved' && <div className="space-y-2">
             <label className="block text-sm">Link the implementation
-              <select className={inputClass} value={implementation} onChange={event=>setImplementation(event.target.value)}>
-                <option value="">Choose an approved code change</option>
-                {records?.filter(row=>row.kind==='episode' && row.status==='approved' && row.commit_sha && row.source_turn_id).map(row=><option key={row.id} value={row.source_turn_id!}>{row.commit_sha!.slice(0,8)} · {row.text.slice(0,80)}</option>)}
-              </select>
+              <ComposerPicker label="Implementation" variant="field" className="mt-1.5 w-full" value={implementation} onChange={setImplementation} disabled={busy} searchable searchLabel="Search code changes" options={[
+                { id: "", label: "Choose an approved code change" },
+                ...(records?.filter(row=>row.kind==='episode' && row.status==='approved' && row.commit_sha && row.source_turn_id).map(row=>({ id: row.source_turn_id!, label: row.text.slice(0,80), description: row.commit_sha!.slice(0,8) })) ?? []),
+              ]} />
             </label>
             <GhostButton disabled={busy || !implementation} onClick={()=>{void action(async()=>{await request(`${base}/${memory.id}/edges`,"POST",{relation:'implemented_by',turnId:implementation});});}}>Link code change</GhostButton>
           </div>}

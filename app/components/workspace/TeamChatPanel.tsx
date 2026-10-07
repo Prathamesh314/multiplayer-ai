@@ -149,7 +149,7 @@ export function TeamChatPanel({
                 type="button"
                 onClick={loadOlder}
                 disabled={loadingMore}
-                className="mx-auto shrink-0 rounded border border-vs-border px-2 py-1 text-chrome text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+                className="mx-auto shrink-0 rounded border border-vs-border px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
               >
                 {loadingMore ? "Loading…" : "Load earlier messages"}
               </button>
@@ -167,7 +167,7 @@ export function TeamChatPanel({
       </div>
 
       {error && (
-        <p className="shrink-0 border-t border-vs-danger/40 bg-vs-danger/10 px-3 py-1.5 text-chrome text-vs-danger">
+        <p className="shrink-0 border-t border-vs-danger/40 bg-vs-danger/10 px-3 py-1.5 text-[12px] text-vs-danger">
           {error}
         </p>
       )}
@@ -186,7 +186,7 @@ function Message({ message, grouped }: { message: ChatMessage; grouped: boolean 
       <span className="w-6 shrink-0">
         {!grouped && (
           <span
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold ${color.chip}`}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ${color.chip}`}
           >
             {initialsOf(message.userName || "…")}
           </span>
@@ -198,10 +198,10 @@ function Message({ message, grouped }: { message: ChatMessage; grouped: boolean 
             <span className="truncate text-sm font-semibold text-vs-fg">
               {message.userName || "Sending…"}
             </span>
-            <span className="shrink-0 text-micro text-vs-muted">{clockOf(message.createdAt)}</span>
+            <span className="shrink-0 text-[11px] text-vs-muted">{clockOf(message.createdAt)}</span>
           </header>
         )}
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-body leading-5 text-vs-fg/90">
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-5 text-vs-fg/90">
           {message.body}
         </p>
       </div>
@@ -224,7 +224,7 @@ export function PanelHeader({
 }) {
   return (
     <header className="flex h-9 shrink-0 items-center gap-2 border-b border-vs-border px-3">
-      <h2 className="text-chrome font-semibold uppercase tracking-wider text-vs-muted">{title}</h2>
+      <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">{title}</h2>
       <div className="ml-auto flex items-center gap-2">
         {children}
         {onClose && (

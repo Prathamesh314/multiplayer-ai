@@ -129,13 +129,13 @@ async function handlePOST(request: Request) {
   const runOptions = { model: body.model || undefined, effort: body.effort || undefined };
   const hasRunner = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, undefined, undefined, true);
   const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
-  if (!useLocal && hasRunner) return Response.json({ error: "This model or effort is not available on an online runner. Refresh models or reconnect the device; nothing ran on the server." }, { status: 409 });
+  if (!useLocal && hasRunner) return Response.json({ error: "Your computer doesn’t have the selected model or effort available. Refresh the model list and choose an available option, then send your message again." }, { status: 409 });
   if (!useLocal && gate.allowed) {
     const inventory = await modelInventory(agent);
     const selected = inventory.choices.find(choice => choice.id === (runOptions.model ?? ""));
     if (!selected || (runOptions.effort && !selected.efforts?.some(effort => effort.id === runOptions.effort))) return Response.json({ error: "This model or effort is no longer available. Refresh the provider inventory." }, { status: 409 });
   }
-  if (!useLocal && !gate.allowed) return Response.json({ error: "Connect your runner with this agent installed and signed in. Server execution is disabled." }, { status: 409 });
+  if (!useLocal && !gate.allowed) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
 
   const sessionId = result.session.id;
 
@@ -147,7 +147,7 @@ async function handlePOST(request: Request) {
   if (run && (run.driverUserId !== result.user.id || body.controlVersion !== run.controlVersion)) {
     return Response.json({ error: "Only the current driver can continue. Refresh or accept a handoff." }, { status: 409 });
   }
-  if (run && run.controlVersion > 0 && !useLocal) return Response.json({ error: "Connect your own runner with this agent before continuing a handed-off chat." }, { status: 409 });
+  if (run && run.controlVersion > 0 && !useLocal) return Response.json({ error: "Connect your computer and set up this AI tool before continuing the chat that was handed to you.", code: "computer_connection_required" }, { status: 409 });
 
   // Which repo the chat works on. A continued run keeps the repo it started
   // on; a new one takes the picker's choice — an imported room repo, or the

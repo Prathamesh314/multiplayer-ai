@@ -1,13 +1,18 @@
 "use client";
+import { ExecutionRequirements } from "../ai/ExecutionRequirements";
 
 import Link from "next/link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { login, register } from "../../lib/auth/client";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { EyeIcon, GitBranchIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { EmailVerification } from "./EmailVerification";
+import { AuthRequestError, authErrorMessage } from "../../lib/auth/request";
+import { useToast } from "../ui/Toast";
+import type { EmailVerificationState } from "../../lib/auth/types";
 import { GoogleCompletion, GoogleSignIn, type PendingGoogleProfile } from "./GoogleAuth";
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -15,10 +20,17 @@ const subscribeToHydration = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
 
-export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null }: {
-  signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null;
+export function AuthForm({ signupMode = "open", googleEnabled = false, googleProfile = null, pendingVerification = null }: {
+  signupMode?: "open" | "invite" | "closed"; googleEnabled?: boolean; googleProfile?: PendingGoogleProfile | null; pendingVerification?: EmailVerificationState | null;
 }) {
   const router = useRouter();
+  const { notify } = useToast();
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  useEffect(() => {
+    if (!retrySeconds) return;
+    const timer = setTimeout(() => setRetrySeconds(value => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [retrySeconds]);
   const params = useSearchParams();
   // Only ever a path on this site: an open redirect here would let a share
   // link bounce someone to another origin after they type their password.
@@ -33,6 +45,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
 
   const [mode, setMode] = useState<"signin" | "signup">(() => signupMode !== "closed" && (params.get("mode") === "signup" || linkedInvitation) ? "signup" : "signin");
   const creating = mode === "signup";
+  const [verification, setVerification] = useState(pendingVerification);
   const [email, setEmail] = useState(() => params.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -49,18 +62,27 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (busy || retrySeconds > 0) return;
     setBusy(true);
     setError(null);
     setShowPassword(false);
     try {
-      if (creating) {
-        await register({ email: email.trim(), password, displayName: "", invitationToken });
-      } else {
-        await login(email.trim(), password);
+      const result = creating
+        ? await register({ email: email.trim(), password, displayName: "", invitationToken })
+        : await login(email.trim(), password);
+      if (result.status === "verification_required") {
+        setVerification(result.verification); setPassword(""); setBusy(false);
+        if (result.verification.deliveryStatus === "sent") notify({ title: "Check your email", description: "Your verification code is on its way. Check spam if it doesn’t arrive." });
+        else if (result.verification.deliveryStatus === "failed") notify({ tone: "error", title: "We couldn’t send your code", description: "Your account is waiting for verification. Try sending a new code shortly." });
+        return;
       }
+      notify({ title: creating ? "Account created" : "Welcome back", description: "You’re signed in." });
       done();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not complete sign-in.");
+      const message = authErrorMessage(cause, "Could not complete sign-in. Please try again.");
+      setError(message);
+      if (cause instanceof AuthRequestError && cause.retryAfter) setRetrySeconds(cause.retryAfter);
+      notify({ tone: "error", title: creating ? "Couldn’t create your account" : "Couldn’t sign you in", description: message });
       setBusy(false);
     }
   }
@@ -90,21 +112,26 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </span>
         </Link>
 
-        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-display font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : (
+        {!!googleProfile && params.get("google") !== "restart" && params.get("google") !== "desktop-done" && <ExecutionRequirements guest={next.startsWith("/shared/")} className="mt-5" />}
+
+        {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[28px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : verification ? (
+          <EmailVerification initial={verification} onVerified={done} onBack={address => { setVerification(null); setEmail(address); setMode("signin"); setError(null); }} />
+        ) : (
           <>
-            <h1 className="font-display mt-6 text-display font-semibold tracking-tight">
+            <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">
               {creating ? "Create your account" : "Welcome back"}
             </h1>
-            <p className="mt-2 text-body leading-6 text-vs-muted">
+            <p className="mt-2 text-[14px] leading-6 text-vs-muted">
               {creating ? (signupMode === "invite" ? "Use your invited email and choose a password." : "Start building with your team and AI.") : "Sign in to your workspace."}
             </p>
 
+            {(creating || googleEnabled) && <ExecutionRequirements guest={next.startsWith("/shared/")} className="mt-5" />}
             {googleEnabled && <GoogleSignIn next={next} invitationToken={invitationToken} desktopId={params.get("desktop")} />}
 
             <form onSubmit={submit} className="mt-7 space-y-5">
               <Field label="Email">
                 <input
-                  autoFocus
+                  autoFocus={!creating && !googleEnabled}
                   required
                   type="email"
                   value={email}
@@ -130,7 +157,7 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 </div>
               </Field>
 
-              {error && <ErrorNote>{error}</ErrorNote>}
+              {error && <ErrorNote announce={!!params.get("google_error")}>{error}</ErrorNote>}
 
               {creating && signupMode === "invite" && (
                 <Field label="Invitation link or code" hint="Paste the newest invitation and use the email it was issued to.">
@@ -153,12 +180,12 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
                 </Field>
               )}
 
-              <SubmitButton busy={busy}>{creating ? "Create account" : "Sign in"}</SubmitButton>
+              <SubmitButton busy={busy} blocked={retrySeconds > 0}>{busy ? (creating ? "Creating account…" : "Signing in…") : retrySeconds > 0 ? `Try again in ${retrySeconds}s` : creating ? "Create account" : "Sign in"}</SubmitButton>
             </form>
           </>
         )}
 
-        {(!googleProfile || params.get("google") === "restart") && params.get("google") !== "desktop-done" && (
+        {!verification && (!googleProfile || params.get("google") === "restart") && params.get("google") !== "desktop-done" && (
           <p className="mt-6 text-center text-sm leading-6 text-vs-muted">
             {creating ? "Already have an account? " : signupMode === "closed" ? "New registrations are currently closed." : "New here? "}
             {(creating || signupMode !== "closed") && <button
@@ -191,14 +218,14 @@ function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => v
   );
 }
 
-function SubmitButton({ busy, children }: { busy: boolean; children: React.ReactNode }) {
+function SubmitButton({ busy, blocked, children }: { busy: boolean; blocked: boolean; children: React.ReactNode }) {
   // Before hydration, a native GET form submission strips the invitation from
   // the URL. Keep submission disabled until React can handle the form.
   const ready = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   return (
     <button
       type="submit"
-      disabled={busy || !ready}
+      disabled={busy || blocked || !ready}
       className="flex w-full items-center justify-center gap-2 rounded-lg bg-vs-accent px-4 py-2.5 text-base font-medium text-vs-accent-fg transition hover:opacity-90 disabled:opacity-60"
     >
       {busy && <SpinnerIcon className="h-4 w-4" />}

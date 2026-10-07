@@ -1,4 +1,5 @@
 import { StorageAdmissionError } from "../storage/admission";
+import { isDatabaseBusy } from "../db/config";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { NextRequest } from "next/server";
@@ -29,7 +30,7 @@ export function usesDeviceToken(route: string) {
 
 export function policyFor(route: string, method: string): PolicyName {
   if (route === '/api/integrations/slack/events') return 'webhook';
-  if (route.startsWith("/api/auth/google/") || ["/api/auth/login", "/api/auth/continue", "/api/auth/register"].includes(route)) return "auth";
+  if (route.startsWith("/api/auth/email/") || route.startsWith("/api/auth/google/") || ["/api/auth/login", "/api/auth/continue", "/api/auth/register"].includes(route)) return "auth";
   if (["/api/runner/pair", "/api/runner/pairing"].includes(route)) return "pair";
   if (route.startsWith("/api/git/")) return "git";
   if (["GET", "HEAD"].includes(method) && (route.endsWith("/events") || route === "/api/terminal/pty" || route === "/api/terminal")) return "stream";
@@ -126,8 +127,9 @@ export function withApiLimit<Args extends unknown[]>(route: string, handler: (re
     let response: Response;
     try { response = await handler(request, ...args); }
     catch (cause) {
-      if (!(cause instanceof StorageAdmissionError)) throw cause;
-      response = Response.json({ error: cause.message }, { status: cause.status });
+      if (cause instanceof StorageAdmissionError) response = Response.json({ error: cause.message }, { status: cause.status });
+      else if (isDatabaseBusy(cause)) response = Response.json({error:"This request took too long or the workspace is busy. Please try again shortly."},{status:503,headers:{"retry-after":"2"}});
+      else throw cause;
     }
     const headers = new Headers(response.headers);
     headers.set("cache-control", "no-store");

@@ -4,7 +4,8 @@ import type { Org } from "../../lib/org/types";
 import type { Project } from "../../lib/project/types";
 import type { SourceChannel, TeamProvider } from "../../lib/integrations/types";
 import { desktopBridge } from "../../lib/desktop";
-import { LinkIcon, SpinnerIcon } from "../icons";
+import { FolderIcon, LinkIcon, SpinnerIcon } from "../icons";
+import { ComposerPicker } from "../workspace/ComposerPicker";
 import {
   ErrorNote,
   GhostButton,
@@ -54,35 +55,33 @@ export function ConnectionsPanel({
   return (
     <main className="app-page vs-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8 lg:py-10">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">
           Project context
         </p>
-        <h1 className="font-display mt-3 text-display font-semibold tracking-tight">
+        <h1 className="font-display mt-2 text-xl font-semibold tracking-tight">
           Bring your conversations along
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-vs-muted">
+        <p className="mt-2 max-w-2xl text-xs leading-5 text-vs-muted">
           Keep talking where your team already works. Connect selected Slack or
           Discord channels so AI can refer to your discussions and link back to
           the source.
         </p>
-        <label className="mt-7 block max-w-sm text-sm font-medium">
-          Project
-          <select
-            aria-label="Project for connections"
-            value={project?.id ?? ""}
-            onChange={(event) => onSelect(event.target.value)}
-            className={`${inputClass} mt-2`}
-          >
-            {!projects.length && (
-              <option value="">No projects available</option>
-            )}
-            {projects.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-5 max-w-sm">
+          <p className="text-sm font-medium text-vs-muted">Project</p>
+          <div className="mt-1.5">
+            <ComposerPicker
+              label="Project for connections"
+              value={project?.id ?? ""}
+              onChange={onSelect}
+              options={projects.length
+                ? projects.map((item) => ({ id: item.id, label: item.name }))
+                : [{ id: "", label: "No projects available" }]}
+              icon={<FolderIcon className="h-4 w-4 shrink-0 text-vs-muted" />}
+              variant="field"
+              disabled={!projects.length}
+            />
+          </div>
+        </div>
         {project ? (
           <ProjectConnections
             key={project.id}
@@ -90,7 +89,7 @@ export function ConnectionsPanel({
             project={project}
           />
         ) : (
-          <p className="mt-6 text-sm text-vs-muted">
+          <p className="mt-6 text-xs text-vs-muted">
             Create or join a project to connect its channels.
           </p>
         )}
@@ -191,8 +190,8 @@ function ProjectConnections({
     });
   return (
     <>
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <p className="text-sm text-vs-muted">
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <p className="text-xs text-vs-muted">
           Sources for <span className="text-vs-fg">{project.name}</span>
         </p>
         <GhostButton
@@ -203,12 +202,12 @@ function ProjectConnections({
         </GhostButton>
       </div>
       {error && (
-        <div className="mt-4">
+        <div className="mt-3">
           <ErrorNote>{error}</ErrorNote>
         </div>
       )}
       {browserProvider && (
-        <p role="status" className="mt-4 rounded-lg border border-vs-border bg-vs-editor/50 p-3 text-sm leading-6 text-vs-muted">
+        <p role="status" className="mt-3 rounded-lg border border-vs-border bg-vs-editor/50 p-2.5 text-xs leading-5 text-vs-muted">
           Continue in your browser: sign in if asked, then choose Connect {names[browserProvider]} for this project.
           After choosing your channels, return here and select Refresh status.
         </p>
@@ -216,13 +215,13 @@ function ProjectConnections({
       {!data ? (
         <p
           role="status"
-          className="mt-8 flex items-center gap-2 text-sm text-vs-muted"
+          className="mt-6 flex items-center gap-2 text-xs text-vs-muted"
         >
-          <SpinnerIcon className="h-4 w-4" />
+          <SpinnerIcon className="h-3.5 w-3.5" />
           {error ? "Use Refresh status to retry." : "Loading connections…"}
         </p>
       ) : (
-        <div className="mt-4 grid gap-5 md:grid-cols-2">
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
           {data.providers.map((provider) => {
             const connection = data.connections.find(
               (c) => c.provider === provider.id,
@@ -231,27 +230,27 @@ function ProjectConnections({
               <section
                 key={provider.id}
                 aria-label={`${names[provider.id]} connection`}
-                className="flex min-w-0 flex-col rounded-2xl border border-vs-border bg-vs-panel p-5 sm:p-6"
+                className="flex min-w-0 flex-col rounded-2xl border border-vs-border bg-vs-panel p-4 sm:p-5"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2.5">
                   <span
-                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-xl font-semibold ${provider.id === "slack" ? "bg-purple-500/15 text-purple-300" : "bg-indigo-500/15 text-indigo-300"}`}
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-base font-semibold ${provider.id === "slack" ? "bg-purple-500/15 text-purple-300" : "bg-indigo-500/15 text-indigo-300"}`}
                     aria-hidden
                   >
                     {provider.id === "slack" ? "#" : "D"}
                   </span>
                   <div className="min-w-0">
-                    <h2 className="text-lg font-semibold">
+                    <h2 className="text-sm font-semibold">
                       {names[provider.id]}
                     </h2>
-                    <p className="mt-1 break-words text-sm text-vs-muted">
+                    <p className="mt-0.5 break-words text-xs text-vs-muted">
                       {connection
                         ? connection.name
                         : "Your team’s discussions, in context"}
                     </p>
                   </div>
                 </div>
-                <p className="mt-5 text-sm leading-6 text-vs-muted">
+                <p className="mt-4 text-xs leading-5 text-vs-muted">
                   {connection
                     ? connection.channels.length
                       ? `${connection.channels.length} selected channel${connection.channels.length === 1 ? "" : "s"}`
@@ -259,22 +258,22 @@ function ProjectConnections({
                     : "Connect a workspace, then choose which public channels this project can use."}
                 </p>
                 {!!connection?.channels.length && (
-                  <ul className="mt-4 space-y-3">
+                  <ul className="mt-3 space-y-2">
                     {connection.channels.map((channel) => (
                       <li
                         key={channel.id}
-                        className="rounded-lg border border-vs-border bg-vs-editor/50 px-3 py-2.5"
+                        className="rounded-lg border border-vs-border bg-vs-editor/50 px-2.5 py-2"
                       >
                         <a
                           href={channel.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center justify-between gap-2 text-sm font-medium hover:text-vs-accent"
+                          className="flex items-center justify-between gap-2 text-xs font-medium hover:text-vs-accent"
                         >
                           <span className="truncate">#{channel.name}</span>
-                          <LinkIcon className="h-3.5 w-3.5 shrink-0" />
+                          <LinkIcon className="h-3 w-3 shrink-0" />
                         </a>
-                        <p className="mt-1 text-xs leading-5 text-vs-muted">
+                        <p className="mt-1 text-[11px] leading-4 text-vs-muted">
                           {channel.error ??
                             (channel.syncedAt
                               ? !channel.verifiedAt ||
@@ -289,13 +288,13 @@ function ProjectConnections({
                   </ul>
                 )}
                 {!provider.configured && (
-                  <p className="mt-4 rounded-lg border border-vs-border bg-vs-editor/50 p-3 text-sm leading-6 text-vs-muted">
+                  <p className="mt-3 rounded-lg border border-vs-border bg-vs-editor/50 p-2.5 text-xs leading-5 text-vs-muted">
                     Server setup needed. Ask your administrator to enable{" "}
                     {names[provider.id]} connections.
                   </p>
                 )}
                 {data.canManage ? (
-                  <div className="mt-auto flex flex-wrap gap-2 pt-5">
+                  <div className="mt-auto flex flex-wrap gap-2 pt-4">
                     {connection ? (
                       <>
                         <PrimaryButton
@@ -317,14 +316,14 @@ function ProjectConnections({
                         onClick={() => void connect(provider.id)}
                       >
                         {busy === provider.id && (
-                          <SpinnerIcon className="h-4 w-4" />
+                          <SpinnerIcon className="h-3.5 w-3.5" />
                         )}
                         Connect {names[provider.id]}
                       </PrimaryButton>
                     )}
                   </div>
                 ) : (
-                  <p className="mt-5 text-sm text-vs-muted">
+                  <p className="mt-4 text-xs text-vs-muted">
                     A project manager can manage this connection.
                   </p>
                 )}
@@ -333,7 +332,7 @@ function ProjectConnections({
           })}
         </div>
       )}
-      <div className="mt-6 rounded-xl border border-vs-border p-5 text-sm leading-6 text-vs-muted">
+      <div className="mt-5 rounded-xl border border-vs-border p-4 text-xs leading-5 text-vs-muted">
         <p className="font-medium text-vs-fg">Shared with this project</p>
         <p className="mt-1">
           Selected channels become context for all project members. We import
@@ -388,7 +387,7 @@ function ProjectConnections({
             onChange={(event) => setSearch(event.target.value)}
             className={inputClass}
           />
-          <p className="text-sm text-vs-muted">
+          <p className="text-xs text-vs-muted">
             {picker.selected.length}/10 selected.{" "}
             {picker.provider === "slack"
               ? "Invite the Slack app to a public channel to make it appear here."
@@ -402,7 +401,7 @@ function ProjectConnections({
               .map((channel) => (
                 <label
                   key={channel.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-sm hover:bg-vs-hover"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs hover:bg-vs-hover"
                 >
                   <input
                     type="checkbox"
@@ -425,13 +424,13 @@ function ProjectConnections({
                 </label>
               ))}
             {!picker.channels.length && (
-              <p className="py-4 text-sm text-vs-muted">
+              <p className="py-3 text-xs text-vs-muted">
                 No eligible channels yet. Add the app to a public channel, then
                 reopen this list.
               </p>
             )}
           </div>
-          <label className="flex items-start gap-3 border-t border-vs-border pt-4 text-sm leading-6">
+          <label className="flex items-start gap-2.5 border-t border-vs-border pt-3 text-xs leading-5">
             <input
               className="mt-1"
               type="checkbox"

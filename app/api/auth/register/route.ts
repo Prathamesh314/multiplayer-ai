@@ -1,8 +1,9 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
 import { passwordProblem } from "../../../lib/auth/password";
-import { issueToken } from "../../../lib/auth/tokens";
-import type { MeResponse, RegisterRequest } from "../../../lib/auth/types";
-import { connectCodeOf, createUser } from "../../../lib/repo/users";
+import { finishPasswordAuthentication, emailVerificationErrorResponse } from "../../../lib/auth/email-http";
+import { emailDeliveryConfig, emailVerificationEnabled } from "../../../lib/auth/email-delivery";
+import type { RegisterRequest } from "../../../lib/auth/types";
+import { createUser } from "../../../lib/repo/users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
+  try { if (emailVerificationEnabled()) emailDeliveryConfig(); }
+  catch (cause) { return emailVerificationErrorResponse(cause); }
+
   const result = await createUser({
     invitationToken: typeof body.invitationToken === "string" ? body.invitationToken : undefined,
     handle: body.handle,
@@ -36,19 +40,7 @@ async function handlePOST(request: Request) {
     return Response.json({ error: result.error, field: result.field }, { status: result.field === "invitation" ? 403 : 409 });
   }
 
-  // Registering signs you in; making people log in again immediately is a
-  // step with no purpose.
-  await issueToken(result.user.id, {
-    userAgent: request.headers.get("user-agent"),
-  });
-
-  return Response.json(
-    {
-      user: result.user,
-      connectCode: await connectCodeOf(result.user.id),
-    } satisfies MeResponse,
-    { status: 201 },
-  );
+  return finishPasswordAuthentication(result.user, request, 201);
 }
 
 export const POST = withApiLimit("/api/auth/register", handlePOST);

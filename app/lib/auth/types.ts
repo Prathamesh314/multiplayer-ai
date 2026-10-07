@@ -27,7 +27,8 @@ export type ContinueRequest = { email: string; password: string; invitationToken
 export type ContinueResponse =
   /** The email is known and the password matched — already signed in. */
   | { status: "existing"; user: CurrentUser; connectCode: string | null }
-  /** The email is new; the password is acceptable. Ask for a username next. */
+  | VerificationRequiredResponse
+  /** The email is new; the password is acceptable. Complete registration next. */
   | { status: "new" };
 
 export type MeResponse = {
@@ -35,3 +36,28 @@ export type MeResponse = {
   /** The code others paste to add this person to an org. */
   connectCode: string | null;
 };
+
+export type EmailVerificationState = {
+  serverTime: number;
+  email: string;
+  codeExpiresAt: number;
+  resendAt: number;
+  deliveryStatus: "pending" | "sent" | "failed";
+  attemptsRemaining: number;
+};
+export type VerificationRequiredResponse = { status: "verification_required"; verification: EmailVerificationState };
+export type PasswordAuthResponse = { status: "authenticated"; user: CurrentUser; connectCode: string | null } | VerificationRequiredResponse;
+
+export function isVerificationState(value: unknown): value is EmailVerificationState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as EmailVerificationState;
+  return typeof state.email === "string" && [state.serverTime, state.codeExpiresAt, state.resendAt, state.attemptsRemaining].every(Number.isFinite)
+    && ["sent", "pending", "failed"].includes(state.deliveryStatus) && state.attemptsRemaining >= 0 && state.attemptsRemaining <= 5;
+}
+
+export function isPasswordAuthResponse(value: unknown): value is PasswordAuthResponse {
+  if (!value || typeof value !== "object") return false;
+  const result = value as PasswordAuthResponse;
+  if (result.status === "verification_required") return isVerificationState(result.verification);
+  return result.status === "authenticated" && !!result.user && typeof result.user.id === "string" && typeof result.user.email === "string";
+}

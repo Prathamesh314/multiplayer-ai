@@ -79,10 +79,11 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
       onClose={onClose}
       footer={<GhostButton onClick={onClose}>Done</GhostButton>}
     >
+      {session.orgId && <p className="rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">These links share the entire room with existing organization members. To invite someone outside your team, open an AI chat first, then choose <strong className="text-vs-fg">Share chat</strong>. They’ll get access to that conversation only.</p>}
       {isOwner && (
         <>
           <div>
-            <span className="text-chrome font-semibold uppercase tracking-wider text-vs-muted">
+            <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
               New share link
             </span>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -131,7 +132,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
 
       <CopyRow label="Access code — always view only" value={session.joinCode} spaced />
 
-      <p className="flex items-start gap-2 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-chrome leading-5 text-vs-muted">
+      <p className="flex items-start gap-2 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-[12px] leading-5 text-vs-muted">
         <ShieldIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vs-accent" />
         The code can be read out loud but not revoked on its own, so it only ever grants read
         access. Anything more has to be a link you can take back.
@@ -162,7 +163,7 @@ function RoleCard({
           : "border-vs-border hover:bg-vs-hover"
       }`}
     >
-      <span className="flex items-center gap-1.5 text-body font-medium text-vs-fg">
+      <span className="flex items-center gap-1.5 text-[14px] font-medium text-vs-fg">
         <span
           className={`h-3 w-3 shrink-0 rounded-full border ${
             selected ? "border-vs-accent bg-vs-accent" : "border-vs-border"
@@ -170,7 +171,7 @@ function RoleCard({
         />
         {title}
       </span>
-      <span className="mt-1 block text-chrome leading-4 text-vs-muted">{detail}</span>
+      <span className="mt-1 block text-[12px] leading-4 text-vs-muted">{detail}</span>
     </button>
   );
 }
@@ -184,7 +185,7 @@ function ActiveLinks({
 }) {
   if (links === null) {
     return (
-      <p className="flex items-center gap-2 text-chrome text-vs-muted">
+      <p className="flex items-center gap-2 text-[12px] text-vs-muted">
         <SpinnerIcon className="h-3 w-3" />
         Loading links…
       </p>
@@ -194,17 +195,17 @@ function ActiveLinks({
 
   return (
     <div>
-      <span className="text-chrome font-semibold uppercase tracking-wider text-vs-muted">
+      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
         Active links ({links.length})
       </span>
       <ul className="mt-1.5 space-y-1">
         {links.map((link) => (
           <li
             key={link.id}
-            className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5 text-chrome"
+            className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5 text-[12px]"
           >
             <span
-              className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-micro ${
+              className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] ${
                 link.role === "editor"
                   ? "bg-vs-accent/15 text-vs-accent"
                   : "bg-vs-hover text-vs-muted"
@@ -226,7 +227,7 @@ function ActiveLinks({
           </li>
         ))}
       </ul>
-      <p className="mt-1.5 text-chrome leading-4 text-vs-muted">
+      <p className="mt-1.5 text-[12px] leading-4 text-vs-muted">
         Revoking stops new people using the link. Anyone who already joined keeps their access —
         remove them from the session to change that.
       </p>
@@ -259,7 +260,7 @@ function CopyRow({
 
   return (
     <div>
-      <span className="text-chrome font-semibold uppercase tracking-wider text-vs-muted">
+      <span className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
         {label}
       </span>
       <div className="mt-1.5 flex gap-2">
@@ -278,7 +279,7 @@ function CopyRow({
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      {hint && <p className="mt-1.5 text-chrome leading-4 text-vs-muted">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[12px] leading-4 text-vs-muted">{hint}</p>}
     </div>
   );
 }

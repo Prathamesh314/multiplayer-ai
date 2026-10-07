@@ -1,4 +1,5 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { databaseConfig } from "./config";
 
 /**
  * One pool per process. Cached on globalThis because Next's dev server
@@ -17,12 +18,7 @@ export function pool(): Pool {
     );
   }
 
-  const created = new Pool({
-    connectionString,
-    max: 10,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
-  });
+  const created = new Pool(databaseConfig(connectionString));
 
   // A pool that emits 'error' with no listener takes the process down.
   created.on("error", (cause) => {
@@ -59,16 +55,25 @@ export async function queryOne<T extends QueryResultRow>(
  */
 export async function transaction<T>(work: (tx: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool().connect();
+  let connectionError: Error | undefined;
+  let discard = false;
+  const onError = (error:Error) => { connectionError??=error; discard=true; };
+  // Idle-in-transaction/transaction deadlines can disconnect a checked-out
+  // client between queries. A pool listener only covers released clients.
+  client.on?.("error",onError);
   try {
     await client.query("BEGIN");
     const result = await work(client);
-    await client.query("COMMIT");
+    if (connectionError) throw connectionError;
+    const committed = await client.query("COMMIT");
+    if (committed.command === "ROLLBACK") throw new Error("The transaction was rolled back before it could finish.");
     return result;
   } catch (cause) {
-    await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK").catch(() => { discard=true; });
     throw cause;
   } finally {
-    client.release();
+    client.removeListener?.("error",onError);
+    client.release(discard);
   }
 }
 

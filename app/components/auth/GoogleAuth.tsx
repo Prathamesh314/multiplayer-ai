@@ -7,15 +7,13 @@ import { desktopBridge } from "../../lib/desktop";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
 import { SpinnerIcon } from "../icons";
+import { authRequest } from "../../lib/auth/request";
 
 export type PendingGoogleProfile = NonNullable<Awaited<ReturnType<typeof pendingGoogleProfile>>>;
 const subscribe = () => () => {};
 const client = () => true, server = () => false;
 async function post(path: string, body: unknown) {
-  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const result = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(result?.error ?? "Could not complete Google sign-in. Please try again.");
-  return result;
+  return authRequest<{ id: string; code: string; next: string }>(path, "POST", body);
 }
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 
@@ -62,7 +60,7 @@ export function GoogleSignIn({ next, invitationToken, desktopId }: { next: strin
       <button type="button" disabled={busy} onClick={() => { setDesktop(null); setError(null); }} className="w-full text-vs-muted hover:text-vs-fg">Cancel</button>
     </div> : <>
       {desktopId && <p className="rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">You are signing in to the desktop app. Continue only if you started this request and the app shows code <strong className="font-mono text-vs-fg">{desktopId.slice(0, 8).toUpperCase()}</strong>.</p>}
-      <button type="button" onClick={start} disabled={!ready || busy} className="flex min-h-11 w-full items-center justify-center gap-3 rounded-lg border border-[#747775] bg-white px-4 py-2.5 text-lead font-medium text-[#1f1f1f] transition hover:bg-[#f2f2f2] disabled:opacity-60">
+      <button type="button" onClick={start} disabled={!ready || busy} className="flex min-h-11 w-full items-center justify-center gap-3 rounded-lg border border-[#747775] bg-white px-4 py-2.5 text-[15px] font-medium text-[#1f1f1f] transition hover:bg-[#f2f2f2] disabled:opacity-60">
         {busy ? <SpinnerIcon className="h-5 w-5" /> : <GoogleIcon />}
         {busy ? "Opening Google…" : "Continue with Google"}
       </button>
@@ -90,7 +88,7 @@ export function GoogleCompletion({ profile, signupMode }: { profile: PendingGoog
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not finish sign-in."); setBusy(false); }
   }
   return <>
-    <h1 className="font-display mt-6 text-display font-semibold tracking-tight">{profile.mode === "signup" ? "Finish creating your account" : profile.mode === "link" ? "Link your Google account" : profile.desktop ? "Sign in to the desktop app" : "Continue with Google"}</h1>
+    <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">{profile.mode === "signup" ? "Finish creating your account" : profile.mode === "link" ? "Link your Google account" : profile.desktop ? "Sign in to the desktop app" : "Continue with Google"}</h1>
     <p className="mt-2 break-words text-sm leading-6 text-vs-muted">Google verified <strong className="font-medium text-vs-fg">{profile.email}</strong>.</p>
     {profile.mode === "link" && <p className="mt-3 text-sm leading-6 text-vs-muted">An account already uses this email. Enter its password once to connect Google and keep your projects.</p>}
     {profile.desktop && <p className="mt-4 rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">This will sign in to the desktop app showing <strong className="font-mono text-vs-fg">{profile.desktopCode}</strong>. Confirm only if you started that request.</p>}

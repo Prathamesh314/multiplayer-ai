@@ -1,5 +1,4 @@
 "use client";
-import { openUserStream } from "../../lib/events/shared-client";
 
 /*
  * Your computers: the machines that run your agents (docs/local-execution.md).
@@ -14,43 +13,36 @@ import { openUserStream } from "../../lib/events/shared-client";
  */
 
 import { useEffect, useState } from "react";
-import { fetchDevices, mintPairingCode, revokeDevice } from "../../lib/runner/client";
+import { mintPairingCode, revokeDevice } from "../../lib/runner/client";
 import type { RunnerDevice } from "../../lib/runner/client";
 import { relativeTime } from "../../lib/format";
 import { SpinnerIcon } from "../icons";
 import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
 import { desktopBridge } from "../../lib/desktop";
+import { useComputerConnection } from "./useComputerConnection";
 
 
-export function DevicesDialog({ onClose }: { onClose: () => void }) {
-  const [devices, setDevices] = useState<RunnerDevice[] | null>(null);
+export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onSetUpAi?: () => void }) {
+  const connection = useComputerConnection();
+  const { devices } = connection;
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<"pair" | "start" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [reloadVersion, setReloadVersion] = useState(0);
+  const [expired, setExpired] = useState(false);
   // Devices present when the pairing code was minted — anything beyond these
   // appearing in a refresh is the new machine coming online.
   const [knownIds, setKnownIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      fetchDevices().then((list) => {
-        if (!cancelled) setDevices(list);
-        return list;
-      }).catch(() => {
-        if (!cancelled) setError("Could not load your computers. Check your connection and try again.");
-      });
-    const stream = openUserStream(type => { if (type === "devices.changed") void load(); }, () => void load());
-    return () => {
-      cancelled = true;
-      stream.close();
-    };
-  }, [reloadVersion]);
+    if (!pairing) return;
+    const timer = setTimeout(() => setExpired(true), Math.max(0, pairing.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pairing]);
 
-  const paired =
-    pairing !== null && (devices ?? []).some((device) => !knownIds.has(device.id));
+  const paired = pairing !== null && (devices ?? []).find((device) => !knownIds.has(device.id));
+  const desktop = !!desktopBridge()?.pairComputer;
+  const connected = connection.status === "connected";
 
   async function startPairing() {
     setBusy(true);
@@ -59,6 +51,12 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
       setKnownIds(new Set((devices ?? []).map((device) => device.id)));
       const minted = await mintPairingCode();
       setPairing(minted);
+      setExpired(false);
+      if (desktop) {
+        const result = await desktopBridge()!.pairComputer(minted.code);
+        if (!result.ok) throw new Error(result.error || "Could not connect this computer. Please try again.");
+        await connection.refresh();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create a pairing code.");
     } finally {
@@ -71,7 +69,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
     setError(null);
     try {
       await revokeDevice(device.id);
-      setDevices((current) => (current ?? []).filter((entry) => entry.id !== device.id));
+      await connection.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not revoke that device.");
     } finally {
@@ -86,7 +84,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
     try {
       const result = await desktopBridge()?.pairComputer(pairing.code);
       if (!result?.ok) throw new Error(result?.error || "Desktop pairing is unavailable.");
-      setDevices(await fetchDevices());
+      await connection.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not pair this desktop.");
     } finally {
@@ -123,25 +121,39 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="Your computers"
-      description="The desktop app connects this computer automatically after sign-in. Your AI tasks run here using your installed AI tools. You can pause the connection from the desktop menu."
+      description="Connect a computer to send AI messages and run tasks. You can read saved chats and browse files without one."
       width="max-w-xl"
       onClose={onClose}
-      footer={<PrimaryButton onClick={onClose}>Done</PrimaryButton>}
+      footer={<><GhostButton onClick={onClose}>Close</GhostButton>{connected && onSetUpAi && <PrimaryButton onClick={onSetUpAi}>Next: Set up AI</PrimaryButton>}</>}
     >
-      {error && (
+      {(error || connection.error) && (
         <p role="alert" className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
-          {error}
-          <button type="button" onClick={() => { setError(null); setReloadVersion(version => version + 1); }} className="ml-2 underline">Try again</button>
+          {error || connection.error}
+          <button type="button" disabled={connection.checking} onClick={() => { setError(null); void connection.refresh(); }} className="ml-2 underline">Check connection again</button>
         </p>
       )}
 
+      {!connected && <div className="space-y-3 rounded-xl border border-vs-border bg-vs-editor p-4">
+        <h3 className="text-base font-semibold">{connection.status === "offline" ? "Bring your computer back online" : connection.status === "update" ? "Update your computer connection" : "Start with the desktop app"}</h3>
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-vs-muted">
+          <li>{connection.status === "update" ? "Install the latest Multiplayer AI desktop app." : "Open the Multiplayer AI desktop app on the computer you want to use."}</li>
+          <li>Sign in with the same account you use here. The app connects automatically.</li>
+          <li>Keep the app open and your computer awake. If paused, choose Resume runner from the app’s desktop menu.</li>
+        </ol>
+        <div className="flex flex-wrap items-center gap-3">
+          {!desktop && <a href="/#download" target="_blank" rel="noreferrer" className="rounded-lg bg-vs-accent px-4 py-2 text-sm font-medium text-vs-accent-fg hover:opacity-90">Get the desktop app</a>}
+          <GhostButton disabled={connection.checking} onClick={() => void connection.refresh()}>{connection.checking ? "Checking…" : "Check connection"}</GhostButton>
+        </div>
+        <p className="text-sm leading-6 text-vs-muted">Once connected, set up an AI tool such as Claude Code or Codex on that computer. Your AI account stays on your computer.</p>
+      </div>}
+
       {devices === null ? (
         <div className="flex justify-center py-8">
-          {!error && <SpinnerIcon className="h-5 w-5 text-vs-muted" />}
+          {!error && !connection.error && <SpinnerIcon className="h-5 w-5 text-vs-muted" />}
         </div>
       ) : devices.length === 0 && !pairing ? (
-        <p className="py-2 text-ui text-vs-muted">
-          No computers connected yet. In the desktop app, the connection starts after sign-in. In a browser, use Connect a computer below.
+        <p className="py-2 text-[13px] text-vs-muted">
+          No computer connected yet. This page updates automatically when your computer comes online.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -155,19 +167,19 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
                 title={device.online ? "Online" : "Offline"}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-body text-vs-fg">{device.name}</p>
-                <p className="text-chrome text-vs-muted">
+                <p className="truncate text-[14px] text-vs-fg">{device.name}</p>
+                <p className="text-[12px] text-vs-muted">
                   {device.online
-                    ? "Online now"
+                    ? device.version === "2" ? "Connected" : "Update needed"
                     : device.lastSeenAt
-                      ? `Last seen ${relativeTime(device.lastSeenAt)}`
+                      ? `Offline · last connected ${relativeTime(device.lastSeenAt)}`
                       : "Never connected"}
                   {device.platform ? ` · ${device.platform}` : ""}
                   {device.version ? ` · v${device.version}` : ""}
                 </p>
               </div>
               <GhostButton onClick={() => void revoke(device)} disabled={busy}>
-                Revoke
+                Remove
               </GhostButton>
             </li>
           ))}
@@ -176,31 +188,36 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
 
       {pairing ? (
         paired ? (
-          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-ui">
-            <p className="text-vs-success">Paired — the new machine is in the list above. {desktopBridge()?.pairComputer ? "The desktop runner starts automatically." : "Start the runner below to bring it online."}</p>
-            {!desktopBridge()?.pairComputer && <>
+          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px]">
+            <p role="status" className="text-vs-success">{paired.online && paired.version === "2" ? "Computer connected. You can now set up AI and continue your chats." : "Computer paired. Waiting for its connection to start…"}</p>
+            {!desktop && <>
               {commandRow("start", "Start your computer connection", startCommand)}
               <p className="text-sm text-vs-muted">Keep this terminal open while you work. Use the same start command whenever you reconnect; you only need to pair once.</p>
             </>}
           </div>
+        ) : expired ? (
+          <div role="status" className="space-y-3 rounded-lg border border-vs-warn/40 p-4 text-sm">
+            <p>This connection code has expired. Get a new code and try again.</p>
+            <PrimaryButton disabled={busy} onClick={() => void startPairing()}>Get new connection code</PrimaryButton>
+          </div>
         ) : (
           <div className="space-y-2 rounded-lg border border-vs-border bg-vs-editor p-3">
-            {desktopBridge()?.pairComputer && (
+            {desktop && (
               <div className="space-y-2 border-b border-vs-border pb-3">
                 <PrimaryButton disabled={busy} onClick={() => void pairDesktop()}>
-                  {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Pair this desktop
+                  {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Connect this computer
                 </PrimaryButton>
                 <p className="text-sm text-vs-muted">Confirm in the native dialog to enable the bundled runner. No project checkout or npm command is needed. Git and your AI CLI must already be installed.</p>
               </div>
             )}
-            <details open={!desktopBridge()?.pairComputer} className="space-y-3">
-              <summary className="cursor-pointer text-sm text-vs-fg">Connect with the standalone runner</summary>
+            <details open={!desktop} className="space-y-3">
+              <summary className="cursor-pointer text-sm text-vs-fg">Connect using a terminal</summary>
               <p className="text-sm leading-6 text-vs-muted">Run these commands from any folder. Install Node.js 22 or newer and Git first, plus your AI provider’s CLI. The commands download the runner automatically; no global installation or Multiplayer AI source code is needed.</p>
               {commandRow("pair", "1. Pair this computer once", pairCommand)}
               {commandRow("start", "2. Start your computer connection", startCommand)}
               <p className="text-sm leading-6 text-vs-muted">Keep the terminal open while you work. Run the start command again whenever you reconnect. If your terminal says npx is not found, install Node.js, then open a new terminal.</p>
             </details>
-            <p className="text-chrome text-vs-muted">
+            <p className="text-[12px] text-vs-muted">
               The code is single-use and expires in ten minutes. This list updates the moment
               the machine connects.
             </p>
@@ -208,11 +225,18 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
           </div>
         )
       ) : (
-        <div>
-          <PrimaryButton onClick={() => void startPairing()} disabled={busy || devices === null}>
-            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Connect a computer
-          </PrimaryButton>
-        </div>
+        desktop ? <PrimaryButton onClick={() => void startPairing()} disabled={busy || devices === null}>
+          {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Connect this computer
+        </PrimaryButton> : <details className="space-y-3 rounded-xl border border-vs-border p-4">
+          <summary className="cursor-pointer text-sm font-medium">Use a terminal instead (advanced)</summary>
+          {(devices?.length ?? 0) > 0 && <div className="space-y-2">
+            <p className="text-sm text-vs-muted">Already paired from a terminal? Run this on that computer to reconnect. Keep the terminal open.</p>
+            {commandRow("start", "Reconnect your computer", startCommand)}
+          </div>}
+          <GhostButton onClick={() => void startPairing()} disabled={busy || devices === null}>
+            {busy ? "Creating code…" : "Connect a new computer with commands"}
+          </GhostButton>
+        </details>
       )}
     </Modal>
   );

@@ -5,6 +5,7 @@ import type { SavedCheckpoint } from "../../lib/runner/checkpoints";
 import type { AiRunEvent } from "../../lib/ai/run-events";
 import { openSessionStream } from "../../lib/events/client";
 import { Modal } from "../ui/Modal";
+import { ComposerPicker } from "./ComposerPicker";
 type Turn = { id: string; status: string; syncedAt: string | null; sequence: number };
 type History = { turns: Turn[]; snapshots: SavedCheckpoint[]; selectedSnapshotId: string | null };
 const button = "rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50";
@@ -72,7 +73,7 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
         </div>
         <div className="space-y-2"><h3 className="font-semibold">Code checkpoints</h3>
           {!data?.snapshots.length && <p className="text-sm text-vs-muted">No uploaded checkpoints yet.</p>}
-          <select aria-label="Code checkpoint" className="w-full rounded-lg border border-vs-border bg-vs-editor p-2 text-sm" value={snapshot?.id ?? ""} disabled={busy} onChange={event => { const item = data?.snapshots.find(s => s.id === event.target.value); if (item) void showSnapshot(item); }}><option value="">Choose a checkpoint</option>{data?.snapshots.map(item => <option key={item.id} value={item.id}>{new Date(item.capturedAt).toLocaleString()} · {item.snapshotSha.slice(0,8)}</option>)}</select>
+          <ComposerPicker label="Code checkpoint" variant="field" className="w-full" placeholder="Choose a checkpoint" value={snapshot?.id ?? ""} disabled={busy || !data?.snapshots.length} searchable searchLabel="Search checkpoints" onChange={value => { const item = data?.snapshots.find(s => s.id === value); if (item) void showSnapshot(item); }} options={data?.snapshots.map(item => ({ id: item.id, label: new Date(item.capturedAt).toLocaleString(), description: item.snapshotSha.slice(0,8) })) ?? []} />
           {snapshot && <><p className="text-xs text-vs-muted">Uploaded {new Date(snapshot.syncedAt).toLocaleString()}. Staged and unstaged changes are preserved separately.</p>
             <div className="flex flex-wrap gap-2">{changes.map(file => <button key={file.path} className={button} onClick={() => void load(`?snapshot=${snapshot.id}&path=${encodeURIComponent(file.path)}`).then(body => setText(body.binary ? "Binary file" : body.diff || body.text)).catch(cause => setError(cause.message))}>{file.status} {file.path}</button>)}</div>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-vs-editor p-3 text-xs">{text}</pre>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
@@ -122,6 +122,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const created = await request(tokens[0], `/api/sessions/${roomId}/repos`, "POST", { name: "Imported storefront" });
     assert.equal(created.status, 200);
     const imported = (await created.json()).repo;
+    assert.equal((await request(tokens[0], `/api/sessions/${roomId}/repos`, "POST", { name: "Imported storefront", empty: true })).status, 409, "empty creation never finalizes an unfinished import");
     const seedUrl = `/api/sessions/${roomId}/repos/${imported.id}/seed`;
     const seedBody = { files: [
       { path: "src/checkout.ts", data: Buffer.from("export const checkout = 'ready';\n").toString("base64") },
@@ -133,6 +134,30 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const importedFile = await request(tokens[1], `/api/sessions/${roomId}/file?repoId=${imported.id}&path=src/checkout.ts`);
     assert.match((await importedFile.json()).text, /ready/);
     console.log("  ok actual import API, finalization retry, and imported-file read");
+
+    const emptyRoomId = "emptyproject";
+    await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Conversation room','ABCD-VWXY',$2)`, [emptyRoomId, bob]);
+    await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner'),($1,$3,'viewer','owner')`, [emptyRoomId, bob, alice]);
+    const emptyEndpoint = `/api/sessions/${emptyRoomId}/repos`;
+    for (const body of [{name:"",empty:true},{name:"x".repeat(101),empty:true},{name:"Invalid",empty:"yes"},{name:"Invalid",empty:true,projectRepositoryId:randomUUID()}]) {
+      assert.equal((await request(tokens[1], emptyEndpoint, "POST", body)).status, 400);
+    }
+    assert.equal((await request(tokens[0], emptyEndpoint, "POST", {name:"Forbidden",empty:true})).status, 403);
+    assert.equal((await request("not-a-session", emptyEndpoint, "POST", {name:"Forbidden",empty:true})).status, 401);
+    const emptyResponse = await request(tokens[1], emptyEndpoint, "POST", {name:"  Ideas and questions  ",empty:true});
+    assert.equal(emptyResponse.status, 200);
+    const emptyRepo = (await emptyResponse.json()).repo;
+    assert.equal(emptyRepo.rootName, "Ideas and questions");
+    assert.equal(emptyRepo.upstreamUrl, null);
+    assert.equal(emptyRepo.projectRepositoryId, null);
+    assert.ok(emptyRepo.seededAt && emptyRepo.headSha);
+    assert.equal((await request(tokens[1], emptyEndpoint, "POST", {name:emptyRepo.rootName,empty:true})).status, 409);
+    const emptyTree = await request(tokens[0], `/api/sessions/${emptyRoomId}/tree?repoId=${emptyRepo.id}`);
+    assert.equal(emptyTree.status, 200);
+    assert.deepEqual((await emptyTree.json()).root.children, []);
+    assert.equal((await (await request(tokens[1], emptyEndpoint)).json()).repos[0].id, emptyRepo.id);
+    assert.equal((await request(tokens[1], `/api/sessions/${roomId}/tree?repoId=${emptyRepo.id}`)).status, 404);
+    console.log("  ok empty project API: zero files, persistence, name validation, duplicate protection, and viewer/anonymous refusal");
 
     chrome = spawn(process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
       "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
@@ -153,7 +178,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
-    async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Projects and chats"]', initScript) {
+    async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Repositories and chats"]', initScript) {
       const { browserContextId } = await send("Target.createBrowserContext");
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -169,20 +194,17 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
         return result.result.value;
       };
-      const click = text => eventually(() => evaluate(`(() => { const scope = document.querySelector('dialog[open]') ?? document; const button = Array.from(scope.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)} && button.checkVisibility() && !button.disabled); if (!button) return false; button.click(); return true; })()`), `click ${text}`);
-      const selectOption = async (selector, value) => {
-        await command("Page.bringToFront");
-        await eventually(() => evaluate(`(() => {
-          const select=document.querySelector(${JSON.stringify(selector)});
-          return !!select && !select.disabled && Array.from(select.options).some(option=>option.value===${JSON.stringify(value)});
-        })()`), `option ${value} in ${selector}`);
-        await evaluate(`(() => {
-          const select=document.querySelector(${JSON.stringify(selector)});
-          select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));
-        })()`);
-        await eventually(() => evaluate(`document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(value)}`), `selected ${value}`);
+      // CDP acknowledges navigation before the previous document is replaced.
+      // Its matching selectors (and sessionStorage) must not satisfy readiness.
+      const changeDocument = async (method, params) => {
+        const previous = await evaluate("performance.timeOrigin");
+        await command(method, params);
+        await eventually(() => evaluate(`performance.timeOrigin !== ${JSON.stringify(previous)} && document.readyState === 'complete'`), `${method} commits a new document`);
       };
-      await command("Page.navigate", { url: `${server}/s/${targetRoom}` });
+      const navigate = url => changeDocument("Page.navigate", { url });
+      const reload = () => changeDocument("Page.reload", {});
+      const click = text => eventually(() => evaluate(`(() => { const scope = document.querySelector('dialog[open]') ?? document; const button = Array.from(scope.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)} && button.checkVisibility() && !button.disabled); if (!button) return false; button.click(); return true; })()`), `click ${text}`);
+      await navigate(`${server}/s/${targetRoom}`);
       try {
         await eventually(() => evaluate(`!!document.querySelector(${JSON.stringify(readySelector)})`), "room workspace");
       } catch (cause) {
@@ -191,11 +213,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
       const selectRepository = label => eventually(() => evaluate(`(() => { const button=Array.from(document.querySelectorAll('.room-sidebar button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify('New chat in '+label)}); if (!button) return false;button.click();return true; })()`), `repository ${label}`);
       const selectPicker = async (label, value) => {
-        await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="${label}"]')`),label);
-        await evaluate(`document.querySelector('button[aria-label="${label}"]').click()`);
-        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button)return false;button.click();return true;})()`),`picker option ${value}`);
+        await command("Page.bringToFront");
+        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(label)});if(!button||button.disabled||!button.checkVisibility())return false;button.scrollIntoView({block:'nearest'});button.focus();button.click();return true;})()`),`enabled picker ${label}`);
+        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button||!button.checkVisibility())return false;button.click();return true;})()`),`picker option ${value}`);
       };
-      return { command, evaluate, click, selectOption, selectRepository, selectPicker, targetId, sessionId };
+      return { command, evaluate, navigate, reload, click, selectRepository, selectPicker, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
@@ -258,14 +280,14 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal((await request(tokens[1],"/api/tasks","POST",null)).status,400);
     assert.equal((await request(tokens[1],`/api/tasks/${stored[0].id}`,"PATCH",{status:"invalid"})).status,400);
     const inbox = await tab(tokens[0]);
-    await inbox.command("Page.navigate",{url:`${server}/workspace`});
+    await inbox.navigate(`${server}/workspace`);
     await eventually(() => inbox.evaluate(`document.querySelector('section[aria-label="My tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "assignee dashboard inbox");
-    await inbox.evaluate(`(() => {const select=document.querySelector('section[aria-label="My tasks"] select');select.value='done';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await inbox.selectPicker(`Status for ${taskText.slice(0,60)}`, "done");
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
     await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
-    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] select\')?.value === "done"'), "status refresh in source chat");
+    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] button[aria-label^="Status for"]\')?.textContent === "Done"'), "status refresh in source chat");
     // The File Manager assignment dialog works without running AI.
     await assigner.click("Assign Tasks");
     const composerSelector = taskSelector;
@@ -422,8 +444,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await eventually(() => view.evaluate("!!document.querySelector('section[aria-label=\"Chat control\"]')"), "handoff controls");
     }
     await sender.click("Handoff");
-    await eventually(() => sender.evaluate("!!document.querySelector('dialog select')"), "handoff dialog");
-    await sender.selectOption('dialog select', bob);
+    await sender.selectPicker("Handoff recipient", bob);
     await sender.evaluate(`(() => { const note = document.querySelector('dialog textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Continue the accessible checkout'); note.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await sender.evaluate("document.querySelector('dialog form').requestSubmit()");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('Open handoff')"), "recipient inbox");
@@ -479,12 +500,13 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), "mobile return to explorer");
     await recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\').click()');
     await eventually(() => recipient.evaluate('document.querySelector(".room-file-document")?.checkVisibility()'), "mobile file editor");
-    await recipient.command("Page.reload", {});
+    await recipient.reload();
     await eventually(() => recipient.evaluate(`sessionStorage.getItem('room-repository:${roomId}') === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
     console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
     const uploadStarted = performance.now();
+    await eventually(() => recipient.evaluate('!!document.querySelector(\'input[aria-label="Import repository folder"]\')'), "folder import input after reload");
     await recipient.evaluate(`(() => {
-      const input = document.querySelectorAll('input[type="file"]')[1];
+      const input = document.querySelector('input[aria-label="Import repository folder"]');
       const file = new File(["export const uploaded = true;\\n"], "uploaded.ts", { type: "text/plain" });
       Object.defineProperty(file, 'webkitRelativePath', { value: 'Browser upload/uploaded.ts' });
       const transfer = new DataTransfer(); transfer.items.add(file);
@@ -508,19 +530,21 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Fresh folder room','ABCD-RSTU',$2)`, [freshRoom, alice]);
     await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner')`, [freshRoom, alice]);
     await createRepo(freshRoom);
-    const fresh = await tab(tokens[0], freshRoom, 'input[type="file"]');
-    async function upload(view, inputIndex, root, path, contents) {
+    const fresh = await tab(tokens[0], freshRoom, 'input[aria-label="Upload initial folder"]');
+    async function upload(view, inputLabel, root, path, contents) {
+      const selector = `input[aria-label="${inputLabel}"]`;
+      await eventually(() => view.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), `folder input: ${inputLabel}`);
       await view.evaluate(`(() => {
-        const input = document.querySelectorAll('input[type="file"]')[${inputIndex}];
+        const input = document.querySelector(${JSON.stringify(selector)});
         const file = new File([${JSON.stringify(contents)}], ${JSON.stringify(path.split("/").at(-1))}, { type: "text/plain" });
         Object.defineProperty(file, 'webkitRelativePath', { value: ${JSON.stringify(root + "/" + path)} });
         const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
         input.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
     }
-    await upload(fresh, 0, "First project", "src/first.ts", "export const first = true;");
+    await upload(fresh, "Upload initial folder", "First project", "src/first.ts", "export const first = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "initial project upload appears without reload");
-    await upload(fresh, 1, "Second project", "lib/second.ts", "export const second = true;");
+    await upload(fresh, "Import repository folder", "Second project", "lib/second.ts", "export const second = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: lib/second.ts"]\')?.checkVisibility()'), "additional import in freshly seeded room");
     await fresh.selectRepository("First project");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
@@ -542,6 +566,33 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const deviceToken = randomBytes(32).toString("base64url");
     await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,last_seen_at,supports_inputs) VALUES ($1,'Simulated Bob runner',$2,'2',ARRAY['codex'],now(),true)`, [bob, createHash("sha256").update(deviceToken).digest()]);
     const runnerRequest = (path, body) => fetch(`${server}${path}`, { method: "POST", headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    let emptyRunId;
+    for (const makeFile of [false, true]) {
+      const prompt = makeFile ? "Save our idea as a note." : "Help me brainstorm a weekend plan.";
+      const stream = await request(tokens[1], "/api/ai/run", "POST", {sessionId:emptyRoomId,repoId:emptyRepo.id,agentId:"codex",prompt,turnId:randomUUID(),...(emptyRunId ? {runId:emptyRunId,controlVersion:0} : {})});
+      assert.equal(stream.status, 200);
+      const streamText = stream.text();
+      const {job} = await (await runnerRequest("/api/runner/claim", {version:"2",waitMs:0})).json();
+      assert.equal(job.repoId, emptyRepo.id);
+      emptyRunId = job.runId;
+      const runnerGit = new RunnerGit(server, deviceToken, join(directory, "empty-project-runner"));
+      const resultSha = await runnerGit.withWorkspace(job, async workspace => {
+        assert.deepEqual((await readdir(workspace.path)).filter(name=>name!==".git"), [], "no uploaded or template files are required");
+        if(makeFile) await writeFile(join(workspace.path,"notes.txt"),"Take a walk and sketch ideas.\n");
+        return workspace.commitAndPush("Conversation note", job.author);
+      });
+      if(!makeFile) assert.equal(resultSha, null, "normal conversation completes without file changes");
+      const report={code:0,resultSha,output:makeFile?"Saved your note.":"Let’s plan a relaxing weekend.",errOutput:"",ms:5};
+      assert.equal((await runnerRequest(`/api/runner/runs/${job.turnId}/complete`,report)).status,200);
+      assert.match(await streamText,/"t":"exit"/);
+      const saved=await (await request(tokens[1],`/api/sessions/${emptyRoomId}/runs/${emptyRunId}`)).json();
+      assert.equal(saved.run.repoId,emptyRepo.id);
+      assert.ok(saved.messages.some(message=>message.body.includes(report.output)), "conversation is saved without an uploaded folder");
+    }
+    assert.equal((await (await request(tokens[1],`/api/sessions/${emptyRoomId}/file?repoId=${emptyRepo.id}&path=notes.txt`)).json()).text,"Take a walk and sketch ideas.\n");
+    const emptyView=await tab(tokens[1],`${emptyRoomId}?run=${emptyRunId}`);
+    await eventually(()=>emptyView.evaluate('document.body.textContent.includes("Let’s plan a relaxing weekend.") && document.body.textContent.includes("Saved your note.")'),"empty project conversation survives reopening");
+    console.log("  ok empty project runs: no-file conversation, saved history, follow-up file creation, and reopening through real APIs");
     const denied = await request(tokens[0], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 0, prompt: "Stale driver" });
     assert.equal(denied.status, 409);
     for (let index = 0; index < 2; index += 1) {
@@ -554,7 +605,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.equal(job.runId, chat.id);
       assert.match(job.agentPrompt, /Continue the accessible checkout/);
       if (index === 0) {
-        await recipient.command("Page.navigate", {url:`${server}/s/${roomId}?run=${chat.id}`});
+        await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
         await eventually(() => recipient.evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`), "working agent queue composer");
         const message = "Also verify keyboard navigation while working";
         await recipient.evaluate(`(() => { const input=document.querySelector('textarea[aria-label="Message working agent"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(message)}); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
@@ -606,11 +657,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.match(changed.diff,/Available after laptop shutdown/);
     assert.equal((await request(tokens[0],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,409);
     assert.equal((await request(tokens[1],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,200);
-    await recipient.command("Page.navigate",{url:`${server}/s/${roomId}?run=${chat.id}`});
+    await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
     await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
     await recipient.click("Activity & checkpoints");
-    await eventually(()=>recipient.evaluate(`document.querySelector('select[aria-label="Code checkpoint"]')?.options.length > 1`),"uploaded checkpoint visible");
-    await recipient.selectOption('select[aria-label="Code checkpoint"]', checkpoint.id);
+    await eventually(()=>recipient.evaluate(`document.querySelector('button[aria-label="Code checkpoint"]')?.disabled === false`),"uploaded checkpoint visible");
+    await recipient.selectPicker("Code checkpoint", checkpoint.id);
     await eventually(()=>recipient.evaluate('document.querySelector("dialog")?.textContent.includes("unfinished.txt")'),"offline checkpoint files");
     await recipient.click("A unfinished.txt");
     await eventually(()=>recipient.evaluate('document.querySelector("dialog pre")?.textContent.includes("Available after laptop shutdown")'),"checkpoint diff displayed");
@@ -625,7 +676,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       fetch(server),
       ...["/api/orgs/ux-workshop/projects", "/api/orgs/ux-workshop/usage", "/api/chat/conversations?org=ux-workshop", "/api/invitations", "/api/runner/devices"].map(path => request(tokens[0], path)),
     ]);
-    await sender.command("Page.navigate", { url: `${server}/workspace` });
+    await sender.navigate(`${server}/workspace`);
     await eventually(() => sender.evaluate('!!document.querySelector(\'button[title="UX workshop"]\')'), "organization navigation");
     await sender.evaluate('document.querySelector(\'button[title="UX workshop"]\').click()');
     await eventually(() => sender.evaluate('document.querySelector("main h1")?.textContent === "UX workshop"'), "guided project overview");
@@ -636,20 +687,21 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sender.click("Cancel");
     await sender.command("Network.enable", {});
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/ai/agents*"] });
-    await sender.click("Set up AI");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer.")'), "AI setup provides next steps");
+    await sender.evaluate('document.querySelector(\'button[aria-label="AI providers"]\').click()');
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect your computer.")'), "AI setup provides next steps");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "AI setup failures surface with a retry");
     await sender.command("Network.setBlockedURLs", { urls: [] });
     await sender.click("Check connections");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
     await sender.command("Network.setBlockedURLs", { urls: ["*/api/runner/devices*"] });
     await sender.click("Connect your computer");
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("The desktop app connects this computer automatically after sign-in")'), "AI setup links to device pairing");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer to send AI messages")'), "AI setup links to device pairing");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
     await sender.command("Network.setBlockedURLs", { urls: [] });
-    await sender.click("Try again");
-    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a computer" && !button.disabled)'), "device loading retry recovers");
-    await sender.click("Connect a computer");
+    await sender.click("Check connection again");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a new computer with commands" && !button.disabled)'), "device loading retry recovers");
+    await sender.evaluate('document.querySelector("dialog details summary").click()');
+    await sender.click("Connect a new computer with commands");
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("multiplayer-ai-runner pair")'), "standalone runner pairing instructions");
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multiplayer-ai-runner.tgz`));
@@ -662,7 +714,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal(download.status, 200);
     const artifact = new Uint8Array(await download.arrayBuffer());
     assert.deepEqual([...artifact.slice(0, 2)], [0x1f, 0x8b], 'download is the actual gzip package');
-    await sender.click("Done");
+    await sender.click("Close");
     await eventually(() => sender.evaluate('!document.querySelector("dialog") && document.querySelector("main h1")?.textContent === "UX workshop"'), "return to project overview");
     for (const [width, height, name] of [[1440, 960, "desktop"], [390, 844, "mobile"]]) {
       await sender.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });

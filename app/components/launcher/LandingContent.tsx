@@ -64,7 +64,7 @@ export function LandingContent() {
   return (
     <div className="mx-auto w-full max-w-4xl px-8 py-14">
       <section>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel px-2.5 py-1 text-chrome font-medium text-vs-muted">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel px-2.5 py-1 text-[12px] font-medium text-vs-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-vs-success" />
           Local-first collaborative workspace
         </span>
@@ -111,16 +111,16 @@ export function LandingContent() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-vs-accent/12 text-vs-accent">
                   {feature.icon}
                 </span>
-                <h3 className="font-display min-w-0 flex-1 truncate text-lead font-semibold tracking-tight">
+                <h3 className="font-display min-w-0 flex-1 truncate text-[16px] font-semibold tracking-tight">
                   {feature.title}
                 </h3>
                 {feature.badge && (
-                  <span className="shrink-0 rounded border border-vs-border px-1.5 py-0.5 text-micro uppercase tracking-wide text-vs-muted">
+                  <span className="shrink-0 rounded border border-vs-border px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                     {feature.badge}
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-body leading-6 text-vs-muted">{feature.body}</p>
+              <p className="mt-2.5 text-[14px] leading-6 text-vs-muted">{feature.body}</p>
             </article>
           ))}
         </div>
@@ -133,13 +133,13 @@ export function LandingContent() {
         <ol className="mt-4 grid gap-3 sm:grid-cols-3">
           {STEPS.map((step, index) => (
             <li key={step.title} className="rounded-xl border border-vs-border bg-vs-panel/50 p-4">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-vs-accent text-chrome font-semibold text-vs-accent-fg">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-vs-accent text-[12px] font-semibold text-vs-accent-fg">
                 {index + 1}
               </span>
-              <h3 className="font-display mt-3 text-lead font-semibold tracking-tight">
+              <h3 className="font-display mt-3 text-[16px] font-semibold tracking-tight">
                 {step.title}
               </h3>
-              <p className="mt-1.5 text-body leading-6 text-vs-muted">{step.body}</p>
+              <p className="mt-1.5 text-[14px] leading-6 text-vs-muted">{step.body}</p>
             </li>
           ))}
         </ol>
@@ -150,7 +150,7 @@ export function LandingContent() {
           <ShieldIcon className="h-4 w-4 text-vs-accent" />
           Why a link alone is not enough
         </h2>
-        <p className="mt-2 max-w-2xl text-body leading-6 text-vs-muted">
+        <p className="mt-2 max-w-2xl text-[14px] leading-6 text-vs-muted">
           The session id in the address bar is not a credential. Access lives in a key your browser
           holds in an httpOnly cookie, which page scripts cannot read and a URL cannot carry. Anyone
           who only has the link — forwarded, pasted into a chat, copied off a screen — lands on a

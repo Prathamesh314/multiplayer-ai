@@ -18,6 +18,13 @@ if [[ -f compose.https.yml ]]; then compose_files+=(-f compose.https.yml); fi
 compose() { docker compose --env-file .env.production "${compose_files[@]}" "$@"; }
 query() { compose exec -T postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1 -c "$1"' sh "$1"; }
 schema() { query "SELECT version FROM schema_migrations ORDER BY version"; }
+cleanup_images() {
+  # Docker preserves images referenced by any container, including the current
+  # release we may need to restart on failure. Never prune containers or volumes.
+  echo 'Removing unused Docker images and limiting unused build cache to 2 GB.'
+  docker image prune --all --force || return
+  docker builder prune --all --force --keep-storage 2GB || return
+}
 stopped=0
 migrating=0
 before_schema=''
@@ -46,9 +53,14 @@ compose config --quiet
 test -s "$state/backup-key.env"
 old_worker=$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q worker)")
 docker image inspect "$old_worker" >/dev/null
+cleanup_images
 # Refuse low disk space before a build can displace a healthy running release.
 available=$(df -Pk . | awk 'NR==2 {print $4}')
-test "$available" -ge 8388608
+echo "Free disk after cleanup: $available KiB; deployment requires at least 8388608 KiB (8 GiB)."
+if [[ ! $available =~ ^[0-9]+$ ]] || [[ "$available" -lt 8388608 ]]; then
+  echo 'Not enough disk space to deploy after Docker cleanup. Free space or expand the VM disk; application data and backups were preserved.' >&2
+  false
+fi
 echo "Building production images for $revision while the current release serves traffic."
 APP_VERSION="$revision" compose build web worker
 active=$(query "SELECT count(*) FROM agent_runs WHERE status IN ('queued','running')")
@@ -93,5 +105,12 @@ for route in / /login /workspace; do
 done
 printf '%s\n' "$revision" > "$state/deployed-revision"
 trap - ERR
+# The new release is healthy and its revision is recorded. Remove the superseded
+# images now, never before verification. A cleanup failure must not roll back a
+# healthy release after its previous images may already have been deleted.
+if ! cleanup_images; then
+  echo "Deployment $revision is healthy, but Docker cleanup failed. Retry cleanup; do not roll back the application." >&2
+  exit 1
+fi
 compose ps
 echo "Verified deployment $revision at https://$domain. Backup: $backup"

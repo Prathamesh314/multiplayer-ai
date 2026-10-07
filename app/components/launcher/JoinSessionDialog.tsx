@@ -85,7 +85,7 @@ export function JoinSessionDialog({
         />
       </Field>
 
-      <p className="flex items-start gap-2 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-chrome leading-5 text-vs-muted">
+      <p className="flex items-start gap-2 rounded-lg border border-vs-border bg-vs-editor px-3 py-2.5 text-[12px] leading-5 text-vs-muted">
         <ShieldIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-vs-accent" />
         Both parts are required. A session link that was forwarded on, or copied out of someone
         else&apos;s browser, will not open without its code.
