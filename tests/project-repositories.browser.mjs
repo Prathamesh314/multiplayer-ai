@@ -339,7 +339,7 @@ try {
   await click('button[aria-label="Choose model"]');
   await eventually(()=>evaluate(`!!document.querySelector('.composer-picker [role="option"]')`),"model popover");
   assert.ok(await evaluate(`(()=>{const trigger=document.querySelector('button[aria-label="Choose model"]').getBoundingClientRect();const popup=document.querySelector('.composer-picker').getBoundingClientRect();return popup.bottom < trigger.top && popup.top >= 0 && popup.right <= innerWidth;})()`),"model menu opens above composer within viewport");
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.composer-picker-option')).fontSize`),"18px");
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.composer-picker-option')).fontSize`),"16px");
   await type('input[aria-label="Search models"]',"Beta");
   assert.equal(await evaluate(`document.querySelectorAll('.composer-picker [role="option"]').length`),1,"model search filters live inventory");
   await click('.composer-picker [role="option"]');

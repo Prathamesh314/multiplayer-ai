@@ -17,6 +17,7 @@ export function ModelPicker({ inventory, value, onChange, onRefresh, refreshing,
     value={value}
     onChange={onChange}
     searchable
+    searchLabel="Search models"
     icon={<SparkleIcon className="h-4 w-4 shrink-0 text-vs-accent" />}
     options={inventory.choices.map(choice => ({ ...choice, description: choice.id && choice.id !== choice.label ? choice.id : undefined, group: choice.id.includes("/") ? choice.id.split("/")[0] : provider }))}
     header={<button type="button" onClick={onRefresh} disabled={refreshing} className="rounded-lg px-2 py-1 text-sm text-vs-muted hover:bg-vs-hover disabled:opacity-50">{refreshing ? <SpinnerIcon className="h-4 w-4" /> : "Refresh"}</button>}

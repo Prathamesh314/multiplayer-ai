@@ -41,7 +41,7 @@ export const XtermView = forwardRef<XtermHandle, { id: string }>(function XtermV
         cursorBlink: true,
         fontFamily:
           'ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Code", "Roboto Mono", monospace',
-        fontSize: 14.5,
+        fontSize: 12.5,
         scrollback: 10_000,
         theme: {
           background: v("--vs-terminal", "#0b0e14"),

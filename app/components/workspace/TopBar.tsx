@@ -101,7 +101,7 @@ export function TopBar({
         </button>
       )}
 
-      <div className="hidden min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-vs-panel px-2 py-1 text-[13px] text-vs-muted xl:flex">
+      <div className="hidden min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-vs-panel px-2 py-1 text-[11px] text-vs-muted xl:flex">
         <span className="truncate">
           {folderName ?? "No folder open"}
           {folderName && isGit && branch && (
@@ -198,7 +198,7 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[12px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
+          className={`max-w-64 truncate text-[10px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}

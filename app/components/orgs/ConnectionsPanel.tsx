@@ -55,7 +55,7 @@ export function ConnectionsPanel({
   return (
     <main className="app-page vs-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8 lg:py-10">
-        <p className="text-[13px] font-medium uppercase tracking-[0.18em] text-vs-muted">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">
           Project context
         </p>
         <h1 className="font-display mt-2 text-xl font-semibold tracking-tight">
@@ -77,8 +77,7 @@ export function ConnectionsPanel({
                 ? projects.map((item) => ({ id: item.id, label: item.name }))
                 : [{ id: "", label: "No projects available" }]}
               icon={<FolderIcon className="h-4 w-4 shrink-0 text-vs-muted" />}
-              className="connections-project-picker"
-              placement="auto"
+              variant="field"
               disabled={!projects.length}
             />
           </div>
@@ -274,7 +273,7 @@ function ProjectConnections({
                           <span className="truncate">#{channel.name}</span>
                           <LinkIcon className="h-3 w-3 shrink-0" />
                         </a>
-                        <p className="mt-1 text-[13px] leading-4 text-vs-muted">
+                        <p className="mt-1 text-[11px] leading-4 text-vs-muted">
                           {channel.error ??
                             (channel.syncedAt
                               ? !channel.verifiedAt ||

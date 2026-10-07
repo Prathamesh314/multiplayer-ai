@@ -55,7 +55,7 @@ export function ShareChatDialog({run,onClose}:{run:AgentRun;onClose:()=>void}) {
     <Link href={sharedChatPath(run.id)} target="_blank" rel="noopener noreferrer" className="inline-block text-sm text-vs-accent underline underline-offset-4">Preview shared chat & reply to comments</Link>
     <form onSubmit={create} className="space-y-4">
       <Field label="Recipient’s email"><input required type="email" maxLength={254} value={email} onChange={e=>setEmail(e.target.value)} className={inputClass} placeholder="teammate@example.com" /></Field>
-      <ComposerPicker label="Guest permission" value={role} onChange={value=>setRole(value as ChatShareRole)} placement="auto" className="connections-project-picker" options={[
+      <ComposerPicker label="Guest permission" value={role} onChange={value=>setRole(value as ChatShareRole)} variant="field" disabled={busy||loading||!canManage} options={[
         {id:"viewer",label:"Can view",description:"Read this conversation and its comments."},
         {id:"commenter",label:"Can comment",description:"Read and discuss. Comments do not run AI or change files."},
       ]}/>

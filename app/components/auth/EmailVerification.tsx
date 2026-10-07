@@ -91,7 +91,7 @@ export function EmailVerification({ initial, onVerified, onBack }: {
     : expired && verification.deliveryStatus === "sent" ? "This code has expired. Request a new code below."
     : verification.deliveryStatus === "failed" ? deliveryError : null;
   return <>
-    <h1 className="font-display mt-6 text-[30px] font-semibold tracking-tight">Verify your email</h1>
+    <h1 className="font-display mt-6 text-[28px] font-semibold tracking-tight">Verify your email</h1>
     <p className="mt-2 text-sm leading-6 text-vs-muted">Confirm your email to finish signing in. You only need to do this once.</p>
     <p className="mt-3 break-all text-sm font-medium text-vs-fg">{verification.email}</p>
     {guidance ? <div id="email-code-guidance" className="mt-4"><ErrorNote announce={false}>{guidance}</ErrorNote></div>

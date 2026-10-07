@@ -48,6 +48,7 @@ import type { Session, SessionMember } from "../../lib/session/types";
 import { CloseIcon, PlusIcon, ShieldIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, Field, GhostButton, Modal, PrimaryButton, inputClass } from "../ui/Modal";
 import { Avatar, CopyLink } from "./parts";
+import { ComposerPicker } from "../workspace/ComposerPicker";
 
 /**
  * The other half of getting started: joining an organisation someone else
@@ -119,13 +120,13 @@ export function JoinOrgDialog({
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div>
-        <p className="text-[13px] uppercase tracking-wider text-vs-muted">Invitations for you</p>
+        <p className="text-[11px] uppercase tracking-wider text-vs-muted">Invitations for you</p>
         {invitations === null ? (
           <div className="flex justify-center py-4">
             <SpinnerIcon className="h-4 w-4 text-vs-muted" />
           </div>
         ) : invitations.length === 0 ? (
-          <p className="mt-1.5 text-[15px] text-vs-muted">
+          <p className="mt-1.5 text-[13px] text-vs-muted">
             Nothing yet — ask a teammate to invite you.
           </p>
         ) : (
@@ -137,8 +138,8 @@ export function JoinOrgDialog({
               >
                 <Avatar name={invite.orgName} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-medium text-vs-fg">{invite.orgName}</p>
-                  <p className="truncate text-[14px] text-vs-muted">
+                  <p className="truncate text-[14px] font-medium text-vs-fg">{invite.orgName}</p>
+                  <p className="truncate text-[12px] text-vs-muted">
                     {invite.invitedByName} invited you as {invite.role}
                   </p>
                 </div>
@@ -173,7 +174,7 @@ export function JoinOrgDialog({
           hint="Share it with an org admin — they can add you directly."
         >
           <div className="mt-1.5 flex items-center gap-2">
-            <code className="flex-1 rounded-md border border-vs-border bg-vs-editor px-3 py-2 font-mono text-[15px] text-vs-fg">
+            <code className="flex-1 rounded-md border border-vs-border bg-vs-editor px-3 py-2 font-mono text-[13px] text-vs-fg">
               {connectCode}
             </code>
             <GhostButton
@@ -469,14 +470,14 @@ export function OrgAdminDialog({
       {/* Pooled usage overview */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg border border-vs-border px-3 py-2">
-          <p className="text-[12px] uppercase tracking-wider text-vs-muted">Running now</p>
-          <p className="mt-0.5 text-[17px] font-semibold">
+          <p className="text-[10px] uppercase tracking-wider text-vs-muted">Running now</p>
+          <p className="mt-0.5 text-[15px] font-semibold">
             {usage ? `${usage.concurrency.used} / ${usage.concurrency.limit}` : "—"}
           </p>
         </div>
         <div className="rounded-lg border border-vs-border px-3 py-2">
-          <p className="text-[12px] uppercase tracking-wider text-vs-muted">AI turns this month</p>
-          <p className="mt-0.5 text-[17px] font-semibold">
+          <p className="text-[10px] uppercase tracking-wider text-vs-muted">AI turns this month</p>
+          <p className="mt-0.5 text-[15px] font-semibold">
             {usage
               ? usage.monthly.limit != null
                 ? `${usage.monthly.used} / ${usage.monthly.limit}`
@@ -488,7 +489,7 @@ export function OrgAdminDialog({
 
       {/* Roster */}
       <div>
-        <h3 className="text-[13px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
           Members ({members?.length ?? 0})
         </h3>
         {members === null ? (
@@ -512,37 +513,33 @@ export function OrgAdminDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px]">
+                    <span className="block truncate text-[13px]">
                       {m.displayName}
                       {isSelf && <span className="text-vs-muted"> (you)</span>}
                       {suspended && (
-                        <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-[11px] uppercase tracking-wide text-amber-500">
+                        <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] uppercase tracking-wide text-amber-500">
                           Suspended
                         </span>
                       )}
                     </span>
-                    <span className="block truncate text-[13px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[11px] text-vs-muted">@{m.handle}</span>
                   </span>
 
                   {editable ? (
                     <>
-                      <select
+                      <ComposerPicker
+                        variant="field"
                         value={m.role}
-                        onChange={(e) =>
+                        onChange={(value) =>
                           mutate(m.userId, () =>
-                            updateOrgMember(org.slug, m.userId, { role: e.target.value as OrgRole }),
+                            updateOrgMember(org.slug, m.userId, { role: value as OrgRole }),
                           )
                         }
                         disabled={busy}
-                        aria-label={`Role for ${m.displayName}`}
-                        className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[13px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
-                      >
-                        {roleOptions.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
+                        label={`Role for ${m.displayName}`}
+                        className="shrink-0"
+                        options={roleOptions.map(role => ({ id: role, label: role[0].toUpperCase() + role.slice(1) }))}
+                      />
                       <button
                         type="button"
                         onClick={() =>
@@ -554,7 +551,7 @@ export function OrgAdminDialog({
                         }
                         disabled={busy}
                         title={suspended ? "Reactivate" : "Suspend"}
-                        className="rounded border border-vs-border px-1.5 py-1 text-[12px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+                        className="rounded border border-vs-border px-1.5 py-1 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
                       >
                         {suspended ? "Reactivate" : "Suspend"}
                       </button>
@@ -575,7 +572,7 @@ export function OrgAdminDialog({
                       </button>
                     </>
                   ) : (
-                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[12px] uppercase tracking-wide text-vs-muted">
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted">
                       {m.role}
                     </span>
                   )}
@@ -588,7 +585,7 @@ export function OrgAdminDialog({
 
       {/* Projects — hands off to the per-project members dialog */}
       <div>
-        <h3 className="text-[13px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
           Projects ({projects?.length ?? 0})
         </h3>
         {projects === null ? (
@@ -604,11 +601,11 @@ export function OrgAdminDialog({
                 key={p.id}
                 className="flex items-center gap-2 rounded-lg border border-vs-border px-2.5 py-1.5"
               >
-                <span className="min-w-0 flex-1 truncate text-[15px]">{p.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
                 <button
                   type="button"
                   onClick={() => onManageProject(p)}
-                  className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[13px] transition hover:bg-vs-hover"
+                  className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[11px] transition hover:bg-vs-hover"
                 >
                   <UsersIcon className="h-3.5 w-3.5" />
                   Members
@@ -731,7 +728,7 @@ export function ProjectMembersDialog({
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div>
-        <h3 className="text-[14px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
           On this project ({members?.length ?? 0})
         </h3>
         {members === null ? (
@@ -752,28 +749,24 @@ export function ProjectMembersDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[16px]">
+                    <span className="block truncate text-[14px]">
                       {m.displayName}
                       {isSelf && <span className="text-vs-muted"> (you)</span>}
                     </span>
-                    <span className="block truncate text-[14px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   {editable ? (
-                    <select
+                    <ComposerPicker
+                      variant="field"
                       value={m.role}
-                      onChange={(e) => changeRole(m.userId, e.target.value as ProjectRole)}
+                      onChange={(value) => void changeRole(m.userId, value as ProjectRole)}
                       disabled={pending === m.userId}
-                      aria-label={`Role for ${m.displayName}`}
-                      className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[14px] uppercase tracking-wide text-vs-fg outline-none disabled:opacity-50"
-                    >
-                      {PROJECT_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+                      label={`Role for ${m.displayName}`}
+                      className="shrink-0"
+                      options={PROJECT_ROLES.map(role => ({ id: role, label: role[0].toUpperCase() + role.slice(1) }))}
+                    />
                   ) : (
-                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[13px] uppercase tracking-wide text-vs-muted">
+                    <span className="rounded bg-vs-active px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                       {m.role}
                     </span>
                   )}
@@ -801,23 +794,20 @@ export function ProjectMembersDialog({
 
       {canManage && (
         <div>
-          <div className="flex items-center justify-between">
-            <h3 className="text-[14px] font-semibold uppercase tracking-wider text-vs-muted">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
               Add from organisation
             </h3>
-            <label className="flex items-center gap-1.5 text-[14px] text-vs-muted">
+            <label className="flex items-center gap-1.5 text-[12px] text-vs-muted">
               Role
-              <select
+              <ComposerPicker
+                label="Role for new project members"
+                variant="field"
                 value={role}
-                onChange={(e) => setRole(e.target.value as ProjectRole)}
-                className="rounded border border-vs-border bg-vs-editor px-1.5 py-1 text-[14px] text-vs-fg outline-none"
-              >
-                {PROJECT_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setRole(value as ProjectRole)}
+                disabled={pending !== null}
+                options={PROJECT_ROLES.map(role => ({ id: role, label: role[0].toUpperCase() + role.slice(1) }))}
+              />
             </label>
           </div>
 
@@ -834,14 +824,14 @@ export function ProjectMembersDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[16px]">{m.displayName}</span>
-                    <span className="block truncate text-[14px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[14px]">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => add(m.userId)}
                     disabled={pending === m.userId}
-                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[14px] transition hover:bg-vs-hover disabled:opacity-50"
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[12px] transition hover:bg-vs-hover disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />
@@ -1023,7 +1013,7 @@ export function RoomSettingsDialog({
                 : "border-vs-border hover:bg-vs-hover"
             }`}
           >
-            <span className="flex items-center gap-1.5 text-[16px] font-medium">
+            <span className="flex items-center gap-1.5 text-[14px] font-medium">
               {option.v === "private" ? (
                 <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
               ) : (
@@ -1031,18 +1021,18 @@ export function RoomSettingsDialog({
               )}
               {option.title}
             </span>
-            <span className="mt-0.5 block text-[14px] leading-4 text-vs-muted">{option.hint}</span>
+            <span className="mt-0.5 block text-[12px] leading-4 text-vs-muted">{option.hint}</span>
           </button>
         ))}
       </div>
       {!isOwner && (
-        <p className="text-[14px] text-vs-muted">
+        <p className="text-[12px] text-vs-muted">
           Only the room owner can rename it, change its privacy or manage who&apos;s in it.
         </p>
       )}
 
       <div>
-        <h3 className="text-[14px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
           In this room ({members?.length ?? 0})
         </h3>
         {members === null ? (
@@ -1058,10 +1048,10 @@ export function RoomSettingsDialog({
               >
                 <Avatar name={m.displayName} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[16px]">{m.displayName}</span>
-                  <span className="block truncate text-[14px] text-vs-muted">@{m.handle}</span>
+                  <span className="block truncate text-[14px]">{m.displayName}</span>
+                  <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                 </span>
-                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[13px] uppercase tracking-wide text-vs-muted">
+                <span className="rounded bg-vs-active px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-vs-muted">
                   {m.userId === ownerId ? "owner" : m.role}
                 </span>
                 {isOwner && m.userId !== ownerId && (
@@ -1087,7 +1077,7 @@ export function RoomSettingsDialog({
 
       {isOwner && visibility === "private" && (
         <div>
-          <h3 className="text-[14px] font-semibold uppercase tracking-wider text-vs-muted">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
             Add from the project
           </h3>
           {addable.length === 0 ? (
@@ -1103,14 +1093,14 @@ export function RoomSettingsDialog({
                 >
                   <Avatar name={m.displayName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[16px]">{m.displayName}</span>
-                    <span className="block truncate text-[14px] text-vs-muted">@{m.handle}</span>
+                    <span className="block truncate text-[14px]">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => add(m.userId)}
                     disabled={pending === m.userId}
-                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[14px] transition hover:bg-vs-hover disabled:opacity-50"
+                    className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-[12px] transition hover:bg-vs-hover disabled:opacity-50"
                   >
                     {pending === m.userId ? (
                       <SpinnerIcon className="h-3.5 w-3.5" />

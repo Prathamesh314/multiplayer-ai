@@ -32,7 +32,7 @@ export function ReviewPanel({runId,userId}:{runId:string;userId:string}) {
     {!data?<GhostButton onClick={refresh}>{error?'Retry reviews':'Loading reviews…'}</GhostButton>:<>
       {data.canRequest&&<form onSubmit={create} className="space-y-3 rounded-xl border border-vs-border p-3">
         <p className="text-sm">Saved version: <code>{data.headSha?.slice(0,8)??'No saved version yet'}</code></p>
-        <ComposerPicker label="Choose reviewer" value={reviewer} onChange={setReviewer} searchable placement="auto" options={data.reviewers.map(person=>({id:person.id,label:person.name}))} />
+        <ComposerPicker label="Choose reviewer" variant="field" value={reviewer} onChange={setReviewer} searchable searchLabel="Search reviewers" disabled={busy} options={data.reviewers.map(person=>({id:person.id,label:person.name}))} />
         {!data.reviewers.length&&<p className="text-sm text-vs-muted">No other editors are available. Invite a teammate, or grant an accepted guest editing access from Share chat.</p>}
         <label className="block text-sm">What should they check?<textarea rows={2} maxLength={4000} value={note} onChange={e=>setNote(e.target.value)} className={`${inputClass} mt-1`} placeholder="Requirements, risks, or specific changes to inspect…" /></label>
         <PrimaryButton type="submit" disabled={busy||!reviewer||!data.headSha}>Request teammate review</PrimaryButton>

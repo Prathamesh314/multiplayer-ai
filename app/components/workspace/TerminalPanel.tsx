@@ -96,7 +96,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
             href={`http://localhost:${port}`}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1 rounded border border-vs-border px-1.5 py-0.5 text-[13px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="flex items-center gap-1 rounded border border-vs-border px-1.5 py-0.5 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             <LinkIcon className="h-3 w-3" />
             Open :{port}
@@ -105,7 +105,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => handles.current.get(activeId)?.clear()}
             title="Clear (or Ctrl+L)"
-            className="rounded px-1.5 py-0.5 text-[12px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
           >
             Clear
           </button>
@@ -165,7 +165,7 @@ function TabButton({
 }) {
   return (
     <span
-      className={`group flex shrink-0 items-center gap-1.5 rounded-md py-1 pl-2 pr-1 text-[13.5px] transition ${
+      className={`group flex shrink-0 items-center gap-1.5 rounded-md py-1 pl-2 pr-1 text-[11.5px] transition ${
         active ? "bg-vs-terminal text-vs-fg" : "text-vs-muted hover:bg-vs-hover hover:text-vs-fg"
       }`}
     >

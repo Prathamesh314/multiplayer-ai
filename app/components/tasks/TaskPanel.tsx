@@ -3,8 +3,9 @@ import { openUserStream } from "../../lib/events/shared-client";
 
 import { openSessionStream } from "../../lib/events/client";
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isSelfAssignment, taskStatuses, type RoomTask, type TaskMember, type TaskStatus } from "../../lib/tasks/types";
+import { ComposerPicker } from "../workspace/ComposerPicker";
 
 const labels: Record<TaskStatus,string> = {open:"To do",in_progress:"In progress",done:"Done",cancelled:"Cancelled"};
 async function request<T>(url:string, init?:RequestInit):Promise<T> {
@@ -33,7 +34,6 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignActi
   const mutation = useRef(false);
   const requestsInFlight = useRef(0);
   const pending = useRef<{payload:string;id:string}|null>(null);
-  const pickerId = useId();
   const assignees = members.filter(member => !isSelfAssignment(userId, member.userId));
   const url = `/api/tasks?offset=${offset}&members=${assigning ? "1" : "0"}${sessionId && runId ? `&sessionId=${encodeURIComponent(sessionId)}&runId=${encodeURIComponent(runId)}` : ""}`;
   const refresh = useCallback(async () => {
@@ -88,13 +88,12 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignActi
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-sm font-semibold">{runId ? "Chat tasks" : "My tasks"}</h2>
       {runId && canAssign && showAssignAction && <button type="button" aria-expanded={assigning} onClick={() => setAssigning(!assigning)} className="rounded border border-vs-border px-2.5 py-1 text-vs-accent">@ Assign task</button>}
-      {!runId && <span className="text-[13px] text-vs-muted">Assigned to you across your rooms</span>}
+      {!runId && <span className="text-[11px] text-vs-muted">Assigned to you across your rooms</span>}
     </div>
     {assigning && <form onSubmit={assign} className="mt-3 space-y-3">
       <label className="block">Assign to another room member
-        <input required autoFocus disabled={busy} list={pickerId} value={person} onChange={e => setPerson(e.target.value)} placeholder="@handle" className="mt-1 block w-full rounded border border-vs-border bg-vs-editor p-2" />
+        <ComposerPicker label="Task assignee" variant="field" className="mt-1 w-full" placeholder="Choose a teammate" disabled={busy || loading} value={person} onChange={setPerson} searchable searchLabel="Search teammates" emptyLabel="No other room members available." options={assignees.map(member => ({ id: `@${member.handle}`, label: member.displayName, description: `@${member.handle}` }))} />
       </label>
-      <datalist id={pickerId}>{assignees.map(m => <option key={m.userId} value={`@${m.handle}`}>{m.displayName}</option>)}</datalist>
       <label className="block">What should they do?
         <textarea required disabled={busy} value={body} maxLength={4000} onChange={e => setBody(e.target.value)} placeholder="Please review the code changes in this chat…" rows={3} className="mt-1 block w-full rounded border border-vs-border bg-vs-editor p-2" />
       </label>
@@ -109,7 +108,7 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignActi
       <p className="mt-2 whitespace-pre-wrap break-words">{task.body}</p>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         {!runId && <Link href={`/s/${task.sessionId}?run=${task.runId}`} className="text-vs-accent underline">{task.roomName} / {task.chatTitle}</Link>}
-        {(task.assigneeId === userId || (canAssign && task.createdBy === userId)) ? <select aria-label={`Status for ${task.body.slice(0,60)}`} disabled={busy} value={task.status} onChange={e => void changeStatus(task.id,e.target.value as TaskStatus)} className="rounded border border-vs-border bg-vs-editor p-1">{taskStatuses.map(status => <option key={status} value={status}>{labels[status]}</option>)}</select> : <span>{labels[task.status]}</span>}
+        {(task.assigneeId === userId || (canAssign && task.createdBy === userId)) ? <ComposerPicker label={`Status for ${task.body.slice(0,60)}`} variant="field" disabled={busy} value={task.status} onChange={value => void changeStatus(task.id,value as TaskStatus)} options={taskStatuses.map(status => ({ id: status, label: labels[status] }))} /> : <span>{labels[task.status]}</span>}
       </div>
     </li>)}</ul>
     {(offset > 0 || hasMore) && <div className="mt-3 flex gap-3"><button disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0,offset-50))}>Previous</button><button disabled={!hasMore || busy} onClick={() => setOffset(offset+50)}>Next</button></div>}

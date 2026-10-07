@@ -5,7 +5,7 @@ import { CheckIcon, FilesIcon } from "../icons";
 
 export function Avatar({ name }: { name: string }) {
   return (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[13px] font-semibold uppercase text-vs-accent">
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[11px] font-semibold uppercase text-vs-accent">
       {initials(name)}
     </span>
   );
@@ -43,12 +43,12 @@ export function CopyLink({ url }: { url: string }) {
         readOnly
         value={url}
         onFocus={(e) => e.target.select()}
-        className="min-w-0 flex-1 rounded border border-vs-border bg-vs-panel px-2 py-1.5 font-mono text-[14px] text-vs-fg outline-none"
+        className="min-w-0 flex-1 rounded border border-vs-border bg-vs-panel px-2 py-1.5 font-mono text-[12px] text-vs-fg outline-none"
       />
       <button
         type="button"
         onClick={copy}
-        className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1.5 text-[14px] font-medium transition ${
+        className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1.5 text-[12px] font-medium transition ${
           copied
             ? "border-vs-success/50 text-vs-success"
             : "border-vs-border text-vs-muted hover:bg-vs-hover hover:text-vs-fg"

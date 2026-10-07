@@ -95,7 +95,7 @@ export function EditorArea({
               aria-controls={`${tabId}-chat-panel`}
               aria-selected={showPinned}
               tabIndex={showPinned ? 0 : -1}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-[14px]"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[12px]"
             >
               {pinned.icon}
               <span>{pinned.label}</span>
@@ -110,7 +110,7 @@ export function EditorArea({
           return (
             <div
               key={path}
-              className={`group flex shrink-0 items-center gap-2 border-r border-vs-border pl-2.5 pr-1.5 text-[14px] ${
+              className={`group flex shrink-0 items-center gap-2 border-r border-vs-border pl-2.5 pr-1.5 text-[12px] ${
                 isActive
                   ? "border-t-2 border-t-vs-accent bg-vs-editor pt-0 text-vs-fg"
                   : "border-t-2 border-t-transparent text-vs-muted hover:bg-vs-hover"
@@ -152,7 +152,7 @@ export function EditorArea({
         )}
 
         {showFile && activePath && (
-          <div className="vs-scroll flex shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-vs-border px-4 py-1 text-[14px] text-vs-muted">
+          <div className="vs-scroll flex shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
             {activePath.split("/").map((segment, index, all) => (
               <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
                 {segment}
@@ -163,7 +163,7 @@ export function EditorArea({
         )}
 
         {showFile && activePath && (editing.get(activePath)?.length ?? 0) > 0 && (
-          <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[14px] text-vs-muted">
+          <p className="flex shrink-0 items-center gap-2 border-b border-vs-border bg-vs-accent/5 px-4 py-1 text-[12px] text-vs-muted">
             <EditingBadge people={editing.get(activePath) ?? []} />
             <span>
               {(editing.get(activePath) ?? []).map((p) => p.name).join(", ")}
@@ -196,7 +196,7 @@ export function EditorArea({
                 <button
                   type="button"
                   onClick={() => onReload(activePath)}
-                  className="rounded border border-vs-border px-2 py-0.5 text-[14px] transition hover:bg-vs-hover"
+                  className="rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover"
                 >
                   Discard mine and reload
                 </button>

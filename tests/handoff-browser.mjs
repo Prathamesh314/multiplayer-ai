@@ -204,18 +204,6 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const navigate = url => changeDocument("Page.navigate", { url });
       const reload = () => changeDocument("Page.reload", {});
       const click = text => eventually(() => evaluate(`(() => { const scope = document.querySelector('dialog[open]') ?? document; const button = Array.from(scope.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)} && button.checkVisibility() && !button.disabled); if (!button) return false; button.click(); return true; })()`), `click ${text}`);
-      const selectOption = async (selector, value) => {
-        await command("Page.bringToFront");
-        await eventually(() => evaluate(`(() => {
-          const select=document.querySelector(${JSON.stringify(selector)});
-          return !!select && !select.disabled && Array.from(select.options).some(option=>option.value===${JSON.stringify(value)});
-        })()`), `option ${value} in ${selector}`);
-        await evaluate(`(() => {
-          const select=document.querySelector(${JSON.stringify(selector)});
-          select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));
-        })()`);
-        await eventually(() => evaluate(`document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(value)}`), `selected ${value}`);
-      };
       await navigate(`${server}/s/${targetRoom}`);
       try {
         await eventually(() => evaluate(`!!document.querySelector(${JSON.stringify(readySelector)})`), "room workspace");
@@ -225,11 +213,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
       const selectRepository = label => eventually(() => evaluate(`(() => { const button=Array.from(document.querySelectorAll('.room-sidebar button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify('New chat in '+label)}); if (!button) return false;button.click();return true; })()`), `repository ${label}`);
       const selectPicker = async (label, value) => {
-        await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="${label}"]')`),label);
-        await evaluate(`document.querySelector('button[aria-label="${label}"]').click()`);
-        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button)return false;button.click();return true;})()`),`picker option ${value}`);
+        await command("Page.bringToFront");
+        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(label)});if(!button||button.disabled||!button.checkVisibility())return false;button.scrollIntoView({block:'nearest'});button.focus();button.click();return true;})()`),`enabled picker ${label}`);
+        await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button||!button.checkVisibility())return false;button.click();return true;})()`),`picker option ${value}`);
       };
-      return { command, evaluate, navigate, reload, click, selectOption, selectRepository, selectPicker, targetId, sessionId };
+      return { command, evaluate, navigate, reload, click, selectRepository, selectPicker, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
@@ -294,12 +282,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const inbox = await tab(tokens[0]);
     await inbox.navigate(`${server}/workspace`);
     await eventually(() => inbox.evaluate(`document.querySelector('section[aria-label="My tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "assignee dashboard inbox");
-    await inbox.evaluate(`(() => {const select=document.querySelector('section[aria-label="My tasks"] select');select.value='done';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await inbox.selectPicker(`Status for ${taskText.slice(0,60)}`, "done");
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
     await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
-    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] select\')?.value === "done"'), "status refresh in source chat");
+    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] button[aria-label^="Status for"]\')?.textContent === "Done"'), "status refresh in source chat");
     // The File Manager assignment dialog works without running AI.
     await assigner.click("Assign Tasks");
     const composerSelector = taskSelector;
@@ -456,8 +444,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await eventually(() => view.evaluate("!!document.querySelector('section[aria-label=\"Chat control\"]')"), "handoff controls");
     }
     await sender.click("Handoff");
-    await eventually(() => sender.evaluate("!!document.querySelector('dialog select')"), "handoff dialog");
-    await sender.selectOption('dialog select', bob);
+    await sender.selectPicker("Handoff recipient", bob);
     await sender.evaluate(`(() => { const note = document.querySelector('dialog textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(note, 'Continue the accessible checkout'); note.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await sender.evaluate("document.querySelector('dialog form').requestSubmit()");
     await eventually(() => recipient.evaluate("document.body.textContent.includes('Open handoff')"), "recipient inbox");
@@ -673,8 +660,8 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
     await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
     await recipient.click("Activity & checkpoints");
-    await eventually(()=>recipient.evaluate(`document.querySelector('select[aria-label="Code checkpoint"]')?.options.length > 1`),"uploaded checkpoint visible");
-    await recipient.selectOption('select[aria-label="Code checkpoint"]', checkpoint.id);
+    await eventually(()=>recipient.evaluate(`document.querySelector('button[aria-label="Code checkpoint"]')?.disabled === false`),"uploaded checkpoint visible");
+    await recipient.selectPicker("Code checkpoint", checkpoint.id);
     await eventually(()=>recipient.evaluate('document.querySelector("dialog")?.textContent.includes("unfinished.txt")'),"offline checkpoint files");
     await recipient.click("A unfinished.txt");
     await eventually(()=>recipient.evaluate('document.querySelector("dialog pre")?.textContent.includes("Available after laptop shutdown")'),"checkpoint diff displayed");
