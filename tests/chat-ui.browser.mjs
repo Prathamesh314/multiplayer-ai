@@ -77,6 +77,7 @@ function installFixtures() {
     if (path === "/api/sessions/locked-room") return json({error:"This room is private. Enter your access code to join."},403);
     if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }
     if (path === "/api/invitations") return json({invitations:[]});
+    if ((init.method ?? "GET") === "GET" && ["/api/collaboration/inbox", "/api/collaboration/access-requests"].includes(path)) return json({items:[],hasMore:false});
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
     if (path.endsWith("/projects")) return json({projects:[{id:"checkout",orgId:org.id,slug:"checkout",name:"Northstar Checkout",source:"local",githubRepo:null,defaultBranch:"main",upstreamUrl:null,myRole:"manager",createdAt:0,archivedAt:null}]});
     if (path.endsWith("/rooms")) return json({sessions:[{id:"alex-room",name:"Checkout · Alex",ownerId:"alex",visibility:"public"},{id:"priya-room",name:"Checkout · Priya",ownerId:"priya",visibility:"public"}]});
@@ -145,6 +146,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/workspace"});
   await eventually(()=>evaluate('!!document.querySelector("#projects-heading") && !!document.querySelector("main article")'),"project overview");
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Collaboration inbox"]\')?.textContent.includes("You’re caught up.")'),"collaboration inbox loaded without errors");
   assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
   assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--vs-editor").trim()`),"#141210","project overview shares the session palette");
   await evaluate("document.fonts.ready");await screenshot("projects");
