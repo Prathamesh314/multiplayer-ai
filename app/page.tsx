@@ -2,6 +2,7 @@ import { ExecutionRequirements } from "./components/ai/ExecutionRequirements";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AppScreenshot } from "./components/marketing/AppScreenshot";
+import { Brand } from "./components/marketing/Brand";
 import { ChatIcon, GitBranchIcon, TerminalIcon, UsersIcon } from "./components/icons";
 import { ProductPreview } from "./components/marketing/ProductPreview";
 import { MobileNavigation } from "./components/marketing/MobileNavigation";
@@ -20,10 +21,6 @@ export const metadata: Metadata = {
 
 function Arrow({ down = false }: { down?: boolean }) {
   return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={down ? "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-}
-
-function Brand() {
-  return <span className={styles.brand}><span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span>multiplayer<span className={styles.brandAi}>ai</span></span>;
 }
 
 const questions = [
@@ -57,7 +54,7 @@ export default function Home() {
       <header className={styles.header}>
         <div className={styles.navInner}>
           <Link href="/" aria-label="Multiplayer AI home"><Brand /></Link>
-          <nav className={styles.nav} aria-label="Main navigation"><a href="#product">Product</a><a href="#how-it-works">How it works</a><a href="#faq">FAQ</a></nav>
+          <nav className={styles.nav} aria-label="Main navigation"><a href="#product">Product</a><a href="#how-it-works">How it works</a><Link href="/docs">Docs</Link><a href="#faq">FAQ</a></nav>
           <div className={styles.navActions}><Link href="/workspace" className={styles.signIn}>Open workspace <span aria-hidden="true">↗</span></Link><a href="#download" className={styles.navDownload}>Get the app <Arrow down /></a></div>
           <MobileNavigation />
         </div>
@@ -101,10 +98,20 @@ export default function Home() {
           </article>)}</div>
           <div className={styles.downloadFootnote}><div><p>After installing, enter this website’s HTTPS address in Workspace address, then sign in.</p><p>Requires a workspace connection, Git, and a signed-in AI CLI.</p>{checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}</div><Link href="/workspace">Get started in your browser <Arrow /></Link></div>
         </section>
+        <section id="docs" className={`${styles.section} ${styles.docsSection}`} aria-labelledby="docs-title">
+          <div className={styles.sectionHeading}><div><p className={styles.kicker}>YOUR WORKSPACE, EXPLAINED</p><h2 id="docs-title">A clear path<br /><span>from setup to teamwork.</span></h2></div><p>Step-by-step documentation, real interface screenshots, and answers when you get stuck.</p></div>
+          <div className={styles.docsCards}>{[
+            ["prerequisites", "Before you start", "Check the computer, Git, account, and AI tool requirements."],
+            ["download-install", "Download & set up", "Install on your platform and connect your workspace."],
+            ["first-conversation", "Your first conversation", "Start with a repository, or just an idea."],
+            ["sharing", "Build with your team", "Invite guests, review changes, and hand off work."],
+          ].map(([slug, title, body]) => <Link key={slug} href={`/docs/${slug}`}><h3>{title} <span aria-hidden="true">↗</span></h3><p>{body}</p></Link>)}</div>
+          <Link href="/docs" className={styles.secondaryButton}>Explore all docs <Arrow /></Link>
+        </section>
         <section id="faq" className={`${styles.section} ${styles.faq}`} aria-labelledby="faq-title"><div><p className={styles.kicker}>A LITTLE MORE CONTEXT</p><h2 id="faq-title">Glad you asked.</h2><p>The details, before you dive in.</p></div><div className={styles.questions}>{questions.map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div></section>
         <section className={styles.finalCta}><span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span><h2>Build something great.<br /><span>Together.</span></h2><Link href="/workspace" className={styles.primaryButton}>Open your workspace <Arrow /></Link><p>Good ideas deserve good company.</p></section>
       </main>
-      <footer className={styles.footer}><Link href="/" aria-label="Multiplayer AI home"><Brand /></Link><p>A shared space for your next big idea.</p><nav aria-label="Footer navigation"><a href="#product">Product</a><a href="#download">Downloads</a><a href="#faq">FAQ</a></nav><span>© {new Date().getFullYear()} Multiplayer AI</span></footer>
+      <footer className={styles.footer}><Link href="/" aria-label="Multiplayer AI home"><Brand /></Link><p>A shared space for your next big idea.</p><nav aria-label="Footer navigation"><a href="#product">Product</a><a href="#download">Downloads</a><Link href="/docs">Docs</Link><a href="#faq">FAQ</a></nav><span>© {new Date().getFullYear()} Multiplayer AI</span></footer>
     </div>
   );
 }

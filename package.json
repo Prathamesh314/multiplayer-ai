@@ -92,7 +92,9 @@
     "test:google-auth:http": "node --import tsx tests/google-auth-http.mjs",
     "test:sharing": "node --import tsx tests/shared-chats.test.mjs && node --import tsx --test tests/db-limits.test.mjs",
     "test:sharing:http": "node --import tsx tests/shared-chats-http.mjs",
-    "test:collaboration": "node --import tsx tests/collaboration-flow.test.mjs"
+    "test:collaboration": "node --import tsx tests/collaboration-flow.test.mjs",
+    "docs:capture": "npm run desktop:prepare && node scripts/capture-docs.mjs --start-server",
+    "test:docs": "node --import tsx --test tests/docs.test.mjs && node --import tsx tests/docs.browser.mjs --start-server"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1143.0",

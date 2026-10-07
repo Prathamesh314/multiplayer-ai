@@ -112,6 +112,9 @@ jobs:
       - run: node tests/marketing-downloads.browser.mjs --start-server
         env:
           CHROME_BIN: /usr/bin/google-chrome
+      - run: npm run test:docs
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
       - run: npm run test:workspace-ui
         env:
           CHROME_BIN: /usr/bin/google-chrome
