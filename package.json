@@ -61,6 +61,8 @@
     "test:repo-context:live": "node --import tsx tests/repo-context-live.test.mjs",
     "test:project-repositories": "node --import tsx tests/project-repositories.test.mjs",
     "storage:maintain": "node --import tsx scripts/storage-maintenance.ts",
+    "storage:accounting": "node --import tsx scripts/storage-accounting.ts",
+    "bench:storage": "node --import tsx scripts/benchmark-storage-admission.mjs",
     "test:storage": "node --import tsx --test tests/storage.test.mjs",
     "test:load": "node --import tsx tests/load/run.mjs",
     "test:load:unit": "node --test tests/load/core.test.mjs tests/load/cancellation.test.mjs tests/load/resources.test.mjs",

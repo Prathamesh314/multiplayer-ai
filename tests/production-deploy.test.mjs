@@ -64,6 +64,9 @@ if(tool==='docker') {
       if(scenario==='schema-change')fs.writeFileSync(path.join(root,'migrated'),'1');
       if(['migration-failure','schema-change'].includes(scenario))process.exit(1);
     }
+    if(args.includes('scripts/storage-accounting.ts') && scenario==='accounting-failure') {
+      fs.writeFileSync(path.join(root,'migrated'),'1');process.exit(1);
+    }
   }
 }
 `, { mode: 0o755 });
@@ -86,7 +89,8 @@ test('production release builds pinned images, backs up, migrates once, then che
   const backup = find(c => c.args.includes('scripts/backup.mjs'));
   const migrate = find(c => c.args.includes('run') && c.args.at(-1) === 'migrate');
   const startup = find(c => c.args.includes('up'));
-  assert.ok(build < backup && backup < migrate && migrate < startup);
+  const accounting = find(c => c.args.includes('scripts/storage-accounting.ts'));
+  assert.ok(build < backup && backup < migrate && migrate < accounting && accounting < startup);
   assert.equal(commands[build].version, revision);
   assert.equal(commands.filter(c => c.args.includes('run') && c.args.at(-1) === 'migrate').length, 1);
   assert.deepEqual(commands[startup].args.slice(-4), ['web', 'web2', 'worker', 'gateway']);
@@ -144,8 +148,8 @@ for (const scenario of ['build-failure', 'busy', 'backup-failure', 'migration-fa
   });
 }
 
-test('partially applied migrations refuse automatic rollback to incompatible old code', () => {
-  const result = release('schema-change');
+for (const scenario of ['schema-change', 'accounting-failure']) test(`${scenario} refuses automatic rollback to incompatible old code`, () => {
+  const result = release(scenario);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Schema changed/);
   assert.equal(result.commands.some(c => c.args.includes('checkout')), false);

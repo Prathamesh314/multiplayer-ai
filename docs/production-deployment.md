@@ -179,7 +179,8 @@ are preserved, so the current release remains available for rollback throughout
 the update. It builds commit-tagged web/worker images while the old release is
 live, refuses deployment during active AI work or with less than 8 GiB available
 after cleanup, closes admission, creates an encrypted coordinated backup, runs
-migrations once, and waits for both web replicas. Only the running application
+migrations once, bootstraps storage counters with all old writers stopped, and
+waits for both web replicas. Only the running application
 services are started with `--wait`; successful one-shot setup services are excluded.
 It then checks image versions and public HTTPS pages. There is a short maintenance
 window during backup and activation. Infrastructure sidecars and desktop installers
@@ -211,9 +212,21 @@ projects have different volume names; existing local data is not auto-migrated.
 
 For an update, drain active work, back up state, pull the reviewed revision,
 update `APP_VERSION`, build the new images, then stop `gateway web web2 worker`.
-Remove the stopped `migrate` container with `docker compose ... rm -f migrate`,
-then `docker compose ... up -d`. This ensures the migration service runs for the
-new revision before traffic resumes. Keep the previous images until the new
+Remove the stopped `migrate` container, run migrations and backfill accounting
+using the **new** images before starting any application service:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yml rm -f migrate
+docker compose --env-file .env.production -f compose.production.yml run --rm --no-deps -T migrate
+docker compose --env-file .env.production -f compose.production.yml run --rm --no-deps -T worker node --import tsx scripts/storage-accounting.ts --bootstrap
+docker compose --env-file .env.production -f compose.production.yml up -d --no-deps --wait web web2 worker gateway
+```
+
+Do not mix pre-049 writers with ledger-aware writers: old writers cannot update
+the new counters. The initial backfill walks existing storage once and can extend
+the maintenance window; later bootstraps skip initialized owners. New installations
+with empty storage initialize owners lazily. [Storage accounting](storage-accounting.md)
+documents explicit reconciliation and recovery. Keep the previous images until the new
 release passes verification, and retain a pre-migration backup. An old image
 alone cannot undo an incompatible database migration.
 This initial procedure has a maintenance window; it is not zero-downtime deploy.

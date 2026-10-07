@@ -92,6 +92,9 @@ compose config --quiet
 migrating=1
 compose rm -f migrate
 compose run --rm --no-deps -T migrate
+# Populate durable storage counters while every old writer is stopped. Subsequent
+# releases only initialize new owners; normal admission never does an org scan.
+compose run --rm --no-deps -T worker node --import tsx scripts/storage-accounting.ts --bootstrap
 # One-shot setup services deliberately excluded: successful exit is not unhealthy.
 compose up -d --no-deps --wait --wait-timeout 180 web web2 worker gateway
 for service in web web2; do

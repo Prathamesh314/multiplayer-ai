@@ -65,10 +65,22 @@ growth) and reserve 160 MiB of allowance. A trusted pre-receive hook checks the
 actual quarantined objects/indexes before accepting them, including bases added
 to thin packs; ordinary Git
 mutations reserve 32 MiB, with larger imports/copies checked before writing.
-Owner file locks serialize competing admissions across replicas. Short capacity
-locks reserve temporary disk space across owners, retaining a 2 GiB free-space
-floor. Crashed reservations are reclaimed only after their kernel lock is free.
-Activity retries already acknowledged do not spend the allowance again.
+Migration 049 replaces repeated organisation scans with durable PostgreSQL owner
+and resource counters. Short transactions reserve quota and temporary disk space;
+different repositories, including those in the same organisation, execute
+concurrently. Reservations use twice the requested growth with a 4 KiB minimum,
+retaining a 2 GiB free-space floor. There are no random reservation slots or
+per-reservation process probes on admission. Each Git mutation measures only its
+affected repository once on completion; activity uploads update exact compressed
+object byte deltas without scanning historical turns. Retries and duplicate
+objects do not increase recorded usage twice, though conservative admission
+headroom is still required before a retry.
+
+Crashed reservations remain charged until recovery can acquire the resource's
+kernel lock, including locks inherited by surviving Git children. Existing owners
+are backfilled while old writers are stopped during deployment; full inventories
+are otherwise explicit reconciliation work. See [storage accounting](storage-accounting.md)
+for recovery, benchmarks, limits and the separate Git retention work.
 
 These are application admission limits measured in file bytes, not operating-system
 block quotas. Database, embeddings, logs and backups require their own disk
@@ -77,9 +89,13 @@ cold Git archives; do not enable another storage profile without its usage meter
 Read access remains available at the allowance. Increase the configured allowance
 or perform reviewed retention cleanup when full; no work is silently deleted.
 
-Validation includes rejected imports with unchanged Git data, competing room
-writes, free-space refusal, orphan reservation reclamation, and atomic invitation
-claims on PGlite and real PostgreSQL.
+Storage validation includes rejected imports with unchanged Git data, concurrent
+same-owner and cross-owner writes, free-space refusal, transaction rollback after
+file writes, settlement failure, compressed-object deduplication, and real-process
+crash/stopped-process recovery on PostgreSQL. A scale fixture includes 5,000 files
+and 3,000 turns and checks filesystem call counts rather than machine-dependent
+timing thresholds. `npm test` enables admission in these fixtures; CI also runs
+them against PostgreSQL.
 
 ## 5. Release acceptance
 

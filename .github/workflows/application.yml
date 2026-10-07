@@ -54,6 +54,10 @@ jobs:
       - run: npm run test:architecture:postgres
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: node --import tsx --test tests/storage-admission.test.mjs
+        env:
+          STORAGE_TEST_POSTGRES: "1"
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:sharing
         env:
           SHARING_TEST_POSTGRES: "1"
