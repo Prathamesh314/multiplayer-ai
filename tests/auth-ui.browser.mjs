@@ -25,7 +25,7 @@ try {
   let sequence=0;const pending=new Map();
   socket.onmessage=event=>{const message=JSON.parse(event.data),operation=pending.get(message.id);if(operation){pending.delete(message.id);clearTimeout(operation.timer);if(message.error)operation.reject(Error(message.error.message));else operation.resolve(message.result);}};
   const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('CDP timeout: '+method));},15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
-  const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result.value;};
+  const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description??result.exceptionDetails.text);return result.result.value;};
   const fill=async(selector,value)=>{await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(100);};
   const ready=()=>eventually(()=>evaluate(`!!document.querySelector('button[type=submit]')&&!document.querySelector('button[type=submit]').disabled`),'interactive form');
   const submit=()=>evaluate(`document.querySelector('button[type=submit]').click()`);
@@ -54,6 +54,7 @@ try {
       if(path==='/api/orgs')return json({orgs:[]});
       if(path==='/api/invitations')return json({invitations:[]});
       if(path==='/api/tasks')return json({tasks:[],members:[],hasMore:false});
+      if(path==='/api/collaboration/inbox'||path==='/api/collaboration/access-requests')return json({items:[],hasMore:false});
       return json({});
     };
   })()`});
@@ -98,6 +99,9 @@ try {
     const json=(body,status=200)=>Promise.resolve(new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}}));
     const orgs=['first-team','second-team'].map(slug=>({id:slug,slug,name:slug,myRole:'owner',createdAt:0,image:null}));
     const project={id:'second-project',orgId:'second-team',slug:'selected-project',name:'Selected project',myRole:'manager',createdAt:0,archivedAt:null};
+    // Hold the provider response until the test releases it. Project selection
+    // renders first in production too; it does not mean Connect Slack is ready.
+    const integrationReady=new Promise(resolve=>{window.__releaseIntegrations=resolve;});
     if(sessionStorage.getItem('connections-flow')==='desktop'){
       window.desktop={isDesktop:true};window.open=url=>{window.__openedConnection=url;return null;};
     }
@@ -111,7 +115,10 @@ try {
       if(path.endsWith('/projects'))return json({projects:path.includes('/second-team/')?[project]:[]});
       if(path.endsWith('/rooms'))return json({sessions:[]});
       if(path.endsWith('/usage'))return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
-      if(path.endsWith('/integrations'))return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:sessionStorage.getItem('connections-authorized')?[{id:'fixture-slack',provider:'slack',name:'Selected team Slack',channels:[]}]:[]});
+      if(path.endsWith('/integrations')){
+        if(!sessionStorage.getItem('connections-authorized')){window.__integrationsLoading=true;await integrationReady;}
+        return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:sessionStorage.getItem('connections-authorized')?[{id:'fixture-slack',provider:'slack',name:'Selected team Slack',channels:[]}]:[]});
+      }
       if(path.endsWith('/integrations/slack')&&init.method==='POST'){
         sessionStorage.setItem('connections-authorized','1');sessionStorage.setItem('connections-authorized-path',path);
         return json({url:location.origin+'/workspace?org=second-team&connections=second-project&connected=slack'});
@@ -122,7 +129,14 @@ try {
   await evaluate(`sessionStorage.setItem('connections-flow','desktop');sessionStorage.setItem('connections-signed-in','1')`);
   await send('Page.navigate',{url:base+'/workspace?org=second-team&connections=second-project'});
   const selectedProject=()=>evaluate(`document.querySelector('button[aria-label="Project for connections"]')?.textContent.trim()==='Selected project'`);
+  const connectionsReady=async()=>{
+    await eventually(()=>evaluate('window.__integrationsLoading===true'),'provider request started');
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Connect Slack')`),false,'project selection is available before providers load');
+    await evaluate('window.__releaseIntegrations()');
+    await eventually(()=>evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Connect Slack'&&!b.disabled&&b.checkVisibility())`),'Connect Slack ready');
+  };
   await eventually(selectedProject,'selected desktop project');
+  await connectionsReady();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);
   await eventually(()=>evaluate(`!!window.__openedConnection`),'browser handoff');
   const browserUrl=await evaluate('window.__openedConnection');
@@ -134,6 +148,7 @@ try {
   assert.equal(await evaluate(`new URL(location.href).searchParams.get('next')`),new URL(browserUrl).pathname+new URL(browserUrl).search);
   await fill('input[type=email]','existing@example.test');await fill('input[type=password]','test-browser-password');await submit();
   await eventually(selectedProject,'selected project restored after browser sign-in');
+  await connectionsReady();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);
   await eventually(()=>evaluate(`document.body.innerText.includes('Selected team Slack')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Choose channels')`),'provider callback returns to channel selection');
   assert.equal(await evaluate(`sessionStorage.getItem('connections-authorized-path')`),'/api/orgs/second-team/projects/selected-project/integrations/slack');
