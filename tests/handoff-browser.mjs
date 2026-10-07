@@ -178,7 +178,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     });
-    async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Projects and chats"]', initScript) {
+    async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Repositories and chats"]', initScript) {
       const { browserContextId } = await send("Target.createBrowserContext");
       const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -517,9 +517,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => recipient.evaluate(`sessionStorage.getItem('room-repository:${roomId}') === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
     console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
     const uploadStarted = performance.now();
-    await eventually(() => recipient.evaluate('!!document.querySelector(\'input[aria-label="Import project folder"]\')'), "folder import input after reload");
+    await eventually(() => recipient.evaluate('!!document.querySelector(\'input[aria-label="Import repository folder"]\')'), "folder import input after reload");
     await recipient.evaluate(`(() => {
-      const input = document.querySelector('input[aria-label="Import project folder"]');
+      const input = document.querySelector('input[aria-label="Import repository folder"]');
       const file = new File(["export const uploaded = true;\\n"], "uploaded.ts", { type: "text/plain" });
       Object.defineProperty(file, 'webkitRelativePath', { value: 'Browser upload/uploaded.ts' });
       const transfer = new DataTransfer(); transfer.items.add(file);
@@ -543,7 +543,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sql(`INSERT INTO sessions(id,name,join_code,owner_id) VALUES ($1,'Fresh folder room','ABCD-RSTU',$2)`, [freshRoom, alice]);
     await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner')`, [freshRoom, alice]);
     await createRepo(freshRoom);
-    const fresh = await tab(tokens[0], freshRoom, 'input[aria-label="Upload initial project folder"]');
+    const fresh = await tab(tokens[0], freshRoom, 'input[aria-label="Upload initial folder"]');
     async function upload(view, inputLabel, root, path, contents) {
       const selector = `input[aria-label="${inputLabel}"]`;
       await eventually(() => view.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), `folder input: ${inputLabel}`);
@@ -555,9 +555,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         input.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
     }
-    await upload(fresh, "Upload initial project folder", "First project", "src/first.ts", "export const first = true;");
+    await upload(fresh, "Upload initial folder", "First project", "src/first.ts", "export const first = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "initial project upload appears without reload");
-    await upload(fresh, "Import project folder", "Second project", "lib/second.ts", "export const second = true;");
+    await upload(fresh, "Import repository folder", "Second project", "lib/second.ts", "export const second = true;");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: lib/second.ts"]\')?.checkVisibility()'), "additional import in freshly seeded room");
     await fresh.selectRepository("First project");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
