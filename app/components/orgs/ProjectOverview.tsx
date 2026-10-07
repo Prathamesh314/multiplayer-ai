@@ -36,7 +36,7 @@ export function ProjectOverview({ org, me, projects, error, onRetry, onNewProjec
         <header className="flex flex-wrap items-start justify-between gap-5">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Team workspace</p>
-            <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{org.name}</h1>
+            <h1 className="font-display mt-3 text-display font-semibold tracking-tight">{org.name}</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-vs-muted">
               Open a project to continue your work, or start something new with your team.
             </p>

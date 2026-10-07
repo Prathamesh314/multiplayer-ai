@@ -140,7 +140,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
           {!error && <SpinnerIcon className="h-5 w-5 text-vs-muted" />}
         </div>
       ) : devices.length === 0 && !pairing ? (
-        <p className="py-2 text-[13px] text-vs-muted">
+        <p className="py-2 text-ui text-vs-muted">
           No computers connected yet. In the desktop app, the connection starts after sign-in. In a browser, use Connect a computer below.
         </p>
       ) : (
@@ -155,8 +155,8 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
                 title={device.online ? "Online" : "Offline"}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] text-vs-fg">{device.name}</p>
-                <p className="text-[12px] text-vs-muted">
+                <p className="truncate text-body text-vs-fg">{device.name}</p>
+                <p className="text-chrome text-vs-muted">
                   {device.online
                     ? "Online now"
                     : device.lastSeenAt
@@ -176,7 +176,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
 
       {pairing ? (
         paired ? (
-          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px]">
+          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-ui">
             <p className="text-vs-success">Paired — the new machine is in the list above. {desktopBridge()?.pairComputer ? "The desktop runner starts automatically." : "Start the runner below to bring it online."}</p>
             {!desktopBridge()?.pairComputer && <>
               {commandRow("start", "Start your computer connection", startCommand)}
@@ -200,7 +200,7 @@ export function DevicesDialog({ onClose }: { onClose: () => void }) {
               {commandRow("start", "2. Start your computer connection", startCommand)}
               <p className="text-sm leading-6 text-vs-muted">Keep the terminal open while you work. Run the start command again whenever you reconnect. If your terminal says npx is not found, install Node.js, then open a new terminal.</p>
             </details>
-            <p className="text-[12px] text-vs-muted">
+            <p className="text-chrome text-vs-muted">
               The code is single-use and expires in ten minutes. This list updates the moment
               the machine connects.
             </p>

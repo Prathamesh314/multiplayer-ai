@@ -39,65 +39,64 @@ export function WelcomeView({
   return (
     <div className="vs-scroll flex min-h-0 flex-1 overflow-y-auto p-5 sm:p-8">
       <div
-        className={`m-auto flex w-full max-w-2xl flex-col items-center gap-5 rounded-2xl border border-dashed px-6 py-10 text-center transition sm:px-10 ${
-          dragging ? "border-vs-accent bg-vs-accent/10" : "border-vs-border"
+        className={`m-auto flex w-full max-w-xl flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-8 text-center transition ${
+          dragging ? "border-vs-accent bg-vs-accent/10" : "border-vs-border/60"
         }`}
       >
         {seeding ? (
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
-            <p className="text-base text-vs-fg">
+            <p className="text-body text-vs-fg">
               {seeding.phase === "finalizing" ? "Finishing import…" : "Uploading files…"}{" "}
               {seeding.phase === "finalizing" ? "Saving the room’s first version." : seeding.total > 0
                 ? `${humanCount(seeding.uploaded)} of ${humanCount(seeding.total)} files`
                 : `${humanCount(seeding.uploaded)} files`}
             </p>
-            <p className="max-w-sm text-sm leading-5 text-vs-muted">
+            <p className="max-w-sm text-chrome leading-5 text-vs-muted">
               Uploading your files and saving the room’s first version. Keep this page open until it finishes. You can browse the files as soon as they appear.
             </p>
           </>
         ) : scanning ? (
           <>
             <SpinnerIcon className="h-8 w-8 text-vs-accent" />
-            <p className="text-base text-vs-fg">Reading folder… {humanCount(progress)} entries</p>
+            <p className="text-body text-vs-fg">Reading folder… {humanCount(progress)} entries</p>
           </>
         ) : (
           <>
-            <span className="rounded-2xl border border-vs-border bg-vs-panel p-4"><FolderUpIcon className="h-8 w-8 text-vs-accent" /></span>
-            <div>
-              <p className="mb-3 text-xs font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
-              <h1 className="font-display text-2xl font-semibold tracking-tight text-vs-fg sm:text-3xl">
-                {readOnly ? "Waiting for the project’s files" : hasFolder ? "Select a file to start editing" : "Bring your code. Start something together."}
+            <span className="rounded-xl border border-vs-border bg-vs-panel p-3"><FolderUpIcon className="h-5 w-5 text-vs-accent" /></span>
+            {/* One heading, one sentence, one action. The steps below are an
+                aside, not a second pitch — this is a tool, not a landing page. */}
+            <div className="max-w-md">
+              <h1 className="font-display text-title font-semibold tracking-tight text-vs-fg">
+                {readOnly ? "Waiting for the project’s files" : hasFolder ? "Select a file to start editing" : "Bring your code"}
               </h1>
-              <p className="mt-1.5 text-base leading-6 text-vs-muted">
+              <p className="mt-1.5 text-body leading-6 text-vs-muted">
                 {readOnly ? "You have view-only access. Ask a room editor to add a folder; its files and chats will appear here." : hasRepo
                   ? "Choose a file in Files & changes. It opens beside your AI chat as another tab."
-                  : "Choose a project folder, or drop one here. We’ll add its files to this room so you and your teammates can explore and work on them."}
+                  : "Choose a project folder, or drop one here — your teammates can then explore and work on it."}
               </p>
             </div>
             {!hasRepo && !readOnly && (
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={onOpenPicker}
-                  className="rounded bg-vs-accent px-4 py-2 text-base font-medium text-vs-accent-fg transition hover:opacity-90"
-                >
-                  Add a project folder
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={onOpenPicker}
+                className="rounded-[var(--ui-radius-control)] bg-vs-accent px-4 py-2 text-body font-semibold text-vs-accent-fg transition hover:opacity-90"
+              >
+                Add a project folder
+              </button>
             )}
             {!hasRepo && !readOnly && <>
-              <ol className="grid w-full gap-3 text-left text-sm sm:grid-cols-3">
-                {[["Add files", "A plain folder works too. Git setup isn’t required."], ["Ask your AI", "Connect a provider and give it a small first task."], ["Review together", "Inspect Changes, then invite a teammate or hand off."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-3"><span className="text-xs text-vs-muted">0{index + 1}</span><p className="mt-2 font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-vs-muted">{body}</p></li>)}
+              <ol className="mt-2 grid w-full gap-2 text-left sm:grid-cols-3">
+                {[["Add files", "A plain folder works too. Git setup isn’t required."], ["Ask your AI", "Connect a provider and give it a small first task."], ["Review together", "Inspect Changes, then invite a teammate or hand off."]].map(([title, body], index) => <li key={title} className="rounded-[var(--ui-radius-surface)] bg-vs-hover p-3"><span className="text-micro tabular-nums text-vs-muted">0{index + 1}</span><p className="mt-1 text-ui font-medium">{title}</p><p className="mt-0.5 text-chrome leading-5 text-vs-muted">{body}</p></li>)}
               </ol>
-              <p className="max-w-lg text-xs leading-5 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
-              {supportsPicker && <details className="text-sm text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="mt-2 rounded border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Use browser upload instead</button></details>}
+              <p className="max-w-md text-chrome leading-5 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
+              {supportsPicker && <details className="text-chrome text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="ui-control ui-control--outline mt-2">Use browser upload instead</button></details>}
             </>}
           </>
         )}
 
         {error && (
-          <p role="alert" className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-base text-vs-danger">
+          <p role="alert" className="flex items-start gap-2 rounded border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-left text-body text-vs-danger">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
           </p>

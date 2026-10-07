@@ -46,6 +46,17 @@
 
 
 @theme inline {
+  /* Type scale. Seven steps, named for the job rather than the pixel count, so
+     a component asks for "chrome" or "body" instead of inventing a number.
+     This replaces 228 arbitrary `text-[Npx]` values across the app. */
+  --text-micro: 11px;      /* badges, counters, keyboard hints */
+  --text-chrome: 12px;     /* toolbars, labels, metadata */
+  --text-ui: 13px;         /* dense UI body */
+  --text-body: 14px;       /* default reading size */
+  --text-lead: 16px;       /* emphasis body, dialog intros */
+  --text-title: 20px;      /* section and dialog titles */
+  --text-display: 28px;    /* page titles — the ceiling inside the app */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -85,6 +96,54 @@
   --color-syn-punct: var(--syn-punct);
 }
 
+/* ---------------------------------------------------------------------------
+   Control system.
+
+   App chrome (toolbars, headers, menus) is dense and quiet: one control height,
+   one radius, one type size. Variants change *weight*, never geometry — so a
+   row of mixed controls still aligns on a single baseline and corner radius.
+
+   Before this existed, TopBar alone used four radii, five padding pairs and
+   three type sizes, which is what made the interface read as unfinished.
+   --------------------------------------------------------------------------- */
+:root {
+  --ui-control-h: 28px;
+  --ui-radius-control: 6px;
+  --ui-radius-surface: 10px;
+  --ui-text-chrome: 12px;
+  --ui-gap: 6px;
+}
+
+.ui-control {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: var(--ui-control-h); padding: 0 9px;
+  border: 1px solid transparent; border-radius: var(--ui-radius-control);
+  font-size: var(--ui-text-chrome); font-weight: 500; line-height: 1;
+  white-space: nowrap; flex-shrink: 0; color: var(--vs-muted);
+}
+.ui-control:hover:not(:disabled) { background: var(--vs-hover); color: var(--vs-fg); }
+.ui-control:disabled { opacity: .45; }
+
+/* Quiet by default; outline only where an action needs to be findable at a
+   glance; solid reserved for the single primary action in a region. */
+.ui-control--outline { border-color: var(--vs-border); color: var(--vs-fg); }
+.ui-control--solid { background: var(--vs-accent); color: var(--vs-accent-fg); font-weight: 600; }
+.ui-control--solid:hover:not(:disabled) { background: var(--vs-accent); color: var(--vs-accent-fg); opacity: .9; }
+.ui-control--strong { color: var(--vs-fg); font-weight: 600; }
+.ui-control--icon { padding: 0; width: var(--ui-control-h); justify-content: center; }
+.ui-control[aria-pressed="true"] { background: var(--vs-active); color: var(--vs-fg); }
+
+/* Read-only context (paths, branches, counts) — same metrics, no affordance. */
+.ui-readout {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  height: var(--ui-control-h); padding: 0 9px;
+  border-radius: var(--ui-radius-control); background: var(--vs-hover);
+  font-size: var(--ui-text-chrome); line-height: 1; color: var(--vs-muted);
+}
+
+/* Separates groups without drawing a full border. */
+.ui-divider { width: 1px; height: 16px; flex-shrink: 0; background: var(--vs-border); }
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -119,7 +178,8 @@ body {
 @keyframes dialog-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 .room-toolbar { min-height: 64px; }
-.room-toolbar-actions > button, .room-toolbar-actions > div > button { min-height: 34px; border-radius: 8px; }
+/* Control geometry belongs to `.ui-control`, not to a descendant selector in a
+   global sheet — overriding it here is what let four radii coexist in one bar. */
 .room-main { container-type: inline-size; }
 .ai-chat-header { padding: 16px 20px 10px; }
 .ai-composer { padding: 12px 20px 16px; }
@@ -208,9 +268,8 @@ body {
 
 /* Session layout; colors come from the shared workspace palette above. */
 .session-workspace { font-size: 14px; }
-.session-workspace .room-toolbar { min-height: 40px; padding: 4px 12px; gap: 8px; }
-.session-workspace .room-toolbar-actions { width: auto; gap: 4px; }
-.session-workspace .room-toolbar-actions > button { min-height: 26px; font-size: 12px; padding: 4px 8px; border-radius: 5px; }
+.session-workspace .room-toolbar { min-height: 44px; padding: 0 12px; gap: 12px; }
+.session-workspace .room-toolbar-actions { width: auto; gap: 6px; }
 .session-workspace .room-sidebar { display: flex; width: clamp(190px, 14vw, 270px); max-width: 24%; flex: none; }
 .session-workspace .room-main { display: flex; min-width: 360px; }
 .session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }

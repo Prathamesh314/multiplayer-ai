@@ -36,7 +36,7 @@ export function ExplorerTree({
   const rows = flatten(visible, expanded, trimmed.length > 0);
 
   return (
-    <div className="py-1 text-[14px] leading-[22px]">
+    <div className="py-1 text-body leading-[22px]">
       {rows.map((row) => (
         <Row
           key={row.node.path}
@@ -97,7 +97,7 @@ function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
       )}
       <span className="truncate">{node.name}</span>
       {node.skipped && (
-        <span className="ml-auto shrink-0 text-[11px] uppercase tracking-wide text-vs-muted">
+        <span className="ml-auto shrink-0 text-micro uppercase tracking-wide text-vs-muted">
           not scanned
         </span>
       )}
@@ -105,7 +105,7 @@ function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
         <EditingBadge people={editing} compact />
       ) : (
         !isDir && (
-          <span className="ml-auto shrink-0 pl-2 text-[11px] tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="ml-auto shrink-0 pl-2 text-micro tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">
             {humanBytes(node.size ?? 0)}
           </span>
         )

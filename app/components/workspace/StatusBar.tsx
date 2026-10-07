@@ -33,7 +33,7 @@ export function StatusBar({
   const git = result?.git;
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-3 text-[11px] text-vs-muted sm:text-[12px]">
+    <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-3 text-micro text-vs-muted sm:text-chrome">
       {git?.isGit ? (
         <span className="hidden max-w-64 items-center gap-1 truncate text-vs-fg sm:flex" title={git.commit ?? undefined}>
           <GitBranchIcon className="h-3.5 w-3.5" />
@@ -63,7 +63,7 @@ export function StatusBar({
               type="button"
               onClick={onReconnect}
               title="Reopen the live connection now instead of waiting for the automatic retry."
-              className="rounded border border-vs-border px-1.5 py-0.5 text-[11px] leading-none text-vs-fg transition hover:bg-vs-hover"
+              className="rounded border border-vs-border px-1.5 py-0.5 text-micro leading-none text-vs-fg transition hover:bg-vs-hover"
             >
               Reconnect
             </button>

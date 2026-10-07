@@ -57,7 +57,7 @@ export function ConnectionsPanel({
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">
           Project context
         </p>
-        <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight">
+        <h1 className="font-display mt-3 text-display font-semibold tracking-tight">
           Bring your conversations along
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-vs-muted">

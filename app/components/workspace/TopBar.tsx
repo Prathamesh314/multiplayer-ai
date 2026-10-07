@@ -45,79 +45,59 @@ export function TopBar({
   repoId, hasRepository, sharedRepository, beforePublish, onPublished,
 }: TopBarProps) {
   return (
-    <header className="room-toolbar flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-vs-border bg-vs-chrome px-4 py-3">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-      <button
-        type="button"
-        onClick={onLeave}
-        title="Back to projects"
-        className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-vs-fg transition hover:bg-vs-hover"
-      >
-        <SparkleIcon className="h-4 w-4 text-vs-accent" />
-        <span className="whitespace-nowrap">
-          multiplayer<span className="text-vs-muted">-ai</span>
-        </span>
-      </button>
-
-      <span aria-hidden="true" className="text-vs-muted/50">/</span>
-      <span
-        title={`Session ${session.id}`}
-        className="min-w-0 max-w-56 truncate text-sm font-medium text-vs-fg"
-      >
-        {session.name}
-      </span>
-
-      </div>
-      <div className="room-toolbar-actions vs-scroll ml-auto flex max-w-full items-center gap-2">
-      {canOpenFolder && (
-        <button
-          type="button"
-          onClick={onOpenFolder}
-          className="shrink-0 rounded px-2 py-0.5 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-        >
-          Open folder…
+    <header className="room-toolbar flex shrink-0 items-center gap-3 border-b border-vs-border bg-vs-chrome px-3">
+      {/* Identity: where am I. */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <button type="button" onClick={onLeave} title="Back to projects" className="ui-control ui-control--strong">
+          <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
+          <span>multiplayer<span className="text-vs-muted">-ai</span></span>
         </button>
-      )}
-
-      <div className="hidden min-w-0 max-w-48 items-center gap-2 rounded-lg bg-vs-panel px-3 py-2 text-xs text-vs-muted xl:flex">
-        <span className="truncate">
-          {folderName ?? "No folder open"}
-          {folderName && isGit && branch && (
-            <span className="ml-2 inline-flex items-center gap-1 font-mono text-vs-fg">
-              <GitBranchIcon className="inline h-3 w-3" />
-              {branch}
-            </span>
-          )}
+        <span aria-hidden="true" className="text-vs-muted/40">/</span>
+        <span title={`Session ${session.id}`} className="min-w-0 max-w-56 truncate px-1 text-chrome font-medium text-vs-fg">
+          {session.name}
         </span>
       </div>
 
+      {/* Context: what am I working on. Read-only, so it carries no affordance. */}
+      <div className="ml-auto flex min-w-0 items-center gap-1.5">
+        <div className="hidden min-w-0 max-w-56 xl:flex">
+          <span className="ui-readout min-w-0">
+            <span className="truncate">{folderName ?? "No folder open"}</span>
+            {folderName && isGit && branch && (
+              <span className="inline-flex shrink-0 items-center gap-1 font-mono text-vs-fg">
+                <GitBranchIcon className="h-3 w-3" />
+                {branch}
+              </span>
+            )}
+          </span>
+        </div>
+        {canOpenFolder && (
+          <button type="button" onClick={onOpenFolder} className="ui-control">Open folder…</button>
+        )}
+      </div>
+
+      {/* Repository actions. */}
       {session.projectId && hasRepository && canEdit(session.myRole) && (
-        <PublishControls key={repoId ?? "legacy"} sessionId={session.id} repoId={repoId} shared={sharedRepository} beforePublish={beforePublish} onPublished={onPublished} />
+        <>
+          <span aria-hidden="true" className="ui-divider" />
+          <PublishControls key={repoId ?? "legacy"} sessionId={session.id} repoId={repoId} shared={sharedRepository} beforePublish={beforePublish} onPublished={onPublished} />
+        </>
       )}
 
-      <div className="hidden px-1 sm:block"><PeopleStack members={members} /></div>
+      <span aria-hidden="true" className="ui-divider hidden sm:block" />
 
-      <button type="button" onClick={onOpenGuide} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Room guide</button>
-      <button type="button" onClick={onOpenMemory} className="shrink-0 rounded-lg border border-vs-border px-3 py-1.5 text-sm hover:bg-vs-hover">Memory</button>
-
-      <button
-        type="button"
-        onClick={onInvite}
-        className="flex shrink-0 items-center gap-1.5 rounded bg-vs-accent px-2.5 py-1 text-sm font-medium text-vs-accent-fg transition hover:opacity-90"
-      >
-        <UserPlusIcon className="h-3.5 w-3.5" />
-        Invite
-      </button>
-
-      <div className="flex items-center gap-0.5">
-        <ToggleButton
-          label="Toggle terminal (Ctrl+Shift+Z)"
-          active={terminalOpen}
-          onClick={onToggleTerminal}
-        >
+      {/* People and room actions. Invite is the one solid control in the bar. */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="hidden sm:block"><PeopleStack members={members} /></div>
+        <button type="button" onClick={onOpenGuide} className="ui-control">Room guide</button>
+        <button type="button" onClick={onOpenMemory} className="ui-control">Memory</button>
+        <button type="button" onClick={onInvite} className="ui-control ui-control--solid">
+          <UserPlusIcon className="h-3.5 w-3.5" />
+          Invite
+        </button>
+        <ToggleButton label="Toggle terminal (Ctrl+Shift+Z)" active={terminalOpen} onClick={onToggleTerminal}>
           <TerminalIcon className="h-4 w-4" />
         </ToggleButton>
-      </div>
       </div>
     </header>
   );
@@ -154,13 +134,13 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 items-center gap-1.5">
       <button
         type="button"
         onClick={() => run("sync")}
         disabled={busy !== null || !shared}
         title="Get the selected repository’s latest shared changes"
-        className="rounded px-2 py-1 text-sm text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
+        className="ui-control"
       >
         {busy === "sync" ? "Syncing…" : "Get latest"}
       </button>
@@ -169,14 +149,14 @@ function PublishControls({ sessionId, repoId, shared, beforePublish, onPublished
         onClick={() => run("publish")}
         disabled={busy !== null}
         title="Share saved changes in the selected repository with project members. Review Changes first."
-        className="flex items-center gap-1 rounded border border-vs-border px-2 py-1 text-sm text-vs-fg transition hover:bg-vs-hover disabled:opacity-50"
+        className="ui-control ui-control--outline"
       >
         <GitBranchIcon className="h-3 w-3" />
         {busy === "publish" ? "Publishing…" : shared ? "Publish" : "Share repository"}
       </button>
       {status && (
         <span
-          className={`max-w-64 truncate text-[12px] ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
+          className={`max-w-64 truncate text-chrome ${status.tone === "ok" ? "text-vs-success" : "text-vs-danger"}`}
           title={status.text}
         >
           {status.text}
@@ -204,7 +184,7 @@ function ToggleButton({
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`rounded p-1 transition hover:bg-vs-hover ${active ? "text-vs-fg" : "text-vs-muted"}`}
+      className="ui-control ui-control--icon"
     >
       {children}
     </button>

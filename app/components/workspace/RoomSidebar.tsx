@@ -104,7 +104,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
                 setEditingId(null);
               }
             }}
-            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-[15px] text-vs-fg outline-none"
+            className="min-w-0 flex-1 rounded border border-vs-accent bg-vs-editor px-1.5 py-0.5 text-lead text-vs-fg outline-none"
           />
         </div>
       );
@@ -144,7 +144,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[15px] leading-[22px]">
+          <span className="min-w-0 flex-1 truncate text-lead leading-[22px]">
             {run.title ?? `${run.agentId} run`}
           </span>
           <DiffStat added={run.addedLines} removed={run.removedLines} />
@@ -225,7 +225,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
           const open = !collapsed.has(repo.id);
           return <section key={repo.id} className="mb-2">
             <div className={`flex min-h-9 items-center gap-1 rounded-md ${active.some(run => run.id === enteredRunId) ? "bg-vs-active" : "hover:bg-vs-hover"}`}>
-              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left text-[15px] font-medium leading-[22px] text-vs-muted hover:text-vs-fg">
+              <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-2 text-left text-lead font-medium leading-[22px] text-vs-muted hover:text-vs-fg">
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
                 <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-xs font-normal tabular-nums">{active.length}</span>
               </button>
@@ -301,7 +301,7 @@ function UnarchiveIcon({ className }: { className?: string }) {
 function DiffStat({ added, removed }: { added: number | null; removed: number | null }) {
   if (!added && !removed) return null;
   return (
-    <span className="shrink-0 font-mono text-[11px] tabular-nums">
+    <span className="shrink-0 font-mono text-micro tabular-nums">
       {added ? <span className="text-vs-success">+{added}</span> : null}
       {removed ? <span className="ml-1 text-vs-danger">-{removed}</span> : null}
     </span>

@@ -148,14 +148,14 @@ function Group({
 
 function Loading() {
   return (
-    <li className="flex items-center gap-2 px-2 py-1.5 text-[13px] text-vs-muted">
+    <li className="flex items-center gap-2 px-2 py-1.5 text-ui text-vs-muted">
       <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
     </li>
   );
 }
 
 function Empty({ text }: { text: string }) {
-  return <li className="px-2 py-1 text-[12px] text-vs-muted">{text}</li>;
+  return <li className="px-2 py-1 text-chrome text-vs-muted">{text}</li>;
 }
 
 function ConversationRow({
@@ -178,7 +178,7 @@ function ConversationRow({
       >
         {conversation.kind === "dm" ? (
           <span
-            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${colorOf(conversation.otherUserId ?? conversation.id).chip}`}
+            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-micro font-semibold ${colorOf(conversation.otherUserId ?? conversation.id).chip}`}
           >
             {initialsOf(conversation.name)}
           </span>
@@ -298,7 +298,7 @@ function NewChannelDialog({
         <Field label="Members">
           <div className="mt-1.5 max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-vs-border vs-scroll">
             {members === null ? (
-              <p className="px-3 py-2 text-[13px] text-vs-muted">Loading members…</p>
+              <p className="px-3 py-2 text-ui text-vs-muted">Loading members…</p>
             ) : (
               members
                 .filter((m) => m.userId !== meId)
@@ -316,10 +316,10 @@ function NewChannelDialog({
                           return next;
                         })
                       }
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] transition hover:bg-vs-hover"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body transition hover:bg-vs-hover"
                     >
                       <span
-                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold ${colorOf(m.userId).chip}`}
+                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-micro font-semibold ${colorOf(m.userId).chip}`}
                       >
                         {initialsOf(m.displayName)}
                       </span>
@@ -355,8 +355,8 @@ function VisibilityOption({
         active ? "border-vs-accent bg-vs-accent/10" : "border-vs-border hover:bg-vs-hover"
       }`}
     >
-      <span className="block text-[14px] font-medium text-vs-fg">{label}</span>
-      <span className="block text-[12px] text-vs-muted">{hint}</span>
+      <span className="block text-body font-medium text-vs-fg">{label}</span>
+      <span className="block text-chrome text-vs-muted">{hint}</span>
     </button>
   );
 }
@@ -414,9 +414,9 @@ function NewDmDialog({
       />
       <div className="max-h-72 space-y-0.5 overflow-y-auto vs-scroll">
         {members === null ? (
-          <p className="px-1 py-2 text-[13px] text-vs-muted">Loading people…</p>
+          <p className="px-1 py-2 text-ui text-vs-muted">Loading people…</p>
         ) : results.length === 0 ? (
-          <p className="px-1 py-2 text-[13px] text-vs-muted">No one matches.</p>
+          <p className="px-1 py-2 text-ui text-vs-muted">No one matches.</p>
         ) : (
           results.map((m) => (
             <button
@@ -427,13 +427,13 @@ function NewDmDialog({
               className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-vs-hover disabled:opacity-60"
             >
               <span
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-semibold ${colorOf(m.userId).chip}`}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-chrome font-semibold ${colorOf(m.userId).chip}`}
               >
                 {initialsOf(m.displayName)}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] text-vs-fg">{m.displayName}</span>
-                <span className="block truncate text-[12px] text-vs-muted">@{m.handle}</span>
+                <span className="block truncate text-body text-vs-fg">{m.displayName}</span>
+                <span className="block truncate text-chrome text-vs-muted">@{m.handle}</span>
               </span>
             </button>
           ))

@@ -148,7 +148,7 @@ export function OrgWorkspace() {
       {loadError ? (
         <main className="grid min-w-0 flex-1 place-items-center p-6">
           <div className="max-w-md space-y-4">
-            <h1 className="font-display text-2xl font-semibold">Could not load your workspace</h1>
+            <h1 className="font-display text-title font-semibold">Could not load your workspace</h1>
             <ErrorNote>{loadError}</ErrorNote>
             <GhostButton onClick={() => { setLoadError(null); setLoadVersion((current) => current + 1); }}>Try again</GhostButton>
           </div>
@@ -328,7 +328,7 @@ function OrgRail({
               type="button"
               onClick={() => onSelect(org.slug)}
               title={org.name}
-              className={`relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-[14px] font-semibold uppercase transition ${
+              className={`relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-body font-semibold uppercase transition ${
                 active
                   ? "rounded-xl bg-vs-accent text-vs-accent-fg"
                   : "bg-vs-panel text-vs-fg hover:rounded-xl hover:bg-vs-hover"
@@ -371,7 +371,7 @@ function OrgRail({
           title={me ? me.displayName : "Profile"}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent transition hover:opacity-80"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-vs-accent/12 text-chrome font-semibold uppercase text-vs-accent transition hover:opacity-80"
         >
           {me ? initials(me.displayName) : "?"}
         </button>
@@ -382,22 +382,22 @@ function OrgRail({
             className="absolute bottom-0 left-full z-50 ml-2 w-60 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
           >
             <div className="flex items-center gap-2.5 border-b border-vs-border px-3 py-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-chrome font-semibold uppercase text-vs-accent">
                 {me ? initials(me.displayName) : "?"}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-[14px] font-medium text-vs-fg">
+                <p className="truncate text-body font-medium text-vs-fg">
                   {me?.displayName ?? "Signed out"}
                 </p>
                 {me && (
-                  <p className="truncate text-[12px] text-vs-muted">@{me.handle}</p>
+                  <p className="truncate text-chrome text-vs-muted">@{me.handle}</p>
                 )}
               </div>
             </div>
             {me?.email && (
               <div className="px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wider text-vs-muted">Email</p>
-                <p className="truncate text-[13px] text-vs-fg">{me.email}</p>
+                <p className="text-micro uppercase tracking-wider text-vs-muted">Email</p>
+                <p className="truncate text-ui text-vs-fg">{me.email}</p>
               </div>
             )}
             <button
@@ -407,7 +407,7 @@ function OrgRail({
                 setMenuOpen(false);
                 onOpenProviders();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-body text-vs-fg transition hover:bg-vs-hover"
             >
               <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
               AI providers
@@ -419,7 +419,7 @@ function OrgRail({
                 setMenuOpen(false);
                 onOpenDevices();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-body text-vs-fg transition hover:bg-vs-hover"
             >
               <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
               Your computers
@@ -431,7 +431,7 @@ function OrgRail({
                 setMenuOpen(false);
                 onSignOut();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
+              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-body text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
             >
               <CloseIcon className="h-3.5 w-3.5" />
               Sign out
@@ -523,7 +523,7 @@ function OrgPanel({
             {org.image && (
               <img src={org.image} alt={org.name} className="h-5 w-5 rounded object-cover" />
             )}
-            <span className="min-w-0 truncate text-[14px] font-semibold">{org.name}</span>
+            <span className="min-w-0 truncate text-body font-semibold">{org.name}</span>
           </div>
           {canManageOrg(org.myRole) && (
             <div className="flex shrink-0 items-center gap-0.5">
@@ -574,7 +574,7 @@ function OrgPanel({
                 <button
                   type="button"
                   onClick={() => onAcceptInvite(invite.id)}
-                  className="mt-1.5 rounded bg-vs-accent px-2 py-1 text-[12px] font-medium text-vs-accent-fg"
+                  className="mt-1.5 rounded bg-vs-accent px-2 py-1 text-chrome font-medium text-vs-accent-fg"
                 >
                   Accept
                 </button>
@@ -585,7 +585,7 @@ function OrgPanel({
 
         <div className="vs-scroll min-h-0 flex-1 overflow-y-auto pb-3">
           <div className="flex items-center justify-between px-4 pb-1 pt-3">
-            <h2 className="text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+            <h2 className="text-chrome font-semibold uppercase tracking-wider text-vs-muted">
               Projects
             </h2>
             {canManageOrg(org.myRole) && (
@@ -732,7 +732,7 @@ function ProjectRow({
             className={`h-3.5 w-3.5 shrink-0 text-vs-muted transition ${expanded ? "rotate-90" : ""}`}
           />
           <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-          <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{project.name}</span>
+          <span className="min-w-0 flex-1 truncate text-body font-medium">{project.name}</span>
         </button>
         <button
           type="button"
@@ -742,7 +742,7 @@ function ProjectRow({
               ? "View members & manage roles"
               : "View project members"
           }
-          className="flex shrink-0 items-center gap-1 rounded-md border border-vs-border px-1.5 py-0.5 text-[11px] font-medium text-vs-muted transition hover:bg-vs-active hover:text-vs-fg"
+          className="flex shrink-0 items-center gap-1 rounded-md border border-vs-border px-1.5 py-0.5 text-micro font-medium text-vs-muted transition hover:bg-vs-active hover:text-vs-fg"
         >
           <UsersIcon className="h-3 w-3" />
           Members
@@ -752,13 +752,13 @@ function ProjectRow({
       {expanded && (
         <ul className="ml-4 border-l border-vs-border pl-2">
           {rooms === null ? (
-            <li className="px-2 py-1 text-[12px] text-vs-muted">Loading…</li>
+            <li className="px-2 py-1 text-chrome text-vs-muted">Loading…</li>
           ) : rooms.length === 0 ? (
-            <li className="px-2 py-1 text-[12px] text-vs-muted">
+            <li className="px-2 py-1 text-chrome text-vs-muted">
               No rooms yet — yours is created when this list loads.
             </li>
           ) : visibleRooms?.length === 0 ? (
-            <li role="status" className="px-2 py-2 text-[12px] text-vs-muted">No rooms match your search.</li>
+            <li role="status" className="px-2 py-2 text-chrome text-vs-muted">No rooms match your search.</li>
           ) : (
             visibleRooms?.map((room) => (
               <li
@@ -768,7 +768,7 @@ function ProjectRow({
                 <button
                   type="button"
                   onClick={() => onOpenRoom(room.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-[14px]"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-body"
                 >
                   {room.visibility === "private" ? (
                     <ShieldIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
@@ -815,8 +815,8 @@ function EmptyState({
         <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-6 sm:p-12">
           <SparkleIcon className="mb-6 h-8 w-8 text-vs-muted" />
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
-          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Build together, from the first prompt.</h1>
-          <p className="mt-2.5 text-[16px] leading-7 text-vs-muted">
+          <h1 className="font-display text-display font-semibold tracking-tight">Build together, from the first prompt.</h1>
+          <p className="mt-2.5 text-lead leading-7 text-vs-muted">
             Start a task with AI, share the conversation, and let a teammate pick up where you left off.
             First, create an organisation—a home for your team’s projects—or join an existing one.
           </p>
@@ -830,7 +830,7 @@ function EmptyState({
             <GhostButton onClick={onJoin}>
               <UserPlusIcon className="h-4 w-4" /> Join an organisation
               {inviteCount > 0 && (
-                <span className="rounded-full bg-vs-accent px-1.5 text-[11px] font-semibold text-vs-accent-fg">
+                <span className="rounded-full bg-vs-accent px-1.5 text-micro font-semibold text-vs-accent-fg">
                   {inviteCount}
                 </span>
               )}
@@ -859,7 +859,7 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   const atCap = usage.concurrency.used >= usage.concurrency.limit && usage.concurrency.limit > 0;
 
   return (
-    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-2.5 text-[12px] text-vs-muted">
+    <div className="flex items-center gap-3 border-b border-vs-border px-4 py-2.5 text-chrome text-vs-muted">
       <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
         <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-vs-warn" : "bg-vs-success"}`} />
         {usage.concurrency.used}/{usage.concurrency.limit} running

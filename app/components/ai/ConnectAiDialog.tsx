@@ -91,7 +91,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-[12px] text-vs-muted">
+          <span className="mr-auto text-chrome text-vs-muted">
             {agents === null ? "" : `${readyCount} execution option${readyCount === 1 ? "" : "s"} detected`}
           </span>
           <PrimaryButton onClick={onClose} disabled={busyId !== null}>
@@ -129,13 +129,13 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
               <li key={agent.id} className="rounded-lg border border-vs-border px-3.5 py-3">
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 text-[14px] font-medium text-vs-fg">
+                    <p className="flex items-center gap-2 text-body font-medium text-vs-fg">
                       {agent.name}
-                      <span className="text-[12px] font-normal text-vs-muted">{agent.vendor}</span>
+                      <span className="text-chrome font-normal text-vs-muted">{agent.vendor}</span>
                       {ready && <CheckIcon className="h-3.5 w-3.5 text-vs-success" />}
                     </p>
-                    <p className="mt-0.5 text-[12px] leading-5 text-vs-muted">{agent.blurb}</p>
-                    <p className="mt-0.5 text-[12px] text-vs-muted">
+                    <p className="mt-0.5 text-chrome leading-5 text-vs-muted">{agent.blurb}</p>
+                    <p className="mt-0.5 text-chrome text-vs-muted">
                       {!agent.installed
                         ? "Not installed"
                         : agent.auth
@@ -161,7 +161,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
 
                 {!agent.installed && (
                   <div className="mt-2 flex items-center gap-2">
-                    <code className="flex-1 truncate rounded-md border border-vs-border bg-vs-editor px-2.5 py-1.5 font-mono text-[12px] text-vs-fg">
+                    <code className="flex-1 truncate rounded-md border border-vs-border bg-vs-editor px-2.5 py-1.5 font-mono text-chrome text-vs-fg">
                       {agent.install.command}
                     </code>
                     <GhostButton
@@ -178,7 +178,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
                 )}
 
                 {busyId === agent.id && loginLog && (
-                  <pre className="vs-scroll mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-vs-border bg-vs-editor p-2 font-mono text-[11px] leading-4 text-vs-muted">
+                  <pre className="vs-scroll mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-vs-border bg-vs-editor p-2 font-mono text-micro leading-4 text-vs-muted">
                     {loginLog}
                   </pre>
                 )}

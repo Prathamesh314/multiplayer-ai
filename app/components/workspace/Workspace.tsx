@@ -1091,14 +1091,14 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} min={140} max={600} />
                   <div style={{ height: terminalHeight, maxHeight: "60%" }} className="flex min-h-0 shrink-0">
-                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[11px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
+                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-micro text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
                   </div>
                 </>
               ) : (
                 <button
                   type="button"
                   onClick={() => setTerminalOpen(true)}
-                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
+                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-chrome text-vs-muted transition hover:text-vs-fg"
                 >
                   <TerminalIcon className="h-3.5 w-3.5" />
                   Terminal

@@ -95,7 +95,7 @@ function Sidebar({
     <aside className="flex w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel md:h-full md:w-72 md:border-b-0 md:border-r">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-vs-border px-4">
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
-        <span className="whitespace-nowrap text-[14px] font-semibold">
+        <span className="whitespace-nowrap text-body font-semibold">
           multiplayer<span className="text-vs-muted">-ai</span>
         </span>
       </header>
@@ -120,7 +120,7 @@ function Sidebar({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <h2 className="shrink-0 px-4 pb-1 pt-3 text-[12px] font-semibold uppercase tracking-wider text-vs-muted">
+        <h2 className="shrink-0 px-4 pb-1 pt-3 text-chrome font-semibold uppercase tracking-wider text-vs-muted">
           Your sessions
           {sessions && sessions.length > 0 && (
             <span className="ml-1.5 font-normal normal-case tracking-normal">
@@ -149,12 +149,12 @@ function Sidebar({
                     title={`/s/${session.id}`}
                     className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-vs-hover"
                   >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-vs-accent/12 text-chrome font-semibold uppercase text-vs-accent">
                       {initialsOf(session.name)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px]">{session.name}</span>
-                      <span className="block truncate text-[12px] text-vs-muted">
+                      <span className="block truncate text-body">{session.name}</span>
+                      <span className="block truncate text-chrome text-vs-muted">
                         {relativeTime(Math.floor(session.createdAt / 1000))}
                       </span>
                     </span>
@@ -167,19 +167,19 @@ function Sidebar({
       </div>
 
       <footer className="flex shrink-0 items-center gap-2.5 border-t border-vs-border px-3 py-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-chrome font-semibold uppercase text-vs-accent">
           {me ? initialsOf(me.displayName) : "?"}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px]">{me?.displayName ?? "Signed out"}</span>
-          <span className="block truncate font-mono text-[12px] text-vs-muted">
+          <span className="block truncate text-body">{me?.displayName ?? "Signed out"}</span>
+          <span className="block truncate font-mono text-chrome text-vs-muted">
             {me ? `@${me.handle}` : ""}
           </span>
         </span>
         <button
           type="button"
           onClick={onSignOut}
-          className="shrink-0 rounded px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+          className="shrink-0 rounded px-2 py-1 text-chrome text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
         >
           Sign out
         </button>
