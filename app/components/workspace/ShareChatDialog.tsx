@@ -7,6 +7,7 @@ import { sharedChatApi, sharedChatPath, sharingRequest } from "../../lib/sharing
 import { ErrorNote, Field, GhostButton, inputClass, Modal, PrimaryButton } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
 import { ComposerPicker } from "./ComposerPicker";
+import { GuestAccess } from "../collaboration/GuestAccess";
 
 export function ShareChatDialog({run,onClose}:{run:AgentRun;onClose:()=>void}) {
   const {notify}=useToast();
@@ -45,7 +46,7 @@ export function ShareChatDialog({run,onClose}:{run:AgentRun;onClose:()=>void}) {
       await sharingRequest(endpoint,{method:"DELETE",body:JSON.stringify({id})});
       setInvitations(items=>items.map(item=>item.id===id?{...item,revokedAt:new Date().toISOString()}:item));
       if(link?.id===id)setLink(null);
-      notify({title:"Access removed",description:"This invitation no longer opens the chat, including for someone who already joined."});
+      notify({title:"Chat invitation revoked",description:"Chat-only access is removed. Workspace memberships are managed separately."});
     }catch(cause){setError(cause instanceof Error?cause.message:"Couldn’t remove access. Try again.");}
     finally{setBusy(false);}
   }
@@ -58,14 +59,14 @@ export function ShareChatDialog({run,onClose}:{run:AgentRun;onClose:()=>void}) {
         {id:"viewer",label:"Can view",description:"Read this conversation and its comments."},
         {id:"commenter",label:"Can comment",description:"Read and discuss. Comments do not run AI or change files."},
       ]}/>
-      <p className="text-sm leading-5 text-vs-muted">Only this email can accept the link. Access ends in 7 days or when you remove it. A new invitation replaces this person’s previous access.</p>
+      <p className="text-sm leading-5 text-vs-muted">Only this email can accept the link. Chat-only access ends in 7 days or when you revoke the invitation. A new invitation replaces this person’s previous access.</p>
       <PrimaryButton type="submit" disabled={busy||loading||!canManage}>{busy?"Saving…":"Create invitation link"}</PrimaryButton>
     </form>
     {link&&<div className="space-y-2 rounded-xl border border-vs-border p-3"><label className="block text-sm font-medium" htmlFor="chat-invite-link">Invitation link — send it to your guest</label><input id="chat-invite-link" readOnly value={link.url} onFocus={e=>e.target.select()} className={`${inputClass} font-mono text-xs`}/><GhostButton onClick={()=>{void navigator.clipboard.writeText(link.url).then(()=>notify({title:"Link copied"})).catch(()=>setError("Couldn’t copy automatically. Select the link above and copy it."));}}>Copy link</GhostButton></div>}
     {error&&<ErrorNote>{error}</ErrorNote>}
     {loading?<p className="text-sm text-vs-muted">Loading invitations…</p>:<ul className="space-y-2" aria-label="Chat invitations">{invitations.map(item=>{
       const ended=!!item.revokedAt||Date.parse(item.expiresAt)<=now;
-      return <li key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-vs-border p-3 text-sm"><div className="min-w-0 flex-1"><p className="break-all">{item.email}</p><p className="text-xs text-vs-muted">{item.revokedAt?"Access removed":ended?"Expired":`${item.role==="commenter"?"Can comment":"Can view"} · ${item.acceptedAt?"Joined":"Waiting to join"} · ends ${new Date(item.expiresAt).toLocaleDateString()}`}</p></div>{!ended&&<GhostButton disabled={busy} onClick={()=>void revoke(item.id)}>Remove access</GhostButton>}</li>;
+      return <li key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-vs-border p-3 text-sm"><div className="min-w-0 flex-1"><p className="break-all">{item.email}</p><p className="text-xs text-vs-muted">{item.revokedAt?"Access removed":ended?"Expired":`${item.role==="commenter"?"Can comment":"Can view"} · ${item.acceptedAt?"Joined":"Waiting to join"} · ends ${new Date(item.expiresAt).toLocaleDateString()}`}</p></div>{!ended&&<GhostButton disabled={busy} onClick={()=>void revoke(item.id)}>Revoke chat invitation</GhostButton>}{!ended&&item.acceptedAt&&<GuestAccess runId={run.id} invitationId={item.id}/>}</li>;
     })}</ul>}
   </Modal>;
 }

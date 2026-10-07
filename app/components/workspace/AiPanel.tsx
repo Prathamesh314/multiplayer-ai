@@ -39,6 +39,8 @@ import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } f
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { BriefingCard } from "../collaboration/BriefingCard";
+import { CollaborationControls } from "../collaboration/CollaborationControls";
 import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
 import type { ComputerStatus } from "../ai/useComputerConnection";
@@ -87,7 +89,7 @@ type AiPanelProps = {
   hasFiles?: boolean;
   repoId: string | null;
   onRepoChange: (repoId: string | null) => void;
-  /** Add an empty project or import a folder into the room. */
+  /** Start without files or import a folder into the workspace. */
   onImportRepo: () => void;
   importingRepo: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
@@ -697,7 +699,7 @@ export function AiPanel({
   // row: choosing it opens project creation instead of selecting anything.
   const repoChoices: AgentChoice[] = [
     ...repoOptions,
-    { id: "__import__", label: importingRepo ? "Importing…" : "Add project…" },
+    { id: "__import__", label: importingRepo ? "Importing…" : "Add repository…" },
   ];
 
   const composerFooter =
@@ -808,7 +810,7 @@ export function AiPanel({
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
-      <header className={`ai-chat-header flex min-w-0 shrink-0 items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
+      <header className={`ai-chat-header flex min-w-0 shrink-0 flex-wrap items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[15px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-vs-muted">
@@ -817,7 +819,7 @@ export function AiPanel({
             {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
         {entered &&
           (enteredIsMine ? (
             <button
@@ -840,6 +842,7 @@ export function AiPanel({
             </button>
           ))}
         <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[13px] text-vs-muted hover:bg-vs-hover">Providers</button>
+        {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
         </div>
@@ -847,7 +850,7 @@ export function AiPanel({
       {actionsHost && createPortal(<>
         <button type="button" disabled={!canRun} onClick={() => setAssignOpen(true)} className="rounded px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover disabled:opacity-40">Assign Tasks</button>
         {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
-        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Draft a review request in the conversation" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Review</button>
+        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Ask AI to draft a code review; this does not request teammate approval" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Ask AI to review</button>
       </>, actionsHost)}
       {assignOpen && <Modal title="Assign Tasks" description="Type @ and choose a teammate, then describe the task." onClose={() => setAssignOpen(false)}>
         <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
@@ -896,6 +899,7 @@ export function AiPanel({
         />
       )}
 
+      {entered && <BriefingCard key={`briefing-${entered.id}`} runId={entered.id} expanded={!enteredIsMine} />}
       <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
           <Conversation turns={turns} />

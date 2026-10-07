@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 
-export async function sharedChatBrowser({base,runId,token,guestToken,revoke}) {
+export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,revoke}) {
   const directory=await mkdtemp(join(tmpdir(),'shared-chat-browser-'));
   const chrome=spawn(process.env.CHROME_BIN??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',[
     '--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${directory}`,'about:blank',
@@ -23,6 +23,18 @@ export async function sharedChatBrowser({base,runId,token,guestToken,revoke}) {
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>reject(Error('CDP timeout: '+method)),15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
     const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value;};
     await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
+    if(hostToken){
+      await send('Network.setCookie',{name:'ma_auth',value:hostToken,url:base,httpOnly:true,sameSite:'Lax'});
+      await send('Page.navigate',{url:`${base}/shared/${runId}`});
+      await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="Edit briefing")'),'host briefing');
+      await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Edit briefing").click()');
+      await eventually(()=>evaluate(`!!document.getElementById('briefing-${runId}-nextAction')`),'editable briefing');
+      await evaluate(`(()=>{const el=document.getElementById('briefing-${runId}-nextAction');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Check delivery failures before accepting the implementation.');el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      await evaluate('document.querySelector("input[type=checkbox]").click()');await delay(100);
+      await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Save briefing").click()');
+      await eventually(()=>evaluate('document.body.innerText.includes("Briefing saved.")'),'briefing persisted');
+      await send('Network.deleteCookies',{name:'ma_auth',url:base});
+    }
     await send('Page.navigate',{url:`${base}/shared/${runId}#invite=${token}`});
     await eventually(()=>evaluate('!!document.body?.innerText.includes("You’re invited to a conversation")'),'signed-out invitation');
     assert.equal(await evaluate(`sessionStorage.getItem('shared-chat-invite:${runId}')`),token);
@@ -33,6 +45,7 @@ export async function sharedChatBrowser({base,runId,token,guestToken,revoke}) {
     await send('Network.setCookie',{name:'ma_auth',value:guestToken,url:base,httpOnly:true,sameSite:'Lax'});
     await send('Page.navigate',{url:`${base}/shared/${runId}`});
     await eventually(()=>evaluate('!!document.querySelector("#shared-comment")'),'invitation resumes after signup');
+    if(hostToken)await eventually(()=>evaluate('document.body.innerText.includes("Check delivery failures before accepting the implementation.")'),'guest receives explicitly shared briefing');
     assert.equal(await evaluate('location.hash'),'');
     assert.equal(await evaluate(`sessionStorage.getItem('shared-chat-invite:${runId}')`),null);
     assert.equal(await evaluate('document.body.innerText.includes("PRIVATE TOOL OUTPUT")'),false);

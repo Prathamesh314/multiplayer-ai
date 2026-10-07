@@ -69,29 +69,29 @@ export function WelcomeView({
             <div>
               <p className="mb-2 text-[13px] font-medium uppercase tracking-widest text-vs-muted">Your room is ready</p>
               <h1 className="font-display text-xl font-semibold tracking-tight text-vs-fg sm:text-2xl">
-                {readOnly ? "Waiting for a project" : hasFolder ? "Select a file to start editing" : "Start a conversation or bring your code"}
+                {readOnly ? "Waiting for a repository or conversation" : hasFolder ? "Select a file to start editing" : "Start a conversation or bring your code"}
               </h1>
               <p className="mt-1.5 text-sm leading-5 text-vs-muted">
-                {readOnly ? "You have view-only access. Ask a room editor to start an empty project or import a folder; its chats and files will appear here." : hasRepo
+                {readOnly ? "You have view-only access. Ask a room editor to start without files or import a folder; its chats and files will appear here." : hasRepo
                   ? "Choose a file in Files & changes. It opens beside your AI chat as another tab."
-                  : "Ask questions, brainstorm, or write with AI in an empty project. You can also import a folder if you want to work with existing code."}
+                  : "Ask questions, brainstorm, or write with AI without importing files. You can also import a folder if you want to work with existing code."}
               </p>
             </div>
             {!hasRepo && !readOnly && (
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <button type="button" onClick={onStartEmpty} className="rounded-lg bg-vs-accent px-3 py-1.5 text-sm font-medium text-vs-accent-fg transition hover:opacity-90">Start empty project</button>
+                <button type="button" onClick={onStartEmpty} className="rounded-lg bg-vs-accent px-3 py-1.5 text-sm font-medium text-vs-accent-fg transition hover:opacity-90">Start without files</button>
                 <button
                   type="button"
                   onClick={onOpenPicker}
                   className="rounded-lg border border-vs-border px-3 py-1.5 text-sm font-medium transition hover:bg-vs-hover"
                 >
-                  Add a project folder
+                  Import a folder
                 </button>
               </div>
             )}
             {!hasRepo && !readOnly && <>
               <ol className="grid w-full gap-2.5 text-left text-xs sm:grid-cols-3">
-                {[["Choose a starting point", "Start empty or import a folder. Files are optional."], ["Set up AI", "Connect your computer and choose your AI in the message box."], ["Start chatting", "Ask anything, explore an idea, or build something together."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-2.5"><span className="text-[13px] text-vs-muted">0{index + 1}</span><p className="mt-1.5 font-medium">{title}</p><p className="mt-1 text-[13px] leading-4 text-vs-muted">{body}</p></li>)}
+                {[["Choose a starting point", "Start empty or import a folder. Files are optional."], ["Set up AI", "Connect your computer with Git and a signed-in AI tool. Reading shared chats needs no setup."], ["Start chatting", "Ask anything, explore an idea, or build something together."]].map(([title, body], index) => <li key={title} className="rounded-xl border border-vs-border bg-vs-panel p-2.5"><span className="text-[13px] text-vs-muted">0{index + 1}</span><p className="mt-1.5 font-medium">{title}</p><p className="mt-1 text-[13px] leading-4 text-vs-muted">{body}</p></li>)}
               </ol>
               <p className="max-w-lg text-[13px] leading-4 text-vs-muted">Files are uploaded to this room and available to people with access. Check the folder for sensitive files before adding it.</p>
               {supportsPicker && <details className="text-xs text-vs-muted"><summary className="cursor-pointer rounded py-1">Having trouble choosing a folder?</summary><button type="button" onClick={onOpenInput} className="mt-2 rounded border border-vs-border px-2.5 py-1.5 text-vs-fg hover:bg-vs-hover">Use browser upload instead</button></details>}

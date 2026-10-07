@@ -104,7 +104,9 @@ export async function readSharedChat(runId: string, actor: string, after = 0, co
   // If a concurrent revoke happened during pagination, send no stale payload.
   const current=await queryOne<{role:SharedChat["role"]|null}>("SELECT shared_chat_role($1,$2) AS role",[runId,actor]);
   if (!current?.role) throw unavailable();
-  return {...chat,role:current.role,messages:messages.slice(0,100),hasMore:messages.length>100,comments:comments.slice(0,100).reverse(),commentsHaveMore:comments.length>100};
+  const workspace=await queryOne<{session_id:string}>("SELECT session_id FROM agent_runs WHERE id=$1 AND room_access_role(session_id,$2) IS NOT NULL",[runId,actor]);
+  return {...chat,role:current.role,messages:messages.slice(0,100),hasMore:messages.length>100,comments:comments.slice(0,100).reverse(),commentsHaveMore:comments.length>100,
+    ...(workspace?{workspacePath:`/s/${workspace.session_id}?run=${runId}`}:{})};
 }
 
 export async function addSharedComment(runId: string, actor: string, input: unknown): Promise<SharedComment> {
@@ -117,8 +119,9 @@ export async function addSharedComment(runId: string, actor: string, input: unkn
     // lock. Wait for those writes before authorizing a guest's comment.
     await tx.query(`SELECT i.id FROM chat_invitations i JOIN users u ON u.id=$2 AND u.email=i.email
       WHERE i.run_id=$1 AND i.accepted_by=$2 AND i.revoked_at IS NULL AND i.expires_at>now() FOR SHARE OF i`,[runId,actor]);
-    const {rows:[access]} = await tx.query("SELECT shared_chat_role($1,$2) AS role",[runId,actor]);
-    if (!["manager","commenter"].includes(access.role)) throw new SharingError("You have view-only access or this invitation has ended.");
+    const {rows:[access]} = await tx.query(`SELECT shared_chat_role(r.id,$2) AS role,
+      room_access_role(r.session_id,$2) AS room_role,chat_guest_eligible(r.id,$2) AS eligible FROM agent_runs r WHERE r.id=$1`,[runId,actor]);
+    if (!access?.eligible || (!["manager","commenter"].includes(access.role) && !["owner","editor"].includes(access.room_role))) throw new SharingError("You have view-only access or this invitation has ended.");
     await tx.query("INSERT INTO shared_chat_comments(id,run_id,user_id,body) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING",[id,runId,actor,body]);
     const {rows:[comment]} = await tx.query<SharedComment>(`SELECT c.id,c.body,u.display_name AS "authorName",c.created_at::text AS "createdAt"
       FROM shared_chat_comments c JOIN users u ON u.id=c.user_id WHERE c.id=$1 AND c.run_id=$2 AND c.user_id=$3 AND c.body=$4`,[id,runId,actor,body]);

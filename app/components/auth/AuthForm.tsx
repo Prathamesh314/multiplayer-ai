@@ -1,4 +1,5 @@
 "use client";
+import { ExecutionRequirements } from "../ai/ExecutionRequirements";
 
 import Link from "next/link";
 import { Field, ErrorNote, inputClass } from "../ui/Modal";
@@ -111,6 +112,8 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
           </span>
         </Link>
 
+        {!!googleProfile && params.get("google") !== "restart" && params.get("google") !== "desktop-done" && <ExecutionRequirements guest={next.startsWith("/shared/")} className="mt-5" />}
+
         {params.get("google") === "desktop-done" ? <div className="mt-6 space-y-4"><h1 className="font-display text-[30px] font-semibold">You’re ready to sign in</h1><p className="text-sm leading-6 text-vs-muted">Return to Multiplayer AI and click <strong className="text-vs-fg">Complete sign-in</strong>. You can then close this browser tab.</p></div> : googleProfile && params.get("google") !== "restart" ? <GoogleCompletion profile={googleProfile} signupMode={signupMode} /> : verification ? (
           <EmailVerification initial={verification} onVerified={done} onBack={address => { setVerification(null); setEmail(address); setMode("signin"); setError(null); }} />
         ) : (
@@ -122,12 +125,13 @@ export function AuthForm({ signupMode = "open", googleEnabled = false, googlePro
               {creating ? (signupMode === "invite" ? "Use your invited email and choose a password." : "Start building with your team and AI.") : "Sign in to your workspace."}
             </p>
 
+            {(creating || googleEnabled) && <ExecutionRequirements guest={next.startsWith("/shared/")} className="mt-5" />}
             {googleEnabled && <GoogleSignIn next={next} invitationToken={invitationToken} desktopId={params.get("desktop")} />}
 
             <form onSubmit={submit} className="mt-7 space-y-5">
               <Field label="Email">
                 <input
-                  autoFocus
+                  autoFocus={!creating && !googleEnabled}
                   required
                   type="email"
                   value={email}

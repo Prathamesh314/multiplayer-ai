@@ -25,7 +25,7 @@ type RoomSidebarProps = {
   enteredRunId: string | null;
   onEnter: (run: AgentRun) => void;
   onNewRun: (repoId: string | null) => void;
-  onAddProject: () => void;
+  onAddRepository: () => void;
   importing?: boolean;
   canAdd?: boolean;
   onFork: (run: AgentRun) => void;
@@ -34,7 +34,7 @@ type RoomSidebarProps = {
 };
 
 /** Repository-first navigation, backed by the room's live runs. */
-export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repos, enteredRunId, onEnter, onNewRun, onFork, onRenamed, onAddProject, importing, canAdd = true }: RoomSidebarProps) {
+export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repos, enteredRunId, onEnter, onNewRun, onFork, onRenamed, onAddRepository, importing, canAdd = true }: RoomSidebarProps) {
   const myId = myUserId ?? members.find(member => member.isSelf)?.userId ?? null;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -210,10 +210,10 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
   const groups = [...repos, ...Array.from(new Set(runs.map(run => run.repoId ?? "")))
     .filter(id => !repos.some(repo => repo.id === id)).map(id => ({ id, label: "Unavailable repository" }))];
   return (
-    <aside aria-label="Projects and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
+    <aside aria-label="Repositories and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
       <header className="flex min-h-8 shrink-0 items-center justify-between gap-2 px-3 py-1">
-        <h2 className="text-xs font-medium text-vs-muted">Projects</h2>
-        <button type="button" aria-label="Add project" aria-busy={importing} title={importing ? "Importing project…" : "Add project"} onClick={onAddProject} disabled={!canAdd || importing} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-50">
+        <h2 className="text-xs font-medium text-vs-muted">Repositories &amp; chats</h2>
+        <button type="button" aria-label="Add repository" aria-busy={importing} title={importing ? "Importing repository…" : "Add repository"} onClick={onAddRepository} disabled={!canAdd || importing} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-50">
           {importing ? <SpinnerIcon className="h-4 w-4" /> : <FolderPlusIcon className="h-4 w-4" />}
         </button>
       </header>
@@ -237,7 +237,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
             </div>}
           </section>;
         })}
-        {!groups.length && <p className="px-3 text-xs leading-5 text-vs-muted">Start an empty project to chat, or import a folder using Add project above.</p>}
+        {!groups.length && <p className="px-3 text-xs leading-5 text-vs-muted">Start without files, or import a folder using Add repository above.</p>}
       </div>
     </aside>
   );

@@ -29,7 +29,7 @@ async function handleGET(_request: Request, context: RouteContext<"/api/sessions
  * Start importing a repo into the room: allocate its record and its bare/work
  * pair on disk. The folder itself arrives next through the per-repo seed
  * route; until that finishes (`seededAt`), the repo takes no runs. An explicit
- * empty project is finalized immediately with no files so conversation can start.
+ * empty repository is finalized immediately so a conversation can start without files.
  *
  * Write access, not owner-only: an editor co-working in someone's room may
  * bring the codebase the collaboration needs — the record keeps who did.
@@ -41,7 +41,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
   if (refusal || !result) return refusal!;
 
   if (!canWrite(result.role)) {
-    return forbidden("You need edit access to add a project to this room.");
+    return forbidden("You need edit access to add a repository or start a conversation in this workspace.");
   }
 
   let body: CreateRoomRepoRequest;
@@ -52,10 +52,10 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
   }
 
   if (body?.empty !== undefined && typeof body.empty !== "boolean") {
-    return Response.json({ error: "Choose whether to start an empty project." }, { status: 400 });
+    return Response.json({ error: "Choose whether to start without files." }, { status: 400 });
   }
   if (body?.empty && body.projectRepositoryId) {
-    return Response.json({ error: "Choose an empty project or a shared repository." }, { status: 400 });
+    return Response.json({ error: "Choose to start without files or add a shared repository." }, { status: 400 });
   }
 
   if (body?.projectRepositoryId) {
@@ -76,11 +76,11 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
 
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!name || name.length > 100) {
-    return Response.json({ error: "Enter a project name using 100 characters or fewer." }, { status: 400 });
+    return Response.json({ error: "Enter a repository or conversation name using 100 characters or fewer." }, { status: 400 });
   }
 
   const unfinished = (await listRoomRepos(id)).find(repo => repo.rootName === name && !repo.seededAt && repo.createdBy === result.user.id);
-  // Empty projects must never finish a partial folder upload with the same name.
+  // Starting without files must never finish a partial upload with the same name.
   if (unfinished && !body.empty) {
     await withRepoLock(unfinished.id, () => createRepo(unfinished.id));
     return Response.json({ repo: unfinished } satisfies CreateRoomRepoResponse);
@@ -91,7 +91,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
   } catch (cause) {
     if (cause instanceof Error && cause.message === "name") {
       return Response.json(
-        { error: "A project with that name is already in this room. Choose another name." },
+        { error: "A repository or conversation space with that name already exists here. Choose another name." },
         { status: 409 },
       );
     }

@@ -8,6 +8,7 @@ import type { Project } from "../../lib/project/types";
 import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { CollaborationInbox } from "../collaboration/CollaborationControls";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import type { ComputerConnection } from "../ai/useComputerConnection";
 
@@ -54,7 +55,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
 
         <ComputerConnectionNotice connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
 
-        {me && <TaskPanel key={me.id} userId={me.id} />}
+        {me && <><CollaborationInbox /><TaskPanel key={me.id} userId={me.id} /></>}
 
         <section className="mt-8" aria-labelledby="projects-heading" aria-busy={projects === null && !error}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -76,7 +77,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
               <GitBranchIcon className="mx-auto h-6 w-6 text-vs-muted" />
               <h3 className="mt-3 text-sm font-semibold">Great work starts with a project</h3>
               <p className="mx-auto mt-1.5 max-w-md text-xs leading-5 text-vs-muted">
-                {canManageOrg(org.myRole) ? "Create a project, then start an empty workspace for conversation or import a folder to work with code." : "Ask an organisation admin to add you to a project so you can get started."}
+                {canManageOrg(org.myRole) ? "Create a team project, then start a conversation or add a repository inside it." : "Ask an organisation admin to add you to a project so you can get started."}
               </p>
               {canManageOrg(org.myRole) && <div className="mt-4 flex justify-center"><PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> Create your first project</PrimaryButton></div>}
             </div>
@@ -97,7 +98,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
             <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" /> From your first prompt to a team result
           </div>
           <h2 id="workflow-heading" className="font-display mt-2 text-sm font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
-          <p className="mt-1.5 max-w-2xl text-xs leading-5 text-vs-muted">A project organizes your team and repositories. A room is where you work on a task, keep its AI conversations, and invite teammates to continue it.</p>
+          <p className="mt-1.5 max-w-2xl text-xs leading-5 text-vs-muted">A project is your team’s shared home. Open it to find your workspace, repositories, and conversations.</p>
           <details open={projects?.length === 0} className="mt-3">
             <summary className="cursor-pointer rounded-lg py-1.5 text-xs font-medium text-vs-fg">How this workspace works</summary>
           <ol className="mt-2.5 grid gap-3 text-xs sm:grid-cols-3">

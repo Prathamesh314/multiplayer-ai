@@ -12,4 +12,5 @@ export type SharedChat = {
   id: string; title: string; hostName: string; role: ChatShareRole | "manager";
   messages: SharedMessage[]; hasMore: boolean;
   comments: SharedComment[]; commentsHaveMore: boolean;
+  workspacePath?: string;
 };

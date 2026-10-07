@@ -159,7 +159,7 @@ export async function createEmptyRoomRepo(sessionId: string, name: string): Prom
   } catch {
     throw new Error("Could not reach the server. Check your connection and try again.");
   }
-  if (!response.ok) throw new Error(await readError(response, "Could not create the empty project. Please try again."));
+  if (!response.ok) throw new Error(await readError(response, "Could not create the conversation space. Please try again."));
   const { repo } = (await response.json()) as { repo: RoomRepo };
   if (!repo?.headSha || !repo.seededAt) throw new Error("The project is not ready yet. Refresh the page and try again.");
   return repo;

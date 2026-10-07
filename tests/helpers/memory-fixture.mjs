@@ -42,8 +42,9 @@ export async function memoryFixture({deferMemoryMigration=false, postgres=false}
     async query(sql, params) { const release = await acquire(); try { return await execute(sql, params); } finally { release(); } },
     async connect() { const release = await acquire(); return { query: execute, release }; },
   };
+  // The legacy backfill test applies 030 itself. Defer its dependent 048 index too.
   if (deferMemoryMigration) await db.exec(`CREATE TABLE schema_migrations(version text PRIMARY KEY,applied_at timestamptz NOT NULL DEFAULT now());
-    INSERT INTO schema_migrations(version) VALUES ('030_memory_records.sql')`);
+    INSERT INTO schema_migrations(version) VALUES ('030_memory_records.sql'),('048_collaboration_flow.sql')`);
   try {
     await migrate(db);
     const first = async (sql, params) => (await db.query(sql, params)).rows[0];

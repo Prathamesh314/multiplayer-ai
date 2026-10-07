@@ -47,9 +47,43 @@ try {
   assert.equal((await api(path+'/comments',guest,'POST',input)).status,201);
   assert.equal((await f.first('SELECT count(*)::int AS n FROM shared_chat_comments WHERE id=$1',[input.id])).n,1);
   console.log('PASS: HTTP authentication, email binding, cache policy, idempotent comments, and denial of room/project/file/event/AI access.');
-  await sharedChatBrowser({base,runId:run.id,token:invite.token,guestToken:tokens.get(guest),revoke:async()=>{
+  await sharedChatBrowser({base,runId:run.id,token:invite.token,guestToken:tokens.get(guest),hostToken:tokens.get(f.alice),revoke:async()=>{
     const result=await api(path+'/invitations',f.alice,'DELETE',{id:invite.invitation.id});assert.equal(result.status,200);
   }});
+  // The same real HTTP boundaries protect the collaboration workflow.
+  const flow=`/api/chats/${run.id}`;
+  assert.equal((await api(flow+'/briefing',null)).status,401);
+  assert.equal((await api(flow+'/briefing',guest)).status,403);
+  assert.equal((await api(flow+'/reviews',guest)).status,403);
+  assert.equal((await api(flow+'/feedback',guest)).status,403);
+  const draft=await(await api(flow+'/briefing?draft=1',f.alice)).json();
+  assert.equal((await api(flow+'/briefing',f.alice,'PUT',{...draft,body:{...draft.body,nextAction:'HTTP updated next action.'}})).status,200);
+  assert.equal((await api(flow+'/briefing',f.alice,'PUT',draft)).status,409,'stale edit cannot overwrite');
+  const fresh=await(await api(path+'/invitations',f.alice,'POST',{email:'guest@example.test',role:'commenter'})).json();
+  await api(path,guest,'POST',{token:fresh.token});
+  assert.equal((await api(flow+'/briefing',guest,'PUT',draft)).status,403);
+  const feedback=await(await api(flow+'/feedback',f.alice)).json();
+  assert.ok(feedback.comments.length>0);
+  assert.equal((await api(flow+'/feedback',f.alice,'PUT',{seq:feedback.comments.at(-1).seq})).status,200);
+  const preview=await(await api(flow+`/access?invitationId=${fresh.invitation.id}`,f.alice)).json();
+  assert.equal(preview.canGrant,true);
+  assert.equal((await api(flow+'/access',guest,'POST',{invitationId:fresh.invitation.id,confirm:true})).status,403);
+  assert.equal((await api(flow+'/access',f.alice,'POST',{invitationId:fresh.invitation.id})).status,400);
+  const granted=await api(flow+'/access',f.alice,'POST',{invitationId:fresh.invitation.id,confirm:true,scopeKey:preview.scopeKey});
+  assert.equal(granted.status,200,await granted.clone().text());
+  assert.equal((await api(`/api/sessions/${f.room}`,guest)).status,200);
+  assert.equal((await f.first('SELECT driver_user_id FROM agent_runs WHERE id=$1',[run.id])).driver_user_id,f.alice);
+  const sha='c'.repeat(40);
+  await f.db.query("INSERT INTO session_repos(session_id,root_name,base_branch,base_sha_at_fork,session_branch,head_sha) VALUES($1,'fixture','main',$2,'main',$2)",[f.room,sha]);
+  await f.db.query("UPDATE agent_runs SET status='completed' WHERE id=$1",[run.id]);
+  const review={id:randomUUID(),reviewerId:guest,headSha:sha,note:'Review the saved version.'};
+  assert.equal((await api(flow+'/reviews',f.alice,'POST',review)).status,200);
+  assert.ok((await(await api('/api/collaboration/inbox',guest)).json()).items.some(item=>item.reviews===1));
+  assert.equal((await api(flow+'/reviews',f.alice,'PATCH',{id:review.id,status:'approved',headSha:sha,note:''})).status,403);
+  assert.equal((await api(flow+'/reviews',guest,'PATCH',{id:review.id,status:'approved',headSha:sha,note:'Verified.'})).status,200);
+  await f.db.query('UPDATE session_repos SET head_sha=$2 WHERE session_id=$1',[f.room,'d'.repeat(40)]);
+  assert.equal((await(await api(flow+'/reviews',f.alice)).json()).reviews[0].stale,true);
+  console.log('PASS: collaboration HTTP permissions, briefing conflicts, read cursors, explicit guest access grants, review inbox and version-bound approvals.');
 }catch(error){console.error(logs);throw error;}
 finally{
   if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([once(server,'exit'),delay(3000)]);}

@@ -1,3 +1,4 @@
+import { ExecutionRequirements } from "./components/ai/ExecutionRequirements";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AppScreenshot } from "./components/marketing/AppScreenshot";
@@ -69,6 +70,7 @@ export default function Home() {
             <h1>Great software<br />is a <span>team sport.</span></h1>
             <p>Your people. Your AI agents. One shared workspace.<br className={styles.desktopBreak} /> Go from the first idea to the next commit, together.</p>
             <div className={styles.heroActions}><a href="#download" className={styles.primaryButton}>Get Multiplayer AI <Arrow down /></a><a href="#product" className={styles.secondaryButton}>Explore the workspace <Arrow /></a></div>
+            <ExecutionRequirements className="mx-auto mt-5 max-w-2xl" />
             <div className={styles.heroNote}><span className={styles.tinyAvatars}><i>A</i><i>S</i><i>✳</i></span><span>Built for teams. Made for the way you code.</span></div>
           </div>
           <div id="product" className={styles.previewWrap}><ProductPreview /></div>
@@ -84,8 +86,8 @@ export default function Home() {
           </div>
         </section>
         <section id="how-it-works" className={`${styles.section} ${styles.workflow}`} aria-labelledby="workflow-title"><p className={styles.kicker}>FROM “WHAT IF” TO “SHIPPED”</p><h2 id="workflow-title">Find your flow. Together.</h2><div className={styles.steps}>{[
-          ["01", "Bring your project", "Start with your repository. Give your team a shared home for the code, conversations, and decisions that matter."],
-          ["02", "Make room for the work", "Open a room, invite your teammates, and choose an AI agent. Build in parallel with the context close at hand."],
+          ["01", "Choose your starting point", "Open a project and start without files, or add a repository. Invite others to read and discuss the conversation in their browser."],
+          ["02", "Connect your AI", "To send prompts, connect your computer with Git and a signed-in AI tool. Keep it online while work runs, including conversations without files."],
           ["03", "Make the next move", "Review a diff. Ask for a second opinion. Hand off a task. Publish your room’s changes when the team is ready."],
         ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div></section>
         <section id="download" className={`${styles.section} ${styles.download}`} aria-labelledby="download-title">

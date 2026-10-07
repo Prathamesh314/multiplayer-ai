@@ -54,6 +54,38 @@ function installFixtures() {
       if(init.method==='DELETE'){state.invitations.find(item=>item.id===JSON.parse(init.body).id).revokedAt=new Date().toISOString();return json({ok:true});}
       return json({invitations:state.invitations});
     }
+    state.feedback??=[{id:'guest-feedback',seq:1,body:'Please check delivery errors.',authorName:'Guest',createdAt:new Date().toISOString()}];
+    if(path==='/api/collaboration/inbox'){
+      const unread=state.feedback.filter(c=>c.authorName!=='Alice'&&c.seq>(state.feedbackRead??0)).length;
+      return json({items:unread?[{runId:u.searchParams.get('runId'),sessionId:room.id,title:'Conversation',unread,reviews:0}]:[],hasMore:false});
+    }
+    if(path==='/api/collaboration/access-requests')return json({items:[],hasMore:false});
+    if(path.startsWith('/api/chats/')&&path.endsWith('/access')) {
+      if(init.method==='POST') {
+        const body=JSON.parse(init.body);
+        if(body.action==='request')state.accessPending=true;
+        if(body.action==='grant')state.accessGranted=true;
+        return json({granted:state.accessGranted,requested:state.accessPending});
+      }
+      return json({invitationId:u.searchParams.get('invitationId'),email:'guest@example.test',userId:'guest',canGrant:!!state.canGrant,canRequest:true,requestPending:!!state.accessPending,
+        reason:state.canGrant?null:'An organization owner or admin must grant access because this guest is not an organization member.',
+        scope:['Join organization “Team” as a member.','Edit this project and workspace.','Handoff remains a separate action.'],scopeKey:'confirmed-scope',alreadyEditor:!!state.accessGranted,sessionId:room.id});
+    }
+    if(path.startsWith('/api/chats/')&&path.endsWith('/briefing')) {
+      state.briefing??={body:{goal:'Review the repository',decisions:'No approved decisions recorded.',progress:'AI reported an implementation.',blockers:'Verify tests.',nextAction:'Review saved changes.'},sources:[],fingerprint:'fixture',sourceSeq:2,headSha:'a'.repeat(40),revision:0,sharedWithGuests:false,stale:false,canEdit:true,updatedBy:null,updatedAt:null};
+      if(init.method==='PUT'){state.briefing={...JSON.parse(init.body),revision:state.briefing.revision+1,updatedBy:'Alice'};}
+      return json(state.briefing);
+    }
+    if(path.startsWith('/api/chats/')&&path.endsWith('/reviews'))return json({reviews:[],headSha:'a'.repeat(40),reviewers:[{id:'bob',name:'Bob'}],canRequest:true});
+    if(path.startsWith('/api/chats/')&&path.endsWith('/feedback')){
+      if(init.method==='PUT'){state.feedbackRead=Math.max(state.feedbackRead??0,JSON.parse(init.body).seq);return json({read:true});}
+      const comments=state.feedback.filter(c=>!u.searchParams.has('before')||c.seq<Number(u.searchParams.get('before')));
+      return json({comments:comments.slice(-50),hasMore:comments.length>50,lastRead:state.feedbackRead??0,canComment:true});
+    }
+    if(path.startsWith('/api/shared-chats/')&&path.endsWith('/comments')){
+      if(state.failFeedback)return new Response(JSON.stringify({error:'Could not post feedback. Try again.'}),{status:503});
+      const comment={...JSON.parse(init.body),seq:state.feedback.length+1,authorName:'Alice',createdAt:new Date().toISOString()};state.feedback.push(comment);return json(comment);
+    }
     if (path === "/api/auth/me") return json({user:{id:"alice",handle:"alice",displayName:"Alice",email:"alice@example.test"}});
     if (path === "/api/orgs") return json({orgs:[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
     if (path === "/api/invitations") return json({invitations:[]});
@@ -66,8 +98,8 @@ function installFixtures() {
       if (init.method === "POST") {
         const body=JSON.parse(init.body);
         if(body.empty) {
-          if(state.failCreate)return new Response(JSON.stringify({error:"Could not create the project. Please try again."}),{status:503,headers:{"content-type":"application/json"}});
-          if(state.repos.some(repo=>repo.rootName===body.name))return new Response(JSON.stringify({error:"A project with that name is already in this room. Choose another name."}),{status:409,headers:{"content-type":"application/json"}});
+          if(state.failCreate)return new Response(JSON.stringify({error:"Could not create the conversation space. Please try again."}),{status:503,headers:{"content-type":"application/json"}});
+          if(state.repos.some(repo=>repo.rootName===body.name))return new Response(JSON.stringify({error:"A repository or conversation space with that name already exists here. Choose another name."}),{status:409,headers:{"content-type":"application/json"}});
           const repo={id:"emptyproject",sessionId:room.id,rootName:body.name,projectRepositoryId:null,headSha:"e".repeat(40),baseSha:"e".repeat(40),seededAt:1,createdAt:1,createdBy:"alice",empty:true};
           state.repos.push(repo);return json({repo});
         }
@@ -159,19 +191,22 @@ try {
   // CDP navigation returns before a cold CI browser has created the new body.
   // Wait for this document and its fixtures before reading page content.
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"workspace document");
-  const button = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)})?.click()`);
-  await eventually(()=>evaluate('!!document.querySelector(\'button[aria-label="Add project"]\')'),"empty room");
-  await button("Start empty project");
-  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Start empty project"] input\')'),"empty project available without any repository");
-  assert.equal(await evaluate('Array.from(document.querySelectorAll("dialog button")).find(button=>button.textContent==="Create project").disabled'),true,"empty project needs a name");
+  const button = async text => {
+    await eventually(()=>evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled)`),`button: ${text}`);
+    return evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled).click()`);
+  };
+  await eventually(()=>evaluate('!!document.querySelector(\'button[aria-label="Add repository"]\')'),"empty room");
+  await button("Start without files");
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Start without files"] input\')'),"empty project available without any repository");
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("dialog button")).find(button=>button.textContent==="Create conversation space").disabled'),true,"empty project needs a name");
   await button("Cancel");
-  await click('button[aria-label="Add project"]');
+  await click('button[aria-label="Add repository"]');
   await button("Project repositories");
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("frontend"))'),"repository catalog");
   await button("Add to room");
   await eventually(()=>evaluate('document.body.innerText.includes("frontend.txt")'),"first repository without primary");
   assert.equal(await evaluate(`document.querySelectorAll('button[aria-label="New chat in frontend"]').length`),1);
-  await click('button[aria-label="Add project"]');
+  await click('button[aria-label="Add repository"]');
   await button("Project repositories");
   await eventually(()=>evaluate('Array.from(document.querySelectorAll("dialog")).some(dialog=>dialog.innerText.includes("Already in this room"))'),"selected repository");
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.trim()==='Add to room' && !b.disabled).click()`);
@@ -224,10 +259,45 @@ try {
   await eventually(()=>evaluate('!!document.querySelector("#chat-invite-link")'),"guest invitation created");
   assert.match(await evaluate('document.querySelector("#chat-invite-link").value'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#invite=/);
   assert.equal(await evaluate('window.__model.invitations[0].role'),'commenter');
-  await button('Remove access');
+  await evaluate('window.__model.invitations[0].acceptedAt=new Date().toISOString()');
+  await button('Done');await button('Share chat');
+  await button('Allow guest to help with code…');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Join organization")'),'explicit access scope');
+  assert.equal(await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Request admin approval").disabled'),true);
+  await click('dialog input[type="checkbox"]');await button('Request admin approval');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Request sent to your organization")'),'admin request feedback');
+  assert.equal(await evaluate('window.__model.accessGranted??false'),false,'request does not grant access');
+  await button('Done');await evaluate('window.__model.canGrant=true');await button('Share chat');
+  await button('Allow guest to help with code…');
+  await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="Grant editing access")'),'authorized grant');
+  await click('dialog input[type="checkbox"]');await button('Grant editing access');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Editing access granted.")'),'grant feedback');
+  assert.equal(await evaluate('JSON.parse(window.__model.requests.filter(r=>r.method==="POST"&&r.path.endsWith("/access")).at(-1).body).scopeKey'),'confirmed-scope');
+  await button('Revoke chat invitation');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Access removed")'),"guest access removed");
   assert.equal(await evaluate('document.querySelector("#chat-invite-link")'),null);
   await button('Done');
+  await button('Feedback · 1 unread');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Please check delivery errors.")'),'guest feedback in the workspace');
+  await type('#conversation-feedback','I will check that before handing off.');
+  await evaluate('window.__model.failFeedback=true');await button('Post reply');
+  await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Could not post feedback")'),'feedback delivery failure');
+  assert.equal(await evaluate('document.querySelector("#conversation-feedback").value'),'I will check that before handing off.');
+  await evaluate('window.__model.failFeedback=false');await button('Post reply');
+  await eventually(()=>evaluate('document.querySelector("#conversation-feedback").value===""&&document.querySelector("dialog").innerText.includes("I will check that before handing off.")'),'direct host reply');
+  await click('button[aria-label="Close Conversation feedback"]');
+  await evaluate('for(let i=0;i<60;i++)window.__model.feedback.push({id:crypto.randomUUID(),seq:window.__model.feedback.length+1,body:"Earlier feedback "+i,authorName:"Guest",createdAt:new Date().toISOString()});document.dispatchEvent(new Event("visibilitychange"))');
+  await button('Feedback · 60 unread');
+  await button('Load earlier feedback');
+  await eventually(()=>evaluate('window.__model.feedbackRead===62'),'read loaded feedback history');
+  await evaluate('for(let i=0;i<65;i++)window.__model.feedback.push({id:crypto.randomUUID(),seq:window.__model.feedback.length+1,body:"New burst "+i,authorName:"Guest",createdAt:new Date().toISOString()});document.dispatchEvent(new Event("visibilitychange"))');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("New burst 64")'),'new feedback burst');
+  assert.equal(await evaluate('window.__model.feedbackRead'),62,'unseen gap stays unread');
+  await button('Load earlier feedback');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("New burst 0")'),'missing feedback fetched');
+  await button('Load earlier feedback');
+  await eventually(()=>evaluate('window.__model.feedbackRead===127'),'complete feedback history marked read');
+  await click('button[aria-label="Close Conversation feedback"]');
   const queue='textarea[aria-label="Message working agent"]';
   await type(queue,"Keep this unsent instruction in chat A");
   await button("Handoff");
@@ -251,7 +321,7 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat control"]').length`),1);
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat message queue"]').length`),1);
   assert.deepEqual(keyWarnings,[],"chat refresh and switching have no React key warnings");
-  assert.deepEqual(await evaluate(`Array.from(document.querySelector('.file-actions').querySelectorAll('button')).map(button=>button.textContent.trim())`), ["Assign Tasks", "Handoff", "Review"]);
+  assert.deepEqual(await evaluate(`Array.from(document.querySelector('.file-actions').querySelectorAll('button')).map(button=>button.textContent.trim())`), ["Assign Tasks", "Handoff", "Ask AI to review"]);
   await button("Assign Tasks");
   await eventually(()=>evaluate(`!!document.querySelector('dialog[aria-label="Assign Tasks"]')`),"task assignment dialog");
   await click('button[aria-label="Close Assign Tasks"]');
@@ -343,15 +413,15 @@ try {
   assert.ok(await evaluate('!!document.querySelector(".human-message")'),"AI discovery failure never hides saved chats");
   await evaluate('window.__model.agentsFailure=false;window.__model.emitDevices()');
   await eventually(()=>evaluate('!document.body.innerText.includes("We couldn’t check your AI tools")'),"AI discovery recovers");
-  await click('button[aria-label="Add project"]');
-  await click('button[aria-label="Start empty project"]');
+  await click('button[aria-label="Add repository"]');
+  await click('button[aria-label="Start without files"]');
   await type('dialog input',"Ideas and questions");
   await evaluate('window.__model.failCreate=true');
-  await button("Create project");
+  await button("Create conversation space");
   await eventually(()=>evaluate('!!document.querySelector("dialog [role=alert]")'),"empty project creation error is visible");
   assert.equal(await evaluate('document.querySelector("dialog input").value'),"Ideas and questions","failed creation preserves the name");
   await evaluate('window.__model.failCreate=false');
-  await button("Create project");
+  await button("Create conversation space");
   await eventually(()=>evaluate('!document.querySelector("dialog") && document.body.textContent.includes("What would you like to talk about?")'),"empty project opens a conversation");
   assert.equal(await evaluate('window.__model.repos.filter(repo=>repo.empty).length'),1);
   assert.ok(await evaluate('!!document.querySelector(\'button[aria-label="New chat in Ideas and questions"]\')'));
@@ -367,13 +437,13 @@ try {
     await writeFile(join(tmpdir(),`multiplayer-empty-project-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   }
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
-  await click('button[aria-label="Add project"]');await click('button[aria-label="Start empty project"]');
-  await type('dialog input',"Ideas and questions");await button("Create project");
+  await click('button[aria-label="Add repository"]');await click('button[aria-label="Start without files"]');
+  await type('dialog input',"Ideas and questions");await button("Create conversation space");
   await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Choose another name")'),"duplicate name has actionable feedback");
   await button("Cancel");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
-  console.log("PASS: empty-project creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
+  console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
   console.log("Unmocked requests:",await evaluate("window.__model.unknown"));
 } catch (error) {
   try { console.log(await debugEvaluate?.(`JSON.stringify({body:document.body?.innerText,state:{unknown:window.__model?.unknown,requests:window.__model?.requests?.filter(r=>r.path!=="/api/presence")}})`)); }

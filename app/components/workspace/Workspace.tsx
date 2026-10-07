@@ -46,7 +46,7 @@ import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
 import { TerminalPanel } from "./TerminalPanel";
-import { AddProjectDialog } from "./AddProjectDialog";
+import { AddRepositoryDialog } from "./AddRepositoryDialog";
 import { TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
@@ -93,7 +93,7 @@ export function Workspace({
   const inputRef = useRef<HTMLInputElement>(null);
   const supportsPicker = useSyncExternalStore(noopSubscribe, hasPicker, noPicker);
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
-  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [addRepositoryOpen, setAddRepositoryOpen] = useState(false);
   const [startEmptyProject, setStartEmptyProject] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -192,9 +192,9 @@ export function Workspace({
   const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
   const [importProgress, setImportProgress] = useState<SeedProgress | null>(null);
   const [importingRepo, setImportingRepo] = useState(false);
-  function openAddProject(empty = false) {
+  function openAddRepository(empty = false) {
     setStartEmptyProject(empty);
-    setAddProjectOpen(true);
+    setAddRepositoryOpen(true);
   }
   const importInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -877,7 +877,7 @@ export function Workspace({
     if (action === "providers" || action === "devices") setHelpDialog(action);
     else if (action === "invite") setInviteOpen(true);
     else if (action === "files") {
-      if (!hasRepo && !readOnly) openAddProject();
+      if (!hasRepo && !readOnly) openAddRepository();
       else setMobilePane("files");
     } else if (action === "team") {
       setShowTeam(true);
@@ -936,16 +936,16 @@ export function Workspace({
       {memoryOpen && <MemoryDialog key={session.id} roomId={session.id} readOnly={readOnly} onClose={() => setMemoryOpen(false)} onOpenRun={runId => {
         void fetchRun(session.id,runId).then(({run}) => {enterRun(run);setMemoryOpen(false);}).catch(() => setError("Could not open the source chat."));
       }} />}
-      {addProjectOpen && !readOnly && <AddProjectDialog sessionId={session.id}
+      {addRepositoryOpen && !readOnly && <AddRepositoryDialog sessionId={session.id}
         sharedProject={!!session.projectId} startEmpty={startEmptyProject}
         selected={[...roomRepos.map(item => item.projectRepositoryId), repo?.projectRepositoryId].filter((id): id is string => !!id)}
-        onClose={() => setAddProjectOpen(false)}
-        onImport={() => { setAddProjectOpen(false); void openImportPicker(); }}
+        onClose={() => setAddRepositoryOpen(false)}
+        onImport={() => { setAddRepositoryOpen(false); void openImportPicker(); }}
         onAdded={async (added, empty) => {
           setRoomRepos(previous => [...previous.filter(item => item.id !== added.id), added]);
-          if (!await selectRepository(added.id)) throw new Error("Project added. Close this dialog and save your edits before opening it from the sidebar.");
+          if (!await selectRepository(added.id)) throw new Error("Repository added. Close this dialog and save your edits before opening it from the sidebar.");
           setEnteredRun(null); setForkFromRunId(null); setShowChat(true);
-          setMobilePane(empty ? "chat" : "files"); setAddProjectOpen(false);
+          setMobilePane(empty ? "chat" : "files"); setAddRepositoryOpen(false);
         }} />}
       {error && hasRepo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
       {handoffInbox.filter(offer => offer.runId !== enteredRun?.id).map(offer => <div key={offer.id} role="status" className="flex shrink-0 items-center gap-3 border-b border-vs-accent/25 bg-vs-accent/10 px-4 py-2 text-xs">
@@ -956,7 +956,7 @@ export function Workspace({
       <input
         ref={inputRef}
         type="file"
-        aria-label="Upload initial project folder"
+        aria-label="Upload initial folder"
         multiple
         webkitdirectory=""
         directory=""
@@ -967,7 +967,7 @@ export function Workspace({
       <input
         ref={importInputRef}
         type="file"
-        aria-label="Import project folder"
+        aria-label="Import repository folder"
         multiple
         webkitdirectory=""
         directory=""
@@ -982,7 +982,7 @@ export function Workspace({
       />
 
       <div className="session-panels vs-scroll flex min-h-0 flex-1 overflow-x-auto">
-            {/* Projects and their associated AI chats. */}
+            {/* Repositories and their associated AI chats. */}
             <div
               style={{ width: teamChatWidth }}
               className={`room-sidebar min-h-0 shrink-0 flex-col border-r border-vs-border ${mobilePane === "team" ? "flex" : "hidden"} ${showTeam ? "lg:flex" : "lg:hidden"}`}
@@ -998,7 +998,7 @@ export function Workspace({
                 enteredRunId={enteredRun?.id ?? null}
                 onEnter={target => void enterRun(target)}
                 onNewRun={next => { void selectRepository(next).then(selected => { if (selected) startNewRun(); }); }}
-                onAddProject={() => openAddProject()}
+                onAddRepository={() => openAddRepository()}
                 importing={importingRepo}
                 canAdd={!readOnly}
                 onFork={startFork}
@@ -1008,7 +1008,7 @@ export function Workspace({
             {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}
 
         {!hasRepo ? (
-          // Choose an empty project or import files before opening the workspace.
+          // Start without files or import a repository before opening the workspace.
           <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
             <WelcomeView
               readOnly={readOnly}
@@ -1022,7 +1022,7 @@ export function Workspace({
               hasRepo={hasRepo}
               onOpenPicker={openPicker}
               onOpenInput={() => inputRef.current?.click()}
-              onStartEmpty={() => openAddProject(true)}
+              onStartEmpty={() => openAddRepository(true)}
             />
           </div>
         ) : (
@@ -1069,7 +1069,7 @@ export function Workspace({
                         hasFiles={result ? result.stats.files > 0 : undefined}
                         repoId={chatRepoId}
                         onRepoChange={next => void selectRepository(next)}
-                        onImportRepo={() => openAddProject()}
+                        onImportRepo={() => openAddRepository()}
                         importingRepo={importingRepo}
                       />
                   ),
@@ -1080,7 +1080,7 @@ export function Workspace({
                   <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                     <div className="max-w-xs space-y-3">
                       <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
-                      <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                      <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your repository files"}</p>
                       <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
                       {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
                     </div>
@@ -1120,7 +1120,7 @@ export function Workspace({
                     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                       <div className="max-w-xs space-y-3">
                         <FilesIcon className="mx-auto h-7 w-7 text-vs-muted" />
-                        <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your project files"}</p>
+                        <p className="font-medium text-vs-fg">{treeError ? "Could not load files" : scanning ? "Loading repository files…" : "Your repository files"}</p>
                         <p>{treeError ?? (result ? "Choose a file in the explorer to read or edit it. Your changes are saved automatically." : "The repository has not loaded yet.")}</p>
                         {!result && !scanning && <button type="button" onClick={refreshTree} className="rounded-lg border border-vs-border px-3 py-2 text-vs-fg hover:bg-vs-hover">Retry loading files</button>}
                       </div>

@@ -11,7 +11,7 @@ export function RoomGuide({ hasRepo, readOnly, onClose, onAction }: {
   onAction: (action: RoomGuideAction) => void;
 }) {
   const steps: { title: string; body: string; label: string; action: RoomGuideAction; disabled?: boolean }[] = [
-    { title: "Choose your starting point", body: "Start an empty project for conversation, or import a folder to work with code. Files are optional, and your chats are saved either way.", label: hasRepo ? "Browse files" : "Add your first project", action: "files", disabled: !hasRepo && readOnly },
+    { title: "Choose your starting point", body: "Start without files for conversation, or import a folder to work with code. Files are optional, and your chats are saved either way.", label: hasRepo ? "Browse files" : "Add a repository or start without files", action: "files", disabled: !hasRepo && readOnly },
     { title: "Choose your AI", body: "Connect a provider and choose a model in the message box. To use your own computer, pair it and keep its runner running.", label: "Set up AI", action: "providers" },
     { title: "Give it a task", body: "Choose a starter or write your own request, then press Send. Use @ to reference an available team chat. Starter buttons never run AI.", label: "Open AI chat", action: "chat", disabled: !hasRepo },
     { title: "Continue as a team", body: "Open a chat from Chats & team. Hand off transfers control to a teammate; Copy chat starts a separate conversation instead.", label: "Browse team chats", action: "team", disabled: !hasRepo },

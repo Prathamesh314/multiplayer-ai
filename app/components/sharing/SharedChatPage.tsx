@@ -5,6 +5,7 @@ import type { SharedChat, SharedComment } from "../../lib/sharing/types";
 import { sharedChatApi, sharedChatPath, SharingRequestError, sharingRequest } from "../../lib/sharing/client";
 import { Markdown } from "../workspace/Markdown";
 import { ErrorNote, GhostButton, inputClass, PrimaryButton } from "../ui/Modal";
+import { BriefingCard } from "../collaboration/BriefingCard";
 
 function savedToken(runId:string) {
   const key=`shared-chat-invite:${runId}`;
@@ -24,6 +25,12 @@ export function SharedChatPage({runId}:{runId:string}) {
   const requestId=useRef<{id:string;body:string}|null>(null);
   const endpoint=sharedChatApi(runId);
   const mergeComments=(old:SharedComment[],fresh:SharedComment[])=>Array.from(new Map([...old,...fresh].map(c=>[c.id,c])).values()).sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt)||a.id.localeCompare(b.id));
+
+  useEffect(()=>{
+    const invitationChanged=()=>{if(new URLSearchParams(location.hash.slice(1)).has('invite')){after.current=0;setChat(null);setLoading(true);setRevision(value=>value+1);}};
+    window.addEventListener('hashchange',invitationChanged);
+    return()=>window.removeEventListener('hashchange',invitationChanged);
+  },[runId]);
 
   useEffect(()=>{
     let disposed=false,working=false;
@@ -96,7 +103,9 @@ export function SharedChatPage({runId}:{runId:string}) {
     {error&&<ErrorNote>{error}</ErrorNote>}
     {!chat&&!loading&&<section className="space-y-4 rounded-2xl border border-vs-border bg-vs-panel p-6"><h1 className="text-xl font-semibold">{signIn?"You’re invited to a conversation":"This chat needs an invitation"}</h1><p className="text-sm leading-6 text-vs-muted">Sign in with the email the host invited. You don’t need to create an organization, add a project, or connect a computer.</p><div className="flex flex-wrap gap-3"><Link className="rounded-lg bg-vs-accent px-4 py-2 text-sm text-vs-accent-fg" href={`/login?next=${next}`}>Sign in</Link><Link className="rounded-lg border border-vs-border px-4 py-2 text-sm" href={`/login?mode=signup&next=${next}`}>Create account</Link><GhostButton onClick={()=>{setLoading(true);setRevision(v=>v+1);}}>Try again</GhostButton></div><p className="text-xs text-vs-muted">Using another account? Choose Sign in and use the email the host invited. Keep your original invitation link if your browser blocks temporary storage.</p></section>}
     {chat&&<>
+      {chat.workspacePath&&<div className="rounded-xl border border-vs-border p-4 text-sm"><p className="mb-2">You have workspace access. AI execution requires editing permission and a connected computer; accepting a handoff is a separate step.</p><Link className="text-vs-accent underline" href={chat.workspacePath}>Open workspace</Link></div>}
       <header className="space-y-2"><p className="text-sm text-vs-muted">Host: {chat.hostName} · {chat.role==="viewer"?"Can view":chat.role==="manager"?"Host":"Can comment"}</p><h1 className="break-words text-2xl font-semibold">{chat.title}</h1><p className="text-sm leading-6 text-vs-muted">You’re viewing this conversation only. Comments are a discussion with the host; they don’t send instructions to AI or change files.</p></header>
+      <BriefingCard key={runId} runId={runId} expanded />
       <section aria-label="Shared conversation" className="space-y-6">{!chat.messages.length&&<p className="text-sm text-vs-muted">There aren’t any messages yet.</p>}{chat.messages.map(message=><article key={message.id} className={`min-w-0 rounded-xl p-4 ${message.role==="user"?"ml-4 border border-vs-border bg-vs-panel sm:ml-12":""}`}><p className="mb-2 text-xs text-vs-muted">{message.role==="agent"?"AI":message.authorName??"Human"}</p><Markdown text={message.body}/></article>)}{chat.hasMore&&<p role="status" className="text-sm text-vs-muted">Loading more messages…</p>}</section>
       <section aria-label="Comments" className="space-y-4 border-t border-vs-border pt-6"><h2 className="text-lg font-semibold">Comments</h2>{chat.commentsHaveMore&&<GhostButton disabled={olderBusy} onClick={()=>void olderComments()}>{olderBusy?"Loading…":"Load earlier comments"}</GhostButton>}{chat.comments.map(item=><article key={item.id} className="rounded-xl border border-vs-border bg-vs-panel p-4"><p className="mb-2 text-sm font-medium">{item.authorName}</p><p className="whitespace-pre-wrap break-words text-sm leading-6">{item.body}</p></article>)}{!chat.comments.length&&<p className="text-sm text-vs-muted">No comments yet.</p>}
         {chat.role!=="viewer"?<form onSubmit={comment} className="space-y-3"><label htmlFor="shared-comment" className="text-sm font-medium">Add a comment</label><textarea id="shared-comment" value={draft} onChange={e=>setDraft(e.target.value)} maxLength={8000} rows={3} className={`${inputClass} resize-y`} placeholder="Share a question or feedback with the host…"/><PrimaryButton type="submit" disabled={sending||!draft.trim()}>{sending?"Posting…":"Post comment"}</PrimaryButton></form>:<p className="rounded-xl border border-vs-border p-4 text-sm text-vs-muted">You have view-only access. Ask the host for comment permission to join the discussion.</p>}

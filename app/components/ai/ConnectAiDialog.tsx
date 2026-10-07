@@ -101,8 +101,9 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       }
     >
       <div className="rounded-xl border border-vs-border bg-vs-editor p-3 text-sm leading-6 text-vs-muted">
+        <p className="mb-2">Reading shared conversations and leaving permitted comments works in your browser without this setup.</p>
         <p><strong className="text-vs-fg">1. Connect your computer.</strong> Open the desktop app and sign in with this account.</p>
-        <p><strong className="text-vs-fg">2. Choose an AI tool.</strong> Install one of the tools below on that computer and sign in to it with your AI account. You only need one.</p>
+        <p><strong className="text-vs-fg">2. Choose an AI tool.</strong> Install Git and one of the tools below on that computer, then sign in to the tool with your AI account. You only need one AI tool.</p>
         <p><strong className="text-vs-fg">3. Start chatting.</strong> Check the connection below, then open a project’s room and send your first message.</p>
         {onOpenDevices && <button type="button" onClick={onOpenDevices} className="mt-2 rounded-lg border border-vs-border px-3 py-1.5 font-medium text-vs-fg hover:bg-vs-hover">Connect your computer</button>}
       </div>
