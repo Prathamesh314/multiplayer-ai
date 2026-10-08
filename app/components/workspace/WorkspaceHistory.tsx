@@ -17,6 +17,7 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   const endpoint = `/api/sessions/${run.sessionId}/runs/${run.id}/history`;
   const requestsInFlight = useRef(0);
   const generation = useRef(0);
+  const openRef = useRef(false);
   const load = useCallback(async (suffix = "", options?: RequestInit) => {
     requestsInFlight.current++;
     try {
@@ -30,14 +31,17 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
     catch (cause) { if (version === generation.current) setError(cause instanceof Error ? cause.message : String(cause)); }
   }, [load]);
   useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+  useEffect(() => {
     const counter = generation;
     const poll = () => { if (!document.hidden && !requestsInFlight.current) void refresh(); };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const changed = () => { if (open && !timer) timer = setTimeout(() => { timer = undefined; poll(); }, 500); };
+    const changed = () => { if (openRef.current && !timer) timer = setTimeout(() => { timer = undefined; poll(); }, 500); };
     const stream = openSessionStream(run.sessionId, { onRunActivity: event => { if (event.runId === run.id) changed(); }, onRunFinished: changed, onRunControl: changed, onStatus: connected => { if (connected) poll(); } });
     document.addEventListener("visibilitychange", poll);
     return () => { counter.current++; clearTimeout(timer); stream.close(); document.removeEventListener("visibilitychange", poll); };
-  }, [refresh, open, run.sessionId, run.id]);
+  }, [refresh, run.sessionId, run.id]);
   async function showActivity(id: string, cursor = 0) {
     setBusy(true); setError("");
     try { const body = await load(`?turn=${id}&after=${cursor}`); const events = body.batches.flatMap((b: { events: AiRunEvent[] }) => b.events);
@@ -58,7 +62,12 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   const synced = data?.turns.find(item => item.syncedAt)?.syncedAt;
   const syncLabel = synced ? `Activity synced ${new Date(synced).toLocaleTimeString()}` : "No activity synced yet";
   return <>
-    <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" title={`${syncLabel}${data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}`} onClick={() => setOpen(true)}>
+    <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" title={`${syncLabel}${data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}`} onClick={() => {
+      setOpen(true);
+      // Read on opening even if an older request is pending. The generation
+      // check keeps that older response from replacing the fresh result.
+      void refresh();
+    }}>
       {data?.selectedSnapshotId && <span className="h-1.5 w-1.5 rounded-full bg-vs-accent" aria-label="Checkpoint selected for next turn" />}
       Activity & checkpoints
     </button>

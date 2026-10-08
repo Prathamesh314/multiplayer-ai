@@ -205,6 +205,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       // CDP acknowledges navigation before the previous document is replaced.
       // Its matching selectors (and sessionStorage) must not satisfy readiness.
       const changeDocument = async (method, params) => {
+        await command("Page.bringToFront");
         const previous = await evaluate("performance.timeOrigin");
         await command(method, params);
         await eventually(() => evaluate(`performance.timeOrigin !== ${JSON.stringify(previous)} && document.readyState === 'complete'`), `${method} commits a new document`);
@@ -682,9 +683,25 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.match(changed.diff,/Available after laptop shutdown/);
     assert.equal((await request(tokens[0],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,409);
     assert.equal((await request(tokens[1],historyUrl,"POST",{snapshotId:checkpoint.id,version:1})).status,200);
+    // Open history while its initial response is still in flight. Resubscribing
+    // must not discard that response and leave the dialog permanently empty.
+    await recipient.command("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+      const originalFetch = window.fetch;
+      window.fetch = async (input, init) => {
+        const response = await originalFetch.call(window, input, init);
+        if (input === ${JSON.stringify(historyUrl)} && (!init?.method || init.method === 'GET')) {
+          window.fetch = originalFetch;
+          await new Promise(resolve => { window.__releaseInitialHistory = resolve; });
+        }
+        return response;
+      };
+    })()` });
     await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
+    await eventually(()=>recipient.evaluate('typeof window.__releaseInitialHistory === "function"'),"initial history response held");
     await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
     await recipient.click("Activity & checkpoints");
+    await eventually(()=>recipient.evaluate('!!document.querySelector(\'dialog[aria-label="Synchronized workspace history"]\')'),"history opens during its initial request");
+    await recipient.evaluate('window.__releaseInitialHistory(); delete window.__releaseInitialHistory');
     await eventually(()=>recipient.evaluate(`document.querySelector('button[aria-label="Code checkpoint"]')?.disabled === false`),"uploaded checkpoint visible");
     await recipient.selectPicker("Code checkpoint", checkpoint.id);
     await eventually(()=>recipient.evaluate('document.querySelector("dialog")?.textContent.includes("unfinished.txt")'),"offline checkpoint files");
