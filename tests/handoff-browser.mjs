@@ -239,7 +239,23 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     console.log("  ok idle room: zero refresh GETs over 16 seconds; one shared room stream");
     // A human assignment from another person's chat must work independently
     // of AI provider availability and without transferring chat control.
-    const assigner = await tab(tokens[1], `${roomId}?run=${chat.id}`);
+    // The room sidebar is ready before the linked conversation has loaded.
+    // Hold its response so this test always exercises that distinction.
+    const assigner = await tab(tokens[1], `${roomId}?run=${chat.id}`, undefined, `(() => {
+      const originalFetch = window.fetch;
+      window.fetch = async (input, init) => {
+        const response = await originalFetch.call(window, input, init);
+        if (input === ${JSON.stringify(`/api/sessions/${roomId}/runs/${chat.id}`)}) {
+          window.fetch = originalFetch;
+          await new Promise(resolve => { window.__releaseLinkedChat = resolve; });
+        }
+        return response;
+      };
+    })()`);
+    await eventually(() => assigner.evaluate('typeof window.__releaseLinkedChat === "function"'), "linked chat response held");
+    assert.notEqual(await assigner.evaluate("document.querySelector('.ai-chat-header h2')?.textContent"), chat.title);
+    await assigner.evaluate('window.__releaseLinkedChat(); delete window.__releaseLinkedChat');
+    await eventually(() => assigner.evaluate(`document.querySelector('.ai-chat-header h2')?.textContent === ${JSON.stringify(chat.title)}`), "linked chat entered");
     await assigner.click("Assign Tasks");
     const aliceHandle = (await sql(`SELECT handle FROM users WHERE id=$1`,[alice])).rows[0].handle;
     const taskText = "Please review the changes in this shared chat.";
@@ -295,6 +311,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
     await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
+    await assigner.command("Page.bringToFront");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
     await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] button[aria-label^="Status for"]\')?.textContent === "Done"'), "status refresh in source chat");
     // The File Manager assignment dialog works without running AI.
