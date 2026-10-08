@@ -23,6 +23,10 @@ await writeFile(composeFile,JSON.stringify({
     redis:{image:'redis:7-alpine'},
     web:{image:process.env.TEST_WEB_IMAGE??'multiplayer-web:ci',command:['node','scripts/serve.mjs','-H','0.0.0.0','-p','3000'],
       environment:{NODE_ENV:'production',DATABASE_URL:database,REDIS_URL:'redis://redis:6379',LOCAL_RUNNERS:'1',AGENT_WORKER:'0',
+        // Anonymous page/runtime checks still require configured authentication.
+        // These are disposable fixture credentials, never a live Clerk account.
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:'pk_test_'+Buffer.from('fixture.clerk.accounts.dev$').toString('base64'),
+        CLERK_SECRET_KEY:'sk_test_fixture',CLERK_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('test-only-webhook-secret').toString('base64'),
         MULTIPLAYER_AI_TERMINAL:'0',API_TRUST_PROXY:'1',PROXY_SHARED_SECRET:'disposable-candidate-test-secret-123456789',MULTIPLAYER_AI_DATA:'/app/workspaces'},
       volumes:['workspace:/app/workspaces'],ports:['127.0.0.1::3000'],
       healthcheck:{test:['CMD','node','scripts/check-web-runtime.mjs'],interval:'2s',timeout:'5s',retries:30}},
@@ -97,6 +101,11 @@ try {
   assert.equal((await fetch(base+'/workspace')).status,200);
   assert.equal(await docker([...compose,'ps','-q','web']),original);
   console.log('PASS: deployment storage commands reconcile legacy writes; healthy/unhealthy private candidates leave the live container serving HTTP.');
+} catch(error) {
+  console.error(await docker([...compose,'logs','--no-color','--tail','50','web']).catch(()=>''));
+  const web=await docker([...compose,'ps','--all','-q','web']).catch(()=>'');
+  if(web)console.error('Web health checks:',await docker(['inspect','--format','{{json .State.Health}}',web]).catch(()=>''));
+  throw error;
 } finally {
   await docker(['rm','-f',candidate]).catch(()=>{});
   await docker([...compose,'down','--volumes','--remove-orphans']);
