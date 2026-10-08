@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRef } from "react";
+import { publicAsset } from "../../lib/public-asset";
 import styles from "./marketing.module.css";
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function AppScreenshot({ src, alt, width, height, label, focus }: Props) {
+  src = publicAsset(src);
   const dialog = useRef<HTMLDialogElement>(null);
   return (
     <>

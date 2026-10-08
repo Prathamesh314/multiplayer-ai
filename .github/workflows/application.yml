@@ -82,6 +82,7 @@ jobs:
       - run: node --import tsx --test tests/return-path.test.mjs
       - run: npm run test:docker-context
       - run: node --test tests/production-deploy.test.mjs tests/deployment-safety.test.mjs
+      - run: node --import tsx --test tests/cdn-config.test.mjs
       - run: npm run build -- --webpack
       - run: npm run test:signup:http
         env:

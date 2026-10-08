@@ -8,6 +8,43 @@
     }
 }
 
+# Optional public-only CDN origin. With no configured hostname this listens on
+# an unpublished container port. Keep the application's main hostname direct.
+{$APP_ASSET_DOMAIN:http://localhost:8090} {
+    # Explicit public file types and path segments; no APIs, pages, source maps,
+    # dot-segment traversal, private repository files, or authenticated content.
+    @assets {
+        method GET HEAD
+        path_regexp publicAssets `^/(_next/static|product|docs/images)/([][a-zA-Z0-9_@()-]+/)*[][a-zA-Z0-9_@().-]+\.(js|css|woff2?|ttf|otf|png|webp|svg|jpe?g|ico)$`
+    }
+    handle @assets {
+        header Access-Control-Allow-Origin "*"
+        header X-Content-Type-Options nosniff
+        header X-Multiplayer-Public-Assets "1"
+        @screenshots path /product/* /docs/images/*
+        header @screenshots {
+            Cache-Control "public, max-age=3600"
+            match status 200 206 304
+            defer
+        }
+        reverse_proxy {$APP_UPSTREAMS:web:3000 web2:3000} {
+            lb_policy least_conn
+            health_uri /health/ready
+            health_status 200
+            lb_retries 0
+            header_up -Cookie
+            header_up -Authorization
+            header_up -X-Multiplayer-Proxy-Secret
+            header_up -X-Multiplayer-Client-IP
+            header_down -Set-Cookie
+        }
+    }
+    handle {
+        header Cache-Control "no-store"
+        respond 404
+    }
+}
+
 {$APP_DOMAIN} {
     # Only the balancer and container health checks use readiness. Application
     # responses retain their own private/no-store policy; no API response cache.

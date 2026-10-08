@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -43,6 +43,7 @@ async function startContainer(args, targetPort) {
 async function gateway(ports) {
   const started = await startContainer(['--add-host=host.docker.internal:host-gateway',
     '-e', 'APP_DOMAIN=:8080', '-e', 'ACME_EMAIL=fixture@example.com', '-e', `PROXY_SHARED_SECRET=${secret}`,
+    '-e', 'APP_ASSET_DOMAIN=http://assets.test:8080',
     '-e', `APP_UPSTREAMS=${ports.map(port => `host.docker.internal:${port}`).join(' ')}`,
     '-v', `${downloads}:/srv/desktop-downloads:ro`,
     '-v', `${resolve('docker/gateway/Caddyfile')}:/etc/caddy/Caddyfile:ro`, 'caddy:2.11.2-alpine'], 8080);
@@ -166,6 +167,11 @@ try {
     const server = createServer(async (request, response) => {
       response.setHeader('x-test-upstream', state.id);
       if (request.url === '/health/ready') { response.writeHead(state.ready ? 200 : 503).end(); return; }
+      if (request.url.startsWith('/_next/static/') || request.url.startsWith('/docs/images/')) {
+        response.setHeader('cache-control', 'public, max-age=31536000, immutable');
+        response.setHeader('set-cookie', 'fixture=should-not-leave-asset-origin');
+        response.end(JSON.stringify(request.headers)); return;
+      }
       if (request.url === '/events') {
         response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
         response.write('event: ready\ndata: {}\n\n');
@@ -183,6 +189,37 @@ try {
     servers.push(server); upstreamPorts.push(await listen(server));
   }
   const gatewayBase = await gateway(upstreamPorts);
+  const assetHeaders = {host:'assets.test',cookie:'ma_auth=private',authorization:'Bearer private',
+    'x-multiplayer-proxy-secret':secret,'x-multiplayer-client-ip':'203.0.113.9'};
+  // Native fetch deliberately rewrites Host in current Node. Use node:http to
+  // exercise actual host-based routing on the same gateway port as production.
+  const fetchAsset=(path,method='GET')=>new Promise((resolve,reject)=>{
+    const request=httpRequest(new URL(gatewayBase+path),{method,headers:assetHeaders},response=>{
+      const chunks=[];response.on('data',chunk=>chunks.push(chunk));response.on('error',reject);
+      response.on('end',()=>resolve(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:response.headers})));
+    });
+    request.on('error',reject);request.setTimeout(5000,()=>request.destroy(new Error('Asset request timed out')));request.end();
+  });
+  const asset = await fetchAsset('/_next/static/chunks/app/[id]/page-abc.js');
+  assert.equal(asset.status,200);
+  assert.equal(asset.headers.get('access-control-allow-origin'),'*');
+  assert.equal(asset.headers.get('set-cookie'),null);
+  assert.equal(asset.headers.get('x-multiplayer-public-assets'),'1');
+  assert.match(asset.headers.get('cache-control'),/immutable/);
+  const forwarded = await asset.json();
+  for(const header of ['cookie','authorization','x-multiplayer-proxy-secret','x-multiplayer-client-ip'])assert.equal(forwarded[header],undefined,header);
+  const screenshot = await fetchAsset('/docs/images/workspace.webp');
+  assert.equal(screenshot.status,200);
+  assert.equal(screenshot.headers.get('cache-control'),'public, max-age=3600');
+  for(const path of ['/', '/login','/api/auth/me','/workspace','/api/files/private.js','/_next/static/../../api/auth/me',
+    '/_next/static/%2e%2e/%2e%2e/api/auth/me','/_next/static/%252e%252e%252fapi%252fauth%252fme.js','/_next/static/chunks/app.js.map']) {
+    const response=await fetchAsset(path);
+    assert.equal(response.status,404,path);
+    assert.equal(response.headers.get('x-test-upstream'),null,'private paths never reach Next');
+    assert.equal(response.headers.get('cache-control'),'no-store');
+  }
+  assert.equal((await fetchAsset('/_next/static/chunks/app.js','POST')).status,404);
+  console.log('PASS: CDN hostname serves only public assets with CORS; credentials, private paths and mutations are excluded.');
   const downloadUrl = gatewayBase+'/downloads/desktop/preview-test/app.exe';
   const head = await fetch(downloadUrl, { method: 'HEAD' });
   assert.equal(head.status, 200);

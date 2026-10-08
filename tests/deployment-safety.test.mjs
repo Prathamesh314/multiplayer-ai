@@ -42,3 +42,15 @@ test('an unhealthy candidate or broken page refuses activation',async t=>{
   const broken=await server(t,(req,res)=>{res.writeHead(req.url==='/workspace'?500:200);res.end();});
   await assert.rejects(checkWebRuntime({base:broken,timeoutMs:1000,pollMs:5}),/workspace.*500/);
 });
+test('asset CDN preflight requires public asset headers and rejects exposed APIs',async t=>{
+  const app=await server(t,(_req,res)=>res.end('fixture'));
+  let exposeApi=false;
+  const assets=await server(t,(req,res)=>{
+    if(req.url==='/docs/images/workspace.webp')res.writeHead(200,{'content-type':'image/webp','access-control-allow-origin':'*','x-multiplayer-public-assets':'1'}).end('fixture');
+    else res.writeHead(exposeApi?200:404).end();
+  });
+  await checkWebRuntime({base:app,assetPrefix:assets});
+  exposeApi=true;
+  await assert.rejects(checkWebRuntime({base:app,assetPrefix:assets}),/must not expose/);
+  await assert.rejects(checkWebRuntime({base:app,assetPrefix:app}),/Asset CDN is not ready/);
+});

@@ -119,6 +119,10 @@ share the `direct` bucket. This mode is not suitable for public ingress.
 
 ## Gateway trust, streaming and retries
 
+For GoDaddy CDN with the existing VM and GoDaddy DNS, use the optional
+[public asset hostname](godaddy-cdn.md). Keep the main application hostname
+direct so live streams, authentication and private files never enter that CDN.
+
 Caddy overwrites `X-Multiplayer-Client-IP` with the actual peer address and adds
 `X-Multiplayer-Proxy-Secret`. The API trusts the address only when the configured
 secret matches. Missing/forged gateway credentials get 403. IPv6 privacy

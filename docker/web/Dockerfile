@@ -31,6 +31,7 @@ ARG DESKTOP_DOWNLOAD_WINDOWS_URL
 ARG DESKTOP_DOWNLOAD_LINUX_URL
 ARG DESKTOP_DOWNLOAD_CHANNEL
 ARG DESKTOP_DOWNLOAD_CHECKSUMS_URL
+ARG NEXT_PUBLIC_ASSET_PREFIX
 RUN npm run build -- --webpack
 
 # --- runtime stage ----------------------------------------------------------
@@ -58,6 +59,10 @@ COPY --from=build /app/public ./public
 COPY next.config.ts ./
 COPY db ./db
 COPY scripts/serve.mjs scripts/server-config.mjs scripts/check-web-runtime.mjs ./scripts/
+
+# Keep the configuration consistent when Next loads next.config.ts at runtime.
+ARG NEXT_PUBLIC_ASSET_PREFIX
+ENV NEXT_PUBLIC_ASSET_PREFIX=$NEXT_PUBLIC_ASSET_PREFIX
 
 ENV NODE_ENV=production
 EXPOSE 3000

@@ -81,6 +81,7 @@ x-web: &web
       DESKTOP_DOWNLOAD_LINUX_URL: ${DESKTOP_DOWNLOAD_LINUX_URL:-}
       DESKTOP_DOWNLOAD_CHANNEL: ${DESKTOP_DOWNLOAD_CHANNEL:-preview}
       DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
+      NEXT_PUBLIC_ASSET_PREFIX: ${NEXT_PUBLIC_ASSET_PREFIX:-}
   restart: unless-stopped
   environment:
     <<: *app-environment
@@ -111,6 +112,7 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?Set the public hostname, without a scheme}
+      APP_ASSET_DOMAIN: ${APP_ASSET_DOMAIN:-http://localhost:8090}
       ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact email}
       PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set PROXY_SHARED_SECRET}
     ports: ["80:80", "443:443", "443:443/udp"]
