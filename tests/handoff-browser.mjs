@@ -12,6 +12,14 @@ import { attachRepo } from "../app/lib/session/store.ts";
 import { RunnerGit } from "../runner/git.ts";
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+function readRunStream(response) {
+  const output = response.text();
+  // Observe failures immediately, while runner/browser assertions are in flight.
+  // Awaiting output still rejects normally; teardown must not mask the assertion
+  // that caused the server to close an unfinished stream.
+  void output.catch(() => {});
+  return output;
+}
 async function eventually(task, label, attempts = 120) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try { if (await task()) return; } catch {}
@@ -571,7 +579,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const prompt = makeFile ? "Save our idea as a note." : "Help me brainstorm a weekend plan.";
       const stream = await request(tokens[1], "/api/ai/run", "POST", {sessionId:emptyRoomId,repoId:emptyRepo.id,agentId:"codex",prompt,turnId:randomUUID(),...(emptyRunId ? {runId:emptyRunId,controlVersion:0} : {})});
       assert.equal(stream.status, 200);
-      const streamText = stream.text();
+      const streamText = readRunStream(stream);
       const {job} = await (await runnerRequest("/api/runner/claim", {version:"2",waitMs:0})).json();
       assert.equal(job.repoId, emptyRepo.id);
       emptyRunId = job.runId;
@@ -598,7 +606,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     for (let index = 0; index < 2; index += 1) {
       const stream = await request(tokens[1], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 1, prompt: `Continue step ${index}`, turnId: randomUUID() });
       if (!stream.ok) throw new Error(`Run failed: ${stream.status} ${await stream.text()}`);
-      const streamText = stream.text();
+      const streamText = readRunStream(stream);
       const claim = await runnerRequest("/api/runner/claim", { version: "2", waitMs: 0 });
       const { job } = await claim.json();
       assert.ok(job);
@@ -608,10 +616,27 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
         await eventually(() => recipient.evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`), "working agent queue composer");
         const message = "Also verify keyboard navigation while working";
+        const inputEndpoint=`/api/sessions/${roomId}/runs/${chat.id}/inputs`;
+        const queuedMessageVisible = () => recipient.evaluate(`Array.from(document.querySelectorAll('[aria-label="Chat message queue"] li p')).some(entry => entry.textContent === ${JSON.stringify(message)})`);
+        // Hold the POST before it reaches the server: a React textarea can
+        // contain the draft in textContent while the UI still says Queuing….
+        await recipient.evaluate(`(() => {
+          const originalFetch = window.fetch;
+          window.fetch = async (input, init) => {
+            if (input === ${JSON.stringify(inputEndpoint)} && init?.method === 'POST') {
+              window.fetch = originalFetch;
+              await new Promise(resolve => { window.__releaseQueuedInput = resolve; });
+            }
+            return originalFetch.call(window, input, init);
+          };
+        })()`);
         await recipient.evaluate(`(() => { const input=document.querySelector('textarea[aria-label="Message working agent"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(message)}); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
         await recipient.click("Queue message");
-        await eventually(() => recipient.evaluate(`document.querySelector('[aria-label="Chat message queue"]')?.textContent.includes(${JSON.stringify(message)})`), "queued instruction appears immediately");
-        const inputEndpoint=`/api/sessions/${roomId}/runs/${chat.id}/inputs`;
+        await eventually(() => recipient.evaluate('typeof window.__releaseQueuedInput === "function"'), "queue POST held before delivery");
+        assert.equal(await queuedMessageVisible(), false, "the unsent draft must not satisfy queue readiness");
+        assert.equal((await (await runnerRequest(`/api/runner/runs/${job.turnId}/inputs`,{kind:"claim",claimId:randomUUID()})).json()).input,null,"runner cannot claim an unsent draft");
+        await recipient.evaluate('window.__releaseQueuedInput(); delete window.__releaseQueuedInput');
+        await eventually(queuedMessageVisible, "persisted instruction appears in the queue");
         assert.equal((await request(tokens[0], inputEndpoint, "POST", {id:randomUUID(),body:"Unauthorized",controlVersion:1})).status,409);
         const claimed = await (await runnerRequest(`/api/runner/runs/${job.turnId}/inputs`,{kind:"claim",claimId:randomUUID()})).json();
         assert.equal(claimed.input.body,message);
@@ -631,7 +656,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       assert.match(await streamText, /"t":"exit"/);
     }
     const interrupted = await request(tokens[1], "/api/ai/run", "POST", { sessionId: roomId, agentId: "codex", runId: chat.id, controlVersion: 1, prompt: "Checkpoint unfinished work", turnId: randomUUID() });
-    assert.equal(interrupted.status,200); const interruptedOutput=interrupted.text();
+    assert.equal(interrupted.status,200); const interruptedOutput=readRunStream(interrupted);
     const pendingJob=(await (await runnerRequest("/api/runner/claim",{version:"2",waitMs:0})).json()).job;
     const checkpointRunner=new RunnerGit(server,deviceToken,join(directory,"simulated-runner"));
     await checkpointRunner.withWorkspace(pendingJob,async workspace=>{
@@ -726,6 +751,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok non-interrupting onboarding, honest GitHub setup, AI-to-device setup, and responsive project overview");
   } catch (cause) {
+    console.error("Browser integration failed:", cause);
     if (lastSessionId) {
       const diagnostic = await send("Runtime.evaluate", { expression: "document.body?.innerText.slice(0, 5000)", returnByValue: true }, lastSessionId).catch(() => null);
       console.error("Last browser state:", diagnostic?.result?.value);
