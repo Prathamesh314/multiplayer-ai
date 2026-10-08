@@ -1256,8 +1256,10 @@ function Conversation({ turns }: { turns: Turn[] }) {
   });
 
   return (
-    <div className="conversation-transcript mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-5">
-      <details className="text-sm text-vs-muted"><summary className="cursor-pointer">{turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0)} tool calls · {visible.filter(turn => turn.role !== "system").length} messages</summary><p className="mt-2 text-xs">Tool calls reflect available activity in this conversation. Expand a response’s steps to inspect them.</p></details>
+    <div className="conversation-transcript mx-auto flex w-full max-w-4xl flex-col gap-8 px-10 py-8">
+      {/* Metadata, not content: kept at chrome size so it never competes with
+          the answer below it. */}
+      <details className="text-[11px] text-vs-muted"><summary className="cursor-pointer">{turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0)} tool calls · {visible.filter(turn => turn.role !== "system").length} messages</summary><p className="mt-2">Tool calls reflect available activity in this conversation. Expand a response’s steps to inspect them.</p></details>
       {visible.map((turn) =>
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />
@@ -1320,8 +1322,8 @@ function TurnBubble({ turn }: { turn: Turn }) {
     const author = turn.author ?? "You";
     return (
       <div className="flex flex-col items-end gap-1">
-        {author !== "You" && <span className="pr-1 text-[12px] text-vs-muted">{author}</span>}
-        <div className="human-message max-w-[92%] whitespace-pre-wrap break-words rounded-md px-4 py-3 text-[14px] leading-[1.6] text-vs-fg">
+        {author !== "You" && <span className="pr-1 text-[11px] text-vs-muted">{author}</span>}
+        <div className="human-message max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-4 py-2.5 text-vs-fg">
           {turn.text}
         </div>
       </div>
