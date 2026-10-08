@@ -32,6 +32,7 @@ ARG DESKTOP_DOWNLOAD_LINUX_URL
 ARG DESKTOP_DOWNLOAD_CHANNEL
 ARG DESKTOP_DOWNLOAD_CHECKSUMS_URL
 ARG NEXT_PUBLIC_ASSET_PREFIX
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 RUN npm run build -- --webpack
 
 # --- runtime stage ----------------------------------------------------------

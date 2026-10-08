@@ -173,7 +173,7 @@ function createWorkspace() {
   if (workspaceSession !== mainWindow.webContents.session) {
     workspaceSession = mainWindow.webContents.session;
     workspaceSession.cookies.on("changed", (_event, cookie) => {
-      if (cookie.name !== "ma_auth" || !settings.url) return;
+      if ((!/^__session(?:_|$)/.test(cookie.name) && cookie.name !== "ma_auth") || !settings.url) return;
       const host = new URL(settings.url).hostname, domain = cookie.domain.replace(/^\./, "");
       if (host === domain || host.endsWith("." + domain)) autoConnection.invalidate();
     });

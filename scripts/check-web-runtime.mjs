@@ -2,7 +2,10 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
-export async function checkWebRuntime({base='http://127.0.0.1:3000',timeoutMs=90_000,pollMs=500,assetPrefix=process.env.NEXT_PUBLIC_ASSET_PREFIX||''}={}) {
+export async function checkWebRuntime({base='http://127.0.0.1:3000',timeoutMs=90_000,pollMs=500,assetPrefix=process.env.NEXT_PUBLIC_ASSET_PREFIX||'',requireAuth=process.env.NODE_ENV==='production'}={}) {
+  if(requireAuth && (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() || !process.env.CLERK_SECRET_KEY?.trim() || !process.env.CLERK_WEBHOOK_SIGNING_SECRET?.trim())) {
+    throw new Error('Clerk authentication is not configured. Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY and CLERK_WEBHOOK_SIGNING_SECRET before deployment. Keep the current release running.');
+  }
   const deadline=Date.now()+timeoutMs;
   let ready=false;
   while(Date.now()<deadline) {

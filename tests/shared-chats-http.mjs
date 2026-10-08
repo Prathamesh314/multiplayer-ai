@@ -1,13 +1,15 @@
+import {clerkFixture,clerkCookie} from "./helpers/clerk-fixture.mjs";
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {createServer} from 'node:net';
-import {createHash,randomBytes,randomUUID} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {memoryFixture} from './helpers/memory-fixture.mjs';
 import {createRun,appendMessage} from '../app/lib/ai/runs.ts';
 import {sharedChatBrowser} from './helpers/shared-chat-browser.mjs';
 
+const clerk=await clerkFixture();
 const f=await memoryFixture({postgres:true});let server,logs='';
 try {
   await f.db.query('UPDATE users SET email_verified_at=now()');
@@ -15,8 +17,7 @@ try {
     VALUES('guest','guest@example.test','External Guest','PK-GGGG-GGGG',now()) RETURNING id`)).id;
   const tokens=new Map();
   for(const user of [guest,f.alice,f.bob]){
-    const token=randomBytes(32).toString('base64url');tokens.set(user,token);
-    await f.db.query("INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '1 hour')",[user,createHash('sha256').update(token).digest()]);
+    tokens.set(user,await clerk.link(f.db,user));
   }
   const run=await createRun({sessionId:f.room,startedBy:f.alice,agentId:'codex',baseSha:'a'.repeat(40),title:'Guest invitation review'});
   await appendMessage({runId:run.id,role:'user',authorUserId:f.alice,body:'Review this change'});
@@ -25,10 +26,10 @@ try {
   const socket=createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));
   const base=`http://127.0.0.1:${port}`,database=new URL(process.env.DATABASE_URL);
   database.searchParams.set('options',globalThis.__maPool.options.options);
-  server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{env:{...process.env,DATABASE_URL:database.href,REDIS_URL:'',API_TRUST_PROXY:'0',SIGNUP_MODE:'open',GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',GOOGLE_OAUTH_CREDENTIALS_FILE:'',MNEMOSYNE_URL:'',REPO_EMBEDDING_URL:'',WEB_CONCURRENCY:'1'},stdio:['ignore','pipe','pipe']});
+  server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{env:{...process.env,...clerk.env,DATABASE_URL:database.href,REDIS_URL:'',API_TRUST_PROXY:'0',SIGNUP_MODE:'open',GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',GOOGLE_OAUTH_CREDENTIALS_FILE:'',MNEMOSYNE_URL:'',REPO_EMBEDDING_URL:'',WEB_CONCURRENCY:'1'},stdio:['ignore','pipe','pipe']});
   for(const stream of [server.stdout,server.stderr])stream.on('data',chunk=>{logs=(logs+chunk).slice(-8000);});
   let ready=false;for(let i=0;i<150;i++){if(server.exitCode!==null)throw Error(logs);try{ready=(await fetch(base+'/shared')).ok;}catch{}if(ready)break;await delay(100);}assert.ok(ready);
-  const api=(path,user,method='GET',body)=>fetch(base+path,{method,headers:{'content-type':'application/json',origin:base,...(user?{cookie:`ma_auth=${tokens.get(user)}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const api=(path,user,method='GET',body)=>fetch(base+path,{method,headers:{'content-type':'application/json',origin:base,...(user?{cookie:clerkCookie(tokens.get(user))}:{})},...(body?{body:JSON.stringify(body)}:{})});
   const path=`/api/shared-chats/${run.id}`;
   assert.equal((await api(path,null)).status,401);
   assert.equal((await api(path,guest)).status,403);
@@ -87,5 +88,5 @@ try {
 }catch(error){console.error(logs);throw error;}
 finally{
   if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([once(server,'exit'),delay(3000)]);}
-  await f.close();
+  await clerk.close();await f.close();
 }

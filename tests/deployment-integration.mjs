@@ -1,3 +1,5 @@
+import {clerkFixture,clerkCookie} from "./helpers/clerk-fixture.mjs";
+import {decodeJwt} from "jose";
 // Real Redis + two production Next processes + the checked-in Caddy gateway.
 // Uses a disposable PostgreSQL schema and test-owned containers only.
 import assert from 'node:assert/strict';
@@ -24,6 +26,7 @@ await mkdir(join(downloads, 'preview-test'), { recursive: true });
 const installer = Buffer.from('verified-preview-installer-fixture');
 await writeFile(join(downloads, 'preview-test', 'app.exe'), installer);
 let fixture;
+const clerk=await clerkFixture();
 async function docker(args, options = {}) { return (await run('docker', args, { maxBuffer: 1024 * 1024, ...options })).stdout.trim(); }
 async function eventually(check, label, attempts = 150) {
   for (let n = 0; n < attempts; n++) { if (await check()) return; await delay(100); }
@@ -58,9 +61,9 @@ async function gateway(ports) {
 
 try {
   // Validate actual Compose output, including the environment and port merging.
-  const composeConfig = async (credentialsFile = '') => JSON.parse(await docker(['compose', '--env-file', '/dev/null', '-f', 'compose.production.yml', 'config', '--format', 'json'], {
+  const composeConfig = async () => JSON.parse(await docker(['compose', '--env-file', '/dev/null', '-f', 'compose.production.yml', 'config', '--format', 'json'], {
     env: { ...process.env, POSTGRES_PASSWORD: 'test-only-password', MNEMOSYNE_MCP_TOKEN: secret,
-      PROXY_SHARED_SECRET: secret, APP_DOMAIN: 'example.com', ACME_EMAIL: 'fixture@example.com', GOOGLE_OAUTH_CREDENTIALS_FILE: credentialsFile },
+      PROXY_SHARED_SECRET: secret, APP_DOMAIN: 'example.com', ACME_EMAIL: 'fixture@example.com', NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:'pk_test_fixture', CLERK_SECRET_KEY:'fixture-secret', CLERK_WEBHOOK_SIGNING_SECRET:'fixture-webhook' },
   }));
   const config = await composeConfig();
   for (const [name, service] of Object.entries(config.services)) if (name !== 'gateway') assert.equal(service.ports, undefined, `${name} is private`);
@@ -72,21 +75,17 @@ try {
     assert.equal(config.services[name].environment.WEB_CONCURRENCY, '1');
     assert.equal(config.services[name].depends_on.migrate.condition, 'service_completed_successfully');
   }
-  const credentialPath = join(root, 'google-oauth.json');
-  const configured = await composeConfig(credentialPath);
-  for (const [deployment, source, credentialEnv] of [[config, '/dev/null', ''], [configured, credentialPath, '/run/secrets/google-oauth.json']]) {
-    for (const name of ['web', 'web2']) {
-      const service = deployment.services[name];
-      const mount = service.volumes.find(volume => volume.target === '/run/secrets/google-oauth.json');
-      assert.equal(mount.type, 'bind');
-      assert.equal(mount.source, source);
-      assert.equal(mount.read_only, true);
-      assert.equal(service.environment.GOOGLE_OAUTH_CREDENTIALS_FILE, credentialEnv);
-    }
-    assert.equal(deployment.services.worker.volumes.some(volume => volume.target === '/run/secrets/google-oauth.json'), false);
+  for(const name of ['web','web2']){
+    const service=config.services[name];
+    assert.equal(service.environment.CLERK_SECRET_KEY,'fixture-secret');
+    assert.equal(service.environment.CLERK_WEBHOOK_SIGNING_SECRET,'fixture-webhook');
+    assert.equal(service.build.args.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,'pk_test_fixture');
+    assert.equal(service.build.args.CLERK_SECRET_KEY,undefined,'secrets never enter image build arguments');
+    assert.equal(service.volumes.some(volume=>volume.target==='/run/secrets/google-oauth.json'),false);
   }
-  console.log('PASS: private backing services, shared Git volume/image and single migration owner.');
-  console.log('PASS: optional Google credential file is mounted read-only in both web replicas, never the worker.');
+  assert.equal(config.services.worker.environment.CLERK_SECRET_KEY,undefined);
+  assert.equal(config.services.worker.environment.CLERK_WEBHOOK_SIGNING_SECRET,undefined);
+  console.log('PASS: private services, shared Git volume/image, single migration owner, and runtime-only Clerk secrets restricted to web replicas.');
 
   fixture = await memoryFixture({ postgres: true });
   const databaseUrl = new URL(process.env.DATABASE_URL);
@@ -105,8 +104,7 @@ try {
 
   const tokens = [];
   for (const user of [fixture.alice, fixture.alice, fixture.bob]) {
-    const token = randomBytes(32).toString('hex'); tokens.push(token);
-    await fixture.db.query("INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '1 hour')", [user, createHash('sha256').update(token).digest()]);
+    tokens.push(await clerk.link(fixture.db,user));
   }
   const deviceTokens = [randomBytes(32).toString('hex'), randomBytes(32).toString('hex')];
   for (const token of deviceTokens) await fixture.db.query("INSERT INTO runner_devices(user_id,name,token_hash) VALUES ($1,'fixture',$2)", [fixture.alice, createHash('sha256').update(token).digest()]);
@@ -114,7 +112,7 @@ try {
   for (let i = 0; i < 2; i++) {
     const probe = createServer(), port = await listen(probe); await new Promise(resolve => probe.close(resolve)); ports.push(port);
     const child = spawn(process.execPath, ['scripts/serve.mjs', '-H', '0.0.0.0', '-p', String(port)], {
-      env: { ...process.env, NODE_ENV: 'production', NEXT_TEST_DIST_DIR: process.env.NEXT_TEST_DIST_DIR || '.next', NEXT_TELEMETRY_DISABLED: '1',
+      env: { ...process.env, ...clerk.env, NODE_ENV: 'production', NEXT_TEST_DIST_DIR: process.env.NEXT_TEST_DIST_DIR || '.next', NEXT_TELEMETRY_DISABLED: '1',
         DATABASE_URL: databaseUrl.href, REDIS_URL: redisUrl, MULTIPLAYER_AI_DATA: root, MNEMOSYNE_URL: '', REPO_EMBEDDING_URL: '',
         LOCAL_RUNNERS: '1', AGENT_WORKER: '0', MULTIPLAYER_AI_TERMINAL: '0', WEB_CONCURRENCY: '1',
         API_TRUST_PROXY: '1', PROXY_SHARED_SECRET: secret, API_RATE_NAMESPACE: 'deployment-test',
@@ -129,7 +127,7 @@ try {
       try { return (await fetch(`http://127.0.0.1:${port}/health/ready`)).ok; } catch { return false; }
     }, 'Next readiness', 300);
   }
-  const headers = (token = tokens[0]) => ({ cookie: `ma_auth=${token}`, 'x-multiplayer-proxy-secret': secret, 'x-multiplayer-client-ip': '192.0.2.1' });
+  const headers = (token = tokens[0]) => ({ cookie: clerkCookie(token), 'x-multiplayer-proxy-secret': secret, 'x-multiplayer-client-ip': '192.0.2.1' });
   const direct = (i, token = tokens[0], path = '/api/auth/me', extra = {}) => fetch(`http://127.0.0.1:${ports[i]}${path}`, { headers: { ...headers(token), ...extra } });
   for (let i = 0; i < 4; i++) {
     const token = i === 3 ? [...tokens[1]].map(char => '%'+char.charCodeAt(0).toString(16)).join('') : tokens[i % 2];
@@ -137,9 +135,11 @@ try {
   }
   const blocked = await direct(1, tokens[1], '/api/orgs?fresh=1', { 'x-user-id': fixture.bob, 'x-forwarded-for': '203.0.113.99', 'x-multiplayer-client-ip': '192.0.2.2' });
   assert.equal(blocked.status, 429); assert.ok(Number(blocked.headers.get('retry-after')) > 0);
-  assert.equal((await direct(0, tokens[2], '/api/auth/me', { cookie: `ma_auth=${tokens[2]}; ma_auth=${tokens[0]}` })).status, 429, 'duplicate-cookie precedence matches authentication');
+  const duplicate=await direct(0, tokens[2], '/api/auth/me', { cookie: clerkCookie(tokens[2])+`; __session=${tokens[0]}` });
+  assert.equal(duplicate.status,200,'Clerk consistently uses the first session cookie for both authentication and rate limits');
+  assert.equal((await duplicate.json()).user.id,fixture.bob);
   assert.equal((await direct(0, tokens[2])).status, 200, 'another user has a separate allowance');
-  assert.equal((await fetch(`http://127.0.0.1:${ports[0]}/api/auth/me`, { headers: { cookie: `ma_auth=${tokens[2]}` } })).status, 403, 'missing gateway credential rejected');
+  assert.equal((await fetch(`http://127.0.0.1:${ports[0]}/api/auth/me`, { headers: { cookie: clerkCookie(tokens[2]) } })).status, 403, 'missing gateway credential rejected');
   for (let i = 0; i < 2; i++) assert.equal((await direct(i, '', '/api/runner/me', { authorization: `Bearer ${deviceTokens[i]}` })).status, 200);
   assert.equal((await direct(0, '', '/api/runner/me', { authorization: `Bearer ${deviceTokens[0]}` })).status, 429, 'devices share owner budget');
   console.log('PASS: real API limits shared across two processes, browser sessions and devices; users isolated.');
@@ -147,13 +147,13 @@ try {
   await control.flushDb(); // This Redis container is exclusively owned by this test.
   const base = await gateway(ports);
   const spoofed = { 'x-multiplayer-proxy-secret': 'forged', 'x-multiplayer-client-ip': '1.2.3.4', 'x-forwarded-for': '8.8.8.8' };
-  assert.equal((await fetch(base+'/api/auth/me', { headers: { cookie: `ma_auth=${tokens[0]}`, ...spoofed } })).status, 200);
+  assert.equal((await fetch(base+'/api/auth/me', { headers: { cookie: clerkCookie(tokens[0]), ...spoofed } })).status, 200);
   for (let i = 0; i < 3; i++) {
     const response = await fetch(base+'/api/auth/login', { method: 'POST', headers: { ...spoofed, 'x-multiplayer-client-ip': `192.0.2.${i}`, 'content-type': 'application/json' }, body: '{}' });
-    assert.equal(response.status, i < 2 ? 400 : 429);
+    assert.equal(response.status, i < 2 ? 410 : 429);
   }
-  await fixture.db.query('UPDATE auth_tokens SET revoked_at=now() WHERE token_hash=$1', [createHash('sha256').update(tokens[0]).digest()]);
-  assert.equal((await (await fetch(base+'/api/auth/me', { headers: { cookie: `ma_auth=${tokens[0]}` } })).json()).user, null, 'revocation remains live');
+  await fixture.db.query('INSERT INTO clerk_revoked_sessions(session_id) VALUES($1)', [decodeJwt(tokens[0]).sid]);
+  assert.equal((await (await fetch(base+'/api/auth/me', { headers: { cookie: clerkCookie(tokens[0]) } })).json()).user, null, 'revocation remains live');
   await docker(['stop', '--time', '1', redis.name]);
   await eventually(async () => (await direct(0, tokens[2])).status === 503, 'Redis outage fails closed');
   assert.equal((await fetch(`http://127.0.0.1:${ports[0]}/health/ready`)).status, 503);
@@ -189,7 +189,7 @@ try {
     servers.push(server); upstreamPorts.push(await listen(server));
   }
   const gatewayBase = await gateway(upstreamPorts);
-  const assetHeaders = {host:'assets.test',cookie:'ma_auth=private',authorization:'Bearer private',
+  const assetHeaders = {host:'assets.test',cookie:'__session=private',authorization:'Bearer private',
     'x-multiplayer-proxy-secret':secret,'x-multiplayer-client-ip':'203.0.113.9'};
   // Native fetch deliberately rewrites Host in current Node. Use node:http to
   // exercise actual host-based routing on the same gateway port as production.
@@ -265,6 +265,7 @@ try {
   for (const close of clients) close();
   for (const name of containers.reverse()) await docker(['stop', '--time', '1', name]).catch(() => {});
   for (const server of servers) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  await clerk.close();
   await fixture?.close();
   await rm(root, { recursive: true, force: true });
 }

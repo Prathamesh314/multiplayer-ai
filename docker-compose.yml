@@ -120,6 +120,8 @@ services:
     build:
       context: .
       dockerfile: docker/web/Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
     container_name: multiplayer-web
     restart: unless-stopped
     depends_on:
@@ -128,6 +130,11 @@ services:
       redis:
         condition: service_healthy
     environment:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_WEBHOOK_SIGNING_SECRET: ${CLERK_WEBHOOK_SIGNING_SECRET:-}
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-http://localhost:3000}
+      SIGNUP_MODE: ${SIGNUP_MODE:-open}
       # Require the caller's paired runner; disable both hosted execution paths.
       <<: *team-context
       LOCAL_RUNNERS: "1"

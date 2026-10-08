@@ -96,21 +96,16 @@ If updates are not configured, obtain a newer installer from the download page o
     description: "Use Google or email, verify your email, and keep invitation links through sign-in.",
     sections: [
       { id: "signup", title: "Create your account", body: `1. Select **Open workspace** on the homepage and choose the signup option on the sign-in page.
-2. Use **Continue with Google** when available, or enter your email and a password using the requirements shown in the form.
+2. Use **Continue with Google** when available, or continue with email. Clerk manages sign-in, signup, verification, and recovery; the available methods follow the workspace’s authentication settings.
 3. Complete any email verification step. You do not need a Gmail address for email/password signup.
 4. Once signed in, create a team workspace or accept an invitation. If you arrived from an invitation, continue through that link so the app can return you to it.
 
-The hosted workspace currently allows open signup. A privately hosted workspace may require an invitation or temporarily disable new accounts; follow the message on that sign-in page.`, screenshot: "signup" },
-      { id: "verification", title: "Verify an email/password account", body: `Unverified email/password accounts receive a verification code. Check the inbox and spam folder for the email address you entered. Enter the newest code in the verification screen.
+The hosted workspace currently allows open signup. A privately hosted workspace may require an invitation or temporarily disable new accounts; follow the message on that sign-in page.` },
+      { id: "verification", title: "Verify your email and manage your account", body: `Follow the verification instructions in the sign-in form. Check your inbox and spam folder, use the newest code, and follow the expiry and resend guidance shown by Clerk. Your email does not need to be a Google account.
 
-- Codes expire after **10 minutes**.
-- Resending normally requires a **one-minute** wait; the screen shows when another request is allowed.
-- A new code replaces the old code. Repeated sends or incorrect attempts can temporarily limit retries.
-- Verification is required once for an unverified account, not on every normal sign-in.
+If you already used Multiplayer AI before Clerk was introduced, sign in or create your Clerk account with the **same verified email address**. Your conversations and memberships stay attached to your account. Your previous application password is not transferred: use Google or email verification and manage your password in **Account settings**.
 
-Google sign-in uses the verified email supplied by Google. It does not require this separate email-code step.
-
-If delivery fails, keep the page open and follow its retry message. Do not repeatedly create another account for the same email.`, screenshot: "email-verification" },
+Open **Account settings** in your workspace to manage your profile, sign-in methods, password, multi-factor authentication, and active sessions. Account deletion removes your access and disconnects your computers. If an email is linked to another identity, contact your workspace administrator instead of creating duplicate accounts.` },
       { id: "invitation-signin", title: "Join from an invitation", body: `Open the complete invitation URL. If asked to sign in, use the account that should receive access. **Guest conversation links require the exact invited email.** For a new account, complete signup and email verification, then return to the invitation if you are not taken there automatically.
 
 Accepting a team invitation and being added to a project are separate steps. If you can see the organisation but not the intended project, ask its manager to add you. See [members and permissions](/docs/members) and [guest sharing](/docs/sharing).` },
@@ -639,7 +634,7 @@ If a limit blocks new work, let active work finish or ask the administrator abou
 
 If you are hosting the platform yourself, start with the repository’s [production deployment guide](https://github.com/Prathamesh314/multiplayer-ai/blob/main/docs/production-deployment.md). It covers the server stack, HTTPS/domain setup, environment configuration, migrations, health checks, and deployment. Access to that repository may be required. Use its [backup and restore guide](https://github.com/Prathamesh314/multiplayer-ai/blob/main/docs/backup-restore.md) for recovery.
 
-Invitation generation requires a valid public website origin. Google signup, email verification, Slack, and Discord also require their separate server-side configuration. Do not put server secrets or OAuth credentials into shared chat. These user guides do not replace the deployment runbook.` },
+Invitation generation requires a valid public website origin. Clerk handles authentication and email verification; Slack and Discord require separate integration configuration. Do not put server secrets or OAuth credentials into shared chat. These user guides do not replace the deployment runbook.` },
     ],
   },
   {
@@ -667,7 +662,7 @@ Use **Check connection again**. If the app asks for an update, install the newer
 - **Team joined, project missing:** ask the project manager to add you to the project.
 
 Do not post the complete token in a public support thread.` },
-      { id: "email", title: "The verification email hasn’t arrived", body: `Check the entered address and spam folder. Wait for the resend timer, then request a new code and use the newest email. A code expires after 10 minutes; old codes stop working after replacement.
+      { id: "email", title: "The verification email hasn’t arrived", body: `Check the entered address and spam folder. Wait for the resend timer, then request a new code and use the newest email. Follow the code expiry and resend instructions shown by Clerk.
 
 If the page reports delivery failure, follow its retry guidance or contact the workspace administrator. Email delivery acceptance does not guarantee placement in the inbox. Google sign-in does not require this separate code flow.` },
       { id: "provider", title: "A model is missing or the provider fails", body: `Try the installed AI CLI directly on the connected computer and finish its own login or provider configuration. Update the CLI if needed, then use **Check connections** and refresh the model picker.

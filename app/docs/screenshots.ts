@@ -1,7 +1,5 @@
 /** Captured from the real components using isolated sample data; see docs/user-documentation.md. */
 export const screenshots: Record<string, { src: string; alt: string; label: string; width: number; height: number }> = Object.fromEntries([
-  ["signup", "Create an account", "The Multiplayer AI signup form with Google and email options."],
-  ["email-verification", "Verify your email", "The email verification form with code entry and resend countdown for a sample address."],
   ["desktop-setup", "Desktop setup", "Desktop settings with Workspace address and runner controls."],
   ["desktop-worktrees", "Local worktree settings", "Desktop settings showing the local worktrees folder and update controls."],
   ["workspace", "Project overview", "A sample organisation’s project overview and workspace navigation."],

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
@@ -13,7 +13,7 @@ const link=`${base}/login?invite=${token}&email=${encodeURIComponent(email)}`;
 const directory=await mkdtemp(join(tmpdir(),'multiplayer-auth-ui-'));
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let output='',socket,chrome;
-const server=process.argv.includes('--start-server')?spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',new URL(base).port],{env:{...process.env,SIGNUP_MODE:openSignup?'open':'invite'},stdio:['ignore','pipe','pipe']}):null;
+const server=process.argv.includes('--start-server')?spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',new URL(base).port],{env:{...process.env,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:'',CLERK_SECRET_KEY:'',SIGNUP_MODE:openSignup?'open':'invite'},stdio:['ignore','pipe','pipe']}):null;
 for(const stream of [server?.stdout,server?.stderr])stream?.on('data',chunk=>{output=(output+chunk).slice(-4000);});
 async function eventually(task,label){for(let i=0;i<120;i++){if(server?.exitCode!=null)throw Error(output);try{if(await task())return;}catch{}await delay(100);}throw Error('Timed out: '+label);}
 try {
@@ -26,71 +26,28 @@ try {
   socket.onmessage=event=>{const message=JSON.parse(event.data),operation=pending.get(message.id);if(operation){pending.delete(message.id);clearTimeout(operation.timer);if(message.error)operation.reject(Error(message.error.message));else operation.resolve(message.result);}};
   const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('CDP timeout: '+method));},15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
   const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description??result.exceptionDetails.text);return result.result.value;};
-  const fill=async(selector,value)=>{await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(100);};
-  const ready=()=>eventually(()=>evaluate(`!!document.querySelector('button[type=submit]')&&!document.querySelector('button[type=submit]').disabled`),'interactive form');
-  const submit=()=>evaluate(`document.querySelector('button[type=submit]').click()`);
   await send('Page.enable');await send('Runtime.enable');
   await send('Emulation.setScriptExecutionDisabled',{value:true});
   await send('Page.navigate',{url:link});
-  await eventually(()=>evaluate(`!!document.querySelector('button[type=submit]')`),'server-rendered form');
-  assert.equal(await evaluate(`document.querySelector('button[type=submit]').disabled`),true,'submission disabled before hydration');
-  await submit();
-  assert.equal(await evaluate(`new URL(location.href).searchParams.get('invite')`),token,'early submit cannot strip the invitation');
-  console.log('PASS: a slow script load cannot submit the form and lose its invitation.');
+  await eventually(()=>evaluate(`document.body.innerText.includes('Sign-in is being configured')`),'server-rendered setup state');
+  assert.equal(await evaluate(`new URL(location.href).searchParams.get('invite')`),token,'invitation survives a slow or unavailable authentication script');
+  assert.equal(await evaluate(`document.querySelector('input[type=password]')`),null,'retired password form is not exposed');
   await send('Emulation.setScriptExecutionDisabled',{value:false});
+  for(const width of [1280,390,320]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<500});
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'auth setup fits narrow windows');
+  }
+  console.log('PASS: unconfigured authentication has an accessible server-rendered state, preserves invitations, and never falls back to legacy credentials.');
   await send('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{
-    const nativeFetch=window.fetch.bind(window);window.__authRequests=[];
-    const json=(body,status=200)=>Promise.resolve(new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}}));
-    const user={id:'fixture-user',email:'existing@example.test',handle:'existing',displayName:'Existing',avatarUrl:null};
+    const nativeFetch=window.fetch.bind(window);
     window.EventSource=class{addEventListener(){} removeEventListener(){} close(){}};
-    window.fetch=(input,init={})=>{const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;if(!path.startsWith('/api/'))return nativeFetch(input,init);
-      if(path==='/api/auth/login'||path==='/api/auth/register'){
-        const body=JSON.parse(init.body);window.__authRequests.push({path,...body});
-        if(path==='/api/auth/login')return body.identifier==='existing@example.test'?json({status:'authenticated',user,connectCode:null}):json({error:'That email and password do not match.'},401);
-        if(!${openSignup}&&(body.email!==${JSON.stringify(email)}||body.invitationToken!==${JSON.stringify(token)}))return json({error:'Paste your invitation into the Invitation link or code field.',field:'invitation'},403);
-        return json({status:'authenticated',user,connectCode:null},201);
-      }
-      if(path==='/api/auth/me')return json({user,connectCode:null});
-      if(path==='/api/orgs')return json({orgs:[]});
-      if(path==='/api/invitations')return json({invitations:[]});
-      if(path==='/api/tasks')return json({tasks:[],members:[],hasMore:false});
-      if(path==='/api/collaboration/inbox'||path==='/api/collaboration/access-requests')return json({items:[],hasMore:false});
-      return json({});
+    window.fetch=(input,init={})=>{
+      const path=new URL(typeof input==='string'?input:input.url,location.origin).pathname;
+      if(path==='/api/auth/me')return Promise.resolve(Response.json({user:{id:'fixture-user',email:'existing@example.test',handle:'existing',displayName:'Existing',avatarUrl:null},connectCode:'PK-TEST-TEST'}));
+      return nativeFetch(input,init);
     };
   })()`});
-  await send('Page.reload',{ignoreCache:true});await ready();
-  assert.equal(await evaluate(`document.querySelector('input[type=email]').value`),email,'invited email prefilled');
-  if(!openSignup)assert.equal(await evaluate(`document.querySelector('input[placeholder="Paste your invitation link or code"]').value`),token,'URL credential visible');
-  assert.equal(await evaluate(`document.querySelector('input[autocomplete=username]')`),null,'no username step');
-  await fill('input[type=password]','test-browser-password');await submit();
-  await eventually(()=>evaluate(`location.pathname==='/workspace'`),'one-step signup');
-  assert.equal(await evaluate(`window.__authRequests.length`),1,'one signup request');
-  console.log('PASS: emailed invitation prefills the address and creates the account in one step.');
-
-  await send('Page.navigate',{url:base+'/login?mode=signup'});await ready();
-  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
-  assert.equal(await evaluate(`document.querySelector('input[autocomplete=new-password]')!==null`),true);
-  assert.ok(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),'mobile signup fits');
-  await writeFile('/tmp/multiplayer-email-signup-'+(openSignup?'open':'invite')+'.png',Buffer.from((await send('Page.captureScreenshot')).data,'base64'));
-  await fill('input[type=email]',email);await fill('input[type=password]','test-browser-password');await submit();
-  if(!openSignup){
-    await eventually(()=>evaluate(`!!document.querySelector('[role=alert]')`),'missing invitation feedback');
-    await fill('input[placeholder="Paste your invitation link or code"]',link);await submit();
-  }
-  await eventually(()=>evaluate(`location.pathname==='/workspace'`),'registered workspace');
-  const registration=await evaluate(`window.__authRequests.filter(request=>request.path==='/api/auth/register').at(-1)`);
-  assert.equal(registration.invitationToken,openSignup?undefined:token);assert.equal(registration.email,email);
-  assert.equal(registration.handle,undefined,'username is generated on the server');
-  console.log('PASS: email signup needs no username and respects configured admission mode.');
   await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
-
-  await send('Page.navigate',{url:base+'/login'});await ready();
-  assert.equal(await evaluate(`document.querySelector('input[placeholder="Paste your invitation link or code"]')`),null,'login never asks for an invitation');
-  await fill('input[type=email]','existing@example.test');await fill('input[type=password]','test-browser-password');await submit();
-  await eventually(()=>evaluate(`location.pathname==='/workspace'`),'existing account login');
-  assert.equal(await evaluate(`window.__authRequests[0].invitationToken`),undefined);
-  console.log('PASS: existing accounts still sign in without an invitation.');
-
   // A desktop browser has its own cookie jar. The selected project must survive
   // signing in there, including when it belongs to a user's second organisation.
   await send('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{
@@ -144,9 +101,12 @@ try {
   assert.equal(new URL(browserUrl).searchParams.get('connections'),'second-project');
   assert.ok(await evaluate(`document.body.innerText.includes('Continue in your browser')`));
   await evaluate(`sessionStorage.setItem('connections-flow','browser');sessionStorage.removeItem('connections-signed-in')`);
-  await send('Page.navigate',{url:browserUrl});await ready();
+  await send('Page.navigate',{url:browserUrl});await eventually(()=>evaluate(`location.pathname==='/login'`),'browser sign-in destination');
   assert.equal(await evaluate(`new URL(location.href).searchParams.get('next')`),new URL(browserUrl).pathname+new URL(browserUrl).search);
-  await fill('input[type=email]','existing@example.test');await fill('input[type=password]','test-browser-password');await submit();
+  // Clerk owns credential entry; simulate its completed sign-in for this application navigation regression.
+  const destination=await evaluate(`new URL(location.href).searchParams.get('next')`);
+  await evaluate(`sessionStorage.setItem('connections-signed-in','1')`);
+  await send('Page.navigate',{url:base+destination});
   await eventually(selectedProject,'selected project restored after browser sign-in');
   await connectionsReady();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Connect Slack').click()`);

@@ -25,7 +25,7 @@ chmod 600 .env.production
 
 Edit `.env.production`: set `APP_DOMAIN` to the hostname without a scheme,
 `AUTH_PUBLIC_URL` to the matching public HTTPS origin (for example,
-`https://cubeclashes.com`, used for invitation links even without Google sign-in),
+`https://cubeclashes.com`, used for invitation links and Clerk session origin checks),
 `ACME_EMAIL` to the certificate contact, and generate three **different** secrets
 with `openssl rand -hex 32`. Fill `POSTGRES_PASSWORD`, `PROXY_SHARED_SECRET` and
 `MNEMOSYNE_MCP_TOKEN`. Hex passwords avoid connection-URL escaping problems.
@@ -119,9 +119,10 @@ share the `direct` bucket. This mode is not suitable for public ingress.
 
 ## Gateway trust, streaming and retries
 
-For GoDaddy CDN with the existing VM and GoDaddy DNS, use the optional
-[public asset hostname](godaddy-cdn.md). Keep the main application hostname
-direct so live streams, authentication and private files never enter that CDN.
+For Cloudflare Free CDN with the existing VM, follow the
+[Cloudflare public-assets setup](cloudflare-cdn.md). The same asset origin also
+supports [GoDaddy CDN](godaddy-cdn.md). Keep the main application hostname direct
+so live streams, authentication and private files never enter the asset CDN.
 
 Caddy overwrites `X-Multiplayer-Client-IP` with the actual peer address and adds
 `X-Multiplayer-Proxy-Secret`. The API trusts the address only when the configured
@@ -279,12 +280,11 @@ recovery, coordinated backup/restore, invitation admission and storage admission
 See `launch-remediation.md` for tests, scope and remaining external release gates.
 Stop **all** old web/worker replicas before upgrading the lock implementation.
 
-Set `SIGNUP_MODE=open` in `.env.production` to allow anyone to create an account
-with email and password, or Google when configured. Recreate both web services
-after changing it. Email signup does not require a username; see
-[Google signup setup](google-sign-in.md) for provider credentials.
-For once-only email codes, configure Resend and enable
-[email verification](email-verification.md).
+Set `SIGNUP_MODE=open` in `.env.production` to admit anyone after Clerk verifies
+their email. Complete [Clerk authentication setup](clerk-auth.md), including
+production keys and signed webhooks, before rebuilding and deploying. Clerk
+manages Google/email sign-in, verification and recovery; the old Google OAuth
+and Resend verification settings are retained only for rollback compatibility.
 
 Production defaults to `SIGNUP_MODE=invite` when no mode is configured. Create the first private invitation
 against the deployed database using `npm run beta:invite -- EMAIL HTTPS_ORIGIN`;
@@ -322,3 +322,7 @@ an actual restore drill before accepting valuable data.
 References: [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy),
 [Redis token buckets](https://redis.io/docs/latest/develop/use-cases/rate-limiter/nodejs/),
 [Docker production guidance](https://docs.docker.com/compose/how-tos/production/).
+
+## Clerk authentication
+
+Human authentication is managed by Clerk. Complete [Clerk setup](clerk-auth.md) before deploying this release. Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` at build time and `CLERK_SECRET_KEY` plus `CLERK_WEBHOOK_SIGNING_SECRET` at runtime in `.env.production`. Keep `AUTH_PUBLIC_URL` set to the public HTTPS origin. The deployment preflight preserves the current release if Clerk credentials are missing.

@@ -24,9 +24,9 @@ const fixtureDevice = "15dc2939-43e7-450b-9d4e-f7f19a7c02c1";
 const server = createServer((request, response) => {
   const json = body => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
   if (request.url === "/api/auth/me") {
-    json({ user: request.headers.cookie?.includes("ma_auth=fixture-alice") ? { id: fixtureUser } : null });
+    json({ user: request.headers.cookie?.includes("__session=fixture-alice") ? { id: fixtureUser } : null });
   } else if (request.url === "/api/runner/pairing") {
-    assert.match(request.headers.cookie ?? "", /ma_auth=fixture-alice/);
+    assert.match(request.headers.cookie ?? "", /__session=fixture-alice/);
     json({ code: "RN-ABCD-EFGH" });
   } else if (request.url === "/api/runner/pair") {
     automaticPairs++;
@@ -121,7 +121,7 @@ try {
     assert.equal((await targets()).filter(target => target.type === "page").length, 2);
     console.log("ok workspace preload, privileged bridge separation, popup and navigation blocks");
     assert.equal(automaticPairs, 0, "No device is paired before sign-in");
-    await workspace.send("Network.setCookie", { name: "ma_auth", value: "fixture-alice", url: origin, httpOnly: true });
+    await workspace.send("Network.setCookie", { name: "__session", value: "fixture-alice", url: origin, httpOnly: true });
     await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "online", "automatic desktop connection after sign-in");
     assert.equal(automaticPairs, 1);
     const saved = JSON.parse(await readFile(join(directory,"runner.json"),"utf8"));
@@ -129,9 +129,9 @@ try {
     assert.equal(saved.deviceId, fixtureDevice);
     assert.equal(saved.token,"fixture-private-device-token");
     assert.equal(await workspace.evaluate("JSON.stringify(window.desktop).includes('fixture-private-device-token')"),false);
-    await workspace.send("Network.deleteCookies",{name:"ma_auth",url:origin});
+    await workspace.send("Network.deleteCookies",{name:"__session",url:origin});
     await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "paused", "sign-out drains runner");
-    await workspace.send("Network.setCookie",{name:"ma_auth",value:"fixture-alice",url:origin,httpOnly:true});
+    await workspace.send("Network.setCookie",{name:"__session",value:"fixture-alice",url:origin,httpOnly:true});
     await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "online", "sign-in reuses saved connection");
     assert.equal(automaticPairs,1);
     await setup.evaluate("window.desktopSetup.toggleRunner()");

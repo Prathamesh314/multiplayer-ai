@@ -1,5 +1,7 @@
 # Email verification
 
+> Legacy runbook for releases before the Clerk migration. Current authentication is managed by Clerk; use [Clerk setup](clerk-auth.md). The endpoints described below are retired in current releases.
+
 Email/password signup and login require a six-digit email code once per account
 when `EMAIL_VERIFICATION_ENABLED=true`. New registrations and existing unverified
 accounts receive no login session or connect code until verification succeeds.

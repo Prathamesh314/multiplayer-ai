@@ -172,14 +172,11 @@ try {
   await delay(200);await screenshot("connections-light");
   assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
   await send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
-  for(const [path,ready,name] of [["/login",'input[type="email"]',"login"],["/s/locked-room",'input',"locked-room"],["/invite/expired",'[role="alert"]',"invitation"]]) {
+  for(const [path,ready,name] of [["/login",'[role="status"]',"login"],["/s/locked-room",'input',"locked-room"],["/invite/expired",'[role="alert"]',"invitation"]]) {
     await send("Page.navigate",{url:base+path});
     await eventually(()=>evaluate(`!!document.querySelector(${JSON.stringify(ready)})`),name);
     for(const width of [1440,390,320]) {await viewport(width);await fits(`${name} at ${width}`);if(width!==320)await screenshot(`${name}-${width}`);}
-    if(path==="/login") {
-      await type('input[type="password"]',"example-password");await click('button[aria-label="Show password"]');
-      assert.equal(await evaluate('document.querySelector("input[autocomplete=current-password]").type'),"text");
-    }
+    if(path==="/login") assert.equal(await evaluate('!!document.querySelector("input[type=password]")'),false,'no legacy password form');
     assert.deepEqual(await evaluate("window.__chatFixture.unknown"),[]);
   }
   await send("Page.navigate",{url:base+"/"});

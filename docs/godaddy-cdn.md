@@ -1,5 +1,8 @@
 # GoDaddy CDN for the Bangalore deployment
 
+For the Cloudflare Free alternative, follow [Cloudflare CDN setup](cloudflare-cdn.md).
+Both providers use the same opt-in asset origin; choose one procedure.
+
 Keep GoDaddy DNS and the existing VM. Use GoDaddy Website Security's Firewall/CDN
 on **assets.cubeclashes.com only**. The application remains at cubeclashes.com.
 This setup is opt-in: a normal build uses the existing same-origin asset URLs.

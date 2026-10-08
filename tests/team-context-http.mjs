@@ -1,5 +1,6 @@
+import {clerkFixture,clerkCookie} from "./helpers/clerk-fixture.mjs";
 import assert from "node:assert/strict";
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
@@ -14,6 +15,7 @@ nextEnv.loadEnvConfig(process.cwd());
 const databaseUrl = process.env.DATABASE_URL;
 process.env.INTEGRATIONS_ENCRYPTION_KEY = "cd".repeat(32);
 const f = await memoryFixture({ postgres: true });
+const clerk=await clerkFixture();
 let server,
   output = "";
 try {
@@ -39,12 +41,7 @@ try {
     ["bob", f.bob],
     ["outsider", f.outsider],
   ]) {
-    const token = randomBytes(32).toString("base64url");
-    cookies[name] = `ma_auth=${token}`;
-    await f.db.query(
-      "INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '1 hour')",
-      [id, createHash("sha256").update(token).digest()],
-    );
+    cookies[name] = clerkCookie(await clerk.link(f.db,id));
   }
   const schema = (await f.first("SELECT current_schema() AS name")).name;
   const url = new URL(databaseUrl);
@@ -58,7 +55,7 @@ try {
     {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
-        ...process.env,
+        ...process.env, ...clerk.env,
         DATABASE_URL: url.toString(),
         REDIS_URL: "",
         LOCAL_RUNNERS: "0",
@@ -251,5 +248,6 @@ try {
     server.kill();
     await once(server, "exit");
   }
+  await clerk.close();
   await f.close();
 }

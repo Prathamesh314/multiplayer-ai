@@ -1,3 +1,4 @@
+import {clerkCookie} from "../helpers/clerk-fixture.mjs";
 import nextEnv from '@next/env';
 import { spawn, fork } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -75,7 +76,7 @@ try {
   if (control.signal.aborted) throw new Error('Interrupted during setup');
   const port=await availablePort(), base=`http://127.0.0.1:${port}`;
   server=spawn(process.execPath,['scripts/serve.mjs','--hostname','127.0.0.1','--port',String(port),'--keepAliveTimeout',String(config['keep-alive-ms'])],{
-    cwd:root,env:{...process.env,DATABASE_URL:data.databaseUrl,REDIS_URL:redisUrl,NODE_ENV:'production',NEXT_TEST_DIST_DIR:'.next',
+    cwd:root,env:{...process.env,...data.clerkEnv,DATABASE_URL:data.databaseUrl,REDIS_URL:redisUrl,NODE_ENV:'production',NEXT_TEST_DIST_DIR:'.next',
       MULTIPLAYER_AI_DATA:join(scratch,'data'),STORAGE_PROVIDER:'local',STORAGE_LOCAL_DIR:join(scratch,'objects'),STORAGE_PREFIX:'',STORAGE_COLD_GIT:'0',
       NEXT_TELEMETRY_DISABLED:'1',AGENT_WORKER:'0',LOCAL_RUNNERS:'1',MULTIPLAYER_AI_TERMINAL:'0',WEB_CONCURRENCY:String(config.workers),MNEMOSYNE_URL:'',MEMORY_EXTRACTION_URL:''},stdio:['ignore',log.fd,log.fd]});
   let spawnError; server.on('error',error=>{spawnError=error;});
@@ -93,7 +94,7 @@ try {
   for (let attempt=0;attempt<120 && !control.signal.aborted;attempt++) {
     if (spawnError || server.exitCode!==null) throw new Error('The isolated server did not start; see its log.');
     try {
-      const response=await fetch(base+'/api/auth/me',{headers:{cookie:`ma_auth=${data.users[0].token}`},signal:AbortSignal.timeout(1000)});
+      const response=await fetch(base+'/api/auth/me',{headers:{cookie:clerkCookie(data.users[0].token)},signal:AbortSignal.timeout(1000)});
       ready=response.ok && (await response.json()).user?.id===data.users[0].id;
       if (ready) break;
     } catch {}
@@ -102,7 +103,7 @@ try {
   if (!ready) throw new Error('Could not verify the isolated server identity. No workload was sent.');
   // Warm representative read routes before starting the measured ramp.
   for (const path of ['/api/tasks',`/api/tasks?sessionId=${data.users[0].roomId}`,`/api/sessions/${data.users[0].roomId}/tree`]) {
-    const response=await fetch(base+path,{headers:{cookie:`ma_auth=${data.users[0].token}`},signal:AbortSignal.timeout(10000)});
+    const response=await fetch(base+path,{headers:{cookie:clerkCookie(data.users[0].token)},signal:AbortSignal.timeout(10000)});
     await response.arrayBuffer(); if (!response.ok) throw new Error('Read-route warmup failed.');
   }
   const baseline={databaseBytes:await data.bytes(),diskBytes:await directoryBytes(scratch)};

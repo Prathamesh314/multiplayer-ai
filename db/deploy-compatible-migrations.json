@@ -1,3 +1,4 @@
 {
-  "049_storage_accounting.sql": "179a7e2f62427fac485edf8055d4acdde9d2aaa0a31aa61a45985aa4d7275e3d"
+  "049_storage_accounting.sql": "179a7e2f62427fac485edf8055d4acdde9d2aaa0a31aa61a45985aa4d7275e3d",
+  "050_clerk_auth.sql": "067251c7a41087c2960510f035576cce6db2b6a4ad4d475a20b0b18d34b2f3a5"
 }

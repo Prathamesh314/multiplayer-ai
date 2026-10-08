@@ -2,7 +2,8 @@ import { StorageAdmissionError } from "../storage/admission";
 import { isDatabaseBusy } from "../db/config";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
-import { NextRequest } from "next/server";
+import { clerkConfigured, ClerkAccountError } from "../auth/clerk-config";
+import { SignupAdmissionError } from "../auth/admission";
 import { queryOne } from "../db/client";
 import { limitKey, limitStore, type LimitPolicy, type LimitStore } from "./rate-limit";
 
@@ -29,7 +30,8 @@ export function usesDeviceToken(route: string) {
 }
 
 export function policyFor(route: string, method: string): PolicyName {
-  if (route === '/api/integrations/slack/events') return 'webhook';
+  if (route === '/api/integrations/slack/events' || route === '/api/webhooks/clerk') return 'webhook';
+  if (route === '/api/auth/complete' || route.startsWith('/api/auth/desktop')) return 'auth';
   if (route.startsWith("/api/auth/email/") || route.startsWith("/api/auth/google/") || ["/api/auth/login", "/api/auth/continue", "/api/auth/register"].includes(route)) return "auth";
   if (["/api/runner/pair", "/api/runner/pairing"].includes(route)) return "pair";
   if (route.startsWith("/api/git/")) return "git";
@@ -67,16 +69,19 @@ export function clientAddress(request: Request, env = process.env): string | nul
  * multiply a user's allowance. Route handlers still perform all authorization. */
 export async function requestUserId(request: Request, route: string): Promise<string | null> {
   const device = usesDeviceToken(route);
+  if (!device) {
+    if (!clerkConfigured()) return null;
+    const { currentUser } = await import("../auth/tokens");
+    return (await currentUser())?.id ?? null;
+  }
   const authorization = request.headers.get("authorization") ?? "";
   // Use the same parser as route authentication (including duplicate-cookie
   // precedence and percent decoding), without copying or reading the body.
-  const token = device ? (authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "") :
-    new NextRequest(request.url, { headers: request.headers }).cookies.get("ma_auth")?.value;
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   if (!token || token.length > 512) return null;
   const hash = createHash("sha256").update(token).digest();
-  const row = await queryOne<{ user_id: string }>(device
-    ? `SELECT d.user_id FROM runner_devices d JOIN users u ON u.id=d.user_id WHERE d.token_hash=$1 AND d.revoked_at IS NULL AND u.deleted_at IS NULL`
-    : `SELECT t.user_id FROM auth_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND t.expires_at>now() AND u.deleted_at IS NULL`, [hash]);
+  const row = await queryOne<{ user_id: string }>(`SELECT d.user_id FROM runner_devices d JOIN users u ON u.id=d.user_id
+    WHERE d.token_hash=$1 AND d.revoked_at IS NULL AND u.deleted_at IS NULL AND u.clerk_disabled_at IS NULL`, [hash]);
   return row?.user_id ?? null;
 }
 
@@ -127,7 +132,8 @@ export function withApiLimit<Args extends unknown[]>(route: string, handler: (re
     let response: Response;
     try { response = await handler(request, ...args); }
     catch (cause) {
-      if (cause instanceof StorageAdmissionError) response = Response.json({ error: cause.message }, { status: cause.status });
+      if (cause instanceof StorageAdmissionError || cause instanceof ClerkAccountError) response = Response.json({ error: cause.message }, { status: cause.status });
+      else if (cause instanceof SignupAdmissionError) response = Response.json({ error: cause.message }, { status: 403 });
       else if (isDatabaseBusy(cause)) response = Response.json({error:"This request took too long or the workspace is busy. Please try again shortly."},{status:503,headers:{"retry-after":"2"}});
       else throw cause;
     }

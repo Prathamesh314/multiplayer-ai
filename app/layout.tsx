@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "./components/ui/Toast";
+import { AuthProvider } from "./components/auth/AuthProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${bricolage.variable} h-full antialiased`}
     >
-      <body className="h-full overflow-hidden"><ToastProvider>{children}</ToastProvider></body>
+      <body className="h-full overflow-hidden"><AuthProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}><ToastProvider>{children}</ToastProvider></AuthProvider></body>
     </html>
   );
 }

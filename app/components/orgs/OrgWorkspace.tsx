@@ -4,6 +4,7 @@ import { openUserStream } from "../../lib/events/shared-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useToast } from "../ui/Toast";
 import { fetchMe, logout } from "../../lib/auth/client";
 import { loginHref } from "../../lib/auth/return-path";
 import type { CurrentUser } from "../../lib/auth/types";
@@ -82,6 +83,7 @@ type Dialog =
 
 export function OrgWorkspace() {
   const router = useRouter();
+  const { notify } = useToast();
   const computerConnection = useComputerConnection();
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [connectCode, setConnectCode] = useState<string | null>(null);
@@ -144,8 +146,8 @@ export function OrgWorkspace() {
         onOpenProviders={() => setDialog({ kind: "connectAi" })}
         onOpenDevices={() => setDialog({ kind: "devices" })}
         onSignOut={async () => {
-          await logout();
-          router.replace("/login");
+          try { await logout(); router.replace("/login"); }
+          catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
         }}
       />
 
@@ -430,7 +432,8 @@ function OrgRail({
               <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
               Your computers
             </button>
-            <button
+            <a href="/account" className="rounded-lg px-3 py-2 text-sm text-vs-muted hover:text-vs-fg">Account settings</a>
+<button
               type="button"
               role="menuitem"
               onClick={() => {

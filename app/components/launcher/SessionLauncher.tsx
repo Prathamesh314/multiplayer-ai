@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { relativeTime } from "../../lib/format";
+import { useToast } from "../ui/Toast";
 import { fetchMe, logout } from "../../lib/auth/client";
 import type { CurrentUser } from "../../lib/auth/types";
 import { listMySessions, NotSignedIn } from "../../lib/session/client";
@@ -16,6 +17,7 @@ type Dialog = "create" | "join" | null;
 
 export function SessionLauncher() {
   const router = useRouter();
+  const { notify } = useToast();
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
 
@@ -45,8 +47,8 @@ export function SessionLauncher() {
   }, [router]);
 
   async function signOut() {
-    await logout();
-    router.replace("/login");
+    try { await logout(); router.replace("/login"); }
+    catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
   }
 
   function open(sessionId: string) {
@@ -176,7 +178,8 @@ function Sidebar({
             {me ? `@${me.handle}` : ""}
           </span>
         </span>
-        <button
+        <a href="/account" className="rounded-lg px-3 py-2 text-sm text-vs-muted hover:text-vs-fg">Account settings</a>
+<button
           type="button"
           onClick={onSignOut}
           className="shrink-0 rounded px-2 py-1 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"

@@ -24,7 +24,9 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
     const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value;};
     await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
     if(hostToken){
-      await send('Network.setCookie',{name:'ma_auth',value:hostToken,url:base,httpOnly:true,sameSite:'Lax'});
+      await send('Network.setCookie',{name:'__client_uat',value:'1',url:base});
+      await send('Network.setCookie',{name:'__clerk_db_jwt',value:'fixture',url:base});
+      await send('Network.setCookie',{name:'__session',value:hostToken,url:base,httpOnly:true,sameSite:'Lax'});
       await send('Page.navigate',{url:`${base}/shared/${runId}`});
       await eventually(()=>evaluate('Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="Edit briefing")'),'host briefing');
       await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Edit briefing").click()');
@@ -33,7 +35,7 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
       await evaluate('document.querySelector("input[type=checkbox]").click()');await delay(100);
       await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Save briefing").click()');
       await eventually(()=>evaluate('document.body.innerText.includes("Briefing saved.")'),'briefing persisted');
-      await send('Network.deleteCookies',{name:'ma_auth',url:base});
+      await send('Network.deleteCookies',{name:'__session',url:base});
     }
     await send('Page.navigate',{url:`${base}/shared/${runId}#invite=${token}`});
     await eventually(()=>evaluate('!!document.body?.innerText.includes("You’re invited to a conversation")'),'signed-out invitation');
@@ -42,7 +44,9 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
     await eventually(()=>evaluate('location.pathname==="/login"'),'signup preserves next');
     assert.equal(await evaluate('new URL(location.href).searchParams.get("next")'),`/shared/${runId}`);
     // Authentication itself is covered by the email/Google HTTP browser suites.
-    await send('Network.setCookie',{name:'ma_auth',value:guestToken,url:base,httpOnly:true,sameSite:'Lax'});
+    await send('Network.setCookie',{name:'__client_uat',value:'1',url:base});
+      await send('Network.setCookie',{name:'__clerk_db_jwt',value:'fixture',url:base});
+      await send('Network.setCookie',{name:'__session',value:guestToken,url:base,httpOnly:true,sameSite:'Lax'});
     await send('Page.navigate',{url:`${base}/shared/${runId}`});
     await eventually(()=>evaluate('!!document.querySelector("#shared-comment")'),'invitation resumes after signup');
     if(hostToken)await eventually(()=>evaluate('document.body.innerText.includes("Check delivery failures before accepting the implementation.")'),'guest receives explicitly shared briefing');

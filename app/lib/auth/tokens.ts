@@ -1,80 +1,37 @@
-import { createHash, randomBytes } from "node:crypto";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
-import { query } from "../db/client";
-import { userFromSessionToken } from "./session-token";
+import { clerkConfigured, ClerkAccountError } from "./clerk-config";
+import { recordClerkRevocation, userForClerkSession } from "./clerk-store";
 import type { CurrentUser } from "./types";
 
-const COOKIE_NAME = "ma_auth";
-const TOKEN_BYTES = 32;
-const LIFETIME_DAYS = 30;
-
-/**
- * The cookie holds the raw token; the database holds only its SHA-256. A dump
- * of auth_tokens therefore grants nothing — which is the entire reason the
- * column is a hash and not the token.
- *
- * SHA-256 with no salt is correct here, unlike for passwords: the input is 32
- * random bytes, so there is nothing to brute force.
- */
-function digest(token: string): Buffer {
-  return createHash("sha256").update(token, "utf8").digest();
-}
-
-export async function issueToken(
-  userId: string,
-  meta: { userAgent?: string | null; ip?: string | null } = {},
-): Promise<void> {
-  const token = randomBytes(TOKEN_BYTES).toString("base64url");
-  const expiresAt = new Date(Date.now() + LIFETIME_DAYS * 24 * 60 * 60 * 1000);
-
-  await query(
-    `INSERT INTO auth_tokens (user_id, token_hash, expires_at, user_agent, ip)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [userId, digest(token), expiresAt, meta.userAgent ?? null, meta.ip ?? null],
-  );
-
-  (await cookies()).set(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    expires: expiresAt,
-    secure: process.env.NODE_ENV === "production",
-  });
-}
-
-/** Resolves the cookie with live revocation checks and throttled usage tracking. */
+/** Clerk validates the session; our database supplies workspace permissions. */
 export async function currentUser(): Promise<CurrentUser | null> {
   return (await sessionUserResolver())();
 }
 
-/** Capture the cookie inside the request, then revalidate that exact token.
- * Redis callbacks run outside the subscriber's Next request context. Reading
- * cookies there can resolve another request's identity or throw entirely. */
+/** Capture identity in the request context. Streams recheck that exact identity,
+ * revocation and JWT expiry without reading another request's cookies. */
 export async function sessionUserResolver(): Promise<() => Promise<CurrentUser | null>> {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
-  return () => token ? userFromSessionToken(token) : Promise.resolve(null);
+  if (!clerkConfigured()) return async () => null;
+  const { userId, sessionId, sessionClaims } = await auth();
+  const expiresAt = Number(sessionClaims?.exp ?? 0) * 1000;
+  return async () => userId && sessionId && Date.now() < expiresAt
+    ? userForClerkSession(userId, sessionId) : null;
 }
 
-/** Revokes the current token and clears the cookie. */
 export async function revokeToken(): Promise<void> {
-  const jar = await cookies();
-  const token = jar.get(COOKIE_NAME)?.value;
-
-  if (token) {
-    await query(
-      `UPDATE auth_tokens SET revoked_at = now()
-        WHERE token_hash = $1 AND revoked_at IS NULL`,
-      [digest(token)],
-    );
+  if (clerkConfigured()) {
+    const { sessionId } = await auth();
+    if (sessionId) {
+      await (await clerkClient()).sessions.revokeSession(sessionId);
+      await recordClerkRevocation(sessionId);
+    }
   }
-
-  jar.delete(COOKIE_NAME);
+  (await cookies()).delete("ma_auth");
 }
 
-/** Signs every device out — the "sign out everywhere" the schema allows for. */
-export async function revokeAllTokens(userId: string): Promise<void> {
-  await query(
-    `UPDATE auth_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
-    [userId],
-  );
+/** Retained only for the retired email migration helper; never mint app sessions. */
+export async function issueToken(userId: string, meta?: unknown): Promise<never> {
+  void userId; void meta;
+  throw new ClerkAccountError("Sign in through Clerk to continue.", 410);
 }

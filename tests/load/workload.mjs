@@ -1,3 +1,4 @@
+import {clerkCookie} from "../helpers/clerk-fixture.mjs";
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -29,7 +30,7 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
     let code='network',ok=false;
     try {
       const response=await httpRequest(base+path,{dispatcher:httpAgent.forUser(user.index),method,maxRedirections:0,headersTimeout:config['timeout-ms'],bodyTimeout:config['timeout-ms'],headers:{'content-type':'application/json',
-        ...(device?{authorization:`Bearer ${user.deviceToken}`}:{cookie:`ma_auth=${user.token}`})},
+        ...(device?{authorization:`Bearer ${user.deviceToken}`}:{cookie:clerkCookie(user.token)})},
         ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:cancellation.signal});
       code=String(response.statusCode); let data;
       try { data=await response.body.json(); } catch (error) {
@@ -56,7 +57,7 @@ export async function workload(base,fixture,config,signal,onProgress=()=>{}) {
     const timeout=setTimeout(()=>{controller.abort();cancel();rejectReady(new Error('Stream readiness timed out'));},config['timeout-ms']);
     const run=(async()=>{
       try {
-        const response=await fetch(`${base}/api/sessions/${user.roomId}/events`,{dispatcher:streamAgent.forUser(user.index),headers:{cookie:`ma_auth=${user.token}`},redirect:'error',signal:controller.signal});
+        const response=await fetch(`${base}/api/sessions/${user.roomId}/events`,{dispatcher:streamAgent.forUser(user.index),headers:{cookie:clerkCookie(user.token)},redirect:'error',signal:controller.signal});
         if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Invalid event stream');
         reader=response.body.getReader();
         if (streamSignal.aborted || controller.signal.aborted) cancel();

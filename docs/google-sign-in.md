@@ -1,5 +1,7 @@
 # Google signup and sign-in
 
+> Legacy runbook for releases before the Clerk migration. Current authentication is managed by Clerk; use [Clerk setup](clerk-auth.md). The endpoints described below are retired in current releases.
+
 Google is an additional login method for every user, not an email allowlist.
 Email signup collects only an email and password in one form. Usernames are
 generated automatically. New Google accounts enter the workspace immediately

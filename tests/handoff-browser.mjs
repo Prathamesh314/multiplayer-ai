@@ -1,3 +1,4 @@
+import {clerkFixture,clerkCookie} from "./helpers/clerk-fixture.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -31,18 +32,17 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   const seed = await finishSeed(roomId, "Platform");
   await attachRepo(roomId, seed, null);
   const chat = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: seed.headSha, title: "Browser handoff" });
+  const clerk=await clerkFixture();
   const tokens = [];
   for (const userId of [alice, bob]) {
-    const token = randomBytes(32).toString("base64url");
-    await sql(`INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '1 hour')`, [userId, createHash("sha256").update(token).digest()]);
-    tokens.push(token);
+    tokens.push(await clerk.link({query:sql},userId));
   }
   let output = "";
   const production = process.env.HANDOFF_TEST_PRODUCTION === "1";
   const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", ...(production ? ["start"] : ["dev", "--webpack"]), "--port", String(port)], {
-    env: { ...process.env, DATABASE_URL: databaseUrl, REDIS_URL: redisUrl ?? "redis://localhost:6380",
+    env: { ...process.env, ...clerk.env, DATABASE_URL: databaseUrl, REDIS_URL: redisUrl ?? "redis://localhost:6380",
       MULTIPLAYER_AI_DATA: directory, MNEMOSYNE_URL: "", LOCAL_RUNNERS: "1", AGENT_WORKER: "0",
-      NODE_ENV: production ? "production" : "development", NEXT_TEST_DIST_DIR: production ? ".next" : ".next-handoff-test", NEXT_TELEMETRY_DISABLED: "1" },
+      NODE_ENV: production ? "production" : "development", NEXT_TEST_DIST_DIR: production ? (process.env.NEXT_TEST_DIST_DIR || ".next") : ".next-handoff-test", NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   next.stdout.on("data", chunk => { output += chunk; });
@@ -61,7 +61,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     socket.send(JSON.stringify({ id, method, params, sessionId }));
   });
   const request = async (token, path, method = "GET", body) => fetch(`${server}${path}`, {
-    method, headers: { cookie: `ma_auth=${token}`, "content-type": "application/json" },
+    method, headers: { cookie: clerkCookie(token), "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   try {
@@ -98,13 +98,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
     } finally { await Promise.all(readers.map(reader=>reader.cancel().catch(()=>{}))); }
     assert.equal((await request(tokens[0],`/api/orgs/handoff-org/members/${bob}`,'PATCH',{status:'active'})).status,200);
-    const probeToken=randomBytes(32).toString('base64url');
-    const probeHash=createHash('sha256').update(probeToken).digest();
-    await sql(`INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '1 hour')`,[bob,probeHash]);
+    const probeToken=await clerk.link({query:sql},bob,{sessionId:'session_probe'});
     const tokenStream=await request(probeToken,`/api/chat/conversations/${conversations[0]}/events`);
     const tokenReader=tokenStream.body.getReader();await tokenReader.read();
     try {
-      await sql('UPDATE auth_tokens SET revoked_at=now() WHERE token_hash=$1',[probeHash]);
+      await sql('INSERT INTO clerk_revoked_sessions(session_id) VALUES($1)',['session_probe']);
       assert.equal((await request(tokens[0],`/api/chat/conversations/${conversations[0]}/messages`,'POST',{body:'After logout'})).status,201);
       const frame=await Promise.race([tokenReader.read(),delay(5000).then(()=>{throw new Error('Logged-out chat stream did not close');})]);
       assert.equal(frame.done,true);
@@ -186,7 +184,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await command("Page.enable"); await command("Runtime.enable"); await command("Network.enable");
       await command("Page.bringToFront");
       if (initScript) await command("Page.addScriptToEvaluateOnNewDocument", { source: initScript });
-      await command("Network.setCookie", { name: "ma_auth", value: token, url: server, httpOnly: true, sameSite: "Lax" });
+      await command("Network.setCookie", { name: "__client_uat", value: "1", url: server });
+      await command("Network.setCookie", { name: "__clerk_db_jwt", value: "fixture", url: server });
+      await command("Network.setCookie", { name: "__session", value: token, url: server, httpOnly: true, sameSite: "Lax" });
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
       const evaluate = async expression => {
         lastSessionId = sessionId;
@@ -734,6 +734,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   } finally {
     await writeFile(join(tmpdir(), "handoff-browser-server.log"), output);
     socket?.close();
+    await clerk.close();
     for (const child of [chrome, next]) {
       if (!child || child.exitCode !== null) continue;
       const stopped = once(child, "exit");

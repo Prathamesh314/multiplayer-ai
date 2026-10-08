@@ -101,7 +101,7 @@ export async function exchangePairingCode(input: {
 }): Promise<{ device: RunnerDevice; token: string } | null> {
   const claimed = await queryOne<{ user_id: string }>(
     `UPDATE runner_pairing_codes SET used_at = now()
-      WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+      WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() AND EXISTS (SELECT 1 FROM users u WHERE u.id=runner_pairing_codes.user_id AND u.deleted_at IS NULL AND u.clerk_disabled_at IS NULL)
       RETURNING user_id`,
     [digest(input.code.trim().toUpperCase())],
   );
@@ -127,7 +127,7 @@ export async function deviceFromToken(token: string | null): Promise<RunnerDevic
   if (!token) return null;
   const row = await queryOne<DeviceRow>(
     `WITH valid AS MATERIALIZED (
-      SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL
+      SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM users u WHERE u.id=runner_devices.user_id AND u.deleted_at IS NULL AND u.clerk_disabled_at IS NULL)
     ), touched AS (
       UPDATE runner_devices d SET last_seen_at=now() FROM valid v
       WHERE d.id=v.id AND d.revoked_at IS NULL
@@ -144,7 +144,7 @@ export async function deviceFromToken(token: string | null): Promise<RunnerDevic
 
 export async function inspectDeviceToken(token: string | null): Promise<RunnerDevice | null> {
   if (!token) return null;
-  const row = await queryOne<DeviceRow>(`SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL`, [digest(token)]);
+  const row = await queryOne<DeviceRow>(`SELECT ${COLUMNS} FROM runner_devices WHERE token_hash=$1 AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM users u WHERE u.id=runner_devices.user_id AND u.deleted_at IS NULL AND u.clerk_disabled_at IS NULL)`, [digest(token)]);
   return row ? toDevice(row) : null;
 }
 

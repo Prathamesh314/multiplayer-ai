@@ -53,10 +53,8 @@ async function closeDialog(){
   }
 }
 try{
-  await navigate('/login?mode=signup','document.body?.innerText.includes("Create your account")');await capture('signup');
-  await evaluate(`window.fetch=async()=>new Response(JSON.stringify({status:'verification_required',verification:{serverTime:Date.now(),email:'alice@example.test',codeExpiresAt:Date.now()+600000,resendAt:Date.now()+60000,deliveryStatus:'sent',attemptsRemaining:5}}),{headers:{'content-type':'application/json'}})`);
-  await type('input[type=email]','alice@example.test');await type('input[type=password]','documentation-sample-password');await click('form button[type=submit]');
-  await eventually(()=>evaluate('document.querySelector("h1")?.textContent==="Verify your email"'),'email verification');await capture('email-verification');
+  // Authentication is rendered by Clerk. Capture it separately using a Clerk
+  // development application; never mock email delivery or real credentials here.
   await install(`window.desktopSetup={status:async()=>({url:'https://cubeclashes.com',runner:'connected',enabled:true,paired:true,workspacesDir:'~/multiplayer-ai/workspaces',workspacesLocked:true,version:'preview',message:''})};`);
   await navigate(pathToFileURL(resolve('.desktop-build/app/setup.html')).href,'document.querySelector("#workspace")?.value==="https://cubeclashes.com"');await capture('desktop-setup');
   await evaluate('document.querySelector("#worktrees-heading").scrollIntoView({block:"center"})');await capture('desktop-worktrees');

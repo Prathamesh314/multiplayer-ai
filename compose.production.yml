@@ -6,9 +6,6 @@ x-app-environment: &app-environment
   NODE_ENV: production
   SIGNUP_MODE: ${SIGNUP_MODE:-invite}
   AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-}
-  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-  EMAIL_VERIFICATION_ENABLED: ${EMAIL_VERIFICATION_ENABLED:-false}
   RESEND_API_KEY: ${RESEND_API_KEY:-}
   EMAIL_FROM: ${EMAIL_FROM:-}
   ORG_STORAGE_LIMIT_BYTES: ${ORG_STORAGE_LIMIT_BYTES:-10737418240}
@@ -82,21 +79,18 @@ x-web: &web
       DESKTOP_DOWNLOAD_CHANNEL: ${DESKTOP_DOWNLOAD_CHANNEL:-preview}
       DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
       NEXT_PUBLIC_ASSET_PREFIX: ${NEXT_PUBLIC_ASSET_PREFIX:-}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
   restart: unless-stopped
   environment:
     <<: *app-environment
-    GOOGLE_OAUTH_CREDENTIALS_FILE: ${GOOGLE_OAUTH_CREDENTIALS_FILE:+/run/secrets/google-oauth.json}
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+    CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+    CLERK_WEBHOOK_SIGNING_SECRET: ${CLERK_WEBHOOK_SIGNING_SECRET:-}
   # Both replicas use one built image and one data volume. Migrations run once
   # through the migrate service before either replica or the worker is started.
   command: ["node", "scripts/serve.mjs", "-H", "0.0.0.0", "-p", "3000"]
   volumes:
     - workspace_data:/app/workspaces
-    - type: bind
-      source: ${GOOGLE_OAUTH_CREDENTIALS_FILE:-/dev/null}
-      target: /run/secrets/google-oauth.json
-      read_only: true
-      bind:
-        create_host_path: false
   depends_on:
     migrate: { condition: service_completed_successfully }
   healthcheck:

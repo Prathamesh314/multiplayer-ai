@@ -1,3 +1,4 @@
+import {clerkFixture} from "../helpers/clerk-fixture.mjs";
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import pg from 'pg';
 import { cp, rename } from 'node:fs/promises';
@@ -9,6 +10,7 @@ const randomId=()=>Array.from(randomBytes(12),byte=>alphabet[byte%alphabet.lengt
 const hash=token=>createHash('sha256').update(token).digest();
 
 export async function fixture(databaseUrl,config,dataDirectory) {
+  const clerk=await clerkFixture();
   const schema='load_test_'+randomUUID().replaceAll('-','');
   const admin=new pg.Pool({connectionString:databaseUrl,max:1,connectionTimeoutMillis:10000,query_timeout:15000});
   let pool,created=false;
@@ -17,7 +19,7 @@ export async function fixture(databaseUrl,config,dataDirectory) {
   async function close() {
     delete globalThis.__maPool;
     try { if (pool) await pool.end(); if (created) await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); }
-    finally { await admin.end(); }
+    finally { await clerk.close(); await admin.end(); }
   }
   try {
     await admin.query(`CREATE SCHEMA ${schema}`);
@@ -34,12 +36,12 @@ export async function fixture(databaseUrl,config,dataDirectory) {
     try {
     await setup.query('BEGIN');
     for (let index=0;index<config.users;index++) {
-      const token=randomBytes(32).toString('base64url'), deviceToken=randomBytes(32).toString('base64url');
-      const user={index,id:randomUUID(),token,deviceToken,deviceId:randomUUID(),runId:randomUUID(),connectionId:randomUUID()};
+      const deviceToken=randomBytes(32).toString('base64url');
+      const user={index,id:randomUUID(),token:null,deviceToken,deviceId:randomUUID(),runId:randomUUID(),connectionId:randomUUID()};
       const code=randomId().slice(0,8).toUpperCase();
       await setup.query(`INSERT INTO users(id,handle,email,display_name,connect_code) VALUES ($1,$2,$3,$4,$5)`,
         [user.id,`load_${index}`,`load_${index}@example.test`,`Load user ${index}`,`PK-${code.slice(0,4)}-${code.slice(4)}`]);
-      await setup.query(`INSERT INTO auth_tokens(user_id,token_hash,expires_at) VALUES ($1,$2,now()+interval '3 hours')`,[user.id,hash(token)]);
+      user.token=await clerk.link(setup,user.id,{expiresIn:10800});
       await setup.query(`INSERT INTO runner_devices(id,user_id,name,token_hash,version) VALUES ($1,$2,'Load fixture',$3,'2')`,[user.deviceId,user.id,hash(deviceToken)]);
       users.push(user);
       if (users.length%1000===0) console.log(`Prepared ${users.length}/${config.users} accounts.`);
@@ -78,7 +80,7 @@ export async function fixture(databaseUrl,config,dataDirectory) {
       rooms.push(room);
       if (rooms.length%100===0) console.log(`Prepared ${rooms.length}/${Math.ceil(config.users/config['room-size'])} rooms and repositories.`);
     }
-    return {schema,databaseUrl:scoped.toString(),pool,users,rooms,orgId,close,
+    return {clerkEnv:clerk.env,schema,databaseUrl:scoped.toString(),pool,users,rooms,orgId,close,
       bytes:async()=>Number((await pool.query(`SELECT COALESCE(sum(pg_total_relation_size(c.oid)),0)::text AS bytes FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relkind IN ('r','m')`,[schema])).rows[0].bytes),
       redisKeys:()=>[...users.flatMap(user=>[`presence:conn:${user.connectionId}`,`presence:user:${user.id}`]),...rooms.map(room=>`presence:session:${room.id}`),`presence:org:${orgId}`]};
   } catch (error) { await close(); throw error; }

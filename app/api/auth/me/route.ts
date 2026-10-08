@@ -2,6 +2,7 @@ import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser, revokeToken } from "../../../lib/auth/tokens";
 import type { MeResponse } from "../../../lib/auth/types";
 import { connectCodeOf, rotateConnectCode } from "../../../lib/repo/users";
+import { assertAuthOrigin } from "../../../lib/auth/clerk-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,14 +21,16 @@ async function handleGET() {
 }
 
 /** Rotates the connect code, which is how a leaked one is revoked. */
-async function handlePOST() {
+async function handlePOST(request: Request) {
+  assertAuthOrigin(request);
   const user = await currentUser();
   if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
   return Response.json({ user, connectCode: await rotateConnectCode(user.id) } satisfies MeResponse);
 }
 
-async function handleDELETE() {
+async function handleDELETE(request: Request) {
+  assertAuthOrigin(request);
   await revokeToken();
   return Response.json({ user: null, connectCode: null } satisfies MeResponse);
 }

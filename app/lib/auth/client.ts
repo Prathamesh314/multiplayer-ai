@@ -1,6 +1,7 @@
 import type { ContinueRequest, ContinueResponse, MeResponse, PasswordAuthResponse } from "./types";
 import { isPasswordAuthResponse } from "./types";
 import { authRequest } from "./request";
+import type { useClerk } from "@clerk/nextjs";
 
 async function readError(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -33,7 +34,9 @@ export async function login(identifier: string, password: string): Promise<Passw
 }
 
 export async function logout(): Promise<void> {
-  await fetch("/api/auth/me", { method: "DELETE" });
+  const response = await fetch("/api/auth/me", { method: "DELETE" });
+  if (!response.ok) throw new Error(await readError(response, "Could not sign out. Please try again."));
+  await (window as Window & { Clerk?: Pick<ReturnType<typeof useClerk>, "signOut"> }).Clerk?.signOut();
 }
 
 export async function rotateConnectCode(): Promise<string | null> {

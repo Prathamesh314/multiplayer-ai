@@ -54,3 +54,10 @@ test('asset CDN preflight requires public asset headers and rejects exposed APIs
   await assert.rejects(checkWebRuntime({base:app,assetPrefix:assets}),/must not expose/);
   await assert.rejects(checkWebRuntime({base:app,assetPrefix:app}),/Asset CDN is not ready/);
 });
+
+test('missing Clerk credentials refuse activation before any network or traffic change',async()=>{
+  const keys=['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY','CLERK_SECRET_KEY','CLERK_WEBHOOK_SIGNING_SECRET'];
+  const before=keys.map(key=>process.env[key]);
+  try{for(const key of keys)delete process.env[key];await assert.rejects(checkWebRuntime({requireAuth:true}),/Clerk authentication is not configured/);}
+  finally{keys.forEach((key,index)=>{if(before[index]===undefined)delete process.env[key];else process.env[key]=before[index];});}
+});
