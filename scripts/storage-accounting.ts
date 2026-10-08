@@ -1,10 +1,13 @@
 import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 async function main() {
-  const { initializeOwner, reconcileOwnerStorage, recoverStorageReservations } = await import("../app/lib/storage/accounting");
+  const { initializeOwner, reconcileOwnerStorage, recoverStorageReservations, localStorage, storageLimit } = await import("../app/lib/storage/accounting");
   const { query, pool } = await import("../app/lib/db/client");
   const mode = process.argv[2];
-  if (!["--bootstrap", "--reconcile", "--recover"].includes(mode)) throw new Error("Usage: storage-accounting.ts --bootstrap | --reconcile | --recover");
+  if (!["--check", "--bootstrap", "--reconcile", "--recover"].includes(mode)) throw new Error("Usage: storage-accounting.ts --check | --bootstrap | --reconcile | --recover");
+  // Load the real runtime and validate configuration before pausing production.
+  // This path must not open a database connection or modify counters/files.
+  if (mode === "--check") { localStorage(); storageLimit(); console.log("Storage accounting runtime is ready."); return; }
   try {
     if (mode === "--recover") {
       const result = await recoverStorageReservations();

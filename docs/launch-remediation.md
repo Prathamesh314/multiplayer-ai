@@ -78,8 +78,9 @@ headroom is still required before a retry.
 
 Crashed reservations remain charged until recovery can acquire the resource's
 kernel lock, including locks inherited by surviving Git children. Existing owners
-are backfilled while old writers are stopped during deployment; full inventories
-are otherwise explicit reconciliation work. See [storage accounting](storage-accounting.md)
+are backfilled and reconciled while writers are stopped during deployment,
+including after rollback to pre-ledger code; full inventories are otherwise
+explicit reconciliation work. See [storage accounting](storage-accounting.md)
 for recovery, benchmarks, limits and the separate Git retention work.
 
 These are application admission limits measured in file bytes, not operating-system

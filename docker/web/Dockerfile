@@ -57,7 +57,7 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY next.config.ts ./
 COPY db ./db
-COPY scripts/serve.mjs scripts/server-config.mjs ./scripts/
+COPY scripts/serve.mjs scripts/server-config.mjs scripts/check-web-runtime.mjs ./scripts/
 
 ENV NODE_ENV=production
 EXPOSE 3000

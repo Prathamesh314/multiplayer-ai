@@ -39,6 +39,7 @@ if(tool==='df') {
 }
 if(tool==='curl' && scenario.endsWith('health-failure'))process.exit(22);
 if(tool==='docker') {
+  if(args[0]==='rm'&&scenario==='candidate-cleanup-failure')process.exit(1);
   if(args[0]==='image' && args[1]==='prune') {
     if(scenario==='cleanup-failure'||scenario==='post-cleanup-failure'&&fs.existsSync(path.join(root,'activated')))process.exit(1);
   }
@@ -51,10 +52,18 @@ if(tool==='docker') {
     console.log(args.at(-1)==='worker-id'?'multiplayer-worker:old':fs.existsSync(path.join(root,'activated'))?'multiplayer-web:${revision}':'multiplayer-web:old');
   }
   if(args[0]==='run') {
-    const output=args[args.indexOf('--output')+1];
-    fs.mkdirSync(output);fs.writeFileSync(path.join(output,'manifest.json'),'{}');
-    if(scenario==='backup-failure')process.exit(1);
+    if(args.includes('scripts/deploy-schema.mjs')) {
+      if(args.includes('--plan')) {
+        if(scenario==='unreviewed-migration')process.exit(1);
+        console.log(JSON.stringify({applied:['original'],pending:['changed']}));
+      } else if(scenario==='unexpected-schema')process.exit(1);
+    } else if(args.includes('scripts/backup.mjs')) {
+      const output=args[args.indexOf('--output')+1];
+      fs.mkdirSync(output);fs.writeFileSync(path.join(output,'manifest.json'),'{}');
+      if(scenario==='backup-failure')process.exit(1);
+    }
   }
+  if(args[0]==='exec' && args.includes('scripts/check-web-runtime.mjs') && scenario==='candidate-failure')process.exit(1);
   if(args[0]==='compose') {
     if(args.includes('up'))fs.writeFileSync(path.join(root,'activated'),'1');
     if(args.includes('ps') && args.includes('-q')) {
@@ -62,15 +71,19 @@ if(tool==='docker') {
     }
     if(args.includes('build') && scenario==='build-failure')process.exit(1);
     if(args.includes('exec') && args.includes('postgres')) {
+      if(args.at(-1).includes('schema_migrations')&&scenario==='schema-query-failure')process.exit(1);
       if(args.at(-1).includes('schema_migrations'))console.log(fs.existsSync(path.join(root,'migrated'))?'changed':'original');
       else console.log(scenario==='busy'?'1':'0');
     }
     if(args.includes('run') && args.at(-1)==='migrate') {
-      if(scenario==='schema-change')fs.writeFileSync(path.join(root,'migrated'),'1');
+      if(['schema-change','schema-health-failure'].includes(scenario))fs.writeFileSync(path.join(root,'migrated'),'1');
       if(['migration-failure','schema-change'].includes(scenario))process.exit(1);
     }
-    if(args.includes('scripts/storage-accounting.ts') && scenario==='accounting-failure') {
-      fs.writeFileSync(path.join(root,'migrated'),'1');process.exit(1);
+    if(args.includes('scripts/storage-accounting.ts')) {
+      if(args.includes('--check')&&scenario==='worker-runtime-failure')process.exit(1);
+      if(args.includes('--reconcile')&&['accounting-failure','unexpected-schema'].includes(scenario)) {
+        fs.writeFileSync(path.join(root,'migrated'),'1');process.exit(1);
+      }
     }
   }
 }
@@ -94,8 +107,13 @@ test('production release builds pinned images, backs up, migrates once, then che
   const backup = find(c => c.args.includes('scripts/backup.mjs'));
   const migrate = find(c => c.args.includes('run') && c.args.at(-1) === 'migrate');
   const startup = find(c => c.args.includes('up'));
-  const accounting = find(c => c.args.includes('scripts/storage-accounting.ts'));
+  const accounting = find(c => c.args.includes('scripts/storage-accounting.ts')&&c.args.includes('--reconcile'));
   assert.ok(build < backup && backup < migrate && migrate < accounting && accounting < startup);
+  const pause=find(c=>c.args.includes('stop'));
+  const plan=find(c=>c.args.includes('--plan'));
+  const workerCheck=find(c=>c.args.includes('--check'));
+  const webCheck=find(c=>c.args.includes('scripts/check-web-runtime.mjs'));
+  assert.ok(build<plan&&plan<workerCheck&&workerCheck<webCheck&&webCheck<pause,'all candidate checks complete before the first live service is paused');
   assert.equal(commands[build].version, revision);
   assert.equal(commands.filter(c => c.args.includes('run') && c.args.at(-1) === 'migrate').length, 1);
   assert.deepEqual(commands[startup].args.slice(-4), ['web', 'web2', 'worker', 'gateway']);
@@ -125,7 +143,7 @@ test('a corrected deployment can use the stopped worker image after a failed mig
   const backup=result.commands.find(c=>c.args.includes('scripts/backup.mjs'));
   assert.ok(backup.args.includes('multiplayer-worker:old'));
   assert.ok(backup.args.includes('APP_VERSION=old'),'inventory uses the retained web image, not the failed tag pruned before the build');
-  const bootstrap=result.commands.findIndex(c=>c.args.includes('scripts/storage-accounting.ts'));
+  const bootstrap=result.commands.findIndex(c=>c.args.includes('scripts/storage-accounting.ts')&&c.args.includes('--reconcile'));
   const startup=result.commands.findIndex(c=>c.args.includes('up'));
   assert.ok(bootstrap>=0&&bootstrap<startup,'complete bootstrap before restarting any application service');
 });
@@ -161,23 +179,31 @@ test('post-deployment cleanup failure reports maintenance without rolling back a
   assert.deepEqual(result.commands.at(-1).args, ['image', 'prune', '--all', '--force']);
 });
 
-for (const scenario of ['build-failure', 'busy', 'backup-failure', 'migration-failure', 'health-failure']) {
+for (const scenario of ['build-failure', 'schema-query-failure', 'unreviewed-migration', 'worker-runtime-failure', 'candidate-failure', 'candidate-cleanup-failure', 'busy', 'backup-failure', 'migration-failure', 'schema-change', 'accounting-failure', 'health-failure', 'schema-health-failure']) {
   test(`${scenario} restores previous code and configuration without deleting data`, () => {
     const result = release(scenario);
     assert.notEqual(result.status, 0);
     assert.match(result.env, /APP_VERSION=old/);
     assert.ok(result.commands.some(c => c.tool === 'git' && c.args.join(' ') === `checkout --detach ${previous}`));
+    assert.equal(result.commands.filter(c=>c.tool==='git'&&c.args.includes('checkout')).length,1,'a failed subshell cannot run rollback twice');
     assert.equal(result.commands.some(c => c.args.includes('down')), false);
-    if (['build-failure', 'busy'].includes(scenario)) {
-      assert.equal(result.commands.some(c => c.args.includes('stop')), false);
-    } else assert.ok(result.commands.some(c => c.args.includes('up')));
+    if (['build-failure', 'schema-query-failure', 'unreviewed-migration', 'worker-runtime-failure', 'candidate-failure', 'candidate-cleanup-failure', 'busy'].includes(scenario)) {
+      assert.equal(result.commands.some(c => c.args.includes('stop')||c.args.includes('up')||c.args.includes('scripts/backup.mjs')||c.args.at(-1)==='migrate'), false,'failed validation never stops or replaces the live app');
+    } else {
+      const restart=result.commands.findLast(c=>c.args.includes('up'));
+      assert.ok(restart.args.some(arg=>arg.endsWith('/rollback-images.json')),'restore pinned previous images');
+      const stop=result.commands.findLastIndex(c=>c.args.includes('stop'));
+      assert.ok(stop<result.commands.indexOf(restart)&&result.commands[stop].args.includes('web2'),'stop new writers before restoring old images');
+      assert.equal(result.commands.filter(c=>c.args.includes('exec')&&['web','web2'].some(service=>c.args.includes(service))).length,2,'verify both restored replicas');
+    }
+    if(scenario==='candidate-failure')assert.ok(result.commands.some(c=>c.args[0]==='rm'&&c.args.at(-1).startsWith('multiplayer-preflight-')),'remove the failed private candidate');
   });
 }
 
-for (const scenario of ['schema-change', 'accounting-failure']) test(`${scenario} refuses automatic rollback to incompatible old code`, () => {
-  const result = release(scenario);
+test('unexpected external schema changes still refuse unsafe rollback', () => {
+  const result = release('unexpected-schema');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Schema changed/);
+  assert.match(result.stderr, /Schema compatibility could not be verified/);
   assert.equal(result.commands.some(c => c.args.includes('checkout')), false);
   assert.equal(result.commands.some(c => c.args.includes('up')), false);
   assert.deepEqual(result.commands.at(-1).args.slice(-4), ['gateway', 'web', 'web2', 'worker']);

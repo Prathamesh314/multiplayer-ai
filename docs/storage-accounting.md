@@ -65,14 +65,19 @@ rotate so they cannot indefinitely starve later entries.
 ## Upgrade and maintenance
 
 For migration 049, stop all old web/worker writers, apply migrations, then run
-the bootstrap using the new worker image before reopening admission. The production
-deployment script enforces this order and keeps services stopped if a backfill
-fails after the schema changed. Back up the database and shared volume together.
+reconciliation using the new worker image before reopening admission. The production
+deployment script checks the CLI and a private web candidate before downtime.
+Migration 049 is explicitly approved as compatible with older code, so a backfill
+failure can restore the previous images without deleting data. Every activation
+reconciles counters while writers are stopped, including already-initialized
+owners: restored pre-ledger writers may have changed files without updating the
+counters. Back up the database and shared volume together.
 See [production deployment](production-deployment.md) for the complete procedure.
 
 From a checkout with the correct database/storage environment:
 
 ```sh
+NODE_ENV=production npm run storage:accounting -- --check
 NODE_ENV=production npm run storage:accounting -- --bootstrap
 NODE_ENV=production npm run storage:accounting -- --recover
 NODE_ENV=production npm run storage:accounting -- --reconcile
@@ -85,7 +90,8 @@ docker compose --env-file .env.production -f compose.production.yml exec -T work
 docker compose --env-file .env.production -f compose.production.yml exec -T worker node --import tsx scripts/storage-accounting.ts --reconcile
 ```
 
-`--bootstrap` skips initialized owners. `--recover` handles one bounded batch and
+`--check` loads the real runtime and validates configuration without opening the
+database or changing files. `--bootstrap` skips initialized owners. `--recover` handles one bounded batch and
 prints recovered, busy and failed resources; failed entries produce a nonzero exit
 status. Repeat for additional batches or let the worker drain them. `--reconcile`
 performs a full inventory, measuring resources individually under their locks and
