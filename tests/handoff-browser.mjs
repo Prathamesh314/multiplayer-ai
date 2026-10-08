@@ -60,6 +60,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   const pending = new Map();
   let sequence = 0;
   const runtimeErrors = [];
+  const consoleErrors = [];
   const networkRequests = [];
   let lastSessionId;
   const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
@@ -183,6 +184,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       }
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
       if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+      if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
+        consoleErrors.push(message.params.args.map(arg => arg.value ?? arg.description ?? "").join(" "));
+      }
     });
     async function tab(token, targetRoom = roomId, readySelector = 'aside[aria-label="Repositories and chats"]', initScript) {
       const { browserContextId } = await send("Target.createBrowserContext");
@@ -786,6 +790,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     console.log("  ok non-interrupting onboarding, honest GitHub setup, AI-to-device setup, and responsive project overview");
   } catch (cause) {
     console.error("Browser integration failed:", cause);
+    console.error("Browser exceptions:", runtimeErrors);
+    console.error("Browser console errors:", consoleErrors.slice(-20));
+    console.error("Next.js server output:", output.slice(-12000));
     if (lastSessionId) {
       const diagnostic = await send("Runtime.evaluate", { expression: "document.body?.innerText.slice(0, 5000)", returnByValue: true }, lastSessionId).catch(() => null);
       console.error("Last browser state:", diagnostic?.result?.value);
