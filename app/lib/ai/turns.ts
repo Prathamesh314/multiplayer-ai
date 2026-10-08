@@ -1,7 +1,6 @@
 import { notifyUsage } from "../events/notifications";
 import { closeTurnInputs } from "./close-inputs";
-import { STALE } from "./usage";
-import { query, queryOne, transaction } from "../db/client";
+import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
 import { randomUUID } from "node:crypto";
 
@@ -12,32 +11,10 @@ export class ControlError extends Error {
 export const isUuid = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-/** Internal: the run holds a turn whose executor is past the staleness window. */
-class StaleExecutorError extends Error {}
-
 export async function reserveTurn(runId: string, userId: string, turnId: string, version: number) {
-  try {
-    return await reserve(runId, userId, turnId, version);
-  } catch (cause) {
-    if (!(cause instanceof StaleExecutorError)) throw cause;
-    // Outside the rolled-back transaction: drop the wedged turn's recovery
-    // backoff so the next sweep settles it, rather than making the driver wait
-    // out a delay that was meant for a transient failure.
-    await query(
-      `UPDATE agent_turns SET recovery_after = now()
-        WHERE run_id = $1 AND status IN ('preparing', 'queued', 'running') AND recovery_after > now()`,
-      [runId],
-    );
-    throw new ControlError("The previous turn's executor stopped responding. Its result is being closed out — send this again shortly.");
-  }
-}
-
-function reserve(runId: string, userId: string, turnId: string, version: number) {
   return transaction(async (tx) => {
     const { rows: [run] } = await tx.query(
-      `SELECT *, room_access_role(session_id, $2) AS role,
-              started_at > now() - interval '${STALE}' AS executor_fresh
-         FROM agent_runs WHERE id = $1 FOR UPDATE`,
+      `SELECT *, room_access_role(session_id, $2) AS role FROM agent_runs WHERE id = $1 FOR UPDATE`,
       [runId, userId],
     );
     if (!run || !["owner", "editor"].includes(run.role)) throw new ControlError("You no longer have edit access.", 403);
@@ -48,16 +25,9 @@ function reserve(runId: string, userId: string, turnId: string, version: number)
     await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [room.org_id ?? `${run.session_id}:${userId}`]);
     const { rows: [quota] } = await tx.query(
       `SELECT
-        -- Same staleness window as checkRunAllowed. A run whose executor died
-        -- keeps status='running' until the recovery sweep settles it; counting
-        -- it here would refuse the work the preflight just said was allowed,
-        -- and would leak an organisation-wide slot for as long as it sat there.
-        (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running'
-          AND started_at > now() - interval '${STALE}') AS personal,
-        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.org_id = $3 AND r.status = 'running'
-          AND r.started_at > now() - interval '${STALE}') AS org_running,
-        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.project_id = $4 AND r.status = 'running'
-          AND r.started_at > now() - interval '${STALE}') AS project_running,
+        (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running') AS personal,
+        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.org_id = $3 AND r.status = 'running') AS org_running,
+        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.project_id = $4 AND r.status = 'running') AS project_running,
         (SELECT run_concurrency_limit FROM orgs WHERE id = $3) AS org_limit,
         (SELECT run_concurrency_limit FROM projects WHERE id = $4) AS project_limit,
         (SELECT run_monthly_quota FROM orgs WHERE id = $3) AS monthly_limit,
@@ -84,15 +54,7 @@ function reserve(runId: string, userId: string, turnId: string, version: number)
     }
     const { rows: [existing] } = await tx.query(`SELECT id FROM agent_turns WHERE id = $1`, [turnId]);
     if (existing) throw new ControlError("This prompt has already been submitted. Reload the chat to see its result.");
-    // Only one non-terminal turn may exist per run (agent_turns_one_active), so
-    // this stays strict even when the executor is gone — admitting a second turn
-    // here would violate that index rather than help. What it must not do is
-    // report a live turn that no longer exists: past the window, say so, and let
-    // the caller hand the wedged turn to the sweep (this transaction rolls back).
-    if (run.status === "running" || run.status === "queued") {
-      if (run.executor_fresh) throw new ControlError("Wait for the current turn to finish.");
-      throw new StaleExecutorError();
-    }
+    if (run.status === "running" || run.status === "queued") throw new ControlError("Wait for the current turn to finish.");
     await tx.query(
       `INSERT INTO agent_turns(id, run_id, driver_user_id, control_version) VALUES ($1, $2, $3, $4)`,
       [turnId, runId, userId, version],

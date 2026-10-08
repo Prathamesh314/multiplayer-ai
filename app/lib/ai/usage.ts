@@ -11,13 +11,7 @@ import { queryOne } from "../db/client";
 
 // Longer than MAX_RUN_MS (10 min) in the run route: a "running" row older than
 // this is stale — its process is gone — and must not hold a concurrency slot.
-//
-// Exported because `reserveTurn` is the gate that actually decides, and this
-// preflight only produces the friendly error. The two counted the same rows
-// with different staleness rules once, so a crashed run passed here and was
-// refused there — the user saw capacity in the UI and a 429 on every submit,
-// with no way out until the worker's recovery sweep ran. They must share it.
-export const STALE = "15 minutes";
+const STALE = "15 minutes";
 
 export type RunGate = { ok: true } | { ok: false; error: string; limit: string };
 
