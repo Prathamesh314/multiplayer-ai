@@ -23,11 +23,27 @@ import { createRunWorker, queueEnabled } from "../app/lib/queue";
 import { loadEnvConfig } from "@next/env";
 import { startTeamContext } from './team-context';
 import { recoverAgentTurns } from '../app/lib/ai/recovery';
+import { recoverStorageReservations, storageLimit } from '../app/lib/storage/accounting';
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const closers: Array<() => Promise<void>> = [];
 if (process.env.DATABASE_URL) closers.push(startTeamContext());
+
+// Storage recovery never blocks admission on another repository. A reservation
+// remains charged until the resource's inherited kernel lock can be acquired.
+if (process.env.DATABASE_URL && storageLimit()) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending = Promise.resolve();
+  const tick = () => {
+    pending = recoverStorageReservations(60_000).then(() => {}, error => {
+      console.warn("Storage recovery will retry", error instanceof Error ? error.message : error);
+    }).finally(() => { if (!stopped) timer = setTimeout(tick, 60_000); });
+  };
+  tick();
+  closers.push(async () => { stopped = true; clearTimeout(timer); await pending; });
+}
 
 // Independent, bounded recovery. Indexing outages cannot leave turns stranded.
 if (process.env.DATABASE_URL) {

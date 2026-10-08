@@ -1,5 +1,5 @@
-import nextEnv from "@next/env";
-nextEnv.loadEnvConfig(process.cwd());
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
 async function main() {
   const { cleanLegacyWork, pruneCheckpoints } = await import("../app/lib/storage/maintenance");
   const { trimGitCache } = await import("../app/lib/storage/git-cache");

@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { gzip, gunzip } from "node:zlib";
 import { promisify } from "node:util";
-import { objectStore } from "./object-store";
+import { objectStore, storageConfig } from "./object-store";
+import { trackActivityWrite } from "./admission";
+import { join } from "node:path";
 const zip = promisify(gzip), unzip = promisify(gunzip);
 const MAX_BYTES = 256 * 1024;
 const validKey = (key: string) => { if (!/^activity\/[0-9a-f-]{36}\/[0-9a-f]{64}\.gz$/.test(key)) throw new Error("Invalid activity object key."); return key; };
@@ -12,7 +14,10 @@ export async function storeActivityObject(turnId: string, text: string) {
   if (bytes.length > MAX_BYTES) throw new Error("Activity batch exceeds 256 KB.");
   const hash = createHash("sha256").update(bytes).digest("hex");
   const key = validKey(`activity/${turnId}/${hash}.gz`);
-  await objectStore().put(key, await zip(bytes));
+  const compressed = await zip(bytes), config = storageConfig();
+  const write = () => objectStore(config).put(key, compressed);
+  if (config.provider === "local") await trackActivityWrite(join(config.directory, config.prefix, key), write);
+  else await write();
   return { key, hash, bytes: bytes.length };
 }
 export async function readActivityObject(key: string, expectedHash: string): Promise<string> {

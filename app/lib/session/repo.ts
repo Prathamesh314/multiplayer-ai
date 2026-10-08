@@ -1,4 +1,4 @@
-import { withStorageAdmission, requireStorageGrowth, directoryBytes } from "../storage/admission";
+import { withStorageAdmission, requireStorageGrowth, repositoryStorageBytes } from "../storage/admission";
 import { withStoredRepo } from "../storage/git-cache";
 import { cachedGitRead } from "../git/read-cache";
 import { filterImportIndex } from "../git/import-index";
@@ -125,7 +125,7 @@ async function stored_forkRoomRepository(
   const bare = barePath(roomId);
   const branch = sessionBranchOf(roomId);
   await mkdir(dirname(bare), { recursive: true });
-  await requireStorageGrowth((await directoryBytes(sharedBare)) * 2 + 2 * 1024 * 1024);
+  await requireStorageGrowth((await repositoryStorageBytes(`shared:${repositoryId}`)) * 2 + 2 * 1024 * 1024, roomId);
   if (!await exists(bare)) await git(dirname(bare), ["clone", "--bare", sharedBare, bare]);
   const baseSha = (await git(bare, ["rev-parse", BASE_BRANCH])).trim();
   await git(bare, ["update-ref", `refs/heads/${branch}`, baseSha]);
@@ -170,7 +170,9 @@ async function mergeShared(roomId: string, repositoryId: string, publish: boolea
     const bare = barePath(roomId), shared = sharedRepositoryBarePath(repositoryId);
     const ref = `refs/heads/${sessionBranchOf(roomId)}`;
     const ours = (await git(bare, ["rev-parse", ref])).trim();
-    await requireStorageGrowth((await directoryBytes(shared)) * 3 + 32 * 1024 * 1024);
+    const sourceBytes = await repositoryStorageBytes(`shared:${repositoryId}`);
+    await requireStorageGrowth(sourceBytes * 3 + 32 * 1024 * 1024, roomId);
+    if (publish) await requireStorageGrowth((await repositoryStorageBytes(roomId)) * 2 + sourceBytes + 32 * 1024 * 1024);
     await git(bare, ["fetch", "--no-tags", shared, `refs/heads/${BASE_BRANCH}`]);
     const theirs = (await git(bare, ["rev-parse", "FETCH_HEAD"])).trim();
     const outcome = await mergeObjects(bare, ours, theirs);
@@ -889,7 +891,7 @@ async function stored_initializeSharedRepository(ref: string, repositoryId: stri
   if (await sharedRepositoryHeadSha(repositoryId)) return;
   await mkdir(dirname(bare), { recursive: true });
   if (!await exists(bare)) await git(dirname(bare), ["init", "--bare", "-b", BASE_BRANCH, bare]);
-  await requireStorageGrowth((await directoryBytes(barePath(ref))) * 2 + 2 * 1024 * 1024);
+  await requireStorageGrowth((await repositoryStorageBytes(ref)) * 2 + 2 * 1024 * 1024);
   await git(bare, ["fetch", barePath(ref), `${sha}:refs/heads/${BASE_BRANCH}`]);
 }
 

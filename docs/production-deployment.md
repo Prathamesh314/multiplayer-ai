@@ -177,20 +177,50 @@ Compose, Bash, Git, curl, flock, and timeout. Preserve any ignored
 build cache to 2 GB before checking disk space. Images referenced by containers
 are preserved, so the current release remains available for rollback throughout
 the update. It builds commit-tagged web/worker images while the old release is
-live, refuses deployment during active AI work or with less than 8 GiB available
-after cleanup, closes admission, creates an encrypted coordinated backup, runs
-migrations once, and waits for both web replicas. Only the running application
+live, then checks the worker CLI and boots a private web candidate without
+publishing ports or replacing the live containers. The candidate must pass
+dependency readiness and serve `/`, `/login` and `/workspace`. Build, runtime,
+database preflight or migration-policy failures leave the live application alone.
+The script refuses deployment during active AI work or with less than 8 GiB
+available after cleanup. Only after validation does it close admission, create
+an encrypted coordinated backup, run migrations once, reconcile storage counters
+with all writers stopped, and wait for both web replicas. Only the running application
 services are started with `--wait`; successful one-shot setup services are excluded.
 It then checks image versions and public HTTPS pages. There is a short maintenance
 window during backup and activation. Infrastructure sidecars and desktop installers
 continue to have separate upgrade/release procedures.
 
-Failures restore the prior checkout, environment and running services if the
-schema is unchanged. If migrations changed the schema (or it cannot be checked),
-the application stays stopped and the workflow fails with recovery paths; it never
-starts an older image against an unverified schema or silently restores over new
-data. Follow `backup-restore.md` for recovery. After fixing a failure, rerun the
+Failures after activation starts restore the prior checkout, environment and
+actual previous web/worker images, then verify both restored replicas. A failed
+bootstrap or health check can roll back after a **reviewed compatible migration**;
+it does not restore the database or discard new user data. This includes migration
+049, which adds separate accounting tables without changing older application
+tables. Storage reconciliation before each later activation catches writes made
+by older code while it was restored.
+
+Automatic deployment accepts pending migrations only if their exact SHA-256
+appears in `db/deploy-compatible-migrations.json`. Unknown, edited or destructive
+migrations are refused **before downtime**. Adding a hash is an explicit code
+review decision: verify the previous release can continue reading/writing with
+the schema and data produced by the new release. Prefer additive expand/contract
+changes; destructive cleanup needs a separate planned upgrade. Never approve a
+hash merely to make CI green. The release records its migration plan and verifies
+that rollback observes only the original schema plus approved additions. If the
+database cannot be queried, migrations disappeared, or an unplanned migration
+appeared during rollout, automatic rollback stops rather than guessing about
+data compatibility. Follow `backup-restore.md` for that exceptional recovery.
+After fixing a failure, rerun the
 workflow on the current `main`. Active-work refusals can be retried when work ends.
+Retries can also use stopped web/worker containers after a failed bootstrap;
+backup inventory uses their retained image rather than a failed release tag.
+If a retry fails, a previously stopped application remains stopped. CI builds
+the worker image and exercises storage bootstrap, repeated bootstrap, recovery,
+reconciliation and the maintenance CLI on disposable PostgreSQL/storage before
+allowing deployment. It also runs a healthy and a deliberately broken private
+candidate beside a live HTTP server, verifying that neither replaces that server.
+This single-host release still has a short maintenance window during coordinated
+backup, reconciliation and activation; these protections are not multi-host
+failover or a guarantee against VM/database failure.
 
 Release records and the last successful SHA are under
 `/root/multiplayer-deployment-config`; encrypted backups are under
@@ -211,9 +241,22 @@ projects have different volume names; existing local data is not auto-migrated.
 
 For an update, drain active work, back up state, pull the reviewed revision,
 update `APP_VERSION`, build the new images, then stop `gateway web web2 worker`.
-Remove the stopped `migrate` container with `docker compose ... rm -f migrate`,
-then `docker compose ... up -d`. This ensures the migration service runs for the
-new revision before traffic resumes. Keep the previous images until the new
+Remove the stopped `migrate` container, run migrations and backfill accounting
+using the **new** images before starting any application service:
+
+```sh
+docker compose --env-file .env.production -f compose.production.yml rm -f migrate
+docker compose --env-file .env.production -f compose.production.yml run --rm --no-deps -T migrate
+docker compose --env-file .env.production -f compose.production.yml run --rm --no-deps -T worker node --import tsx scripts/storage-accounting.ts --reconcile
+docker compose --env-file .env.production -f compose.production.yml up -d --no-deps --wait web web2 worker gateway
+```
+
+Do not mix pre-049 writers with ledger-aware writers: old writers cannot update
+the new counters. Deployment reconciliation walks existing storage and can extend
+the maintenance window; it is necessary after restoring pre-ledger writers, even
+when the ledger was initialized before the failed release. New installations
+with empty storage initialize owners lazily. [Storage accounting](storage-accounting.md)
+documents explicit reconciliation and recovery. Keep the previous images until the new
 release passes verification, and retain a pre-migration backup. An old image
 alone cannot undo an incompatible database migration.
 This initial procedure has a maintenance window; it is not zero-downtime deploy.

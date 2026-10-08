@@ -1,4 +1,4 @@
-import { withStorageAdmission } from "../storage/admission";
+import { withActivityStorageAdmission } from "../storage/admission";
 import { createHash } from "node:crypto";
 import { query, queryOne, transaction } from "../db/client";
 import { readActivityObject, storeActivityObject } from "../storage/blobs";
@@ -27,7 +27,7 @@ export async function persistActivity(turnId: string, sequence: number, events: 
   }
   const room = await queryOne<{ session_id: string }>(`SELECT r.session_id FROM agent_turns t JOIN agent_runs r ON r.id=t.run_id WHERE t.id=$1`, [turnId]);
   if (!room) throw new Error("Unknown activity turn.");
-  return withStorageAdmission(room.session_id, () => transaction(async tx => {
+  return withActivityStorageAdmission(room.session_id, turnId, () => transaction(async tx => {
     await tx.query(`SELECT id FROM agent_turns WHERE id = $1 FOR UPDATE`, [turnId]);
     const { rows: [existing] } = await tx.query(`SELECT content_hash FROM run_activity_batches WHERE turn_id = $1 AND sequence = $2`, [turnId, sequence]);
     if (existing) { if (existing.content_hash !== hash) throw new Error("Activity retry differs from acknowledged content."); return false; }
