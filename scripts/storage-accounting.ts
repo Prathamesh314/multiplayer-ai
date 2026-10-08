@@ -1,5 +1,5 @@
-import nextEnv from "@next/env";
-nextEnv.loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 async function main() {
   const { initializeOwner, reconcileOwnerStorage, recoverStorageReservations } = await import("../app/lib/storage/accounting");
   const { query, pool } = await import("../app/lib/db/client");

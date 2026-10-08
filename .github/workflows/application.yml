@@ -130,6 +130,10 @@ jobs:
         run: docker build -f docker/web/Dockerfile -t multiplayer-web:ci .
       - name: Verify production container runtime
         run: node tests/container-smoke.mjs
+      - name: Build production worker image
+        run: docker build -f docker/worker/Dockerfile -t multiplayer-worker:ci .
+      - name: Verify worker storage bootstrap and maintenance commands
+        run: node tests/worker-container-smoke.mjs
       - name: Verify encrypted backup and isolated restore
         run: npm run test:backup
         env:

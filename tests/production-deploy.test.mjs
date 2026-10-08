@@ -26,7 +26,7 @@ function release(scenario) {
   for (const path of [state, backups, bin, join(root, 'scripts')]) mkdirSync(path);
   copyFileSync(script, join(root, 'scripts/deploy-production.sh'));
   writeFileSync(join(state, 'backup-key.env'), 'TEST_ONLY=1\n');
-  writeFileSync(join(root, '.env.production'), 'APP_VERSION=old\nAPP_DOMAIN=example.com\n');
+  writeFileSync(join(root, '.env.production'), `APP_VERSION=${scenario.startsWith('stopped-writers')?'failed':'old'}\nAPP_DOMAIN=example.com\n`);
   writeFileSync(join(bin, 'fake'), `#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');
 const tool=path.basename(process.argv[1]),args=process.argv.slice(2),root=process.env.FIXTURE_ROOT;
@@ -37,7 +37,7 @@ if(tool==='df') {
   const available=scenario==='disk-full'||scenario==='reclaim-space'&&!fs.existsSync(path.join(root,'cache-cleaned'))?8090308:99999999;
   console.log('Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 99999999 0 '+available+' 0% /');
 }
-if(tool==='curl' && scenario==='health-failure')process.exit(22);
+if(tool==='curl' && scenario.endsWith('health-failure'))process.exit(22);
 if(tool==='docker') {
   if(args[0]==='image' && args[1]==='prune') {
     if(scenario==='cleanup-failure'||scenario==='post-cleanup-failure'&&fs.existsSync(path.join(root,'activated')))process.exit(1);
@@ -46,7 +46,10 @@ if(tool==='docker') {
     if(scenario==='cache-failure')process.exit(1);
     fs.writeFileSync(path.join(root,'cache-cleaned'),'1');
   }
-  if(args[0]==='inspect')console.log(args.at(-1)==='worker-id'?'multiplayer-worker:old':'multiplayer-web:${revision}');
+  if(args[0]==='inspect') {
+    if(!args.at(-1))process.exit(1);
+    console.log(args.at(-1)==='worker-id'?'multiplayer-worker:old':fs.existsSync(path.join(root,'activated'))?'multiplayer-web:${revision}':'multiplayer-web:old');
+  }
   if(args[0]==='run') {
     const output=args[args.indexOf('--output')+1];
     fs.mkdirSync(output);fs.writeFileSync(path.join(output,'manifest.json'),'{}');
@@ -54,7 +57,9 @@ if(tool==='docker') {
   }
   if(args[0]==='compose') {
     if(args.includes('up'))fs.writeFileSync(path.join(root,'activated'),'1');
-    if(args.includes('ps') && args.includes('-q'))console.log(args.at(-1)+'-id');
+    if(args.includes('ps') && args.includes('-q')) {
+      if(!scenario.startsWith('stopped-writers')||args.includes('--all')||fs.existsSync(path.join(root,'activated')))console.log(args.at(-1)+'-id');
+    }
     if(args.includes('build') && scenario==='build-failure')process.exit(1);
     if(args.includes('exec') && args.includes('postgres')) {
       if(args.at(-1).includes('schema_migrations'))console.log(fs.existsSync(path.join(root,'migrated'))?'changed':'original');
@@ -111,6 +116,27 @@ test('reclaims disposable Docker storage before applying the unchanged disk-spac
   const result=release('reclaim-space');
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/Free disk after cleanup/);
+});
+
+test('a corrected deployment can use the stopped worker image after a failed migration bootstrap', () => {
+  const result=release('stopped-writers');
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.deployed,revision);
+  const backup=result.commands.find(c=>c.args.includes('scripts/backup.mjs'));
+  assert.ok(backup.args.includes('multiplayer-worker:old'));
+  assert.ok(backup.args.includes('APP_VERSION=old'),'inventory uses the retained web image, not the failed tag pruned before the build');
+  const bootstrap=result.commands.findIndex(c=>c.args.includes('scripts/storage-accounting.ts'));
+  const startup=result.commands.findIndex(c=>c.args.includes('up'));
+  assert.ok(bootstrap>=0&&bootstrap<startup,'complete bootstrap before restarting any application service');
+});
+
+test('a failed retry keeps a previously stopped deployment stopped', () => {
+  const result=release('stopped-writers-health-failure');
+  assert.notEqual(result.status,0);
+  assert.equal(result.deployed,null);
+  assert.match(result.env,/APP_VERSION=failed/);
+  assert.equal(result.commands.filter(c=>c.args.includes('up')).length,1,'only the new release starts; rollback cannot activate the previously stopped release');
+  assert.match(result.stderr,/previous release was already stopped/);
 });
 
 for(const scenario of ['disk-full','cleanup-failure','cache-failure']) {

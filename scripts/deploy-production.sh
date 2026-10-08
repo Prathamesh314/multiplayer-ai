@@ -26,6 +26,7 @@ cleanup_images() {
   docker builder prune --all --force --keep-storage 2GB || return
 }
 stopped=0
+initially_stopped=0
 migrating=0
 before_schema=''
 rollback() {
@@ -43,7 +44,12 @@ rollback() {
   cp -p "$release/environment.before" .env.production
   git checkout --detach "$previous"
   if [[ $stopped = 1 ]]; then
-    compose up -d --no-deps --wait --wait-timeout 180 web web2 worker gateway
+    if [[ $initially_stopped = 1 ]]; then
+      compose stop --timeout 30 gateway web web2 worker
+      echo 'The previous release was already stopped; application services remain stopped.' >&2
+    else
+      compose up -d --no-deps --wait --wait-timeout 180 web web2 worker gateway
+    fi
   fi
   echo "Previous revision $previous restored." >&2
   exit "$status"
@@ -51,7 +57,12 @@ rollback() {
 trap rollback ERR
 compose config --quiet
 test -s "$state/backup-key.env"
-old_worker=$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q worker)")
+if [[ -z "$(compose ps --status running -q web web2 worker gateway)" ]]; then initially_stopped=1; fi
+# A failed post-migration bootstrap deliberately leaves writers stopped. Retain
+# access to their image so the corrected release can back up and resume safely.
+old_worker=$(docker inspect --format '{{.Config.Image}}' "$(compose ps --all -q worker)")
+old_web=$(docker inspect --format '{{.Config.Image}}' "$(compose ps --all -q web)")
+[[ $old_web = multiplayer-web:* ]]
 docker image inspect "$old_worker" >/dev/null
 cleanup_images
 # Refuse low disk space before a build can displace a healthy running release.
@@ -77,7 +88,10 @@ if [[ $active != 0 ]]; then
   false
 fi
 backup="$backups/pre-$revision-$(date -u +%Y%m%dT%H%M%SZ)"
+# After a failed release, .env.production can name an unused image just pruned
+# above. Run backup inventory with the web image retained by its container.
 docker run --rm --entrypoint node --env-file "$state/backup-key.env" \
+  -e "APP_VERSION=${old_web#multiplayer-web:}" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   -v /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro \

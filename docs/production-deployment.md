@@ -192,6 +192,12 @@ the application stays stopped and the workflow fails with recovery paths; it nev
 starts an older image against an unverified schema or silently restores over new
 data. Follow `backup-restore.md` for recovery. After fixing a failure, rerun the
 workflow on the current `main`. Active-work refusals can be retried when work ends.
+Retries can also use stopped web/worker containers after a failed bootstrap;
+backup inventory uses their retained image rather than a failed release tag.
+If a retry fails, a previously stopped application remains stopped. CI builds
+the worker image and exercises storage bootstrap, repeated bootstrap, recovery,
+reconciliation and the maintenance CLI on disposable PostgreSQL/storage before
+allowing deployment.
 
 Release records and the last successful SHA are under
 `/root/multiplayer-deployment-config`; encrypted backups are under
