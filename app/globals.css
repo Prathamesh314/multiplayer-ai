@@ -237,15 +237,20 @@ body {
 .session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 10px; }
 .session-workspace .ai-composer { padding: 10px 20px 14px; }
 .session-workspace .ai-composer > div > .rounded-2xl { border-radius: 14px; background: var(--vs-chrome); }
-.session-workspace .ai-composer textarea { font-size: 12px; min-height: 80px; }
+.session-workspace .ai-composer textarea { font-size: 14px; line-height: 1.6; min-height: 80px; }
 .session-workspace .ai-composer-footer { border-top: 0; margin-top: 12px; }
 .session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 7px; }
-.session-workspace .human-message { background: #2b201d; }
+/* The reading surface is deliberately larger than the surrounding chrome.
+   Toolbars and sidebars stay at 11–12px because they are glanced at; a long
+   agent answer is *read*, and 12px prose with tight leading is what made this
+   panel feel cramped. Only these rules scale up — the chrome above is
+   untouched. */
+.session-workspace .conversation-transcript { font-size: 15px; line-height: 1.7; }
+.session-workspace .human-message { background: #2b201d; font-size: 15px; line-height: 1.6; }
 .session-workspace .assistant-message > span { display: none; }
-.session-workspace .assistant-message > div > header { margin-bottom: 8px; }
+.session-workspace .assistant-message > div > header { margin-bottom: 10px; }
 .session-workspace .assistant-message > div > header > span:first-child { font-size: 11px; font-weight: 400; color: var(--vs-muted); }
-.session-workspace .conversation-markdown h1, .session-workspace .conversation-markdown h2 { font-weight: 700; margin-top: 24px; margin-bottom: 14px; }
-.session-workspace .conversation-markdown p { margin-bottom: 14px; }
+.session-workspace .conversation-markdown { font-size: 15px; line-height: 1.7; }
 .session-workspace .file-actions { white-space: nowrap; }
 .session-workspace .room-editor-layout > [role="tablist"] > div { border-right: 0; border-top: 0; }
 .session-workspace .room-editor-layout > [role="tablist"] > div:has([aria-selected="true"]) { border-bottom: 2px solid var(--vs-accent); background: transparent; }
