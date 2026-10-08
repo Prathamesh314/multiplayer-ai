@@ -56,6 +56,7 @@ import { DevicesDialog } from "../ai/DevicesDialog";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { useComputerConnection, type ComputerConnection } from "../ai/useComputerConnection";
 import { TaskPanel } from "../tasks/TaskPanel";
+import { ComposerPicker } from "../workspace/ComposerPicker";
 import chatStyles from "../chat/chat.module.css";
 
 // Minimal settings gear icon
@@ -322,12 +323,19 @@ function OrgRail({
       aria-label="Organisations"
       className={`${chatStyles.workspaceRail} flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-vs-border bg-vs-chrome py-3`}
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-vs-accent/12 text-vs-accent">
-        <SparkleIcon className="h-5 w-5" />
+      <div className={chatStyles.organizationHeading}>
+        <ComposerPicker label="Your organizations" triggerLabel="Organizations" value={activeSlug ?? ""}
+          options={(orgs ?? []).map(org => ({ id: org.slug, label: org.name, description: org.slug === activeSlug ? "Current organization" : undefined }))}
+          onChange={onSelect} icon={<SearchIcon className="h-4 w-4 shrink-0" />} searchable searchLabel="Search organizations"
+          placement="auto" disabled={orgs === null} className={chatStyles.organizationSearch}
+          emptyLabel="You haven’t joined any organizations yet." noResultsLabel="No organizations found. Try another name."
+          footer={<p className="px-2 py-1 text-xs text-vs-muted">Organizations you belong to. Choose one to open its projects.</p>} />
+        <span className={chatStyles.organizationCompactLabel}>Orgs</span>
       </div>
-      <div className="my-1 h-px w-8 bg-vs-border" />
 
-      <div className="vs-scroll flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
+      <div className="vs-scroll flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto px-2">
+        {orgs === null && <p role="status" className="hidden px-2 py-3 text-xs text-vs-muted lg:block">Loading organizations…</p>}
+        {orgs?.length === 0 && <p className="hidden px-2 py-3 text-xs leading-5 text-vs-muted lg:block">No organizations yet. Create one or join your team.</p>}
         {(orgs ?? []).map((org) => {
           const active = org.slug === activeSlug;
           return (
@@ -336,40 +344,44 @@ function OrgRail({
               type="button"
               onClick={() => onSelect(org.slug)}
               title={org.name}
-              className={`relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl text-[14px] font-semibold uppercase transition ${
-                active
-                  ? "rounded-xl bg-vs-accent text-vs-accent-fg"
-                  : "bg-vs-panel text-vs-fg hover:rounded-xl hover:bg-vs-hover"
-              }`}
+              aria-label={`${org.name} organization`}
+              aria-current={active ? "page" : undefined}
+              className={chatStyles.organizationRow}
             >
-              {active && (
-                <span className="absolute -left-3 h-6 w-1 rounded-r bg-vs-accent z-10" />
-              )}
-              {org.image ? (
-                <img src={org.image} alt={org.name} className="h-full w-full object-cover" />
-              ) : (
-                initials(org.name)
-              )}
+              <span className={chatStyles.organizationAvatar} aria-hidden="true">
+                {org.image ? (
+                  <img src={org.image} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  initials(org.name)
+                )}
+              </span>
+              <span className={chatStyles.organizationName}>{org.name}</span>
             </button>
           );
         })}
 
-        <button
-          type="button"
-          onClick={onCreate}
-          title="Create an organisation"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-vs-panel text-vs-accent transition hover:rounded-xl hover:bg-vs-hover"
-        >
-          <PlusIcon className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
-          onClick={onJoin}
-          title="Join an organisation"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-vs-panel text-vs-muted transition hover:rounded-xl hover:bg-vs-hover hover:text-vs-accent"
-        >
-          <UserPlusIcon className="h-5 w-5" />
-        </button>
+        <div className="mt-2 space-y-1 border-t border-vs-border pt-2">
+          <button
+            type="button"
+            onClick={onCreate}
+            title="Create an organisation"
+            aria-label="Create organization"
+            className={chatStyles.organizationAction}
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span className={chatStyles.organizationName}>New organization</span>
+          </button>
+          <button
+            type="button"
+            onClick={onJoin}
+            title="Join an organisation"
+            aria-label="Join organization"
+            className={chatStyles.organizationAction}
+          >
+            <UserPlusIcon className="h-5 w-5" />
+            <span className={chatStyles.organizationName}>Join organization</span>
+          </button>
+        </div>
       </div>
 
       <div ref={profileRef} className="relative">

@@ -71,6 +71,37 @@ try {
   assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
   assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--vs-editor").trim()`),"#141210","project overview shares the session palette");
   await evaluate("document.fonts.ready");await screenshot("projects");
+  // Organization names stay visible on desktop; search switches only among
+  // memberships returned by the real workspace's organization data source.
+  assert.ok(await evaluate('document.querySelector(\'button[aria-label="Your organizations"]\').innerText.includes("Organizations")'));
+  assert.equal(await evaluate('document.querySelector(\'button[title="Northstar Studio"]\').getAttribute("aria-current")'),"page");
+  await click('button[aria-label="Your organizations"]');
+  await eventually(()=>evaluate('document.activeElement?.getAttribute("aria-label") === "Search organizations"'),"organization search receives focus");
+  await type('input[aria-label="Search organizations"]','not-my-team');
+  await eventually(()=>evaluate('document.querySelector(".composer-picker [role=status]")?.textContent.includes("No organizations found")'),"organization search empty result");
+  await type('input[aria-label="Search organizations"]','  sIdE pRoJeCtS  ');
+  assert.equal(await evaluate('document.querySelectorAll(".composer-picker [role=option]").length'),1);
+  await screenshot('organization-search');
+  for(const key of ['ArrowDown','Enter']) {
+    await send('Input.dispatchKeyEvent',{type:'keyDown',key,code:key,windowsVirtualKeyCode:key==='Enter'?13:40,...(key==='Enter'?{text:'\r'}:{})});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',key,code:key,windowsVirtualKeyCode:key==='Enter'?13:40});
+  }
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Side Projects"'),"search opens the selected organization");
+  assert.equal(await evaluate('document.querySelector(\'button[title="Side Projects"]\').getAttribute("aria-current")'),"page");
+  assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Your organizations","selection restores search trigger focus");
+  await click('button[title="Northstar Studio"]');
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Northstar Studio"'),"organization rail switches back");
+  await viewport(320);
+  await click('button[aria-label="Your organizations"]');
+  await eventually(()=>evaluate('!!document.querySelector(".composer-picker")'),"mobile organization search");
+  assert.equal(await evaluate('document.querySelectorAll(".composer-picker [role=option]").length'),2,"reopening clears the old search");
+  await fits('organization search fits mobile');
+  assert.ok(await evaluate('(()=>{const r=document.querySelector(".composer-picker").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()'));
+  await screenshot('organizations-mobile');
+  await escape();
+  assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Your organizations","Escape restores organization search focus");
+  await viewport(1440);
+  console.log('PASS: named organization rail, membership search, empty results, keyboard switching, current organization, focus restoration and mobile bounds.');
   await click('button[title="Organisation settings"]');
   await eventually(()=>evaluate('!!document.querySelector("dialog[open] input[type=text]")'),"settings dialog");
   await type('dialog input[type=text]',"Northstar Studio");

@@ -1,7 +1,19 @@
 /* A Discord-inspired shell, scoped to the team workspace. */
 .workspace { background: var(--vs-editor); color: var(--vs-fg); }
-.workspaceRail { width: 64px; border-right: 0; gap: 10px; padding-top: 14px; }
-.workspaceRail > div:first-child { background: var(--vs-panel); color: var(--vs-fg); border-radius: 14px; width: 40px; height: 40px; }
+.workspaceRail { width: 192px; gap: 8px; padding-top: 10px; }
+.organizationHeading { width: 100%; padding: 0 8px 8px; border-bottom: 1px solid var(--vs-border); }
+.organizationSearch { width: 100%; justify-content: flex-start; min-height: 36px; gap: 8px; font-size: 13px; font-weight: 600; }
+.organizationSearch > svg { color: var(--vs-muted); }
+.organizationCompactLabel { display: none; }
+.organizationRow, .organizationAction { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; flex-shrink: 0; padding: 6px 8px; border-radius: 10px; text-align: left; color: var(--vs-muted); transition: background .15s, color .15s; }
+.organizationRow:hover, .organizationAction:hover { background: var(--vs-hover); color: var(--vs-fg); }
+.organizationRow[aria-current="page"] { background: var(--vs-active); color: var(--vs-fg); }
+.organizationRow:focus-visible, .organizationAction:focus-visible { outline: 2px solid var(--vs-accent); outline-offset: -2px; }
+.organizationAvatar { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; overflow: hidden; border: 1px solid var(--vs-border); border-radius: 9px; background: var(--vs-panel); font-size: 11px; font-weight: 600; }
+.organizationRow[aria-current="page"] .organizationAvatar { background: var(--vs-accent); border-color: transparent; color: var(--vs-accent-fg); }
+.organizationName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.organizationAction { min-height: 36px; gap: 10px; }
+.organizationAction > svg { width: 18px; height: 18px; flex-shrink: 0; margin: 0 6px; }
 .workspaceNavigation { background: var(--vs-chrome); }
 .workspaceNavigation :global([aria-current="page"]) { background: var(--vs-active); color: var(--vs-accent); }
 .workspaceNavigation > header { height: 40px; border-color: var(--vs-border); }
@@ -101,13 +113,19 @@
   .topic { display: none; }
 }
 @media (max-width: 1023px) {
+  .workspaceRail { width: 64px; }
+  .organizationHeading { padding: 0 8px 8px; }
+  .organizationSearch { justify-content: center; padding: 8px; }
+  .organizationSearch > span, .organizationName { display: none; }
+  .organizationCompactLabel { display: block; margin-top: 2px; text-align: center; font-size: 10px; color: var(--vs-muted); }
+  .organizationRow, .organizationAction { justify-content: center; padding: 5px; }
+  .organizationAction > svg { margin: 0; }
   .workspaceNavigation { position: absolute; z-index: 30; top: 62px; left: 72px; width: min(320px, calc(100vw - 72px)); max-height: calc(100dvh - 72px); border: 1px solid var(--vs-border); border-radius: 0 0 10px 0; box-shadow: 15px 20px 50px #0008; }
   .workspaceNavigation > header { min-height: 56px; }
   .workspaceNavigation > div:last-of-type { flex-shrink: 0; }
 }
 @media (max-width: 700px) {
   .workspaceRail { width: 56px; padding-top: 14px; }
-  .workspaceRail > div:first-child { width: 36px; height: 36px; }
   .workspaceRail button { max-width: 38px; max-height: 38px; }
   .workspaceNavigation { left: 56px; width: min(290px, calc(100vw - 56px)); }
   .conversationHeader { height: 56px; padding: 0 15px; gap: 8px; }

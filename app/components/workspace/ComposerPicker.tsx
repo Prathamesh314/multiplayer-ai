@@ -7,7 +7,7 @@ import { CheckIcon, SearchIcon } from "../icons";
 export type ComposerOption = { id: string; label: string; description?: string; group?: string };
 
 /** Shared picker for composer controls and form fields, including modal dialogs. */
-export function ComposerPicker({ label, value, options, onChange, icon, searchable = false, searchLabel = "Search options", placeholder, header, footer, emptyLabel = "No options available.", className = "", placement = "top", disabled = false, variant = "compact" }: {
+export function ComposerPicker({ label, value, options, onChange, icon, searchable = false, searchLabel = "Search options", placeholder, triggerLabel, header, footer, emptyLabel = "No options available.", noResultsLabel = "No matching options.", className = "", placement = "top", disabled = false, variant = "compact" }: {
   label: string;
   value: string;
   options: ComposerOption[];
@@ -16,9 +16,11 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
   searchable?: boolean;
   searchLabel?: string;
   placeholder?: string;
+  triggerLabel?: string;
   header?: ReactNode;
   footer?: ReactNode;
   emptyLabel?: string;
+  noResultsLabel?: string;
   className?: string;
   placement?: "top" | "auto";
   disabled?: boolean;
@@ -103,7 +105,7 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
     <button ref={trigger} type="button" disabled={disabled} aria-label={label} aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? id : undefined} title={`${label}: ${selected?.label ?? (value || placeholder || "Choose an option")}`} className={`composer-control ${variant === "field" ? "picker-field" : ""} ${className}`} onClick={() => { if (expanded) close(); else show(); }} onKeyDown={event => {
       if (["ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); show(); }
     }}>
-      {icon}<span className="truncate">{selected?.label ?? (value ? `Unavailable: ${value}` : placeholder ?? label)}</span>
+      {icon}<span className="truncate">{triggerLabel ?? selected?.label ?? (value ? `Unavailable: ${value}` : placeholder ?? label)}</span>
     </button>
     {expanded && portalRoot && createPortal(<div ref={panel} id={id} popover="manual" role="dialog" aria-label={`${label} options`} style={position} className="composer-picker" onKeyDown={event => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
@@ -126,7 +128,7 @@ export function ComposerPicker({ label, value, options, onChange, icon, searchab
             {option.id === value && <CheckIcon className="h-4 w-4 shrink-0 text-vs-accent" />}
           </button>
         </div>)}
-        {!matches.length && <p role="status" className="p-4 text-sm leading-6 text-vs-muted">{query ? "No matching options." : emptyLabel}</p>}
+        {!matches.length && <p role="status" className="p-4 text-sm leading-6 text-vs-muted">{query ? noResultsLabel : emptyLabel}</p>}
       </div>
       {footer && <div className="composer-picker-footer vs-scroll">{footer}</div>}
     </div>, portalRoot)}
