@@ -4,11 +4,13 @@ The public product website is at `/`. The existing application is at
 `/workspace`; sign-in, accepted invitations, room exit actions, and the Electron
 entry point send users there.
 
-The website always uses its own dark palette, independent of workspace or OS
-color preferences. Its scroll container preserves the full-height workspace
-layout. The product preview has four selectable screenshots captured from the actual
-application, with a full-size viewer; it does not connect to a live room. Native disclosure controls provide the mobile navigation
-and FAQs, including without JavaScript.
+The website and documentation use the workspace's shared warm dark palette in
+`app/globals.css`, including its surfaces, text, borders, and action accent.
+Headings use the same display font as the workspace. The website scroll container
+preserves the full-height workspace layout. The product preview has four
+selectable screenshots captured from the actual application, with a full-size
+viewer; it does not connect to a live room. Native disclosure controls provide
+the mobile navigation and FAQs, including without JavaScript.
 
 ## Downloads
 
@@ -35,7 +37,14 @@ provenance, and maintenance commands.
 
 ## Actual product screenshots
 
-The four original images in `public/product/` are frames from the recorded app demo:
+The homepage now reuses the current `connections`, `changes`, `conversation`, and
+`handoff` captures from `app/docs/screenshots.ts`. Both the feature cards and
+interactive preview use that registry's dimensions and alt text. Refresh these
+captures using the process in [user-documentation.md](user-documentation.md).
+This keeps the advertised interface and its theme consistent with the docs.
+
+The older images in `public/product/` are retained as historical captures, and
+are no longer shown on the homepage. The original demo frames came from:
 `artifacts/demo-2026-09-22-extended/multiplayer-ai-extended-walkthrough.mp4`.
 The sample Northstar project and Alex/Priya identities are demo fixtures. See the
 recording’s README for provenance. The UI and agent responses are real footage;
