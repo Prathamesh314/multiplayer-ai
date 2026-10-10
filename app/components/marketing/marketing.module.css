@@ -367,8 +367,20 @@
   .heroContent { margin-left: 0; }
   .finalCta > a { width: 100%; max-width: 20rem; }
 }
+/* At 320px the brand, the download button and the menu trigger together need
+   more than the viewport, so tighten all three rather than let one run past
+   the right edge. */
 @media (max-width: 420px) {
-  .navDownload { font-size: .8125rem; padding: 0 10px; }
+  .navInner { gap: 8px; padding: 0 12px; }
+  .brand { gap: 6px; font-size: .875rem; white-space: nowrap; }
+  .brandMark { width: 18px; height: 18px; }
+  .brandMark i { width: 3px; height: 10px; }
+  .brandMark i:nth-child(2) { height: 16px; }
+  .brandMark i:nth-child(3) { height: 13px; }
+  .brandAi { font-size: .5625rem; padding: 1px 3px; }
+  .navDownload { gap: 6px; padding: 0 9px; font-size: .75rem; }
+  .navDownload svg { width: 13px; height: 13px; }
+  .mobileMenu summary { width: 32px; height: 32px; }
   .previewControls > div { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; }
   .previewControls button { padding: 8px 4px; text-align: center; }
   .previewLabel { display: none; }
