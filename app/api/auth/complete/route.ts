@@ -3,7 +3,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { withApiLimit } from "../../../lib/http/api-limit";
 import { assertAuthOrigin, requireClerkSession } from "../../../lib/auth/clerk-http";
 import { ClerkAccountError } from "../../../lib/auth/clerk-config";
-import { completeClerkAccount } from "../../../lib/auth/clerk-store";
+import { completeClerkAccount, hasOnboarded } from "../../../lib/auth/clerk-store";
 import { connectCodeOf } from "../../../lib/repo/users";
 
 export const runtime = "nodejs";
@@ -20,5 +20,5 @@ export const POST = withApiLimit("/api/auth/complete", async request => {
   });
   if (!profile.raw) throw new ClerkAccountError("Your account details are temporarily unavailable. Please try again.", 503);
   const user = await completeClerkAccount(profile.raw, body.invitationToken);
-  return Response.json({ user, connectCode: await connectCodeOf(user.id) });
+  return Response.json({ user, connectCode: await connectCodeOf(user.id), onboarded: await hasOnboarded(user.id) });
 });

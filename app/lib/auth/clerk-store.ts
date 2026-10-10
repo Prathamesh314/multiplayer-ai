@@ -10,6 +10,17 @@ type UserRow = { id: string; handle: string; email: string; display_name: string
   clerk_user_id: string | null; clerk_updated_at: string | number; clerk_disabled_at: Date | null; deleted_at: Date | null };
 const toUser = (row: UserRow): CurrentUser => ({ id: row.id, handle: row.handle, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url });
 
+/** The first-run setup step is shown once per account, not once per sign-in. */
+export async function hasOnboarded(userId: string): Promise<boolean> {
+  const row = await queryOne<{ onboarded_at: Date | null }>("SELECT onboarded_at FROM users WHERE id=$1", [userId]);
+  return Boolean(row?.onboarded_at);
+}
+
+/** Idempotent: re-running keeps the original timestamp so the step cannot reappear. */
+export async function markOnboarded(userId: string): Promise<void> {
+  await query("UPDATE users SET onboarded_at=COALESCE(onboarded_at,now()) WHERE id=$1", [userId]);
+}
+
 /** Only use a profile returned by Clerk's backend or its verified webhook. */
 export function verifiedClerkProfile(profile: UserJSON) {
   const primary = profile.email_addresses.find(email => email.id === profile.primary_email_address_id);

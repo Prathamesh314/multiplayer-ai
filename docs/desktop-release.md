@@ -35,8 +35,11 @@ acceptance are mandatory external release inputs. Backend risks in
 - HTTPS-only workspace origins in packaged builds. Development additionally
   permits loopback HTTP. Credentials, paths, query parameters and fragments in
   workspace addresses are rejected. TLS verification is never bypassed.
-- First-run connection UI, bounded readiness checks, offline/render-crash
-  recovery, single-instance behavior, menu/tray access and persistent sessions.
+- Configured builds open their workspace on launch and show the browser's own
+  sign-in and workspace pages; the setup window is reserved for builds with no
+  address and for reporting connection failures. Bounded readiness checks,
+  offline/render-crash recovery, single-instance behavior, menu/tray access and
+  persistent sessions.
 - Automatic connection after sign-in, a bundled utility-process runner, filtered
   environment, private per-account connection profiles and persistent pause.
   Signing out stops new claims; returning to the same account reuses its saved
@@ -49,7 +52,9 @@ acceptance are mandatory external release inputs. Backend risks in
   Backend code, node_modules, .env files and source repositories are not shipped.
 - Packaged Electron fuses disable RunAsNode, Node environment injection and Node
   CLI inspection, and enable ASAR-only loading/integrity validation. Preview Macs
-  use ad-hoc signing; release Macs require signing, hardened runtime and notarization.
+  use a configured Developer ID when one is available and fall back to ad-hoc
+  signing only without a certificate; release Macs require signing, hardened
+  runtime and notarization.
 - Update checks against a build-configured HTTPS feed. Downloads require consent;
   installation requires another confirmation, a stopped runner and no pairing in
   progress. No automatic install on quit or downgrade. Platform updater signature
@@ -77,12 +82,30 @@ npm run desktop:dist:linux      # setup-screen Linux x64 AppImage
 node tests/desktop-smoke.mjs --packaged
 ```
 
-Preview installers start with **Workspace address**. Enter the HTTPS origin of
-your deployed workspace; these installers do not deploy a server. The platform
-scripts use `--setup`, which clears any workspace/update URL inherited from the
-build environment. Preview filenames include `-preview`. CI artifacts are private
-until an operator deliberately publishes verified installers for preview testing.
-An unconfigured website shows **Coming soon**, with no fake download links.
+A build carrying a workspace address opens that workspace immediately, so the
+first thing users see is the same sign-in page and workspace the browser serves.
+The setup window is not part of that path; it stays available from the
+application menu (**Desktop settings**, `Cmd+,`) and the tray, and it is still
+where connection failures are reported. Local worktrees always default to
+`~/multiplayer-ai/workspaces` and are never requested before first use.
+
+Builds without an address start at **Workspace address** instead. The
+`desktop:dist:mac`, `:win` and `:linux` scripts use `--setup`, which clears any
+workspace/update URL inherited from the build environment and produces exactly
+that generic installer. To build an installer aimed at your own deployment, set
+`DESKTOP_WORKSPACE_URL` in `.env.desktop.local` and omit `--setup`:
+
+```sh
+npm run desktop:dist -- --mac --arm64     # opens https://<your workspace> directly
+```
+
+Preview filenames include `-preview`. CI artifacts are private until an operator
+deliberately publishes verified installers for preview testing. An unconfigured
+website shows **Coming soon**, with no fake download links.
+
+Leave unused keys in `.env.desktop.local` blank rather than deleting them; blank
+values are ignored, so a copied template never reaches electron-builder as an
+empty certificate path.
 
 After signing in, the desktop app connects this computer automatically; users
 do not need a pairing command. Install Git and install/authenticate the chosen AI
@@ -108,9 +131,24 @@ On macOS, open the DMG and drag the app to Applications (or extract the ZIP). On
 Windows, run the NSIS `.exe` and choose an installation location. On Linux, mark
 the AppImage executable with `chmod +x Multiplayer-AI-*.AppImage` and run it;
 systems without FUSE can use `./Multiplayer-AI-…AppImage --appimage-extract-and-run`.
-Preview Mac builds are ad-hoc signed and Windows builds are unsigned, so normal
-OS trust checks may warn or block them. A production release still needs the
-signing steps below; do not present a preview as a signed production release.
+Windows preview builds are unsigned, so normal OS trust checks may warn.
+
+A Mac preview built without a certificate is ad-hoc signed, and macOS does not
+merely warn about it: once a browser attaches `com.apple.quarantine` to the
+download, Gatekeeper refuses the launch before dyld maps a single library. The
+process sits at `_dyld_start` using a few kilobytes of memory, no window is ever
+created, and Finder reports that the app is damaged. Clear the flag after
+installing, then open it again:
+
+```sh
+xattr -dr com.apple.quarantine '/Applications/Multiplayer AI.app'
+```
+
+This is a tester-only workaround. Set `CSC_LINK` or `CSC_NAME` in
+`.env.desktop.local` and preview builds are signed with that Developer ID and
+hardened runtime instead, and notarized too when Apple credentials are present —
+those open normally. A production release still needs the signing steps below;
+do not present a preview as a signed production release.
 
 ### Publish preview downloads on the application server
 

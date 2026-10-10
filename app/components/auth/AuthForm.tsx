@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { safeReturnPath } from "../../lib/auth/return-path";
-import { ExecutionRequirements } from "../ai/ExecutionRequirements";
 import { desktopBridge } from "../../lib/desktop";
 import { DesktopSignIn } from "./DesktopSignIn";
 
@@ -13,7 +12,6 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto w-full max-w-md space-y-6">
       <Link href="/" className="block text-lg font-semibold tracking-tight">multiplayer-ai</Link>
       {children}
-      <ExecutionRequirements />
       <p className="text-center text-sm text-vs-muted"><Link href="/docs" className="hover:text-vs-fg">Setup guide</Link> · <Link href="/" className="hover:text-vs-fg">Back to home</Link></p>
     </div>
   </main>;

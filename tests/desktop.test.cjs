@@ -143,6 +143,37 @@ test("desktop build targets record the target architecture when cross compiling"
   assert.match(packagedExecutable("output", "darwin", "x64"), /mac[/\\]Multiplayer AI\.app[/\\]Contents[/\\]MacOS[/\\]Multiplayer AI$/);
 });
 
+test("a configured build opens the workspace instead of the setup screen", () => {
+  const main = fs.readFileSync("desktop/main.js", "utf8");
+  assert.match(main, /if\s*\(settings\.url\)\s*void connect\(\);\s*else showSetup\(\);/);
+  assert.doesNotMatch(main, /showSetup\(\);\s*if\s*\(settings\.url\)\s*void connect\(\);/);
+});
+
+test("a blank value in the signing template is treated as unconfigured", async () => {
+  const { localReleaseEnvironment } = await import("../desktop/release-preflight.mjs");
+  const file = path.join(require("node:os").tmpdir(), "desktop-signing-" + process.pid + ".env");
+  fs.writeFileSync(file, "CSC_LINK=\nCSC_NAME=\nAPPLE_TEAM_ID=TEAM\n");
+  try {
+    const env = localReleaseEnvironment({}, file);
+    assert.equal("CSC_LINK" in env, false, "an empty CSC_LINK must not reach electron-builder as a certificate path");
+    assert.equal("CSC_NAME" in env, false);
+    assert.equal(env.APPLE_TEAM_ID, "TEAM");
+  } finally { fs.rmSync(file, { force: true }); }
+});
+
+test("macOS previews only fall back to ad-hoc signing when no certificate is configured", () => {
+  const { macSigning } = require("../desktop/targets.cjs");
+  const notarization = { APPLE_ID: "releases@example.com", APPLE_APP_SPECIFIC_PASSWORD: "secret", APPLE_TEAM_ID: "TEAM" };
+  assert.deepEqual(macSigning({}, false), { hardenedRuntime: false, notarize: false, identity: "-" });
+  assert.deepEqual(macSigning({ CSC_NAME: "-" }, false), { hardenedRuntime: false, notarize: false, identity: "-" });
+  for (const certificate of [{ CSC_NAME: "Developer ID Application: Example" }, { CSC_LINK: "certificate.p12" }]) {
+    assert.deepEqual(macSigning(certificate, false), { hardenedRuntime: true, notarize: false });
+    assert.deepEqual(macSigning({ ...certificate, ...notarization }, false), { hardenedRuntime: true, notarize: true });
+  }
+  assert.deepEqual(macSigning({}, true), { hardenedRuntime: true, notarize: true });
+  assert.doesNotMatch(fs.readFileSync("desktop/builder.cjs", "utf8"), /identity: "-"/);
+});
+
 test("desktop build arguments cannot bypass preview publishing or release requirements", () => {
   const { buildTarget } = require("../desktop/targets.cjs");
   for (const args of [["--publish", "always"], ["--config", "other.json"], ["--mac", "--win"], ["--x64", "--arm64"], ["--release", "--setup"]]) {

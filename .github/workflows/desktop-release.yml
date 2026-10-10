@@ -21,7 +21,8 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm ci
-      - run: npm audit --audit-level=high
+      # Shipped dependencies only; see the note in desktop.yml.
+      - run: npm audit --audit-level=high --omit=dev
       - run: npm run test:desktop
       - run: npm run test:desktop:smoke
       - name: Build signed and notarized macOS candidate

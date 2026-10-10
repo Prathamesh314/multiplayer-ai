@@ -90,7 +90,7 @@ export default function Home() {
         ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div></section>
         <section id="download" className={`${styles.section} ${styles.download}`} aria-labelledby="download-title">
           <div className={styles.downloadHeading}><div><p className={styles.kicker}>YOUR NEXT GREAT PROJECT STARTS HERE</p><h2 id="download-title">Better, together.<br /><span>Even better on desktop.</span></h2></div><p>A dedicated space for your team, with a local runner built right in. Choose your platform to get started.</p></div>
-          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. Your operating system may warn or block installation.</p>}
+          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. macOS refuses to start a downloaded preview, and nothing appears when you open it. Drag the app to Applications, run <code>xattr -dr com.apple.quarantine &quot;/Applications/Multiplayer AI.app&quot;</code> in Terminal, then open it again. Windows may warn before installation.</p>}
           <div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}>
             <span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p>
             <div className={styles.platformDownloads}>{platform.downloads.map(download => download.href

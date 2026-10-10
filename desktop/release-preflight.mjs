@@ -6,7 +6,11 @@ import { execFileSync } from 'node:child_process';
 
 /** Load an ignored local file without running shell code or overriding CI secrets. */
 export function localReleaseEnvironment(base = process.env, file = '.env.desktop.local') {
-  return { ...(existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {}), ...base };
+  const local = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  // The template ships every key blank. A blank value means "not configured"; passing it
+  // through as an empty string makes electron-builder read CSC_LINK as a certificate path.
+  const configured = Object.entries(local).filter(([, value]) => value !== '');
+  return { ...Object.fromEntries(configured), ...base };
 }
 export function releaseChecks(env, platform = process.platform) {
   const errors = [];

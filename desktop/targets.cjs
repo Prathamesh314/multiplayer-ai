@@ -17,6 +17,20 @@ function buildTarget(args, host = process.platform, hostArch = process.arch) {
   return { platform, arch, release, setup: args.includes("--setup"), builderArgs: [Object.keys(platforms).find(key => platforms[key] === platform), "--" + arch, ...(args.includes("--dir") ? ["--dir"] : [])] };
 }
 
+/**
+ * Gatekeeper refuses to start a quarantined ad-hoc bundle: dyld stalls before it maps a
+ * single library, so a downloaded preview never reaches its first line of JavaScript.
+ * Ad-hoc is therefore a last resort for builds that have no certificate at all, not the
+ * default for every preview. Hardened runtime is required for notarization.
+ */
+function macSigning(env = process.env, release = false) {
+  const certificate = env.CSC_NAME !== "-" && Boolean(env.CSC_LINK || env.CSC_NAME);
+  const notarize = Boolean((env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) || (env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID));
+  if (release) return { hardenedRuntime: true, notarize: true };
+  if (!certificate) return { hardenedRuntime: false, notarize: false, identity: "-" };
+  return { hardenedRuntime: true, notarize };
+}
+
 function packagedExecutable(directory, platform, arch) {
   if (platform === "darwin") return join(directory, "mac" + (arch === "x64" ? "" : "-" + arch), "Multiplayer AI.app", "Contents", "MacOS", "Multiplayer AI");
   if (platform === "win32") return join(directory, "win" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "Multiplayer AI.exe");
@@ -24,4 +38,4 @@ function packagedExecutable(directory, platform, arch) {
   throw new Error("Unsupported desktop platform: " + platform);
 }
 
-module.exports = { buildTarget, packagedExecutable };
+module.exports = { buildTarget, macSigning, packagedExecutable };
