@@ -147,6 +147,7 @@ export function AiPanel({
   onClose,
 }: AiPanelProps) {
   const [assignOpen, setAssignOpen] = useState(false);
+  const [briefingOpen, setBriefingOpen] = useState(false);
   const [planMode, setPlanMode] = useState(false);
   const composer = useRef<ComposerHandle>(null);
   const [taskRevision, setTaskRevision] = useState(0);
@@ -257,27 +258,37 @@ export function AiPanel({
     try {
       const { messages } = await fetchRun(sessionId, target.id);
       if (generation !== historyGeneration.current || enteredRef.current?.id !== target.id) return;
-      setTurns(
-        messages
-          // Every stored turn shows — replies, notices, warnings, errors, the
-          // changed-files record. The old blanket drop of system turns on
-          // completed runs guarded against a stderr transcript being stored on
-          // success; the server no longer stores stderr except on failure,
-          // where it is exactly the thing to show.
-          .map((message) => {
-            // "tool" turns are the agent's own machinery; show them as agent output.
-            const role: Turn["role"] =
-              message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
-            return {
-              id: uid(),
-              role,
-              text: message.body,
-              activities: message.role === "tool" ? [message.body] : undefined,
-              author: message.authorName ?? null,
-              agentName: role === "agent" ? agentName : null,
-            };
-          }),
-      );
+      // Every stored turn shows — replies, notices, warnings, errors, the
+      // changed-files record. The old blanket drop of system turns on
+      // completed runs guarded against a stderr transcript being stored on
+      // success; the server no longer stores stderr except on failure,
+      // where it is exactly the thing to show.
+      //
+      // Stored "tool" turns are the agent's own machinery. They belong to the
+      // reply they led to, exactly as a live run shows them: collect each run
+      // of them and hand them to the next agent turn as its trace.
+      const restored: Turn[] = [];
+      let pendingSteps: string[] = [];
+      for (const message of messages) {
+        if (message.role === "tool") {
+          pendingSteps.push(message.body);
+          continue;
+        }
+        const role: Turn["role"] = message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
+        restored.push({
+          id: uid(),
+          role,
+          text: message.body,
+          activities: role === "agent" && pendingSteps.length ? pendingSteps : undefined,
+          author: message.authorName ?? null,
+          agentName: role === "agent" ? agentName : null,
+        });
+        if (role === "agent") pendingSteps = [];
+      }
+      // Steps with no reply after them (a cancelled or still-syncing turn) are
+      // still worth showing on their own.
+      if (pendingSteps.length) restored.push({ id: uid(), role: "agent", text: "", activities: pendingSteps, author: null, agentName });
+      setTurns(restored);
     } catch {
       if (generation !== historyGeneration.current) return;
       setHistoryFailed(true);
@@ -811,7 +822,9 @@ export function AiPanel({
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       <header className={`ai-chat-header flex min-w-0 shrink-0 flex-wrap items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
-        <div className="min-w-0 flex-1">
+        {/* A basis keeps the title readable; the actions wrap below it instead
+            of squeezing the chat's name down to an ellipsis. */}
+        <div className="min-w-0 flex-1 basis-44">
           <h2 className="truncate text-[13px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
@@ -841,6 +854,10 @@ export function AiPanel({
               Copy chat
             </button>
           ))}
+        {/* Briefing and synchronized history are reference material, not part of
+            the conversation, so they open from here instead of sitting above it. */}
+        {entered && <button type="button" onClick={() => setBriefingOpen(true)} className="rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">Briefing</button>}
+        {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
         <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[11px] text-vs-muted hover:bg-vs-hover">Providers</button>
         {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
@@ -856,7 +873,9 @@ export function AiPanel({
         <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
         {taskPeople.length === 0 && <p className="text-sm text-vs-muted">No teammates are available to assign. Invite a teammate to this room first.</p>}
       </Modal>}
-      {entered && <div className="px-4 py-1 text-xs text-vs-muted"><WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} /></div>}
+      {briefingOpen && entered && <Modal title="Conversation briefing" description="A starting point for joining the work. AI reports are unverified." onClose={() => setBriefingOpen(false)}>
+        <BriefingCard key={`briefing-${entered.id}`} runId={entered.id} expanded bare />
+      </Modal>}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
           footer; the full selector is only for connecting or installing one. */}
@@ -899,7 +918,6 @@ export function AiPanel({
         />
       )}
 
-      {entered && <BriefingCard key={`briefing-${entered.id}`} runId={entered.id} expanded={!enteredIsMine} />}
       <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
           <Conversation turns={turns} />
@@ -1252,7 +1270,9 @@ function Conversation({ turns }: { turns: Turn[] }) {
     // "Thinking…" placeholder until stdout arrives.
     if (turn.streaming) return [turn];
     const text = cleanRunText(turn.text);
-    return text ? [{ ...turn, text }] : [];
+    // A turn that was nothing but noise is dropped, unless it carries the tool
+    // steps for work that produced no reply.
+    return text || turn.activities?.length ? [{ ...turn, text }] : [];
   });
 
   return (

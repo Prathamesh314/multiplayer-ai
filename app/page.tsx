@@ -21,8 +21,39 @@ export const metadata: Metadata = {
 };
 
 function Arrow({ down = false }: { down?: boolean }) {
-  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={down ? "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={down ? "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" : "M4 12h15m-6-6 6 6-6 6"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
+
+const features = [
+  {
+    icon: <UsersIcon />,
+    title: "Your conversations, connected to the work.",
+    body: "Keep talking in Slack or Discord. Share selected public channels with your project so AI can use the discussion and link back to its source.",
+    link: { href: "/docs/sharing", label: "Build with your team" },
+    shot: screenshots.connections,
+  },
+  {
+    icon: <ChatIcon />,
+    title: "Pass the context. Keep the momentum.",
+    body: "Follow a teammate’s AI conversation, fork an idea, or hand off a chat. Pick up exactly where the work left off, with the reasoning intact.",
+    link: { href: "/docs/first-conversation", label: "Your first conversation" },
+    shot: screenshots.handoff,
+  },
+  {
+    icon: <GitBranchIcon />,
+    title: "A little room to experiment.",
+    body: "Every room gets a Git branch. Explore an idea, review the changes side by side, and publish back to your project only when it is ready.",
+    link: { href: "/docs/sharing", label: "Review and publish changes" },
+    shot: screenshots.changes,
+  },
+  {
+    icon: <TerminalIcon />,
+    title: "Your agents. On your machine.",
+    body: "Use the AI tools you already know, with your existing CLI accounts. The paired local runner connects your computer to the shared workspace.",
+    link: { href: "/docs/prerequisites", label: "What you need to run agents" },
+    shot: screenshots.conversation,
+  },
+];
 
 const questions = [
   ["What is Multiplayer AI?", "A collaborative coding workspace for people and AI agents. Bring repositories into a project, work together in rooms, and connect selected Slack or Discord channels for shared context. AI conversations, task assignment, and code review stay together."],
@@ -30,6 +61,13 @@ const questions = [
   ["Where does my code run?", "On a paired computer through the local runner. The desktop app includes the runner; Git and your chosen AI CLI are separate prerequisites. Code and collaboration data are synced with your connected workspace server, so the app needs a network connection."],
   ["How does working together affect my main branch?", "Each project room has its own Git branch. Build and review in the room, sync the latest project changes, and publish when you are ready to merge your work back. Conflicts are surfaced for review."],
   ["Can I use it in a browser?", "Yes. Open the web workspace to collaborate, review code, and follow conversations. Running AI tasks requires a paired computer with Git and an authenticated agent CLI. The desktop app brings the workspace and local runner together."],
+];
+
+const docsCards = [
+  ["prerequisites", "01", "Before you start", "Check the computer, Git, account, and AI tool requirements."],
+  ["download-install", "02", "Download & set up", "Install on your platform and connect your workspace."],
+  ["first-conversation", "03", "Your first conversation", "Start with a repository, or just an idea."],
+  ["sharing", "04", "Build with your team", "Invite guests, review changes, and hand off work."],
 ];
 
 export default function Home() {
@@ -55,8 +93,16 @@ export default function Home() {
       <header className={styles.header}>
         <div className={styles.navInner}>
           <Link href="/" aria-label="Multiplayer AI home"><Brand /></Link>
-          <nav className={styles.nav} aria-label="Main navigation"><a href="#product">Product</a><a href="#how-it-works">How it works</a><Link href="/docs">Docs</Link><a href="#faq">FAQ</a></nav>
-          <div className={styles.navActions}><Link href="/workspace" className={styles.signIn}>Open workspace <span aria-hidden="true">↗</span></Link><a href="#download" className={styles.navDownload}>Get the app <Arrow down /></a></div>
+          <nav className={styles.nav} aria-label="Main navigation">
+            <a href="#product">Product</a>
+            <a href="#how-it-works">How it works</a>
+            <Link href="/docs">Docs</Link>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <div className={styles.navActions}>
+            <Link href="/workspace" className={styles.signIn}>Open workspace</Link>
+            <a href="#download" className={styles.navDownload}>Download <Arrow down /></a>
+          </div>
           <MobileNavigation />
         </div>
       </header>
@@ -64,32 +110,73 @@ export default function Home() {
         <section className={styles.hero}>
           <div className={styles.heroGrid} aria-hidden="true" />
           <div className={styles.heroContent}>
-            <a className={styles.eyebrowPill} href="#product"><span className={styles.liveDot} /> A new way to build, together <span aria-hidden="true">↗</span></a>
-            <h1>Great software<br />is a <span>team sport.</span></h1>
-            <p>Your people. Your AI agents. One shared workspace.<br className={styles.desktopBreak} /> Go from the first idea to the next commit, together.</p>
-            <div className={styles.heroActions}><a href="#download" className={styles.primaryButton}>Get Multiplayer AI <Arrow down /></a><a href="#product" className={styles.secondaryButton}>Explore the workspace <Arrow /></a></div>
-            <ExecutionRequirements className="mx-auto mt-5 max-w-2xl" />
-            <div className={styles.heroNote}><span className={styles.tinyAvatars}><i>A</i><i>S</i><i>✳</i></span><span>Built for teams. Made for the way you code.</span></div>
+            <span className={styles.heroBrand}><Brand /></span>
+            <h1><span>Great software</span><span>is a team sport.</span></h1>
+            <p className={styles.heroLead}>Bring your team, your code, and your AI agents into one shared workspace. Build with Claude Code, Codex, or Gemini — together, in the same room.</p>
+            <div className={styles.heroActions}>
+              <a href="#download" className={styles.primaryButton}>Get Multiplayer AI <Arrow down /></a>
+              <Link href="/workspace" className={styles.secondaryButton}>Open workspace <Arrow /></Link>
+              <p className={styles.heroNote}>
+                “Every room gets its own Git branch, so an experiment never touches your project until the team publishes it.”
+                <span className={styles.heroNoteMeta}>
+                  <span className={styles.tinyAvatars}><i>A</i><i>S</i><i>✳</i></span>
+                  <span>Built for teams. Made for the way you code.</span>
+                </span>
+              </p>
+            </div>
           </div>
           <div id="product" className={styles.previewWrap}><ProductPreview /></div>
-          <div className={styles.providerStrip}><p>YOUR FAVORITE AGENTS. NOW ON THE SAME TEAM.</p><div><span><b className={styles.claudeMark}>✳</b> Claude Code</span><span><b className={styles.codexMark}>◎</b> Codex</span><span><b className={styles.geminiMark}>✦</b> Gemini</span><span className={styles.providerExtra}>Your tools. Your choice.</span></div></div>
         </section>
-        <section className={`${styles.section} ${styles.features}`} aria-labelledby="features-title">
-          <div className={styles.sectionHeading}><div><p className={styles.kicker}>LESS FRICTION. MORE BUILDING.</p><h2 id="features-title">Everyone in the loop.<br /><span>Everything in one place.</span></h2></div><p>Give your team and AI the context to do their best work. Keep the conversation right next to the code.</p></div>
-          <div className={styles.featureGrid}>
-            <article className={styles.featureCard}><div className={styles.featureCopy}><span className={styles.featureIcon}><UsersIcon /></span><h3>Your conversations.<br />Connected to the work.</h3><p>Keep talking in Slack or Discord. Share selected public channels with your project so AI can use the discussion and link back to its source.</p></div><AppScreenshot {...screenshots.connections} focus="team" /></article>
-            <article className={styles.featureCard}><div className={styles.featureCopy}><span className={styles.featureIcon}><ChatIcon /></span><h3>Pass the context.<br />Keep the momentum.</h3><p>Follow a teammate’s AI conversation, fork an idea, or hand off a chat. Pick up where the work left off.</p></div><AppScreenshot {...screenshots.handoff} focus="handoff" /></article>
-            <article className={styles.featureCard}><div className={styles.featureCopy}><span className={styles.featureIcon}><GitBranchIcon /></span><h3>A little room to experiment.</h3><p>Every room gets a Git branch. Explore an idea, review the changes, and publish back to your project when it’s ready.</p></div><AppScreenshot {...screenshots.changes} focus="code" /></article>
-            <article className={styles.featureCard}><div className={styles.featureCopy}><span className={styles.featureIcon}><TerminalIcon /></span><h3>Your agents. On your machine.</h3><p>Use the AI tools you already know, with your existing CLI accounts. The paired local runner connects your computer to the shared workspace.</p></div><AppScreenshot {...screenshots.conversation} focus="agent" /></article>
+
+        <section className={styles.providerStrip} aria-label="Supported AI agents">
+          <p>Your favorite agents. Now on the same team.</p>
+          <div>
+            <span><b>✳</b> Claude Code</span>
+            <span><b>◎</b> Codex</span>
+            <span><b>✦</b> Gemini</span>
+            <span className={styles.providerExtra}>Your tools. Your accounts.</span>
           </div>
         </section>
-        <section id="how-it-works" className={`${styles.section} ${styles.workflow}`} aria-labelledby="workflow-title"><p className={styles.kicker}>FROM “WHAT IF” TO “SHIPPED”</p><h2 id="workflow-title">Find your flow. Together.</h2><div className={styles.steps}>{[
-          ["01", "Choose your starting point", "Open a project and start without files, or add a repository. Invite others to read and discuss the conversation in their browser."],
-          ["02", "Connect your AI", "To send prompts, connect your computer with Git and a signed-in AI tool. Keep it online while work runs, including conversations without files."],
-          ["03", "Make the next move", "Review a diff. Ask for a second opinion. Hand off a task. Publish your room’s changes when the team is ready."],
-        ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div></section>
+
+        <section className={styles.section} aria-labelledby="features-title">
+          <div className={styles.sectionHeading}>
+            <p className={styles.kicker}>Less friction. More building.</p>
+            <h2 id="features-title">Everyone in the loop. Everything in one place.</h2>
+            <p>Give your team and your agents the context to do their best work, and keep the conversation right next to the code it is about.</p>
+          </div>
+        </section>
+
+        {features.map(feature => (
+          <section key={feature.title} className={styles.featureCard}>
+            <div className={styles.featureCopy}>
+              <span className={styles.featureIcon}>{feature.icon}</span>
+              <h3>{feature.title}</h3>
+              <p>{feature.body}</p>
+            </div>
+            <div className={styles.featureFrame}><AppScreenshot {...feature.shot} /></div>
+            <Link href={feature.link.href} className={styles.learnMore}>{feature.link.label} <Arrow /></Link>
+          </section>
+        ))}
+
+        <section id="how-it-works" className={`${styles.section} ${styles.workflow}`} aria-labelledby="workflow-title">
+          <div className={styles.sectionHeading}>
+            <p className={styles.kicker}>From “what if” to “shipped”</p>
+            <h2 id="workflow-title">Find your flow. Together.</h2>
+            <p>Three steps from an empty room to a reviewed change your team can publish.</p>
+          </div>
+          <div className={styles.steps}>{[
+            ["01", "Choose your starting point", "Open a project and start without files, or add a repository. Invite others to read and discuss the conversation in their browser."],
+            ["02", "Connect your AI", "To send prompts, connect your computer with Git and a signed-in AI tool. Keep it online while work runs, including conversations without files."],
+            ["03", "Make the next move", "Review a diff. Ask for a second opinion. Hand off a task. Publish your room’s changes when the team is ready."],
+          ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div>
+        </section>
+
         <section id="download" className={`${styles.section} ${styles.download}`} aria-labelledby="download-title">
-          <div className={styles.downloadHeading}><div><p className={styles.kicker}>YOUR NEXT GREAT PROJECT STARTS HERE</p><h2 id="download-title">Better, together.<br /><span>Even better on desktop.</span></h2></div><p>A dedicated space for your team, with a local runner built right in. Choose your platform to get started.</p></div>
+          <div className={styles.downloadHeading}>
+            <p className={styles.kicker}>Your next great project starts here</p>
+            <h2 id="download-title">Better together. Even better on desktop.</h2>
+            <p>A dedicated space for your team, with the local runner built right in. Choose your platform to get started.</p>
+          </div>
           {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. macOS refuses to start a downloaded preview, and nothing appears when you open it. Drag the app to Applications, run <code>xattr -dr com.apple.quarantine &quot;/Applications/Multiplayer AI.app&quot;</code> in Terminal, then open it again. Windows may warn before installation.</p>}
           <div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}>
             <span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p>
@@ -97,22 +184,84 @@ export default function Home() {
               ? <a key={download.label} href={download.href} className={styles.platformDownload} aria-label={`Download ${download.label}`} aria-describedby={preview ? "download-preview-note" : undefined}>{download.label} <Arrow down /></a>
               : <span key={download.label} className={styles.platformUnavailable}>{download.label}<small>Coming soon</small></span>)}</div>
           </article>)}</div>
-          <div className={styles.downloadFootnote}><div><p>After installing, enter this website’s HTTPS address in Workspace address, then sign in.</p><p>Requires a workspace connection, Git, and a signed-in AI CLI.</p>{checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}</div><Link href="/workspace">Get started in your browser <Arrow /></Link></div>
+          <ExecutionRequirements className={styles.requirements} />
+          <div className={styles.downloadFootnote}>
+            <div>
+              <p>After installing, enter this website’s HTTPS address in Workspace address, then sign in.</p>
+              {checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}
+            </div>
+            <Link href="/workspace" className={styles.learnMore}>Get started in your browser <Arrow /></Link>
+          </div>
         </section>
+
         <section id="docs" className={`${styles.section} ${styles.docsSection}`} aria-labelledby="docs-title">
-          <div className={styles.sectionHeading}><div><p className={styles.kicker}>YOUR WORKSPACE, EXPLAINED</p><h2 id="docs-title">A clear path<br /><span>from setup to teamwork.</span></h2></div><p>Step-by-step documentation, real interface screenshots, and answers when you get stuck.</p></div>
-          <div className={styles.docsCards}>{[
-            ["prerequisites", "Before you start", "Check the computer, Git, account, and AI tool requirements."],
-            ["download-install", "Download & set up", "Install on your platform and connect your workspace."],
-            ["first-conversation", "Your first conversation", "Start with a repository, or just an idea."],
-            ["sharing", "Build with your team", "Invite guests, review changes, and hand off work."],
-          ].map(([slug, title, body]) => <Link key={slug} href={`/docs/${slug}`}><h3>{title} <span aria-hidden="true">↗</span></h3><p>{body}</p></Link>)}</div>
-          <Link href="/docs" className={styles.secondaryButton}>Explore all docs <Arrow /></Link>
+          <div className={styles.sectionHeading}>
+            <p className={styles.kicker}>Your workspace, explained</p>
+            <h2 id="docs-title">A clear path from setup to teamwork.</h2>
+            <p>Step-by-step documentation, real interface screenshots, and answers when you get stuck.</p>
+          </div>
+          <div className={styles.docsCards}>{docsCards.map(([slug, step, title, body]) => (
+            <Link key={slug} href={`/docs/${slug}`}>
+              <span className={styles.docsBadge}>{step}</span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </Link>
+          ))}</div>
+          <Link href="/docs" className={styles.learnMore}>Explore all docs <Arrow /></Link>
         </section>
-        <section id="faq" className={`${styles.section} ${styles.faq}`} aria-labelledby="faq-title"><div><p className={styles.kicker}>A LITTLE MORE CONTEXT</p><h2 id="faq-title">Glad you asked.</h2><p>The details, before you dive in.</p></div><div className={styles.questions}>{questions.map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div></section>
-        <section className={styles.finalCta}><span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span><h2>Build something great.<br /><span>Together.</span></h2><Link href="/workspace" className={styles.primaryButton}>Open your workspace <Arrow /></Link><p>Good ideas deserve good company.</p></section>
+
+        <section id="faq" className={`${styles.section} ${styles.faq}`} aria-labelledby="faq-title">
+          <div className={styles.sectionHeading}>
+            <p className={styles.kicker}>A little more context</p>
+            <h2 id="faq-title">Glad you asked.</h2>
+          </div>
+          <div className={styles.questions}>{questions.map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div>
+        </section>
+
+        <section className={styles.finalCta}>
+          <span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span>
+          <h2>Build something great.<br /><span>Together.</span></h2>
+          <Link href="/workspace" className={styles.primaryButton}>Open your workspace <Arrow /></Link>
+          <p>Good ideas deserve good company.</p>
+        </section>
       </main>
-      <footer className={styles.footer}><Link href="/" aria-label="Multiplayer AI home"><Brand /></Link><p>A shared space for your next big idea.</p><nav aria-label="Footer navigation"><a href="#product">Product</a><a href="#download">Downloads</a><Link href="/docs">Docs</Link><a href="#faq">FAQ</a></nav><span>© {new Date().getFullYear()} Multiplayer AI</span></footer>
+      <footer className={styles.footer}>
+        <div className={styles.footerInner}>
+          <div className={styles.footerBrand}>
+            <Link href="/" aria-label="Multiplayer AI home"><Brand /></Link>
+            <p>A shared space for your next big idea.</p>
+          </div>
+          <div className={styles.footerColumns}>
+            <section>
+              <h3>[Product]</h3>
+              <div>
+                <a href="#product">Product</a>
+                <a href="#how-it-works">How it works</a>
+                <a href="#download">Downloads</a>
+                <a href="#faq">FAQ</a>
+              </div>
+            </section>
+            <section>
+              <h3>[Documentation]</h3>
+              <div>
+                <Link href="/docs">All docs</Link>
+                <Link href="/docs/prerequisites">Before you start</Link>
+                <Link href="/docs/download-install">Download &amp; set up</Link>
+                <Link href="/docs/first-conversation">Your first conversation</Link>
+              </div>
+            </section>
+            <section>
+              <h3>[Workspace]</h3>
+              <div>
+                <Link href="/workspace">Open workspace</Link>
+                <Link href="/login">Sign in</Link>
+                <Link href="/account">Your account</Link>
+              </div>
+            </section>
+          </div>
+          <div className={styles.footerMeta}><span>© {new Date().getFullYear()} Multiplayer AI</span></div>
+        </div>
+      </footer>
     </div>
   );
 }

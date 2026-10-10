@@ -236,7 +236,7 @@ Choose **Open my room** on a project card to enter your working space. Viewers s
 
 Inside a room, expand **Repositories & chats** groups and select a conversation. The **+** next to a repository starts a new chat. The toolbar’s back and forward arrows navigate page history; **Back to projects** returns to the workspace.` },
       { id: "room-layout", title: "The four room panels", body: `- **Left:** repositories, conversation spaces, AI chats, and teammate navigation.
-- **Centre:** the active AI conversation or file contents.
+- **Centre:** the active AI conversation or file contents. The chat header carries **Briefing**, **Activity & checkpoints**, and **Providers**, so the conversation itself stays prompts, replies, and tool calls.
 - **Top right:** **All files** and **Changes**, with task assignment, handoff, and AI review actions.
 - **Bottom right:** the terminal panel, when opened. Interactive shell availability depends on the environment.
 
@@ -389,7 +389,7 @@ After recovery or an accepted handoff, read the conversation, inspect uploaded c
     slug: "briefings-memory", category: "Work with AI", title: "Conversation briefings & memory",
     description: "Catch up from recorded evidence and review what the team’s AI should remember.",
     sections: [
-      { id: "briefing", title: "Start with the conversation briefing", body: `Expand **Conversation briefing** when entering a chat. It organises the goal, accepted decisions, recorded progress, blockers/checks, and next action. **Source evidence** shows what the draft is based on.
+      { id: "briefing", title: "Start with the conversation briefing", body: `Select **Briefing** in the chat header when entering a chat. It organises the goal, accepted decisions, recorded progress, blockers/checks, and next action. **Source evidence** shows what the draft is based on.
 
 The initial briefing is assembled from recorded activity. It distinguishes AI-reported work from saved changes and approved decisions. It is a starting point to review, not a guarantee that the task is finished.`, screenshot: "briefing" },
       { id: "edit", title: "Edit and update a briefing", body: `Choose **Edit briefing**, correct the fields, and select **Save briefing**. If sources changed, **Needs updating** prompts you to check them. **Refresh evidence, keep draft** updates the source version while preserving your draft; **Replace draft from sources** rebuilds it.
