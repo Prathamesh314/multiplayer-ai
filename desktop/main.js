@@ -199,10 +199,14 @@ async function connect() {
   connecting = controller;
   if (!settings.url) { showSetup(); return; }
   report("Connecting to your workspace…");
+  const window = createWorkspace();
+  // Nothing else is on screen during a normal launch, so present the window while the
+  // readiness check runs rather than leaving the user with no sign the app started.
+  const opening = !window.webContents.getURL();
+  if (opening) window.show();
   try {
     await waitForServer(settings.url, { timeoutMs: serverProcess ? 90000 : 15000, signal: controller.signal });
-    if (controller.signal.aborted || quitting) return;
-    const window = createWorkspace();
+    if (controller.signal.aborted || quitting || window.isDestroyed()) return;
     await window.loadURL(new URL("/workspace", settings.url).href);
     if (controller.signal.aborted || window.isDestroyed() || quitting) return;
     window.show();
@@ -213,6 +217,7 @@ async function connect() {
   } catch (error) {
     if (!controller.signal.aborted && !quitting) {
       report(error.message);
+      if (opening && !window.isDestroyed()) window.destroy();
       showSetup();
     }
   }
@@ -459,8 +464,10 @@ if (!app.requestSingleInstanceLock()) {
       { role: "windowMenu" },
     ]));
     startDevelopmentServer();
-    showSetup();
+    // A configured build is the workspace: open it straight away so the app shows the same
+    // sign-in and workspace pages as the browser. Setup is only for builds with no address.
     if (settings.url) void connect();
+    else showSetup();
     configureUpdates();
     app.on("activate", showWorkspace);
   }).catch(error => { dialog.showErrorBox("Desktop startup failed", error.message); app.exit(1); });

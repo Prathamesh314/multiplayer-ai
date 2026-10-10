@@ -121,6 +121,7 @@
 .platformUnavailable { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 46px; padding: 10px 13px; border: 1px solid var(--vs-border); border-radius: 5px; color: var(--vs-muted); font-size: 15px; }
 .downloadGrid .platformUnavailable small { margin: 0; }
 .previewNotice { margin-bottom: 20px; padding: 15px 18px; border: 1px solid color-mix(in srgb, var(--vs-accent) 21%, transparent); border-radius: 10px; color: var(--vs-fg); font-size: 15px; line-height: 1.7; background: color-mix(in srgb, var(--vs-accent) 4%, transparent); }
+.previewNotice code { padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--vs-accent) 12%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
 .downloadGrid small { display: block; color: var(--vs-muted); font-size: 13px; margin-top: 10px; }
 .downloadFootnote { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-top: 23px; }
 .downloadFootnote p { font-size: 14px; line-height: 1.8; color: var(--vs-muted); }

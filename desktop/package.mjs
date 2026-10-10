@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url);
-const { buildTarget, packagedExecutable } = require("./targets.cjs");
+const { buildTarget, macSigning, packagedExecutable } = require("./targets.cjs");
 const { platform, arch, release, setup, builderArgs } = buildTarget(process.argv.slice(2));
 const env = { ...localReleaseEnvironment(), DESKTOP_RELEASE: release ? "1" : "0" };
 if (setup) {
@@ -43,3 +43,10 @@ if (hashes.length) await writeFile(join("desktop-dist", "SHA256SUMS-" + platform
 await writeFile(".desktop-build/output.json", JSON.stringify({ directory: env.DESKTOP_OUTPUT_DIR, executable: packagedExecutable(env.DESKTOP_OUTPUT_DIR, platform, arch), platform, arch, release }, null, 2));
 console.log("Unpacked application: " + env.DESKTOP_OUTPUT_DIR);
 console.log("Installers: " + resolve("desktop-dist"));
+if (platform === "darwin" && macSigning(env, release).identity === "-") {
+  console.warn("\nWarning: this macOS build is ad-hoc signed because no CSC_LINK or CSC_NAME was configured.");
+  console.warn("Gatekeeper will not start it once a browser quarantines the download; it stalls before any window appears.");
+  console.warn("Testers must clear the quarantine flag after installing:");
+  console.warn("  xattr -dr com.apple.quarantine '/Applications/Multiplayer AI.app'");
+  console.warn("Configure a Developer ID certificate and notarization credentials to distribute a build that just opens.");
+}
