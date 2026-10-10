@@ -91,6 +91,17 @@ try {
   assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Your organizations","selection restores search trigger focus");
   await click('button[title="Northstar Studio"]');
   await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Northstar Studio"'),"organization rail switches back");
+  // The signed-in card lives in the organisation rail and is the only copy; it
+  // carries the shortcuts and opens the account menu the avatar used to own.
+  const rail='nav[aria-label="Organisations"]';
+  assert.ok(await evaluate(`document.querySelector(${JSON.stringify(rail)}).innerText.includes("Alex Chen")&&document.querySelector(${JSON.stringify(rail)}).innerText.includes("@alex")`),"profile card names the signed-in person in the rail");
+  assert.equal(await evaluate('document.querySelectorAll(\'#workspace-navigation button[aria-label="AI providers"]\').length'),0,"the projects column no longer repeats the profile card");
+  for(const label of ['AI providers','Your computers']) assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(rail+' button[aria-label="'+label+'"]')})`),label+" shortcut stays on the card");
+  await click(`${rail} button[aria-haspopup="menu"]`);
+  await eventually(()=>evaluate('!!document.querySelector("[role=menu]")'),"account menu opens from the profile card");
+  for(const label of ['AI providers','Your computers','Account settings','Sign out']) assert.ok(await evaluate(`document.querySelector("[role=menu]").innerText.includes(${JSON.stringify(label)})`),label+" stays reachable after the avatar button was removed");
+  await escape();
+  await eventually(()=>evaluate('!document.querySelector("[role=menu]")'),"Escape closes the account menu");
   await viewport(320);
   await click('button[aria-label="Your organizations"]');
   await eventually(()=>evaluate('!!document.querySelector(".composer-picker")'),"mobile organization search");

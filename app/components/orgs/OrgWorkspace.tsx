@@ -384,36 +384,31 @@ function OrgRail({
         </div>
       </div>
 
-      <div ref={profileRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          title={me ? me.displayName : "Profile"}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent transition hover:opacity-80"
-        >
-          {me ? initials(me.displayName) : "?"}
-        </button>
+      <div ref={profileRef} className="relative w-full">
+        <div className={chatStyles.profileBar}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            title={me ? me.displayName : "Profile"}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={chatStyles.profileTrigger}
+          >
+            <span className={chatStyles.profileAvatar} aria-hidden="true">{me ? initials(me.displayName) : "?"}</span>
+            <span className={chatStyles.profileName}>
+              <span className={chatStyles.profileDisplayName}>{me?.displayName ?? "Signed out"}</span>
+              {me && <span className={chatStyles.profileHandle}>@{me.handle}</span>}
+            </span>
+          </button>
+          <button type="button" className={chatStyles.iconButton} aria-label="AI providers" title="AI providers" onClick={onOpenProviders}><SparkleIcon /></button>
+          <button type="button" className={chatStyles.iconButton} aria-label="Your computers" title="Your computers" onClick={onOpenDevices}><TerminalIcon /></button>
+        </div>
 
         {menuOpen && (
           <div
             role="menu"
             className="absolute bottom-0 left-full z-50 ml-2 w-60 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
           >
-            <div className="flex items-center gap-2.5 border-b border-vs-border px-3 py-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-[12px] font-semibold uppercase text-vs-accent">
-                {me ? initials(me.displayName) : "?"}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-[14px] font-medium text-vs-fg">
-                  {me?.displayName ?? "Signed out"}
-                </p>
-                {me && (
-                  <p className="truncate text-[12px] text-vs-muted">@{me.handle}</p>
-                )}
-              </div>
-            </div>
             {me?.email && (
               <div className="px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wider text-vs-muted">Email</p>
@@ -674,14 +669,6 @@ function OrgPanel({
           </div>
 
         </div>
-        {me && (
-          <div className={chatStyles.profileBar}>
-            <span className={chatStyles.profileAvatar}>{initials(me.displayName)}</span>
-            <div className={chatStyles.profileName}><p>{me.displayName}</p><span>@{me.handle}</span></div>
-            <button type="button" className={chatStyles.iconButton} aria-label="AI providers" title="AI providers" onClick={onConnectAi}><SparkleIcon /></button>
-            <button type="button" className={chatStyles.iconButton} aria-label="Your computers" title="Your computers" onClick={onConnectComputer}><TerminalIcon /></button>
-          </div>
-        )}
       </aside>
 
       {connectionsOpen ? (
