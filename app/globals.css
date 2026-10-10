@@ -142,9 +142,13 @@ body {
 .ai-composer-footer { flex-wrap: wrap; row-gap: 8px; }
 .ai-composer textarea { min-width: 0; line-height: 1.55; font-size: 12px; }
 .room-explorer-panel { background: var(--vs-panel); }
+/* The header carries the chat's reference actions, so it needs its own, wider
+   threshold: give the title a line of its own before the actions crowd it. */
+@container (max-width: 720px) {
+  .ai-chat-header > div:first-child { flex-basis: 100%; }
+}
 @container (max-width: 560px) {
   .ai-chat-header { flex-wrap: wrap; padding: 12px; }
-  .ai-chat-header > div:first-child { flex-basis: 100%; }
   .ai-composer { padding: 10px 12px; }
 }
 @media (max-width: 767px) {

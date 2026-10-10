@@ -7,9 +7,9 @@ import styles from "./marketing.module.css";
 
 const views = [
   {
-    ...screenshots.connections,
-    label: "Team context",
-    caption: "Bring selected Slack and Discord channels into your project’s shared context.",
+    ...screenshots.conversation,
+    label: "AI conversations",
+    caption: "Follow the agent’s work, read its response, and see which files changed.",
   },
   {
     ...screenshots.changes,
@@ -17,9 +17,9 @@ const views = [
     caption: "Your code, your teammates, and the changes to review. One shared room.",
   },
   {
-    ...screenshots.conversation,
-    label: "AI conversations",
-    caption: "Follow the agent’s work, read its response, and see which files changed.",
+    ...screenshots.connections,
+    label: "Team context",
+    caption: "Bring selected Slack and Discord channels into your project’s shared context.",
   },
   {
     ...screenshots.handoff,
@@ -34,7 +34,6 @@ export function ProductPreview() {
 
   return (
     <figure className={styles.preview}>
-      <AppScreenshot {...view} />
       <div className={styles.previewControls}>
         <div role="group" aria-label="Explore screenshots of the app">
           {views.map((item, index) => (
@@ -50,6 +49,7 @@ export function ProductPreview() {
         </div>
         <span className={styles.previewLabel}>Captured in Multiplayer AI</span>
       </div>
+      <AppScreenshot {...view} />
       <figcaption className={styles.screenshotCaption}>
         <p aria-live="polite">{view.caption}</p>
         <span>Actual app interface · Sample project and demo accounts</span>

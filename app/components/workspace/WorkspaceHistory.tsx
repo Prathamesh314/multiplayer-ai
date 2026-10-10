@@ -62,7 +62,7 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   const synced = data?.turns.find(item => item.syncedAt)?.syncedAt;
   const syncLabel = synced ? `Activity synced ${new Date(synced).toLocaleTimeString()}` : "No activity synced yet";
   return <>
-    <button className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" title={`${syncLabel}${data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}`} onClick={() => {
+    <button className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" title={`${syncLabel}${data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}`} onClick={() => {
       setOpen(true);
       // Read on opening even if an older request is pending. The generation
       // check keeps that older response from replacing the fresh result.

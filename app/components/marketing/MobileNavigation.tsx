@@ -18,7 +18,7 @@ export function MobileNavigation() {
         }
       }}
     >
-      <summary aria-label="Open navigation"><span /><span /></summary>
+      <summary aria-label="Open navigation"><span /><span /><span /></summary>
       <nav
         aria-label="Mobile navigation"
         onClick={(event) => {
@@ -31,8 +31,8 @@ export function MobileNavigation() {
         <a href="#how-it-works">How it works</a>
         <Link href="/docs">Docs</Link>
         <a href="#faq">FAQ</a>
-        <a href="#download">Get the app</a>
-        <Link href="/workspace">Open workspace ↗</Link>
+        <a href="#download">Download</a>
+        <Link href="/workspace">Open workspace</Link>
       </nav>
     </details>
   );

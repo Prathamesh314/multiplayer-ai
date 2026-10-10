@@ -11,18 +11,16 @@ type Props = {
   width: number;
   height: number;
   label: string;
-  focus?: "team" | "handoff" | "code" | "agent";
 };
 
-export function AppScreenshot({ src, alt, width, height, label, focus }: Props) {
+export function AppScreenshot({ src, alt, width, height, label }: Props) {
   src = publicAsset(src);
   const dialog = useRef<HTMLDialogElement>(null);
   return (
     <>
       <button
         type="button"
-        className={`${styles.screenshotButton} ${focus ? styles.featureScreenshot : ""}`}
-        data-focus={focus}
+        className={styles.screenshotButton}
         aria-label={`Enlarge screenshot: ${label}`}
         onClick={() => dialog.current?.showModal()}
       >
