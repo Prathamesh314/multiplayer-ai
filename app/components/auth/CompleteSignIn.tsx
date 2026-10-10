@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { safeReturnPath } from "../../lib/auth/return-path";
 import { invitationDetails } from "../../lib/auth/invitation-link";
 import { authRequest, authErrorMessage } from "../../lib/auth/request";
+import { ExecutionRequirements } from "../ai/ExecutionRequirements";
 import { AuthShell } from "./AuthForm";
 
 export function CompleteSignIn() {
@@ -15,13 +16,14 @@ export function CompleteSignIn() {
   const invitation = params.get("invite") ?? /^\/invite\/([a-zA-Z0-9_-]{43})$/.exec(next)?.[1] ?? "";
   const [token, setToken] = useState(invitation), [retry, setRetry] = useState(0);
   const [error, setError] = useState<string | null>(null), [ready, setReady] = useState(false), [approved, setApproved] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false), [firstRun, setFirstRun] = useState(false);
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) { location.replace(`/login?${params}`); return; }
     let cancelled = false;
-    authRequest("/api/auth/complete", "POST", { invitationToken: invitationDetails(token)?.token || token || undefined })
-      .then(() => { if (cancelled) return; if (desktopId) setReady(true); else location.replace(next); })
+    authRequest<{ onboarded?: boolean }>("/api/auth/complete", "POST", { invitationToken: invitationDetails(token)?.token || token || undefined })
+      // Only a server that positively reports a first sign-in holds someone here.
+      .then(result => { if (cancelled) return; if (desktopId) setReady(true); else if (result.onboarded === false) setFirstRun(true); else location.replace(next); })
       .catch(cause => { if (!cancelled) setError(authErrorMessage(cause, "Could not open your workspace. Please try again.")); });
     return () => { cancelled = true; };
     // Read the edited invitation only on explicit retry, not on every keystroke.
@@ -33,6 +35,18 @@ export function CompleteSignIn() {
     catch (cause) { setError(authErrorMessage(cause, "Could not approve desktop sign-in.")); }
     finally { setBusy(false); }
   }
+  async function finishFirstRun() {
+    setBusy(true);
+    // Never block the workspace on bookkeeping; at worst the step shows once more.
+    await authRequest("/api/auth/onboarded", "POST", {}).catch(() => {});
+    location.replace(next);
+  }
+  if (firstRun) return <AuthShell><section className="space-y-4 rounded-xl border border-vs-border bg-vs-panel p-6">
+    <h1 className="text-xl font-bold">Set up AI on your computer</h1>
+    <p className="leading-6 text-vs-muted">Your account is ready. You only see this step once.</p>
+    <ExecutionRequirements />
+    <button disabled={busy} onClick={finishFirstRun} className="w-full rounded-xl bg-vs-accent p-3 text-vs-accent-fg disabled:opacity-50">{busy ? "Opening your workspace…" : "Continue to your workspace"}</button>
+  </section></AuthShell>;
   return <AuthShell><section className="space-y-4 rounded-xl border border-vs-border bg-vs-panel p-6">
     <h1 className="text-xl font-bold">{approved ? "Desktop sign-in approved" : ready ? "Confirm desktop sign-in" : "Opening your workspace"}</h1>
     {approved ? <p className="leading-6 text-vs-muted">Return to the desktop app and select Complete sign-in. You can close this browser tab.</p>
