@@ -125,6 +125,19 @@ export type RunTurnEvent = {
   at: number;
 };
 
+/**
+ * A chat was named. Unlike the other events this carries the new text: the
+ * title is not sensitive beyond the run itself (a watcher already reads every
+ * turn of it), and the header animates the change, which needs the value in
+ * the same tick rather than a refetch later.
+ */
+export type RunRenamedEvent = {
+  type: "run.renamed";
+  runId: string;
+  title: string;
+  at: number;
+};
+
 /** A run reached a terminal state. headSha is the commit it produced, if any. */
 export type RunFinishedEvent = {
   type: "run.finished";
@@ -147,6 +160,7 @@ export type SessionEvent =
   | RunStartedEvent
   | RunOutputEvent
   | RunTurnEvent
+  | RunRenamedEvent
   | RunFinishedEvent;
 
 export type EventHandler = (event: SessionEvent) => void;

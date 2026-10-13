@@ -10,11 +10,13 @@ import { agentById } from "../../../lib/ai/catalog";
 import { executeAgentRun } from "../../../lib/ai/execute";
 import {
   appendMessage,
+  autoRenameRun,
   createRun,
   getRun,
   joinRun,
   runHasOtherAuthors,
 } from "../../../lib/ai/runs";
+import { draftRunTitle, refineRunTitle, MAX_TITLE } from "../../../lib/ai/titles";
 import { checkRunAllowed } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
@@ -77,6 +79,26 @@ export type AiRunRequest = {
    */
   repoId?: string;
 };
+
+/**
+ * Improve a brand-new chat's drafted name, once, in the background.
+ *
+ * Deliberately not awaited: the run is already starting, and a naming gateway
+ * that is slow or down must never delay or fail a turn. `autoRenameRun` is the
+ * safety catch — if the driver renamed the chat while this was in flight, the
+ * update matches no row and nothing is broadcast.
+ */
+async function nameChat(sessionId: string, runId: string, prompt: string): Promise<void> {
+  try {
+    const refined = await refineRunTitle(prompt);
+    if (!refined) return;
+    const title = await autoRenameRun(runId, refined.slice(0, MAX_TITLE));
+    if (!title) return;
+    await (await events()).publish(sessionId, { type: "run.renamed", runId, title, at: Date.now() });
+  } catch (cause) {
+    console.warn("Chat naming failed", cause);
+  }
+}
 
 /**
  * Runs a coding agent against the session's working copy.
@@ -195,14 +217,21 @@ async function handlePOST(request: Request) {
   let importedContext: string | null = null;
 
   if (!run) {
+    // A chat is named from the request that opens it, and only then. The draft
+    // is pure and instant so the first turn pays nothing for it; when a naming
+    // gateway is configured, a better name replaces it a moment later (below).
+    // A client-supplied title is a person's choice and is never refined.
+    const supplied = typeof body.title === "string" ? body.title.trim().slice(0, MAX_TITLE) : "";
     run = await createRun({
       sessionId,
       repoId,
       startedBy: result.user.id,
       agentId: agent.id,
       baseSha: headSha,
-      title: typeof body.title === "string" ? body.title.trim().slice(0, 200) || prompt.slice(0, 80) : prompt.slice(0, 80),
+      title: supplied || draftRunTitle(prompt),
+      titleSource: supplied ? "manual" : "auto",
     });
+    if (!supplied) void nameChat(sessionId, run.id, prompt);
     await (await events()).publish(sessionId, {
       type: "run.started",
       runId: run.id,

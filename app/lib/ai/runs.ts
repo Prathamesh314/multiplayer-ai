@@ -124,13 +124,18 @@ export async function createRun(input: {
   agentId: AgentId;
   baseSha: string;
   title?: string | null;
+  /**
+   * "auto" is a drafted name that background refinement may still replace
+   * once; "manual" is a name someone chose, which nothing automatic touches.
+   */
+  titleSource?: "auto" | "manual";
   /** Which room repo the chat targets; null/omitted = the project fork. */
   repoId?: string | null;
 }): Promise<AgentRun> {
   return transaction(async (tx) => {
     const inserted = await tx.query<{ id: string }>(
-      `INSERT INTO agent_runs (session_id, repo_id, started_by, driver_user_id, agent_id, base_sha, title, status, started_at)
-       VALUES ($1, $2, $3, $3, $4, $5, $6, 'completed', NULL)
+      `INSERT INTO agent_runs (session_id, repo_id, started_by, driver_user_id, agent_id, base_sha, title, title_source, status, started_at)
+       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'completed', NULL)
        RETURNING id`,
       [
         input.sessionId,
@@ -139,6 +144,7 @@ export async function createRun(input: {
         input.agentId,
         input.baseSha,
         input.title ?? null,
+        input.titleSource ?? "auto",
       ],
     );
     const id = inserted.rows[0].id;
@@ -252,9 +258,31 @@ export async function finishRun(
   );
 }
 
-/** Renames a run (its title defaults to the first prompt). */
+/**
+ * Renames a run on a person's instruction. This is the only way a title
+ * becomes 'manual', and once it is, nothing automatic writes it again.
+ */
 export async function renameRun(runId: string, title: string): Promise<void> {
-  await query(`UPDATE agent_runs SET title = $2 WHERE id = $1`, [runId, title]);
+  await query(`UPDATE agent_runs SET title = $2, title_source = 'manual' WHERE id = $1`, [runId, title]);
+}
+
+/**
+ * Replaces a drafted name with a refined one. A no-op once the driver has
+ * renamed the chat themselves — the WHERE clause is the whole guarantee that
+ * background refinement can never overwrite a deliberate name, including when
+ * the rename lands while the refinement request is still in flight.
+ *
+ * Returns the title now in effect, so a caller can skip broadcasting a change
+ * that did not happen.
+ */
+export async function autoRenameRun(runId: string, title: string): Promise<string | null> {
+  const row = await queryOne<{ title: string | null }>(
+    `UPDATE agent_runs SET title = $2
+      WHERE id = $1 AND title_source = 'auto' AND title IS DISTINCT FROM $2
+      RETURNING title`,
+    [runId, title],
+  );
+  return row?.title ?? null;
 }
 
 /** Archives or restores a run — a personal hide, set only by its starter. */

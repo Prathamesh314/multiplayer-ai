@@ -12,6 +12,11 @@ import type { IPty } from "node-pty";
  * The registry lives on globalThis so a dev-time module reload does not orphan
  * running shells, and because the SSE (GET) and control (POST) handlers must
  * reach the same map inside the one Next server process.
+ *
+ * Every shell records the account that created it. Ids are client-generated,
+ * so without that an attacker who guessed (or was told) an id could attach to
+ * someone else's live shell; with it, a mismatched owner is treated exactly
+ * like a shell that does not exist.
  */
 
 /** Recent output kept per shell, so a reconnecting terminal can repaint. */
@@ -21,6 +26,8 @@ const GRACE_MS = 10_000;
 
 type Session = {
   pty: IPty;
+  /** The account that opened this shell; nobody else may reach it. */
+  ownerId: string;
   /** Tail of raw output, capped at RING_BYTES, replayed on (re)subscribe. */
   ring: string;
   subscribers: Set<(chunk: string) => void>;
@@ -37,10 +44,22 @@ function loginShell(): string {
   return process.platform === "win32" ? "powershell.exe" : "/bin/zsh";
 }
 
-/** Returns the live shell for `id`, spawning one the first time. */
-export function getOrCreate(id: string, cols: number, rows: number): void {
+/** A shell `ownerId` is allowed to reach, or null (missing, dead, or theirs). */
+function owned(id: string, ownerId: string): Session | null {
+  const session = store.get(id);
+  if (!session || session.ownerId !== ownerId) return null;
+  return session;
+}
+
+/**
+ * Returns the live shell for `id`, spawning one the first time. False means
+ * the id is already taken by another account — the caller must not be told
+ * anything more specific than "that shell is not available to you".
+ */
+export function getOrCreate(id: string, cols: number, rows: number, ownerId: string): boolean {
   const existing = store.get(id);
-  if (existing && !existing.exited) return;
+  if (existing && existing.ownerId !== ownerId) return false;
+  if (existing && !existing.exited) return true;
 
   const term = pty.spawn(loginShell(), ["-il"], {
     name: "xterm-256color",
@@ -52,6 +71,7 @@ export function getOrCreate(id: string, cols: number, rows: number): void {
 
   const session: Session = {
     pty: term,
+    ownerId,
     ring: "",
     subscribers: new Set(),
     exitHandlers: new Set(),
@@ -72,6 +92,7 @@ export function getOrCreate(id: string, cols: number, rows: number): void {
   });
 
   store.set(id, session);
+  return true;
 }
 
 /**
@@ -81,10 +102,11 @@ export function getOrCreate(id: string, cols: number, rows: number): void {
  */
 export function subscribe(
   id: string,
+  ownerId: string,
   onData: (chunk: string) => void,
   onExit: () => void,
 ): () => void {
-  const session = store.get(id);
+  const session = owned(id, ownerId);
   if (!session) {
     onExit();
     return () => {};
@@ -108,15 +130,15 @@ export function subscribe(
   };
 }
 
-export function write(id: string, data: string): boolean {
-  const session = store.get(id);
+export function write(id: string, ownerId: string, data: string): boolean {
+  const session = owned(id, ownerId);
   if (!session || session.exited) return false;
   session.pty.write(data);
   return true;
 }
 
-export function resize(id: string, cols: number, rows: number): boolean {
-  const session = store.get(id);
+export function resize(id: string, ownerId: string, cols: number, rows: number): boolean {
+  const session = owned(id, ownerId);
   if (!session || session.exited) return false;
   try {
     session.pty.resize(Math.max(1, cols), Math.max(1, rows));
@@ -126,9 +148,12 @@ export function resize(id: string, cols: number, rows: number): boolean {
   return true;
 }
 
-/** Kills a shell and forgets it — used on tab close and after the grace period. */
-export function destroy(id: string): void {
-  const session = store.get(id);
+/**
+ * Kills a shell and forgets it — used on tab close and after the grace period.
+ * `ownerId` is omitted by the internal reaper, which is not acting for anyone.
+ */
+export function destroy(id: string, ownerId?: string): void {
+  const session = ownerId === undefined ? store.get(id) : owned(id, ownerId);
   if (!session) return;
   store.delete(id);
   if (session.graceTimer) clearTimeout(session.graceTimer);

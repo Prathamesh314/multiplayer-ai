@@ -875,6 +875,7 @@ export function Workspace({
   function navigateGuide(action: RoomGuideAction) {
     setHelpDialog(null);
     if (action === "providers" || action === "devices") setHelpDialog(action);
+    else if (action === "memory") setMemoryOpen(true);
     else if (action === "invite") setInviteOpen(true);
     else if (action === "files") {
       if (!hasRepo && !readOnly) openAddRepository();
@@ -903,7 +904,6 @@ export function Workspace({
       onDrop={onDrop}
     >
       <TopBar
-        onOpenMemory={() => setMemoryOpen(true)}
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
         inviteLabel={enteredRun ? "Share chat" : "Invite"}

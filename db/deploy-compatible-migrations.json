@@ -1,5 +1,6 @@
 {
   "049_storage_accounting.sql": "179a7e2f62427fac485edf8055d4acdde9d2aaa0a31aa61a45985aa4d7275e3d",
   "050_clerk_auth.sql": "067251c7a41087c2960510f035576cce6db2b6a4ad4d475a20b0b18d34b2f3a5",
-  "051_first_run_setup.sql": "deb2d1bc7e427597702205ee411b48c7a8977090d7adb7aae43685881de51c62"
+  "051_first_run_setup.sql": "deb2d1bc7e427597702205ee411b48c7a8977090d7adb7aae43685881de51c62",
+  "052_run_auto_title.sql": "c179c1cdf5e376740b1620cf4b3506502505ca855ea725341838796cbfdbdd02"
 }

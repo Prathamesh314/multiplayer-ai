@@ -6,7 +6,7 @@ import { Modal } from "../ui/Modal";
 import { ComposerPicker } from "./ComposerPicker";
 import { ModelPicker } from "./ModelPicker";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { agentById, type AgentAuth, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import {
   fetchAgents,
@@ -38,6 +38,7 @@ import { QueuedMessages } from "./QueuedMessages";
 import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
+import { useTitleTransition } from "./useTitleTransition";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { BriefingCard } from "../collaboration/BriefingCard";
 import { CollaborationControls } from "../collaboration/CollaborationControls";
@@ -171,6 +172,13 @@ export function AiPanel({
   // Composer selectors. Reset together with the provider, since the options do.
   const [model, setModel] = useState("");
   const [showProviders, setShowProviders] = useState(false);
+  // Held in state, not a ref: the popover is positioned from this element
+  // during render, so it has to be a value React re-renders on.
+  const [providersButton, setProvidersButton] = useState<HTMLButtonElement | null>(null);
+  const closeProviders = useCallback(() => setShowProviders(false), []);
+  // A rename that arrived over the room stream, ahead of the parent's copy of
+  // the run. Scoped to one run id so it cannot leak onto the next chat.
+  const [renamedTitle, setRenamedTitle] = useState<{ runId: string; title: string } | null>(null);
   const [effort, setEffort] = useState("");
   // Candidate chats to import context from. The chosen one (forkFromRunId) is
   // controlled by the parent so a "Fork" action elsewhere preselects it here.
@@ -360,6 +368,10 @@ export function AiPanel({
           ]);
         }
       },
+      // The chat's own name settling in, or its driver renaming it in another
+      // tab. Held locally rather than refetching the run: the heading
+      // cross-fades, and a refetch would land the new text with no transition.
+      onRunRenamed: (event) => setRenamedTitle({ runId: event.runId, title: event.title }),
       onRunFinished: (event) => {
         // Reload the entered run so its complete, stored output replaces the
         // live tail (which may have started mid-run). Only for a run driven by
@@ -812,7 +824,8 @@ export function AiPanel({
       void fetchRun(sessionId, result.runId).then(({ run }) => onEntered?.(run)).catch(() => {});
     }
   }
-  const chatTitle = entered?.title ?? (entered ? "Agent run" : "New chat");
+  const liveTitle = entered && renamedTitle?.runId === entered.id ? renamedTitle.title : entered?.title;
+  const chatTitle = liveTitle ?? (entered ? "Agent run" : "New chat");
   const repoLabel = enteredRepoLabel ?? repoOptions.find(option => option.id === (entered ? entered.repoId ?? "" : repoId ?? ""))?.label;
   const executionLabel = active?.execution === "runner" ? "Paired computer" : "App’s machine";
   const executionDetail = active?.execution === "runner"
@@ -825,7 +838,7 @@ export function AiPanel({
         {/* A basis keeps the title readable; the actions wrap below it instead
             of squeezing the chat's name down to an ellipsis. */}
         <div className="min-w-0 flex-1 basis-44">
-          <h2 className="truncate text-[13px] font-semibold text-vs-fg" title={chatTitle}>{chatTitle}</h2>
+          <ChatTitle title={chatTitle} runId={entered?.id ?? null} />
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
             {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
             {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
@@ -858,7 +871,7 @@ export function AiPanel({
             the conversation, so they open from here instead of sitting above it. */}
         {entered && <button type="button" onClick={() => setBriefingOpen(true)} className="rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">Briefing</button>}
         {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
-        <button type="button" onClick={() => setShowProviders(previous => !previous)} aria-expanded={showProviders} className="rounded px-1.5 py-1 text-[11px] text-vs-muted hover:bg-vs-hover">Providers</button>
+        <button ref={setProvidersButton} type="button" onClick={() => setShowProviders(previous => !previous)} aria-haspopup="dialog" aria-expanded={showProviders} className={`rounded px-1.5 py-1 text-[11px] transition hover:bg-vs-hover ${showProviders ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>Providers</button>
         {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
         <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
@@ -878,20 +891,37 @@ export function AiPanel({
       </Modal>}
 
       {/* Once an agent is ready the provider/model/capacity live in the composer
-          footer; the full selector is only for connecting or installing one. */}
-      {(showProviders || (!entered && !ready && serverCanRun && !computerUnavailable)) && (
+          footer; the full selector is only for connecting or installing one.
+          Before anything is set up it is the panel's first step, so it sits
+          inline; afterwards it is a menu, and opens over the conversation. */}
+      {!showProviders && !entered && !ready && serverCanRun && !computerUnavailable && (
         <div className="vs-scroll max-h-[35%] shrink-0 overflow-y-auto">
-        {active?.installed && <p className="px-4 py-2 text-xs leading-5 text-vs-muted">{executionDetail}</p>}
-        <AgentSelector
-          agents={agents}
-          connected={connected}
-          installFor={installFor}
-          refreshing={refreshing}
-          onSelect={selectProvider}
-          onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
-          onRecheck={recheck}
-        />
+          {active?.installed && <p className="px-4 pt-2 text-xs leading-5 text-vs-muted">{executionDetail}</p>}
+          <AgentSelector
+            agents={agents}
+            connected={connected}
+            installFor={installFor}
+            refreshing={refreshing}
+            onSelect={selectProvider}
+            onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
+            onRecheck={recheck}
+          />
         </div>
+      )}
+      {showProviders && (
+        <ProvidersPopover anchor={providersButton} onClose={closeProviders}>
+          <AgentSelector
+            variant="menu"
+            detail={active?.installed ? executionDetail : null}
+            agents={agents}
+            connected={connected}
+            installFor={installFor}
+            refreshing={refreshing}
+            onSelect={(id) => { selectProvider(id); closeProviders(); }}
+            onToggleInstall={(id) => setInstallFor((shown) => (shown === id ? null : id))}
+            onRecheck={recheck}
+          />
+        </ProvidersPopover>
       )}
 
       {agentsError && (
@@ -984,9 +1014,100 @@ export function AiPanel({
   );
 }
 
+/** The chat's name in the header, cross-faded as the chat names itself. */
+function ChatTitle({ title, runId }: { title: string; runId: string | null }) {
+  const { shown, className } = useTitleTransition(title, runId);
+  return (
+    <h2 className={`${className} truncate text-[13px] font-semibold text-vs-fg`} title={shown}>
+      {shown}
+    </h2>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Agent selector
 // ---------------------------------------------------------------------------
+
+/**
+ * The provider menu, anchored under the header's "Providers" button.
+ *
+ * It used to drop into the panel's flow, shoving the conversation down with no
+ * transition at all. Floating it on the same surface as the composer pickers
+ * (`.composer-picker` colours, radius, shadow, and `picker-enter`) keeps the
+ * transcript still and makes the menu read like the app's other menus.
+ */
+function ProvidersPopover({
+  anchor,
+  onClose,
+  children,
+}: {
+  anchor: HTMLElement | null;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<CSSProperties>({ visibility: "hidden" });
+
+  useLayoutEffect(() => {
+    // The top layer escapes the panel's overflow, so the menu is never clipped
+    // by the column it opens from.
+    const popup = panel.current;
+    popup?.showPopover?.();
+    function place() {
+      const box = anchor?.getBoundingClientRect();
+      if (!box) return;
+      const width = Math.min(360, window.innerWidth - 24);
+      const below = window.innerHeight - box.bottom - 16;
+      const above = box.top - 16;
+      const openBelow = below >= Math.min(280, above);
+      setPosition({
+        width,
+        // Right-aligned to the trigger, which sits near the panel's edge.
+        left: Math.max(12, Math.min(box.right - width, window.innerWidth - width - 12)),
+        ...(openBelow ? { top: box.bottom + 8 } : { bottom: window.innerHeight - box.top + 8 }),
+        maxHeight: Math.max(220, Math.min(460, openBelow ? below : above)),
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      if (popup?.hidePopover && popup.matches(":popover-open")) popup.hidePopover();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchor]);
+
+  useEffect(() => {
+    function outside(event: PointerEvent) {
+      const target = event.target as Node;
+      if (!panel.current?.contains(target) && !anchor?.contains(target)) onClose();
+    }
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [anchor, onClose]);
+
+  return createPortal(
+    <div
+      ref={panel}
+      popover="manual"
+      role="dialog"
+      aria-label="AI providers"
+      style={position}
+      className="providers-popover"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
 
 function AgentSelector({
   agents,
@@ -996,6 +1117,8 @@ function AgentSelector({
   onSelect,
   onToggleInstall,
   onRecheck,
+  variant = "inline",
+  detail: executionDetail = null,
 }: {
   agents: AgentStatus[] | null;
   connected: string | null;
@@ -1004,45 +1127,59 @@ function AgentSelector({
   onSelect: (id: string) => void;
   onToggleInstall: (id: string) => void;
   onRecheck: () => void;
+  /** "inline" is the first-run setup step; "menu" is the floating popover. */
+  variant?: "inline" | "menu";
+  /** Where turns execute, shown above the list when an agent is installed. */
+  detail?: string | null;
 }) {
   const detail = agents?.find((agent) => agent.id === installFor);
+  const menu = variant === "menu";
 
   return (
-    <div className="shrink-0 border-b border-vs-border px-2 py-2">
-      <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">Agent</span>
+    <div className={menu ? "flex min-h-0 flex-col" : "shrink-0 border-b border-vs-border px-2 py-2"}>
+      <div className={menu ? "composer-picker-heading" : "mb-1.5 flex items-center justify-between px-1"}>
+        <span className={menu ? "" : "text-[11px] font-semibold uppercase tracking-wider text-vs-muted"}>
+          {menu ? "Providers" : "Agent"}
+        </span>
         <button
           type="button"
           onClick={onRecheck}
           disabled={refreshing}
-          className="text-[13px] text-vs-muted transition hover:text-vs-fg disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-normal text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50"
         >
+          {refreshing && <SpinnerIcon className="h-3 w-3" />}
           {refreshing ? "Checking…" : "Recheck"}
         </button>
       </div>
 
+      {menu && executionDetail && (
+        <p className="px-2.5 pb-2 text-[11px] leading-4 text-vs-muted">{executionDetail}</p>
+      )}
+
       {agents === null ? (
-        <p className="flex items-center gap-2 px-1 py-1.5 text-sm text-vs-muted">
+        <p className="flex items-center gap-2 px-3 py-4 text-sm text-vs-muted">
           <SpinnerIcon className="h-3.5 w-3.5" />
           Looking for installed agents…
         </p>
       ) : (
-        <div className="flex flex-col gap-1">
-          {agents.map((agent) => {
+        <div className={`flex flex-col gap-0.5 ${menu ? "vs-scroll min-h-0 overflow-y-auto px-0.5 pb-0.5" : ""}`}>
+          {agents.map((agent, index) => {
             const selected = connected === agent.id;
             return (
               <button
                 key={agent.id}
                 type="button"
+                aria-pressed={agent.installed ? selected : undefined}
                 onClick={() => (agent.installed ? onSelect(agent.id) : onToggleInstall(agent.id))}
-                className={`group flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${
-                  selected
-                    ? "border-vs-accent bg-vs-accent/10"
-                    : "border-transparent hover:border-vs-border hover:bg-vs-hover"
+                // Rows settle in one after another so the list reads as opening
+                // rather than appearing fully formed.
+                style={menu ? { animationDelay: `${index * 40}ms` } : undefined}
+                className={`provider-row group flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-left ${
+                  selected ? "provider-row-selected" : ""
                 }`}
               >
                 <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                  className={`provider-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                     agent.installed ? "bg-vs-accent/15 text-vs-accent" : "bg-vs-hover text-vs-muted"
                   }`}
                 >
@@ -1053,29 +1190,26 @@ function AgentSelector({
                     <span className="truncate text-[14px] font-medium text-vs-fg">{agent.name}</span>
                     {agent.installed && <StatusDot ok={!agent.auth || agent.auth.loggedIn} />}
                   </span>
-                  <span className="block truncate text-[11px] text-vs-muted">
+                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-vs-muted">
                     {agentSubtitle(agent)}
                   </span>
                 </span>
                 {agent.installed ? (
                   selected ? (
                     agent.auth && !agent.auth.loggedIn ? (
-                      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-vs-accent">
+                      <span className="shrink-0 rounded-full bg-vs-accent/15 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-vs-accent">
                         Sign in
                       </span>
                     ) : (
-                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-vs-accent">
-                        <CheckIcon className="h-3 w-3" />
-                        Connected
-                      </span>
+                      <CheckIcon className="h-4 w-4 shrink-0 text-vs-accent" />
                     )
                   ) : (
-                    <span className="shrink-0 text-[11px] text-vs-muted opacity-0 transition group-hover:opacity-100">
+                    <span className="shrink-0 text-[11px] text-vs-muted opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
                       Select
                     </span>
                   )
                 ) : (
-                  <span className="shrink-0 text-[11px] uppercase tracking-wide text-vs-accent">
+                  <span className="shrink-0 rounded-full border border-vs-accent/30 px-2 py-0.5 text-[10.5px] uppercase tracking-wide text-vs-accent">
                     {installFor === agent.id ? "Hide" : "Install"}
                   </span>
                 )}
@@ -1086,7 +1220,7 @@ function AgentSelector({
       )}
 
       {detail && !detail.installed && (
-        <div className="mt-1.5 space-y-1.5 rounded-lg border border-vs-border bg-vs-editor p-2">
+        <div className={`space-y-1.5 rounded-xl border border-vs-border bg-vs-editor p-2.5 ${menu ? "m-1.5 shrink-0" : "mt-1.5"}`}>
           <p className="text-[12px] leading-4 text-vs-fg">{detail.blurb}</p>
           <CopyLine command={detail.install.command} />
           {detail.install.alternative && <CopyLine command={detail.install.alternative} />}

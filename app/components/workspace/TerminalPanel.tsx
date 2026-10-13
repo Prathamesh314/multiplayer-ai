@@ -63,7 +63,11 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
     });
   }
 
-  const port = typeof window !== "undefined" ? window.location.port || "3000" : "3000";
+  // "Open :3000" is a local-development convenience — a hosted deployment is
+  // already being viewed at its own origin, so the link has nothing to offer.
+  const port = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
+    ? window.location.port || "3000"
+    : null;
   const disabled = status !== null && !status.enabled;
 
   return (
@@ -92,15 +96,17 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="ml-2 flex shrink-0 items-center gap-1">
-          <a
-            href={`http://localhost:${port}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1 rounded border border-vs-border px-1.5 py-0.5 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            <LinkIcon className="h-3 w-3" />
-            Open :{port}
-          </a>
+          {port && (
+            <a
+              href={`http://localhost:${port}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 rounded border border-vs-border px-1.5 py-0.5 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+            >
+              <LinkIcon className="h-3 w-3" />
+              Open :{port}
+            </a>
+          )}
           <button
             type="button"
             onClick={() => handles.current.get(activeId)?.clear()}

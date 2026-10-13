@@ -69,6 +69,29 @@
         file_server
     }
 
+    # A shell lives in one web process's memory, so the SSE stream and the
+    # keystroke POSTs for a terminal id must land on the same replica. Hashing
+    # the id keeps them together; least_conn would split them and silently drop
+    # half the keystrokes. Only meaningful with MULTIPLAYER_AI_TERMINAL=1.
+    handle /api/terminal* {
+      reverse_proxy {$APP_UPSTREAMS:web:3000 web2:3000} {
+        lb_policy query id
+        health_uri /health/ready
+        health_interval 10s
+        health_timeout 3s
+        health_status 200
+        fail_duration 10s
+        max_fails 2
+        lb_retries 0
+        lb_try_duration 0
+        header_up X-Multiplayer-Client-IP {http.request.remote.host}
+        header_up X-Multiplayer-Proxy-Secret {$PROXY_SHARED_SECRET}
+        transport http {
+            keepalive 30s
+        }
+      }
+    }
+
     handle {
       reverse_proxy {$APP_UPSTREAMS:web:3000 web2:3000} {
         lb_policy least_conn
