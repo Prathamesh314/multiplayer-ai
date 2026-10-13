@@ -6,6 +6,7 @@ import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
 import type { ChatMessage, SessionMember } from "../../lib/session/types";
 import { CheckIcon, ChevronIcon, FolderPlusIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { useTitleTransition } from "./useTitleTransition";
 
 type RoomSidebarProps = {
   sessionId: string;
@@ -144,9 +145,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               }`}
             />
           )}
-          <span className="min-w-0 flex-1 truncate text-[12.5px] leading-[20px]">
-            {run.title ?? `${run.agentId} run`}
-          </span>
+          <RunTitle runId={run.id} title={run.title ?? `${run.agentId} run`} />
           <DiffStat added={run.addedLines} removed={run.removedLines} />
         </button>
 
@@ -241,6 +240,16 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
       </div>
     </aside>
   );
+}
+
+/**
+ * A chat's name in the list, cross-faded when it changes — so the row a
+ * freshly started chat occupies visibly settles on its name rather than
+ * flicking from the raw prompt to something else.
+ */
+function RunTitle({ runId, title }: { runId: string; title: string }) {
+  const { shown, className } = useTitleTransition(title, runId);
+  return <span className={`${className} min-w-0 flex-1 truncate text-[12.5px] leading-[20px]`}>{shown}</span>;
 }
 
 /** A hover-revealed icon action on a chat row. */

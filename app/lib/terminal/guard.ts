@@ -1,12 +1,25 @@
 /**
  * The terminal routes execute arbitrary shell commands on the machine serving
- * this app. That is remote code execution by design, so access is gated twice:
+ * this app. That is remote code execution by design, so it is gated:
  *
- *  1. Enabled only in development, unless MULTIPLAYER_AI_TERMINAL=1 opts in.
- *  2. The request must have arrived over a loopback Host.
+ *  1. `MULTIPLAYER_AI_TERMINAL=1` is an explicit operator opt-in. It enables the
+ *     terminal wherever the app runs, including a hosted production deployment
+ *     reached over a real domain. Nothing else lifts the production gate.
+ *  2. Without that opt-in, the terminal is development-only *and* the request
+ *     must have arrived over a loopback Host — i.e. the developer's own machine.
+ *  3. `MULTIPLAYER_AI_TERMINAL=0` turns it off everywhere, including development.
  *
- * MULTIPLAYER_AI_TERMINAL=0 turns it off everywhere, including development.
+ * The loopback rule used to apply even to the opt-in, which made the flag
+ * useless on a hosted host (every request arrives for the public domain) and
+ * also blocked the "run this on the app's machine" path in app/api/ai/run.
+ * Lifting it moves the whole burden of authorisation onto the routes: this
+ * function answers "is the feature on here", never "may this caller use it".
+ * Terminal routes must additionally call `terminalUser()` — on a public host
+ * the Host check is no longer standing in for authentication.
  */
+
+import { currentUser } from "../auth/tokens";
+import type { CurrentUser } from "../auth/types";
 
 export type TerminalAccess = { allowed: true } | { allowed: false; reason: string };
 
@@ -19,12 +32,14 @@ export function terminalAccess(request: Request): TerminalAccess {
     return { allowed: false, reason: "The terminal is disabled by MULTIPLAYER_AI_TERMINAL." };
   }
 
-  const optedIn = flag === "1" || flag === "on" || flag === "true";
-  if (process.env.NODE_ENV === "production" && !optedIn) {
+  // The operator has said "yes, run shells here". Host no longer matters.
+  if (flag === "1" || flag === "on" || flag === "true") return { allowed: true };
+
+  if (process.env.NODE_ENV === "production") {
     return {
       allowed: false,
       reason:
-        "The terminal is disabled in production builds. Set MULTIPLAYER_AI_TERMINAL=1 to enable it — only do that on a machine you control.",
+        "The terminal is disabled in production builds. Set MULTIPLAYER_AI_TERMINAL=1 to enable it — every signed-in member then gets a shell on this server.",
     };
   }
 
@@ -37,9 +52,32 @@ export function terminalAccess(request: Request): TerminalAccess {
   if (!LOOPBACK_HOSTS.has(hostname.toLowerCase())) {
     return {
       allowed: false,
-      reason: `The terminal only accepts loopback requests, and this one arrived for “${hostname || "unknown host"}”.`,
+      reason: `Without MULTIPLAYER_AI_TERMINAL=1 the terminal only accepts loopback requests, and this one arrived for “${hostname || "unknown host"}”.`,
     };
   }
 
   return { allowed: true };
+}
+
+/**
+ * The signed-in owner of a terminal request, or a refusal.
+ *
+ * Every shell is bound to the account that opened it (see pty.ts), so one
+ * member can neither watch nor type into another's. This is the only identity
+ * check the terminal has; it is not room-scoped, because a shell is a shell on
+ * the host, not something that belongs to a room.
+ */
+export async function terminalUser(
+  request: Request,
+): Promise<{ user: CurrentUser } | { reason: string; refusal: Response }> {
+  const refuse = (reason: string, status: number) => ({
+    reason,
+    refusal: Response.json({ error: reason }, { status, headers: { "cache-control": "no-store" } }),
+  });
+
+  const gate = terminalAccess(request);
+  if (!gate.allowed) return refuse(gate.reason, 403);
+  const user = await currentUser();
+  if (!user) return refuse("Sign in to use the terminal.", 401);
+  return { user };
 }

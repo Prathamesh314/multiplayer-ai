@@ -27,6 +27,10 @@ export function useRoomRuns(sessionId: string): { runs: AgentRun[]; refresh: () 
       onRunFinished: refresh,
       onRunControl: refresh,
       onRunTurn: refresh,
+      // Patched in place rather than refetched: the sidebar row animates the
+      // change, and a full reload would replace the row and lose the animation.
+      onRunRenamed: event => setRuns(previous =>
+        previous.map(run => (run.id === event.runId ? { ...run, title: event.title } : run))),
       onStatus: connected => { if (connected) refresh(); },
     });
     return () => stream.close();

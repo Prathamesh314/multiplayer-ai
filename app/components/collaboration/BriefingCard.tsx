@@ -8,7 +8,7 @@ import { useResource } from "./useResource";
 const labels: Record<BriefingField,string> = {goal:"Goal",decisions:"Accepted decisions",progress:"Recorded progress",blockers:"Blockers / checks",nextAction:"Next action"};
 /** `bare` drops the disclosure chrome for hosts that supply their own heading,
  *  such as the chat header's briefing dialog. */
-export function BriefingCard({runId,expanded=false,bare=false,onUseForHandoff}:{runId:string;expanded?:boolean;bare?:boolean;onUseForHandoff?:(note:string)=>void}) {
+export function BriefingCard({runId,expanded=false,bare=false}:{runId:string;expanded?:boolean;bare?:boolean}) {
   const endpoint=`/api/chats/${encodeURIComponent(runId)}/briefing`;
   const {data,error,refresh}=useResource<Briefing>(endpoint,30_000);
   const [editing,setEditing]=useState<Briefing|null>(null);
@@ -42,7 +42,6 @@ export function BriefingCard({runId,expanded=false,bare=false,onUseForHandoff}:{
       {(failure||error)&&<ErrorNote>{failure??error}</ErrorNote>}{notice&&<p role="status" className="text-xs text-vs-muted">{notice}</p>}
       <div className="flex flex-wrap gap-2">
         {data.canEdit&&(editing?<><PrimaryButton disabled={busy} onClick={()=>void save()}>{busy?'Saving…':'Save briefing'}</PrimaryButton><GhostButton disabled={busy} onClick={()=>void regenerate(true)}>Refresh evidence, keep draft</GhostButton><GhostButton disabled={busy} onClick={()=>void regenerate(false)}>Replace draft from sources</GhostButton><GhostButton disabled={busy} onClick={()=>{setEditing(null);setFailure(null);setNotice('');}}>Cancel edits</GhostButton></>:<GhostButton onClick={()=>{setEditing(data);setFailure(null);setNotice('');}}>Edit briefing</GhostButton>)}
-        {onUseForHandoff&&<GhostButton disabled={!!editing} onClick={()=>onUseForHandoff(`Goal: ${data.body.goal.slice(0,220)}\nNext: ${data.body.nextAction.slice(0,320)}\nChecks: ${data.body.blockers.slice(0,260)}`)}>Use briefing in handoff note</GhostButton>}
       </div>
     </div>;
   if(bare)return detail;

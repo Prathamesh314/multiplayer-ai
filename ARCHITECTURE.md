@@ -9,9 +9,12 @@ changing the session, repo, or run-execution layers.
 The supported beta target is one repository-owning server with a persistent
 volume, PostgreSQL, Redis, a Next.js web process, and an indexing worker.
 Desktop runners execute coding agents on members' computers. Keep
-`LOCAL_RUNNERS=1`, `AGENT_WORKER=0`, and `MULTIPLAYER_AI_TERMINAL=0` on the hosted
-service. This is a modular application with separate execution processes; adding
-independent web hosts is not yet a supported storage topology.
+`LOCAL_RUNNERS=1` and `AGENT_WORKER=0` on the hosted service.
+`MULTIPLAYER_AI_TERMINAL` defaults to `0`; setting it to `1` is an explicit
+operator decision that gives every signed-in member a shell inside the web
+container and lets agents run on the host — see `docker/README.md`. This is a
+modular application with separate execution processes; adding independent web
+hosts is not yet a supported storage topology.
 
 ```mermaid
 flowchart LR

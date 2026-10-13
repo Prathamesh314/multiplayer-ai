@@ -7,6 +7,7 @@ import type {
   RoleChangedEvent,
   RunFinishedEvent,
   RunOutputEvent,
+  RunRenamedEvent,
   RunStartedEvent,
   RunTurnEvent,
   SessionEvent,
@@ -32,6 +33,8 @@ export type SessionStreamOptions = {
   onRunOutput?: (event: RunOutputEvent) => void;
   /** A stored turn (prompt or consolidated output) appended to a run. */
   onRunTurn?: (event: RunTurnEvent) => void;
+  /** A chat was named — automatically on its first turn, or by its driver. */
+  onRunRenamed?: (event: RunRenamedEvent) => void;
   /** A run reached a terminal state. */
   onRunFinished?: (event: RunFinishedEvent) => void;
   /** Connection state, for showing whether live updates are actually flowing. */
@@ -67,6 +70,7 @@ export function openSessionStream(
         case "run.started": options.onRunStarted?.(event); break;
         case "run.output": options.onRunOutput?.(event); break;
         case "run.turn": options.onRunTurn?.(event); break;
+        case "run.renamed": options.onRunRenamed?.(event); break;
         case "run.finished": options.onRunFinished?.(event); break;
         case "run.inputs": options.onRunInputs?.(event); break;
         case "run.activity": options.onRunActivity?.(event); break;

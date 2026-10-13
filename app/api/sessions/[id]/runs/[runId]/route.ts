@@ -1,13 +1,13 @@
 import { withApiLimit } from "../../../../../lib/http/api-limit";
 import { reconcileCompletions } from "../../../../../lib/ai/finalize";
+import { events } from "../../../../../lib/events";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
 import { getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
 import type { RunResponse } from "../../../../../lib/ai/runs";
+import { MAX_TITLE } from "../../../../../lib/ai/titles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAX_TITLE = 200;
 
 /**
  * One run with its full conversation — the replay a watcher gets on open,
@@ -72,7 +72,13 @@ async function handlePATCH(
     return Response.json({ error: "A name is required." }, { status: 400 });
   }
 
-  await renameRun(runId, title.slice(0, MAX_TITLE));
+  const named = title.slice(0, MAX_TITLE);
+  // Marks the title as the driver's, which also stops any background naming
+  // still in flight from overwriting it.
+  await renameRun(runId, named);
+  await (await events())
+    .publish(id, { type: "run.renamed", runId, title: named, at: Date.now() })
+    .catch(() => {});
   return Response.json({ ok: true });
 }
 

@@ -129,13 +129,13 @@ try{
   await button('Room guide');await button('Connect your computer');await eventually(()=>evaluate('document.body.innerText.includes("Alice’s Mac")'),'computers');await capture('computers');await closeDialog();
   await button('Briefing');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Accepted decisions")'),'briefing');await capture('briefing');await closeDialog();
   await button('Activity & checkpoints');await eventually(()=>evaluate('document.body.innerText.includes("No uploaded checkpoints yet")'),'history');await capture('history');await closeDialog();
-  await button('Memory');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Show quantity errors")'),'memory');
+  await button('Room guide');await button('Review room memory');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Show quantity errors")'),'memory');
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.includes('Show quantity errors')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Source evidence")'),'memory evidence');await capture('memory');await closeDialog();
   await button('Share chat');await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),'share chat');await type('dialog input[type=email]','teammate@example.test');await capture('share-chat');await closeDialog();
   await evaluate(`window.__model.invitations=[{id:'sample-invite',email:'teammate@example.test',role:'commenter',createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+604800000).toISOString(),acceptedAt:new Date().toISOString(),revokedAt:null}]`);
   await button('Share chat');await button('Allow guest to help with code…');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Grant editing access")'),'guest access');await capture('guest-access');await closeDialog();
   await button('Handoff');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Offer handoff")'),'handoff');
-  await evaluate(`document.querySelector('dialog details').open=false`);await capture('handoff');await closeDialog();
+  await capture('handoff');await closeDialog();
   await button('Assign Tasks');await capture('tasks');await closeDialog();
   await button('Teammate review');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Request teammate review")'),'review');await capture('reviews');await closeDialog();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Feedback')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Please check delivery errors")'),'feedback');await capture('feedback');await closeDialog();

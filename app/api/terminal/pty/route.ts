@@ -1,5 +1,5 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
-import { terminalAccess } from "../../../lib/terminal/guard";
+import { terminalUser } from "../../../lib/terminal/guard";
 import { destroy, getOrCreate, resize, subscribe, write } from "../../../lib/terminal/pty";
 import type { PtyControl } from "../../../lib/terminal/protocol";
 
@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic";
  * leaves (see pty.ts). Same RCE gate as the rest of the terminal.
  */
 async function handleGET(request: Request) {
-  const access = terminalAccess(request);
-  if (!access.allowed) return Response.json({ error: access.reason }, { status: 403 });
+  const caller = await terminalUser(request);
+  if ("refusal" in caller) return caller.refusal;
 
   const url = new URL(request.url);
   const id = url.searchParams.get("id") ?? "";
@@ -22,7 +22,9 @@ async function handleGET(request: Request) {
   const cols = Number(url.searchParams.get("cols")) || 80;
   const rows = Number(url.searchParams.get("rows")) || 24;
 
-  getOrCreate(id, cols, rows);
+  if (!getOrCreate(id, cols, rows, caller.user.id)) {
+    return Response.json({ error: "That terminal is not available." }, { status: 403 });
+  }
 
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
@@ -50,6 +52,7 @@ async function handleGET(request: Request) {
 
       unsubscribe = subscribe(
         id,
+        caller.user.id,
         (chunk) => send(`data: ${Buffer.from(chunk, "utf8").toString("base64")}\n\n`),
         () => {
           send("event: exit\ndata: end\n\n");
@@ -87,8 +90,8 @@ async function handleGET(request: Request) {
 
 /** Keystrokes, resizes, and kills for a shell. */
 async function handlePOST(request: Request) {
-  const access = terminalAccess(request);
-  if (!access.allowed) return Response.json({ error: access.reason }, { status: 403 });
+  const caller = await terminalUser(request);
+  if ("refusal" in caller) return caller.refusal;
 
   let body: PtyControl;
   try {
@@ -102,13 +105,13 @@ async function handlePOST(request: Request) {
 
   switch (body.type) {
     case "input":
-      write(id, typeof body.data === "string" ? body.data : "");
+      write(id, caller.user.id, typeof body.data === "string" ? body.data : "");
       break;
     case "resize":
-      resize(id, Number(body.cols) || 80, Number(body.rows) || 24);
+      resize(id, caller.user.id, Number(body.cols) || 80, Number(body.rows) || 24);
       break;
     case "kill":
-      destroy(id);
+      destroy(id, caller.user.id);
       break;
     default:
       return Response.json({ error: "Unknown control type." }, { status: 400 });

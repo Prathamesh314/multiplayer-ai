@@ -394,10 +394,10 @@ After recovery or an accepted handoff, read the conversation, inspect uploaded c
 The initial briefing is assembled from recorded activity. It distinguishes AI-reported work from saved changes and approved decisions. It is a starting point to review, not a guarantee that the task is finished.`, screenshot: "briefing" },
       { id: "edit", title: "Edit and update a briefing", body: `Choose **Edit briefing**, correct the fields, and select **Save briefing**. If sources changed, **Needs updating** prompts you to check them. **Refresh evidence, keep draft** updates the source version while preserving your draft; **Replace draft from sources** rebuilds it.
 
-Concurrent edits can require a refresh. Review the current evidence before saving again. In the handoff dialog, **Use briefing in handoff note** copies a concise saved summary into the note.
+Concurrent edits can require a refresh. Review the current evidence before saving again.
 
 Only the chat host can publish a briefing and its evidence to guests using the explicit sharing checkbox. Inspect it first: evidence may include workspace decisions or saved-change details.` },
-      { id: "memory", title: "Review room memory", body: `Select **Memory** in the room toolbar. Select a record and inspect **Source evidence**, **Open source chat**, related memories, and review history.
+      { id: "memory", title: "Review room memory", body: `Select **Room guide** in the room toolbar, then **Review room memory**. Select a record and inspect **Source evidence**, **Open source chat**, related memories, and review history.
 
 Completed conversations can create historical episodes. An approved episode records that an exchange happened; it does not certify every AI assertion. Facts and procedures need review before they become approved guidance.
 

@@ -61,6 +61,27 @@ No host AI credential directories are mounted into the web or worker.
 The current images still contain legacy CLI binaries; their presence does not
 enable hosted execution.
 
+### Turning the hosted terminal on
+
+`MULTIPLAYER_AI_TERMINAL=1` in the deployment's `.env` enables it; nothing in
+the compose file needs editing. Understand what it grants before you do:
+
+- Every **signed-in member** can open an interactive login shell inside the web
+  container, as the container's user, with the app's environment — including
+  `DATABASE_URL`, `PROXY_SHARED_SECRET`, and the workspace volume. There is no
+  room-level or role-level restriction; a shell is bound only to the account
+  that opened it, so members cannot read each other's shells.
+- The same flag lets coding agents run **on this host** when the caller has no
+  paired computer, instead of refusing the turn.
+- `WEB_CONCURRENCY` must stay `1` (it already is). The startup check in
+  `scripts/server-config.mjs` refuses more than one web process with the
+  terminal enabled, because a shell lives in one process's memory.
+- The gateway hashes `/api/terminal*` on the `id` query parameter so a shell's
+  stream and its keystrokes always reach the same replica.
+
+Leave it at `0` unless the deployment is a machine you control and every member
+is someone you would give a server shell to.
+
 ## Local development
 
 ```bash

@@ -306,3 +306,46 @@ body {
 .composer-picker-group { padding: 9px 12px 5px; font-size: 13px; color: var(--vs-muted); }
 .composer-picker-footer { border-top: 1px solid var(--vs-border); margin-top: 6px; padding: 10px; color: var(--vs-muted); font-size: 12px; line-height: 20px; max-height: 100px; overflow-y: auto; flex-shrink: 0; }
 @keyframes picker-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* A chat naming itself: the drafted name fades out and the settled one rises
+   in. Short enough not to be read as loading. */
+.chat-title { transition: opacity 130ms ease; }
+.chat-title-out { opacity: 0; }
+.chat-title-in { animation: chat-title-in 300ms cubic-bezier(0.2, 0.8, 0.3, 1); }
+@keyframes chat-title-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The provider menu. Same surface as the composer pickers above, so the two
+   kinds of menu in this panel are visibly one thing. */
+.providers-popover {
+  position: fixed; inset: auto; margin: 0; z-index: 100;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--vs-border); border-radius: 16px; padding: 6px;
+  background: var(--vs-panel); color: var(--vs-fg);
+  box-shadow: 0 18px 60px var(--vs-shadow), 0 2px 8px #0003;
+  animation: picker-enter 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* One provider. The accent bar grows from the left edge on selection instead
+   of a border snapping on, which is what made the old list feel static. */
+.provider-row {
+  position: relative;
+  border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.provider-row::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 2px; height: 0; border-radius: 2px;
+  background: var(--vs-accent); transform: translateY(-50%);
+  transition: height 180ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.provider-row:hover { background: var(--vs-hover); }
+.provider-row:focus-visible { background: var(--vs-hover); }
+.provider-row-selected { background: color-mix(in srgb, var(--vs-accent) 10%, transparent); border-color: color-mix(in srgb, var(--vs-accent) 28%, transparent); }
+.provider-row-selected::before { height: 56%; }
+.provider-row .provider-mark { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1); }
+.provider-row:hover .provider-mark, .provider-row-selected .provider-mark { transform: scale(1.06); }
+.providers-popover .provider-row { animation: provider-row-in 240ms cubic-bezier(0.2, 0.8, 0.3, 1) backwards; }
+@keyframes provider-row-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }

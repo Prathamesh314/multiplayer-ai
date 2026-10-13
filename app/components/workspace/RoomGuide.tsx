@@ -2,7 +2,7 @@
 
 import { Modal } from "../ui/Modal";
 
-export type RoomGuideAction = "files" | "chat" | "team" | "invite" | "providers" | "devices";
+export type RoomGuideAction = "files" | "chat" | "team" | "invite" | "providers" | "devices" | "memory";
 
 export function RoomGuide({ hasRepo, readOnly, onClose, onAction }: {
   hasRepo: boolean;
@@ -33,6 +33,9 @@ export function RoomGuide({ hasRepo, readOnly, onClose, onAction }: {
     <div className="flex flex-wrap gap-2">
       <button type="button" onClick={() => onAction("invite")} className="rounded-lg bg-vs-accent px-3 py-2 text-sm font-medium text-vs-accent-fg">Invite a teammate</button>
       <button type="button" onClick={() => onAction("devices")} className="rounded-lg border border-vs-border px-3 py-2 text-sm hover:bg-vs-hover">Connect your computer</button>
+      {/* The room's memory manager used to sit in the toolbar. It is reference
+          material rather than a per-chat action, so it lives here instead. */}
+      <button type="button" onClick={() => onAction("memory")} className="rounded-lg border border-vs-border px-3 py-2 text-sm hover:bg-vs-hover">Review room memory</button>
     </div>
     <p className="text-xs leading-5 text-vs-muted">Imported files are uploaded to this room. Authorized teammates can access its shared content, and your chosen AI provider may receive task context. Local execution does not necessarily mean an offline model.</p>
   </Modal>;

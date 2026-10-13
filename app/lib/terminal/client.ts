@@ -6,10 +6,18 @@ export async function fetchTerminalStatus(): Promise<TerminalStatus> {
   return (await response.json()) as TerminalStatus;
 }
 
-/** Fire-and-forget control message to a shell (keystrokes, resize, kill). */
+/**
+ * Fire-and-forget control message to a shell (keystrokes, resize, kill).
+ *
+ * The id is repeated in the query string even though the server reads it from
+ * the body: a shell lives in one web process's memory, so a multi-replica
+ * deployment has to send every message about a given id to the same upstream,
+ * and a load balancer can only see the URL (see the Caddyfile's `lb_policy
+ * query id` for /api/terminal/*).
+ */
 async function control(body: PtyControl, keepalive = false): Promise<void> {
   try {
-    await fetch("/api/terminal/pty", {
+    await fetch(`/api/terminal/pty?id=${encodeURIComponent(body.id)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
