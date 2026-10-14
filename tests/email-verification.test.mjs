@@ -11,7 +11,7 @@ if (process.env.EMAIL_TEST_POSTGRES === '1') nextEnv.loadEnvConfig(process.cwd()
 const keys = ['EMAIL_VERIFICATION_ENABLED','RESEND_API_KEY','EMAIL_FROM'];
 test('email verification is browser-bound, once-only, limited and atomic', async t => {
   const previous = Object.fromEntries(keys.map(key=>[key,process.env[key]]));
-  Object.assign(process.env,{EMAIL_VERIFICATION_ENABLED:'true',RESEND_API_KEY:'test-resend-secret',EMAIL_FROM:'Multiplayer AI <verify@example.test>'});
+  Object.assign(process.env,{EMAIL_VERIFICATION_ENABLED:'true',RESEND_API_KEY:'test-resend-secret',EMAIL_FROM:'Multicode AI <verify@example.test>'});
   const nativeFetch = globalThis.fetch, sent = [];
   let deliveryFails = false;
   globalThis.fetch = async (url, options) => {

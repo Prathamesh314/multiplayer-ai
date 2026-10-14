@@ -4,7 +4,7 @@ import styles from "./docs.module.css";
 
 export default function Documentation() {
   return <div className={styles.overview}>
-    <p className={styles.eyebrow}>THE MULTIPLAYER AI HANDBOOK</p>
+    <p className={styles.eyebrow}>THE MULTICODE AI HANDBOOK</p>
     <h1>From your first prompt<br />to working together.</h1>
     <p className={styles.lead}>Install the app, connect your tools, and bring your team into the work. Practical guides for every step, with screenshots of the actual interface.</p>
     <div className={styles.startCards}>

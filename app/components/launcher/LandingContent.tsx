@@ -76,7 +76,7 @@ export function LandingContent() {
         </h1>
 
         <p className="mt-5 max-w-2xl text-base leading-7 text-vs-muted">
-          multiplayer-ai is a code workspace that runs in the browser and reads your folders
+          multicode-ai is a code workspace that runs in the browser and reads your folders
           directly from disk. Every project opens in its own session, and a session only opens for
           someone holding both its link and its access code.
         </p>

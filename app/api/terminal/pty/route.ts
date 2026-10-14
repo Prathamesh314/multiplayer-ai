@@ -22,9 +22,8 @@ async function handleGET(request: Request) {
   const cols = Number(url.searchParams.get("cols")) || 80;
   const rows = Number(url.searchParams.get("rows")) || 24;
 
-  if (!getOrCreate(id, cols, rows, caller.user.id)) {
-    return Response.json({ error: "That terminal is not available." }, { status: 403 });
-  }
+  const started = getOrCreate(id, cols, rows, caller.user.id);
+  if (!started.ok) return Response.json({ error: started.reason }, { status: started.status });
 
   const encoder = new TextEncoder();
   let unsubscribe = () => {};

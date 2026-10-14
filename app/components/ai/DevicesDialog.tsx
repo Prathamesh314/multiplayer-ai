@@ -95,7 +95,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   // npm supplies the downloaded executable's PATH. A global install can fail
   // on permissions or leave its bin directory outside the user's shell PATH.
-  const runnerCommand = `npx --yes --package="${origin}/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner`;
+  const runnerCommand = `npx --yes --package="${origin}/downloads/multicode-ai-runner.tgz" multicode-ai-runner`;
   const startCommand = `${runnerCommand} start`;
   const pairCommand = pairing
     ? `${runnerCommand} pair --server "${origin}" --code ${pairing.code}`
@@ -136,7 +136,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
       {!connected && <div className="space-y-3 rounded-xl border border-vs-border bg-vs-editor p-4">
         <h3 className="text-base font-semibold">{connection.status === "offline" ? "Bring your computer back online" : connection.status === "update" ? "Update your computer connection" : "Start with the desktop app"}</h3>
         <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-vs-muted">
-          <li>{connection.status === "update" ? "Install the latest Multiplayer AI desktop app." : "Open the Multiplayer AI desktop app on the computer you want to use."}</li>
+          <li>{connection.status === "update" ? "Install the latest Multicode AI desktop app." : "Open the Multicode AI desktop app on the computer you want to use."}</li>
           <li>Sign in with the same account you use here. The app connects automatically.</li>
           <li>Keep the app open and your computer awake. If paused, choose Resume runner from the app’s desktop menu.</li>
         </ol>
@@ -212,7 +212,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
             )}
             <details open={!desktop} className="space-y-3">
               <summary className="cursor-pointer text-sm text-vs-fg">Connect using a terminal</summary>
-              <p className="text-sm leading-6 text-vs-muted">Run these commands from any folder. Install Node.js 22 or newer and Git first, plus your AI provider’s CLI. The commands download the runner automatically; no global installation or Multiplayer AI source code is needed.</p>
+              <p className="text-sm leading-6 text-vs-muted">Run these commands from any folder. Install Node.js 22 or newer and Git first, plus your AI provider’s CLI. The commands download the runner automatically; no global installation or Multicode AI source code is needed.</p>
               {commandRow("pair", "1. Pair this computer once", pairCommand)}
               {commandRow("start", "2. Start your computer connection", startCommand)}
               <p className="text-sm leading-6 text-vs-muted">Keep the terminal open while you work. Run the start command again whenever you reconnect. If your terminal says npx is not found, install Node.js, then open a new terminal.</p>

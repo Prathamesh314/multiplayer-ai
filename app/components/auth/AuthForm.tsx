@@ -10,7 +10,7 @@ import { DesktopSignIn } from "./DesktopSignIn";
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return <main className="app-page h-dvh overflow-y-auto px-5 py-10 text-vs-fg">
     <div className="mx-auto w-full max-w-md space-y-6">
-      <Link href="/" className="block text-lg font-semibold tracking-tight">multiplayer-ai</Link>
+      <Link href="/" className="block text-lg font-semibold tracking-tight">multicode-ai</Link>
       {children}
       <p className="text-center text-sm text-vs-muted"><Link href="/docs" className="hover:text-vs-fg">Setup guide</Link> · <Link href="/" className="hover:text-vs-fg">Back to home</Link></p>
     </div>

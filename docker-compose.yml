@@ -1,4 +1,4 @@
-# Local development services for multiplayer-ai.
+# Local development services for multicode-ai.
 #
 #   docker compose up -d      start everything
 #   npm run db:migrate        apply the schema (not run automatically — see below)
@@ -9,6 +9,9 @@
 # comes up with no setup. Override any of them with a .env file beside this one,
 # and never reuse them anywhere reachable from outside your machine.
 
+# Deliberately not renamed with the product. Compose prefixes volume names with
+# the project name, so changing it would orphan every existing local database,
+# workspace and Redis volume rather than migrate them.
 name: multiplayer-ai
 
 x-team-context: &team-context

@@ -18,7 +18,7 @@ go through their existing acceptance page.
    email and your app domain). Choose an External audience to support customers
    outside your own Google Workspace organisation.
 3. Under Clients, create a **Web application** OAuth client. Add the exact
-   authorized redirect URI `https://cubeclashes.com/api/auth/google/callback`.
+   authorized redirect URI `https://multicode.in/api/auth/google/callback`.
    For a different deployment substitute its own HTTPS origin. This server
    redirect flow does not require a JavaScript origin or Google API keys.
 4. Download the client JSON and save it outside the repository (for example,
@@ -27,7 +27,7 @@ go through their existing acceptance page.
 
    ```dotenv
    SIGNUP_MODE=open
-   AUTH_PUBLIC_URL=https://cubeclashes.com
+   AUTH_PUBLIC_URL=https://multicode.in
    GOOGLE_OAUTH_CREDENTIALS_FILE=/absolute/path/to/google-oauth.json
    ```
 

@@ -1,6 +1,6 @@
 import { ActivityOutbox } from "./activity-outbox";
 /*
- * The multiplayer-ai runner: agents on your machine, rooms in the cloud.
+ * The multicode-ai runner: agents on your machine, rooms in the cloud.
  *
  * A headless daemon that turns this computer into the execution plane of
  * docs/local-execution.md. It pairs once, then loops: heartbeat, claim the
@@ -55,7 +55,7 @@ async function pair(): Promise<void> {
   const server = (flag("server") ?? "").replace(/\/$/, "");
   const code = flag("code") ?? "";
   if (!server || !code) {
-    console.error("Usage: multiplayer-ai-runner pair --server <url> --code <RN-XXXX-XXXX> [--name <name>]");
+    console.error("Usage: multicode-ai-runner pair --server <url> --code <RN-XXXX-XXXX> [--name <name>]");
     process.exit(1);
   }
   const name = flag("name") ?? hostname();
@@ -182,7 +182,7 @@ async function start(): Promise<void> {
         }
       : loadConfig();
   if (!config) {
-    console.error(`No config at ${configPath()} — run \`multiplayer-ai-runner pair\` first.`);
+    console.error(`No config at ${configPath()} — run \`multicode-ai-runner pair\` first.`);
     process.exit(1);
   }
 
@@ -267,7 +267,7 @@ async function start(): Promise<void> {
 
 const command = process.argv[2];
 if (command === "--help" || command === "-h" || command === "help") {
-  console.log("Usage: multiplayer-ai-runner <pair|start|workspaces> [options]\n\n" +
+  console.log("Usage: multicode-ai-runner <pair|start|workspaces> [options]\n\n" +
     "  pair --server <url> --code <RN-XXXX-XXXX>  Connect this computer\n" +
     "  start                                    Run your AI tasks (Ctrl+C to stop)\n" +
     "  workspaces [--json]                       List local worktrees\n" +
@@ -293,6 +293,6 @@ if (command === "--help" || command === "-h" || command === "help") {
     process.exit(1);
   });
 } else {
-  console.error("Usage: multiplayer-ai-runner <pair|start|workspaces> [--workspaces <directory>] [flags]");
+  console.error("Usage: multicode-ai-runner <pair|start|workspaces> [--workspaces <directory>] [flags]");
   process.exit(1);
 }

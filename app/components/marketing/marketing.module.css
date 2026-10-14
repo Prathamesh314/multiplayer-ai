@@ -71,6 +71,15 @@
   font-size: .875rem; font-weight: 500; white-space: nowrap; transition: opacity .15s;
 }
 .navDownload:hover { opacity: .9; }
+/* Icon-only, so it sits beside the text actions without competing with the
+   download button for attention. */
+.discordLink {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 6px;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+  transition: color .15s, background-color .15s;
+}
+.discordLink:hover { color: var(--fg); background: var(--muted); }
 .mobileMenu { display: none; }
 
 /* ---------- Brand ---------- */
@@ -306,6 +315,7 @@
 .footerColumns div { display: flex; flex-direction: column; gap: 8px; }
 .footerColumns a { font-size: .875rem; color: var(--fg); transition: opacity .15s; }
 .footerColumns a:hover { opacity: .7; }
+.footerDiscord { display: inline-flex; align-items: center; gap: 8px; }
 .footerMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 64px; font-size: .875rem; color: var(--muted-fg); }
 
 /* The shared requirements notice borrows the workspace tokens; remap them so it
@@ -357,6 +367,9 @@
 @media (max-width: 767px) {
   .nav { display: none; }
   .signIn { display: none; }
+  /* The brand, download button and menu trigger already fill a 320px header;
+     the menu carries Discord at this width instead. */
+  .discordLink { display: none; }
   .mobileMenu { display: block; margin-left: auto; }
   .mobileMenu summary { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; list-style: none; flex-direction: column; gap: 4px; }
   .mobileMenu summary::-webkit-details-marker { display: none; }

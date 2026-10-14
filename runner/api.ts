@@ -42,7 +42,7 @@ export class RunnerApi {
       redirect: "error",
     });
     if (response.status === 401) {
-      throw new Error("This device was revoked or the token is stale — re-pair with `multiplayer-ai-runner pair`.");
+      throw new Error("This device was revoked or the token is stale — re-pair with `multicode-ai-runner pair`.");
     }
     if (!response.ok) {
       const parsed = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -66,7 +66,7 @@ export class RunnerApi {
 
   async signals(signal: AbortSignal, onEvent: (type: string, data: unknown) => void): Promise<void> {
     const response = await fetch(`${this.server}/api/runner/events`, { headers: { authorization: `Bearer ${this.token}` }, signal, redirect: "error" });
-    if (response.status === 401) throw new Error("This device was revoked — re-pair with multiplayer-ai-runner pair.");
+    if (response.status === 401) throw new Error("This device was revoked — re-pair with multicode-ai-runner pair.");
     if (!response.ok) throw new Error(`Runner live connection failed (${response.status}). Update the server and runner together.`);
     await readSignals(response, onEvent);
   }

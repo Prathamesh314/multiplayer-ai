@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef } from "react";
 import styles from "./marketing.module.css";
+import { DISCORD_INVITE } from "./Community";
 
 export function MobileNavigation() {
   const menu = useRef<HTMLDetailsElement>(null);
@@ -33,6 +34,8 @@ export function MobileNavigation() {
         <a href="#faq">FAQ</a>
         <a href="#download">Download</a>
         <Link href="/workspace">Open workspace</Link>
+        {/* The header's icon-only Discord link is hidden at this width. */}
+        <a href={DISCORD_INVITE} target="_blank" rel="noreferrer">Join us on Discord</a>
       </nav>
     </details>
   );

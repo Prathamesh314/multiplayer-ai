@@ -93,7 +93,7 @@ async function openSession(url: string): Promise<Session> {
       params: {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "multiplayer-ai", version: "0.1.0" },
+        clientInfo: { name: "multicode-ai", version: "0.1.0" },
       },
     }),
     signal: AbortSignal.timeout(RECALL_TIMEOUT_MS),
@@ -264,7 +264,7 @@ export async function remember(input: {
         importance: input.importance,
         bank: input.bank,
         channel_id: input.channelId,
-        source: input.source ?? "multiplayer-ai",
+        source: input.source ?? "multicode-ai",
         scope: "global",
       },
       input.timeoutMs ?? REMEMBER_TIMEOUT_MS,

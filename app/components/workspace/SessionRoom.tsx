@@ -156,7 +156,7 @@ function LockedScreen({
         <span className="flex items-center gap-2 text-base font-semibold">
           <SparkleIcon className="h-4 w-4 text-vs-accent" />
           <span className="whitespace-nowrap">
-            multiplayer<span className="text-vs-muted">-ai</span>
+            multicode<span className="text-vs-muted">-ai</span>
           </span>
         </span>
 

@@ -138,9 +138,9 @@ test("desktop build targets record the target architecture when cross compiling"
   assert.equal(buildTarget(["--win"], "darwin", "arm64").arch, "x64");
   assert.deepEqual(buildTarget(["--linux", "--arm64", "--setup"], "darwin", "arm64").builderArgs, ["--linux", "--arm64"]);
   assert.equal(buildTarget([], "darwin", "arm64").arch, "arm64");
-  assert.match(packagedExecutable("output", "linux", "x64"), /linux-unpacked[/\\]multiplayer-ai$/);
-  assert.match(packagedExecutable("output", "win32", "arm64"), /win-arm64-unpacked[/\\]Multiplayer AI\.exe$/);
-  assert.match(packagedExecutable("output", "darwin", "x64"), /mac[/\\]Multiplayer AI\.app[/\\]Contents[/\\]MacOS[/\\]Multiplayer AI$/);
+  assert.match(packagedExecutable("output", "linux", "x64"), /linux-unpacked[/\\]multicode-ai$/);
+  assert.match(packagedExecutable("output", "win32", "arm64"), /win-arm64-unpacked[/\\]Multicode AI\.exe$/);
+  assert.match(packagedExecutable("output", "darwin", "x64"), /mac[/\\]Multicode AI\.app[/\\]Contents[/\\]MacOS[/\\]Multicode AI$/);
 });
 
 test("a configured build opens the workspace instead of the setup screen", () => {

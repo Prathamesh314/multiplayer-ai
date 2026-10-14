@@ -8,7 +8,7 @@ export function objectGit(cwd: string, args: string[], input?: Buffer | string, 
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
-    const child = spawn("git", ["-c", "user.name=multiplayer-ai", "-c", "user.email=sessions@multiplayer-ai.local", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", ...args], {
+    const child = spawn("git", ["-c", "user.name=multicode-ai", "-c", "user.email=sessions@multicode-ai.local", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", ...args], {
       cwd, windowsHide: true, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_REPLACE_OBJECTS: "1", GIT_TERMINAL_PROMPT: "0", ...extraEnv },
       stdio: ["pipe", "pipe", "pipe", ...inheritedRepoLocks()],
     });

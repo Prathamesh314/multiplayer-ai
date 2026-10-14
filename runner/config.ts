@@ -6,9 +6,19 @@
  * chmod 600 for the same reason an ssh key is.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+
+/**
+ * Paths moved with the Multicode AI rename. A runner that was already paired
+ * keeps using the directory it created: re-pairing and re-cloning every
+ * worktree is not an acceptable cost for a name change. New installs get the
+ * current name. `multiplayer-ai` is the pre-rename product name, not a typo.
+ */
+function renamedPath(current: string, legacy: string): string {
+  return !existsSync(current) && existsSync(legacy) ? legacy : current;
+}
 
 export type RunnerConfig = {
   server: string;
@@ -20,7 +30,9 @@ export type RunnerConfig = {
 };
 
 export function configPath(): string {
-  return process.env.RUNNER_CONFIG || join(homedir(), ".config", "multiplayer-ai", "runner.json");
+  if (process.env.RUNNER_CONFIG) return process.env.RUNNER_CONFIG;
+  const config = join(homedir(), ".config");
+  return renamedPath(join(config, "multicode-ai", "runner.json"), join(config, "multiplayer-ai", "runner.json"));
 }
 
 export function defaultDataDir(): string {
@@ -28,7 +40,7 @@ export function defaultDataDir(): string {
 }
 
 export function defaultWorkspacesDir(): string {
-  return join(homedir(), "multiplayer-ai", "workspaces");
+  return renamedPath(join(homedir(), "multicode-ai", "workspaces"), join(homedir(), "multiplayer-ai", "workspaces"));
 }
 
 export function resolveWorkspacesDir(value?: string | null): string {

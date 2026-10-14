@@ -4,7 +4,7 @@ For the Cloudflare Free alternative, follow [Cloudflare CDN setup](cloudflare-cd
 Both providers use the same opt-in asset origin; choose one procedure.
 
 Keep GoDaddy DNS and the existing VM. Use GoDaddy Website Security's Firewall/CDN
-on **assets.cubeclashes.com only**. The application remains at cubeclashes.com.
+on **assets.multicode.in only**. The application remains at multicode.in.
 This setup is opt-in: a normal build uses the existing same-origin asset URLs.
 
 | Request | Route |
@@ -38,7 +38,7 @@ screenshots use a one-hour origin TTL. Do not put private material in public/.
 
 Open **My Products → Website Security and Backups → Manage → Firewall/CDN**.
 If this product is absent, there is no CDN to activate from the domain's DNS page.
-Confirm the plan includes CDN and can be provisioned for **assets.cubeclashes.com
+Confirm the plan includes CDN and can be provisioned for **assets.multicode.in
 alone**, preserving the apex domain's existing record. GoDaddy's setup guide
 specifically names Advanced/Premium for CDN. Do not buy or auto-activate a plan
 against the main application hostname merely to complete this procedure.
@@ -57,7 +57,7 @@ IPv6 listener and routing are working.
 On the VM, add to `.env.production`:
 
 ```dotenv
-APP_ASSET_DOMAIN=assets.cubeclashes.com
+APP_ASSET_DOMAIN=assets.multicode.in
 # Leave NEXT_PUBLIC_ASSET_PREFIX unset in this first deployment.
 ```
 
@@ -65,8 +65,8 @@ Deploy the gateway changes through the normal deployment procedure. Caddy issues
 the origin certificate using its existing persistent certificate volumes. Verify:
 
 ```sh
-curl --fail --head https://assets.cubeclashes.com/docs/images/workspace.webp
-curl --head https://assets.cubeclashes.com/api/auth/me
+curl --fail --head https://assets.multicode.in/docs/images/workspace.webp
+curl --head https://assets.multicode.in/api/auth/me
 ```
 
 The image must return 200, `Content-Type: image/webp`,
@@ -76,14 +76,14 @@ only on an unpublished container port; it does not replace the application host.
 
 ## 3. Put that hostname behind GoDaddy CDN
 
-Provision Website Security for **assets.cubeclashes.com**, with its hosting/origin
+Provision Website Security for **assets.multicode.in**, with its hosting/origin
 IP set to the VM IP. Enable HTTPS to the origin and certificate validation where
-the service exposes it. Keep the Host header and TLS SNI as assets.cubeclashes.com.
+the service exposes it. Keep the Host header and TLS SNI as assets.multicode.in.
 Complete GoDaddy's domain verification and wait for its edge certificate to be
 valid before directing browser traffic through it.
 
 Change only the `assets` A record to the **Firewall IP shown by GoDaddy**. Do not
-replace the cubeclashes.com apex A record or the nameservers. Some GoDaddy setup
+replace the multicode.in apex A record or the nameservers. Some GoDaddy setup
 wizards apply DNS automatically: confirm the selected hostname before activation.
 Keep the original VM IP in the CDN's origin settings to avoid a proxy loop.
 
@@ -104,8 +104,8 @@ actual response rather than assuming that a DNS change means the CDN is active.
 Only after step 3 passes, set:
 
 ```dotenv
-APP_ASSET_DOMAIN=assets.cubeclashes.com
-NEXT_PUBLIC_ASSET_PREFIX=https://assets.cubeclashes.com
+APP_ASSET_DOMAIN=assets.multicode.in
+NEXT_PUBLIC_ASSET_PREFIX=https://assets.multicode.in
 ```
 
 Rebuild/redeploy normally. This public value is a Docker build argument baked
@@ -121,8 +121,8 @@ downtime. This preflight is not a worldwide latency benchmark or an ongoing CDN
 availability guarantee.
 
 After deployment, use browser Network tools to verify actual JS/CSS/font requests
-go to assets.cubeclashes.com and load successfully, while API/event requests go
-to cubeclashes.com. Test from an overseas connection as well as India, comparing
+go to assets.multicode.in and load successfully, while API/event requests go
+to multicode.in. Test from an overseas connection as well as India, comparing
 cold/warm asset load times separately from API response time. Next builds use
 content hashes; never overwrite an existing hashed asset with different bytes.
 Purge changed public screenshots if they need to update before their cache TTL.

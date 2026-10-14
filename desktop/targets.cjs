@@ -32,9 +32,9 @@ function macSigning(env = process.env, release = false) {
 }
 
 function packagedExecutable(directory, platform, arch) {
-  if (platform === "darwin") return join(directory, "mac" + (arch === "x64" ? "" : "-" + arch), "Multiplayer AI.app", "Contents", "MacOS", "Multiplayer AI");
-  if (platform === "win32") return join(directory, "win" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "Multiplayer AI.exe");
-  if (platform === "linux") return join(directory, "linux" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "multiplayer-ai");
+  if (platform === "darwin") return join(directory, "mac" + (arch === "x64" ? "" : "-" + arch), "Multicode AI.app", "Contents", "MacOS", "Multicode AI");
+  if (platform === "win32") return join(directory, "win" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "Multicode AI.exe");
+  if (platform === "linux") return join(directory, "linux" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "multicode-ai");
   throw new Error("Unsupported desktop platform: " + platform);
 }
 

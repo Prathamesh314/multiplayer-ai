@@ -58,7 +58,7 @@ function sampleWorkspace(){
     if(path==='/api/tasks')return json({tasks:[],members:[{userId:'bob',handle:'bob',displayName:'Bob',role:'editor'}],hasMore:false});
     if(path==='/api/terminal')return window.__terminal.enabled
       ? json({enabled:true,cwd:'/Users/alice/northstar-checkout',shell:'/bin/zsh',platform:'darwin'})
-      : json({enabled:false,reason:'The terminal is disabled in production builds. Set MULTIPLAYER_AI_TERMINAL=1 to enable it — only do that on a machine you control.',cwd:'',shell:'',platform:''});
+      : json({enabled:false,reason:'The terminal is disabled in production builds. Set MULTIPLAYER_AI_TERMINAL=1 to enable it — every signed-in member then gets a shell on this server.',cwd:'',shell:'',platform:''});
     if(path==='/api/terminal/pty')return json({ok:true});
     if(path.endsWith('/memories'))return json({memories:[{id:'memory-1',kind:'fact',text:'Show quantity errors next to the checkout input.',status:'approved',revision:1,stated_at:new Date().toISOString(),source_run_id:runId,publish_gated:false}],nextCursor:null});
     if(path.endsWith('/memories/memory-1'))return json({nodes:[{id:'memory-1',kind:'fact',text:'Show quantity errors next to the checkout input.',status:'approved',revision:1,stated_at:new Date().toISOString(),source_run_id:runId,publish_gated:false}],edges:[],events:[],jobs:[],sources:[{memory_id:'memory-1',body:'Keep the quantity validation close to the input so the problem is easy to fix.',author:'Alice'}]});
@@ -103,8 +103,8 @@ async function terminalSession(enabled){
 try{
   // Authentication is rendered by Clerk. Capture it separately using a Clerk
   // development application; never mock email delivery or real credentials here.
-  await install(`window.desktopSetup={status:async()=>({url:'https://cubeclashes.com',runner:'connected',enabled:true,paired:true,workspacesDir:'~/multiplayer-ai/workspaces',workspacesLocked:true,version:'preview',message:''})};`);
-  await navigate(pathToFileURL(resolve('.desktop-build/app/setup.html')).href,'document.querySelector("#workspace")?.value==="https://cubeclashes.com"');await capture('desktop-setup');
+  await install(`window.desktopSetup={status:async()=>({url:'https://multicode.in',runner:'connected',enabled:true,paired:true,workspacesDir:'~/multicode-ai/workspaces',workspacesLocked:true,version:'preview',message:''})};`);
+  await navigate(pathToFileURL(resolve('.desktop-build/app/setup.html')).href,'document.querySelector("#workspace")?.value==="https://multicode.in"');await capture('desktop-setup');
   await evaluate('document.querySelector("#worktrees-heading").scrollIntoView({block:"center"})');await capture('desktop-worktrees');
   await install(`(${teamFixtures.toString()})()`);
   await navigate('/workspace','document.body?.innerText.includes("Northstar Checkout")');await capture('workspace');

@@ -98,7 +98,7 @@ function Sidebar({
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-vs-border px-4">
         <SparkleIcon className="h-4 w-4 text-vs-accent" />
         <span className="whitespace-nowrap text-[14px] font-semibold">
-          multiplayer<span className="text-vs-muted">-ai</span>
+          multicode<span className="text-vs-muted">-ai</span>
         </span>
       </header>
 

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AppScreenshot } from "./components/marketing/AppScreenshot";
 import { Brand } from "./components/marketing/Brand";
+import { DISCORD_INVITE, DiscordIcon, DiscordLink } from "./components/marketing/Community";
 import { ChatIcon, GitBranchIcon, TerminalIcon, UsersIcon } from "./components/icons";
 import { ProductPreview } from "./components/marketing/ProductPreview";
 import { MobileNavigation } from "./components/marketing/MobileNavigation";
@@ -11,10 +12,10 @@ import { desktopDownloadUrl } from "./lib/desktop-downloads";
 import { screenshots } from "./docs/screenshots";
 
 export const metadata: Metadata = {
-  title: "Multiplayer AI — Great software is a team sport.",
-  description: "Bring your team, code, and AI agents into one shared workspace. Build together with Claude Code, Codex, and Gemini. Discover Multiplayer AI for desktop and web.",
+  title: "Multicode AI — Great software is a team sport.",
+  description: "Bring your team, code, and AI agents into one shared workspace. Build together with Claude Code, Codex, and Gemini. Discover Multicode AI for desktop and web.",
   openGraph: {
-    title: "Multiplayer AI — Build something great. Together.",
+    title: "Multicode AI — Build something great. Together.",
     description: "Your people. Your AI agents. One shared workspace.",
     type: "website",
   },
@@ -56,8 +57,8 @@ const features = [
 ];
 
 const questions = [
-  ["What is Multiplayer AI?", "A collaborative coding workspace for people and AI agents. Bring repositories into a project, work together in rooms, and connect selected Slack or Discord channels for shared context. AI conversations, task assignment, and code review stay together."],
-  ["Which AI agents can I use?", "Multiplayer AI supports Claude Code, Codex, and Gemini through their local command-line tools. Install and sign in to the tools you want to use. Your existing provider account and usage limits apply."],
+  ["What is Multicode AI?", "A collaborative coding workspace for people and AI agents. Bring repositories into a project, work together in rooms, and connect selected Slack or Discord channels for shared context. AI conversations, task assignment, and code review stay together."],
+  ["Which AI agents can I use?", "Multicode AI supports Claude Code, Codex, and Gemini through their local command-line tools. Install and sign in to the tools you want to use. Your existing provider account and usage limits apply."],
   ["Where does my code run?", "On a paired computer through the local runner. The desktop app includes the runner; Git and your chosen AI CLI are separate prerequisites. Code and collaboration data are synced with your connected workspace server, so the app needs a network connection."],
   ["How does working together affect my main branch?", "Each project room has its own Git branch. Build and review in the room, sync the latest project changes, and publish when you are ready to merge your work back. Conflicts are surfaced for review."],
   ["Can I use it in a browser?", "Yes. Open the web workspace to collaborate, review code, and follow conversations. Running AI tasks requires a paired computer with Git and an authenticated agent CLI. The desktop app brings the workspace and local runner together."],
@@ -92,7 +93,7 @@ export default function Home() {
       <a href="#main-content" className={styles.skipLink}>Skip to content</a>
       <header className={styles.header}>
         <div className={styles.navInner}>
-          <Link href="/" aria-label="Multiplayer AI home"><Brand /></Link>
+          <Link href="/" aria-label="Multicode AI home"><Brand /></Link>
           <nav className={styles.nav} aria-label="Main navigation">
             <a href="#product">Product</a>
             <a href="#how-it-works">How it works</a>
@@ -100,6 +101,7 @@ export default function Home() {
             <a href="#faq">FAQ</a>
           </nav>
           <div className={styles.navActions}>
+            <DiscordLink />
             <Link href="/workspace" className={styles.signIn}>Open workspace</Link>
             <a href="#download" className={styles.navDownload}>Download <Arrow down /></a>
           </div>
@@ -114,7 +116,7 @@ export default function Home() {
             <h1><span>Great software</span><span>is a team sport.</span></h1>
             <p className={styles.heroLead}>Bring your team, your code, and your AI agents into one shared workspace. Build with Claude Code, Codex, or Gemini — together, in the same room.</p>
             <div className={styles.heroActions}>
-              <a href="#download" className={styles.primaryButton}>Get Multiplayer AI <Arrow down /></a>
+              <a href="#download" className={styles.primaryButton}>Get Multicode AI <Arrow down /></a>
               <Link href="/workspace" className={styles.secondaryButton}>Open workspace <Arrow /></Link>
               <p className={styles.heroNote}>
                 “Every room gets its own Git branch, so an experiment never touches your project until the team publishes it.”
@@ -177,7 +179,7 @@ export default function Home() {
             <h2 id="download-title">Better together. Even better on desktop.</h2>
             <p>A dedicated space for your team, with the local runner built right in. Choose your platform to get started.</p>
           </div>
-          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. macOS refuses to start a downloaded preview, and nothing appears when you open it. Drag the app to Applications, run <code>xattr -dr com.apple.quarantine &quot;/Applications/Multiplayer AI.app&quot;</code> in Terminal, then open it again. Windows may warn before installation.</p>}
+          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. macOS refuses to start a downloaded preview, and nothing appears when you open it. Drag the app to Applications, run <code>xattr -dr com.apple.quarantine &quot;/Applications/Multicode AI.app&quot;</code> in Terminal, then open it again. Windows may warn before installation.</p>}
           <div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}>
             <span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p>
             <div className={styles.platformDownloads}>{platform.downloads.map(download => download.href
@@ -228,7 +230,7 @@ export default function Home() {
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
-            <Link href="/" aria-label="Multiplayer AI home"><Brand /></Link>
+            <Link href="/" aria-label="Multicode AI home"><Brand /></Link>
             <p>A shared space for your next big idea.</p>
           </div>
           <div className={styles.footerColumns}>
@@ -258,8 +260,16 @@ export default function Home() {
                 <Link href="/account">Your account</Link>
               </div>
             </section>
+            <section>
+              <h3>[Community]</h3>
+              <div>
+                <a href={DISCORD_INVITE} target="_blank" rel="noreferrer" className={styles.footerDiscord}>
+                  <DiscordIcon />Join us on Discord
+                </a>
+              </div>
+            </section>
           </div>
-          <div className={styles.footerMeta}><span>© {new Date().getFullYear()} Multiplayer AI</span></div>
+          <div className={styles.footerMeta}><span>© {new Date().getFullYear()} Multicode AI</span></div>
         </div>
       </footer>
     </div>

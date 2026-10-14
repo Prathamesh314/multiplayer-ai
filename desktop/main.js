@@ -8,12 +8,27 @@ const { createHash } = require("node:crypto");
 const { workspaceUrl, sameOrigin, externalUrl, waitForServer, runnerEnvironment } = require("./policy");
 const { createAutoConnection } = require("./connection");
 
-app.setName("Multiplayer AI");
+app.setName("Multicode AI");
+// userData is derived from the app name, so the Multicode AI rename would
+// otherwise strand an existing install's workspace address, device pairing and
+// runner state in a directory nothing reads any more. Keep using the old one
+// when it is already there; new installs get the current name. The directory
+// named "Multiplayer AI" below is the pre-rename product name, not a typo.
+const legacyUserData = path.join(path.dirname(app.getPath("userData")), "Multiplayer AI");
+if (!fs.existsSync(app.getPath("userData")) && fs.existsSync(legacyUserData)) {
+  app.setPath("userData", legacyUserData);
+}
 const setupUrl = pathToFileURL(path.join(__dirname, "setup.html")).href;
 const settingsPath = path.join(app.getPath("userData"), "desktop.json");
 const runnerPath = path.join(app.getPath("userData"), "runner.json");
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, "release.json"), "utf8"));
-const defaultWorkspacesDir = path.join(os.homedir(), "multiplayer-ai", "workspaces");
+// Same reasoning for the visible worktrees: an existing checkout must not
+// appear to vanish because the folder the product suggests changed name.
+const legacyWorkspacesDir = path.join(os.homedir(), "multiplayer-ai", "workspaces");
+const renamedWorkspacesDir = path.join(os.homedir(), "multicode-ai", "workspaces");
+const defaultWorkspacesDir = !fs.existsSync(renamedWorkspacesDir) && fs.existsSync(legacyWorkspacesDir)
+  ? legacyWorkspacesDir
+  : renamedWorkspacesDir;
 let settings = { url: "", runnerEnabled: true, workspacesDir: defaultWorkspacesDir };
 let mainWindow = null;
 let setupWindow = null;
@@ -152,7 +167,7 @@ function showSetup() {
   }
   setupWindow = new BrowserWindow({
     width: 800, height: 870, minWidth: 440, minHeight: 500,
-    title: "Multiplayer AI — Desktop settings", backgroundColor: "#151515",
+    title: "Multicode AI — Desktop settings", backgroundColor: "#151515",
     icon: path.join(__dirname, "icon.png"),
     webPreferences: { preload: path.join(__dirname, "setup-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false, partition: "desktop-settings" },
   });
@@ -165,7 +180,7 @@ function createWorkspace() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   mainWindow = new BrowserWindow({
     width: 1440, height: 940, minWidth: 700, minHeight: 500,
-    show: false, title: "Multiplayer AI", backgroundColor: "#151515",
+    show: false, title: "Multicode AI", backgroundColor: "#151515",
     icon: path.join(__dirname, "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false },
   });
@@ -233,7 +248,7 @@ function showWorkspace() {
 }
 
 function updateTray() {
-  tray?.setToolTip("Multiplayer AI — Runner: " + runnerState);
+  tray?.setToolTip("Multicode AI — Runner: " + runnerState);
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: "Runner: " + runnerState, enabled: false },
     { label: "Open workspace", click: showWorkspace },
@@ -257,7 +272,7 @@ function startRunner() {
   try {
     const entry = app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", "runner.cjs") : path.join(__dirname, "runner.cjs");
     const child = utilityProcess.fork(entry, ["start"], {
-      cwd: app.getPath("userData"), env: runnerEnvironment(process.env, runnerPath), stdio: "pipe", serviceName: "Multiplayer AI Runner",
+      cwd: app.getPath("userData"), env: runnerEnvironment(process.env, runnerPath), stdio: "pipe", serviceName: "Multicode AI Runner",
     });
     runnerProcess = child;
     setRunnerState("connecting");
@@ -458,7 +473,7 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(icon);
     setRunnerState(paired() ? "paused" : "not paired");
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: "Multiplayer AI", submenu: [{ role: "about" }, { label: "Desktop settings", accelerator: "CmdOrCtrl+,", click: showSetup }, { label: "Check for updates", click: () => void checkUpdates() }, { type: "separator" }, { role: "quit" }] },
+      { label: "Multicode AI", submenu: [{ role: "about" }, { label: "Desktop settings", accelerator: "CmdOrCtrl+,", click: showSetup }, { label: "Check for updates", click: () => void checkUpdates() }, { type: "separator" }, { role: "quit" }] },
       { role: "editMenu" },
       { label: "View", submenu: [{ role: "reload" }, { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { role: "togglefullscreen" }] },
       { role: "windowMenu" },

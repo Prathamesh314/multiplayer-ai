@@ -42,11 +42,11 @@ outside the runner. Avoid external edits while its agent is active.
 ## Local storage
 
 Editable files are created on the **first local agent run**, by default at
-`~/multiplayer-ai/workspaces` on macOS/Linux and
-`%USERPROFILE%\multiplayer-ai\workspaces` on Windows:
+`~/multicode-ai/workspaces` on macOS/Linux and
+`%USERPROFILE%\multicode-ai\workspaces` on Windows:
 
 ```text
-multiplayer-ai/workspaces/
+multicode-ai/workspaces/
   frontend--<repository-id>/
     alice-room--<room-repository-id>/
     bob-room--<room-repository-id>/
@@ -72,10 +72,10 @@ The desktop app bundles its runner. Browser users can install the standalone
 runner from their workspace without cloning this application's source code:
 
 ```sh
-npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multiplayer-ai/workspaces
-npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner start --workspaces /path/to/new/worktrees
-npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner workspaces
-npx --yes --package="https://workspace.example/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner workspaces --json
+npx --yes --package="https://workspace.example/downloads/multicode-ai-runner.tgz" multicode-ai-runner pair --server https://workspace.example --code RN-XXXX-XXXX --workspaces ~/multicode-ai/workspaces
+npx --yes --package="https://workspace.example/downloads/multicode-ai-runner.tgz" multicode-ai-runner start --workspaces /path/to/new/worktrees
+npx --yes --package="https://workspace.example/downloads/multicode-ai-runner.tgz" multicode-ai-runner workspaces
+npx --yes --package="https://workspace.example/downloads/multicode-ai-runner.tgz" multicode-ai-runner workspaces --json
 ```
 
 Pairing saves the location; `start --workspaces` overrides it for that process.

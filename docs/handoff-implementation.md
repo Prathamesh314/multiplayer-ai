@@ -87,7 +87,7 @@ The default handoff suite uses disposable PGlite and temporary Git repositories.
 
 Migrations `025_handoff_turns.sql` and `026_import_base.sql` were applied to the actual local database after verifying there were no active runs/jobs. A permission-restricted database backup was created first:
 
-`/tmp/multiplayer-ai-before-handoff-20260911.dump`
+`/tmp/multicode-ai-before-handoff-20260911.dump`
 
 That temporary backup is not a long-term production backup. Existing user application, worker, and runner processes were not restarted, and no cloud environment was changed.
 
@@ -96,7 +96,7 @@ For another environment:
 1. Stop new submissions and drain active jobs. Back up both PostgreSQL and durable repositories; rehearse the upgrade on a copy.
 2. Apply pending migrations with the environment's `DATABASE_URL`, for example `node --env-file=.env db/migrate.mjs`.
 3. Upgrade and restart compatible web, worker, and local runner code together. This implementation requires runner protocol **2**; older runners are rejected rather than allowed to consume incompatible work. Existing pairing tokens can remain in place.
-4. Start the bundled runner by signing in to the desktop app, or install the [standalone runner](../runner/README.md) and run `multiplayer-ai-runner start` on each participating user's device. Verify it reports an installed, signed-in provider. Restart the app and worker using their existing process manager.
+4. Start the bundled runner by signing in to the desktop app, or install the [standalone runner](../runner/README.md) and run `multicode-ai-runner start` on each participating user's device. Verify it reports an installed, signed-in provider. Restart the app and worker using their existing process manager.
 5. Smoke-test a named handoff, recipient continuation, imported-file edit, and final diff before admitting normal traffic.
 
 Do not roll back only the executable to a protocol-1 version while retaining queued protocol-2 work. Preserve history, completion intents, candidate refs, and runner outboxes during any recovery.

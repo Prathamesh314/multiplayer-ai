@@ -25,7 +25,7 @@ try {
   for(const port of ports){
     const child=spawn(process.execPath,['--import','./tests/helpers/email-provider-fixture.mjs','node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{
       env:{...process.env,DATABASE_URL:database.href,REDIS_URL:'',MNEMOSYNE_URL:'',LOCAL_RUNNERS:'0',WEB_CONCURRENCY:'1',API_TRUST_PROXY:'0',SIGNUP_MODE:'open',AUTH_PUBLIC_URL:base,
-        GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',GOOGLE_OAUTH_CREDENTIALS_FILE:'',EMAIL_VERIFICATION_ENABLED:'true',RESEND_API_KEY:'fixture-resend-key',EMAIL_FROM:'Multiplayer AI <verify@example.test>',EMAIL_PROVIDER_TEST:'1',EMAIL_TEST_OUTBOX:outbox,API_RATE_AUTH_BURST:'200',API_RATE_AUTH_PER_MINUTE:'200'},stdio:['ignore','pipe','pipe']});
+        GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',GOOGLE_OAUTH_CREDENTIALS_FILE:'',EMAIL_VERIFICATION_ENABLED:'true',RESEND_API_KEY:'fixture-resend-key',EMAIL_FROM:'Multicode AI <verify@example.test>',EMAIL_PROVIDER_TEST:'1',EMAIL_TEST_OUTBOX:outbox,API_RATE_AUTH_BURST:'200',API_RATE_AUTH_PER_MINUTE:'200'},stdio:['ignore','pipe','pipe']});
     servers.push({child,exit:once(child,'exit')});for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{logs=(logs+chunk).slice(-8000);});
     let ready=false;for(let count=0;count<150;count++){if(child.exitCode!==null)throw Error(logs);try{ready=(await fetch(`http://127.0.0.1:${port}/login`)).ok;}catch{}if(ready)break;await delay(100);}assert.ok(ready);
   }

@@ -826,7 +826,7 @@ function EmptyState({
       ) : (
         <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-5 sm:p-9">
           <SparkleIcon className="mb-4 h-6 w-6 text-vs-muted" />
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multiplayer-ai</p>
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multicode-ai</p>
           <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Build together, from the first prompt.</h1>
           <p className="mt-2 text-xs leading-5 text-vs-muted">
             Start a task with AI, share the conversation, and let a teammate pick up where you left off.

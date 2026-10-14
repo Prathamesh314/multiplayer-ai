@@ -29,7 +29,7 @@ for (const args of [["desktop/prepare.mjs"], [require.resolve("electron-builder/
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-if (release && platform === "darwin") verifySignedMac(join(env.DESKTOP_OUTPUT_DIR, "mac" + (arch === "x64" ? "" : "-" + arch), "Multiplayer AI.app"));
+if (release && platform === "darwin") verifySignedMac(join(env.DESKTOP_OUTPUT_DIR, "mac" + (arch === "x64" ? "" : "-" + arch), "Multicode AI.app"));
 await mkdir("desktop-dist", { recursive: true });
 const hashes = [];
 for (const file of (await readdir(env.DESKTOP_OUTPUT_DIR)).sort()) {
@@ -47,6 +47,6 @@ if (platform === "darwin" && macSigning(env, release).identity === "-") {
   console.warn("\nWarning: this macOS build is ad-hoc signed because no CSC_LINK or CSC_NAME was configured.");
   console.warn("Gatekeeper will not start it once a browser quarantines the download; it stalls before any window appears.");
   console.warn("Testers must clear the quarantine flag after installing:");
-  console.warn("  xattr -dr com.apple.quarantine '/Applications/Multiplayer AI.app'");
+  console.warn("  xattr -dr com.apple.quarantine '/Applications/Multicode AI.app'");
   console.warn("Configure a Developer ID certificate and notarization credentials to distribute a build that just opens.");
 }

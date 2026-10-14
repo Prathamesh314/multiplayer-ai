@@ -8,7 +8,7 @@ export const guides: Guide[] = [
     slug: "prerequisites", category: "Get started", title: "Prerequisites",
     description: "Know what you need before downloading, joining, or running your first AI task.",
     sections: [
-      { id: "choose-your-path", title: "Choose how you’ll participate", body: `Multiplayer AI is a shared coding workspace. The website stores collaboration and saved work; a connected computer runs your AI tools. A cloud AI provider can still process requests remotely.
+      { id: "choose-your-path", title: "Choose how you’ll participate", body: `Multicode AI is a shared coding workspace. The website stores collaboration and saved work; a connected computer runs your AI tools. A cloud AI provider can still process requests remotely.
 
 | What you want to do | What you need |
 | --- | --- |
@@ -21,7 +21,7 @@ export const guides: Guide[] = [
 You can join as a reader or commenter before setting up a computer. A guest invitation does not give editing access. See [sharing and guest access](/docs/sharing).` },
       { id: "computer", title: "Prepare your computer", body: `1. Use a computer that can stay awake and online while tasks run.
 2. Install **Git** and confirm that \`git --version\` works in a new terminal. Get it from [Git’s download page](https://git-scm.com/downloads).
-3. Install one supported AI command-line tool and complete its own sign-in or provider configuration. Signing in to Multiplayer AI with Google does **not** sign you in to an AI provider.
+3. Install one supported AI command-line tool and complete its own sign-in or provider configuration. Signing in to Multicode AI with Google does **not** sign you in to an AI provider.
 4. Have enough disk space for your repositories, dependency installations, and build output. Those files use your computer’s storage.
 5. Install the desktop app, or use the [standalone runner](/docs/connect-computer#terminal-connection).
 
@@ -33,9 +33,9 @@ There is no published universal RAM minimum for all projects. A small cloud-back
 The website lists Windows 10 or later; operating-system support also depends on the chosen desktop release and AI tool. On a Mac, **About This Mac** shows whether you have an Apple chip or Intel processor. The Linux download is an AppImage.
 
 Preview builds are labeled on the download page. macOS previews are not notarized and Windows previews are unsigned; your operating system may block installation. Follow the [installation guide](/docs/download-install) and your organisation’s device policy.` },
-      { id: "accounts-and-network", title: "Accounts, access, and connectivity", body: `Use your own AI provider account or configured provider credentials. That provider’s subscription, credits, permissions, and rate limits apply. Multiplayer AI does not include unlimited AI usage just because you created an account.
+      { id: "accounts-and-network", title: "Accounts, access, and connectivity", body: `Use your own AI provider account or configured provider credentials. That provider’s subscription, credits, permissions, and rate limits apply. Multicode AI does not include unlimited AI usage just because you created an account.
 
-Your computer needs access to **https://cubeclashes.com** and to the services used by your AI tool. A network that blocks streaming connections may interrupt live updates or computer pairing. Ask your network administrator about the workspace domain if connections repeatedly fail.
+Your computer needs access to **https://multicode.in** and to the services used by your AI tool. A network that blocks streaming connections may interrupt live updates or computer pairing. Ask your network administrator about the workspace domain if connections repeatedly fail.
 
 Imported files are uploaded to the workspace, and authorised teammates can access shared content. Prompts and selected context may reach your AI provider. Use sample files for your first task and keep credentials out of shared messages and uploads.` },
       { id: "ready-check", title: "Check that you’re ready", body: `Before sending your first prompt, confirm:
@@ -60,28 +60,28 @@ Then follow [your first AI conversation](/docs/first-conversation).`, screenshot
 
 Read the preview notice beside the download buttons. A preview is not a signed production release. Downloads and availability come from the homepage; these docs deliberately do not pin an installer version.` },
       { id: "macos", title: "Install on macOS", body: `1. Open the downloaded **.dmg**.
-2. Drag **Multiplayer AI** into **Applications**.
+2. Drag **Multicode AI** into **Applications**.
 3. Launch it from Applications.
 4. If macOS blocks a preview build, confirm that it came from the official download page and consult your organisation’s policy or administrator. Do not disable system-wide security controls to run it.
 
 A processor mismatch can stop the app from opening. Recheck **About This Mac** and download the corresponding Apple Silicon or Intel build.` },
-      { id: "windows-linux", title: "Install on Windows or Linux", body: `**Windows:** open the downloaded **.exe**, follow the installer, and launch Multiplayer AI. An unsigned preview may trigger an operating-system warning. Use the release’s published provenance and your organisation’s installation policy to decide whether to proceed.
+      { id: "windows-linux", title: "Install on Windows or Linux", body: `**Windows:** open the downloaded **.exe**, follow the installer, and launch Multicode AI. An unsigned preview may trigger an operating-system warning. Use the release’s published provenance and your organisation’s installation policy to decide whether to proceed.
 
 **Linux:** make the downloaded AppImage executable, then launch it. Replace the example filename with your actual downloaded filename:
 
 \`\`\`sh
-chmod +x ./Multiplayer-AI.AppImage
-./Multiplayer-AI.AppImage
+chmod +x ./Multicode-AI.AppImage
+./Multicode-AI.AppImage
 \`\`\`
 
 If your distribution cannot run AppImages because FUSE is unavailable, the packaged AppImage supports:
 
 \`\`\`sh
-./Multiplayer-AI.AppImage --appimage-extract-and-run
+./Multicode-AI.AppImage --appimage-extract-and-run
 \`\`\`
 
 These commands install neither Git nor your AI tool. Complete the [prerequisites](/docs/prerequisites) separately.` },
-      { id: "workspace-address", title: "Enter your workspace address", body: `On first launch, enter **https://cubeclashes.com** in **Workspace address** and select **Connect**. Use only the origin: no \`/workspace\` path, invitation token, or trailing query string. For a privately hosted installation, use the HTTPS address supplied by its administrator.
+      { id: "workspace-address", title: "Enter your workspace address", body: `On first launch, enter **https://multicode.in** in **Workspace address** and select **Connect**. Use only the origin: no \`/workspace\` path, invitation token, or trailing query string. For a privately hosted installation, use the HTTPS address supplied by its administrator.
 
 The desktop app connects to an existing server; it does not create or host one. Sign in using the same account as the browser. The bundled runner connects automatically after sign-in.
 
@@ -103,7 +103,7 @@ If updates are not configured, obtain a newer installer from the download page o
 The hosted workspace currently allows open signup. A privately hosted workspace may require an invitation or temporarily disable new accounts; follow the message on that sign-in page.` },
       { id: "verification", title: "Verify your email and manage your account", body: `Follow the verification instructions in the sign-in form. Check your inbox and spam folder, use the newest code, and follow the expiry and resend guidance shown by Clerk. Your email does not need to be a Google account.
 
-If you already used Multiplayer AI before Clerk was introduced, sign in or create your Clerk account with the **same verified email address**. Your conversations and memberships stay attached to your account. Your previous application password is not transferred: use Google or email verification and manage your password in **Account settings**.
+If you already used Multicode AI before Clerk was introduced, sign in or create your Clerk account with the **same verified email address**. Your conversations and memberships stay attached to your account. Your previous application password is not transferred: use Google or email verification and manage your password in **Account settings**.
 
 Open **Account settings** in your workspace to manage your profile, sign-in methods, password, multi-factor authentication, and active sessions. Account deletion removes your access and disconnects your computers. If an email is linked to another identity, contact your workspace administrator instead of creating duplicate accounts.` },
       { id: "invitation-signin", title: "Join from an invitation", body: `Open the complete invitation URL. If asked to sign in, use the account that should receive access. **Guest conversation links require the exact invited email.** For a new account, complete signup and email verification, then return to the invitation if you are not taken there automatically.
@@ -137,7 +137,7 @@ Pairing codes are single-use and expire in **10 minutes**. Never publish or reus
 For the hosted workspace, the start command is:
 
 \`\`\`sh
-npx --yes --package="https://cubeclashes.com/downloads/multiplayer-ai-runner.tgz" multiplayer-ai-runner start
+npx --yes --package="https://multicode.in/downloads/multicode-ai-runner.tgz" multicode-ai-runner start
 \`\`\`
 
 Run it on the computer that should execute your tasks. The full package URL matters: the runner is distributed by your workspace. If \`npx\` is missing, install Node.js and open a new terminal.` },
@@ -161,7 +161,7 @@ Each computer executes work for its owning account. Teammates do not gain contro
     sections: [
       { id: "connect", title: "Install and connect one tool", body: `1. Install Git and your chosen AI command-line tool on the connected computer. Use its official installer and sign-in instructions.
 2. Run that tool directly in a terminal once and finish its login/provider setup.
-3. In Multiplayer AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat.
+3. In Multicode AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat.
 4. Select **Check connections**. If a detected tool offers **Connect**, follow its login flow; you can also complete the CLI login in your terminal.
 5. Return to the room and choose its provider and model in the composer.
 
@@ -589,7 +589,7 @@ Only supported public, unarchived channels containing the app are available. Pri
       { id: "discord", title: "Connect Discord", body: `Choose **Connect Discord**, authorise the intended server, then choose and save eligible public text channels. The bot needs permission to view channels and read message history; server setup must include the required message-content capability.
 
 Private channels, DMs, voice, forum, and thread channels are excluded in this integration. Check the connection’s status and error message if the expected channel is missing.` },
-      { id: "desktop", title: "Complete authorisation from desktop", body: `The desktop app opens the web workspace to complete provider authorisation. Sign in there with the same Multiplayer AI account, confirm the selected organisation/project, and click **Connect Slack/Discord** in that browser.
+      { id: "desktop", title: "Complete authorisation from desktop", body: `The desktop app opens the web workspace to complete provider authorisation. Sign in there with the same Multicode AI account, confirm the selected organisation/project, and click **Connect Slack/Discord** in that browser.
 
 After authorising and choosing channels, return to desktop and use **Refresh status**. This keeps the external provider login in the browser while preserving the intended project.` },
       { id: "context", title: "Understand sync and disconnect", body: `The integration makes bounded, attributed channel history available as project context. It is not a complete Slack or Discord archive. Initial sync reads recent messages; supported live events and reconciliation update that context afterward. Look at channel status, sync time, and source links when checking a result.
@@ -601,13 +601,13 @@ You can share up to **10 public channels per connection selection**. A project m
     slug: "desktop-settings", category: "Manage & troubleshoot", title: "Desktop settings & local files",
     description: "Pause execution, find your worktrees, change their location, and update the desktop client.",
     sections: [
-      { id: "settings", title: "Open desktop settings", body: `Open **Multiplayer AI → Desktop settings**, or press **Cmd/Ctrl + ,**. This screen controls the workspace address, runner connection, local worktree location, and update checks.
+      { id: "settings", title: "Open desktop settings", body: `Open **Multicode AI → Desktop settings**, or press **Cmd/Ctrl + ,**. This screen controls the workspace address, runner connection, local worktree location, and update checks.
 
 Use **Reopen workspace** to retry the configured server. Changing the workspace address changes which server the desktop client connects to; use the HTTPS origin your team trusts.`, screenshot: "desktop-setup" },
       { id: "pause", title: "Pause, resume, and quit", body: `**Pause after current task** stops new execution and waits for already accepted work to drain. A manual pause persists across relaunches. Use **Resume runner** when ready to accept tasks again.
 
 Signing out stops new work for that account. Quitting normally waits for an active task and its completion report. Force-quitting, shutting down, or letting the computer sleep can interrupt work. Use [Handoff](/docs/handoff) when another person should continue, and inspect uploaded history after an interruption.` },
-      { id: "worktrees", title: "Find your local files", body: `Under **Local worktrees**, select **Open folder** to inspect the workspace directory. The default is \`~/multiplayer-ai/workspaces\`. Each repository in a room has a persistent worktree, created on first use. Chats in that room repository share it.
+      { id: "worktrees", title: "Find your local files", body: `Under **Local worktrees**, select **Open folder** to inspect the workspace directory. The default is \`~/multicode-ai/workspaces\`. Each repository in a room has a persistent worktree, created on first use. Chats in that room repository share it.
 
 Use **Change location** while the runner is paused to choose where new worktrees are created. Existing worktrees retain their saved paths; changing the setting is not a migration of all old files.
 
@@ -654,7 +654,7 @@ Starting without files still requires computer and AI setup to send a prompt.` }
       { id: "offline", title: "My computer is offline or not detected", body: `Wake the computer, restore internet access, and open desktop using the same account as the browser. Check whether the runner was paused. For the standalone runner, leave the start command running in a terminal.
 
 Use **Check connection again**. If the app asks for an update, install the newer desktop/runner. If the device was revoked, pair it again explicitly. Repeated disconnects can indicate a proxy/firewall blocking the workspace’s streaming connections.` },
-      { id: "invites", title: "An invitation link does not work", body: `- **Wrong hostname:** a public invitation must use your workspace’s public domain, not \`0.0.0.0\` or someone else’s \`localhost\`. For this service use \`https://cubeclashes.com\` and preserve the rest of the link.
+      { id: "invites", title: "An invitation link does not work", body: `- **Wrong hostname:** a public invitation must use your workspace’s public domain, not \`0.0.0.0\` or someone else’s \`localhost\`. For this service use \`https://multicode.in\` and preserve the rest of the link.
 - **Expired/replaced link:** ask the host for a fresh invitation. Organisation links expire after 14 days; guest chat access lasts 7 days from creation; handoff offers last one hour.
 - **Wrong email:** guest links are bound to the invited email. Sign in with that account.
 - **Incomplete URL:** preserve the entire guest link, including its \`#invite=\` fragment.

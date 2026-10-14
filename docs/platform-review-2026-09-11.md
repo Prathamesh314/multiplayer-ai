@@ -1,4 +1,4 @@
-# Multiplayer AI: product and engineering review
+# Multicode AI: product and engineering review
 
 Review date: 11 September 2026. Reviewed baseline: `b665b24`, the latest `origin/main` pulled during this review. The UI improvements described below are additional, uncommitted changes in the local `main` checkout.
 
@@ -14,7 +14,7 @@ I would keep the architecture and narrow the next milestone to one reliable work
 
 ### How the idea fits YC
 
-This is a direct match to YC's Fall 2026 “Multiplayer AI” request by Aaron Epstein. It explicitly discusses teammates watching, redirecting, and handing off a live agent session, including engineering teams. That supports the problem area; it does not establish customer demand for this particular product or predict admission. [YC's actual request](https://www.ycombinator.com/rfs).
+This is a direct match to YC's Fall 2026 “Multicode AI” request by Aaron Epstein. It explicitly discusses teammates watching, redirecting, and handing off a live agent session, including engineering teams. That supports the problem area; it does not establish customer demand for this particular product or predict admission. [YC's actual request](https://www.ycombinator.com/rfs).
 
 The strongest positioning is: “A shared workspace where engineering teams can pick up each other's AI work without losing context.” The current feature list sounds broader: editor, terminal, team messenger, agent dashboard, memory system, desktop client, and execution platform. Buyers need one reason to adopt it before they need all of those capabilities.
 

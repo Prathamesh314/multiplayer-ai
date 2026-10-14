@@ -1,4 +1,4 @@
-# multiplayer-ai
+# multicode-ai
 
 A collaborative, browser-based IDE where several people and several AI coding
 agents work in the same repository at the same time. Each "room" is a live
