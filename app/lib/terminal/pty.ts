@@ -24,6 +24,17 @@ import { NO_SHELL_REASON, resolveShell } from "./shell";
 const RING_BYTES = 256 * 1024;
 /** Grace period after the last viewer leaves before the shell is reaped. */
 const GRACE_MS = 10_000;
+/**
+ * How long a shell gets to honour SIGHUP before it is killed outright.
+ *
+ * SIGHUP is the polite signal — it lets the shell run its exit traps and flush
+ * — but a shell is free to ignore it, and some do: a login bash with job
+ * control, anything that trapped it, or a stopped foreground job. Without an
+ * escalation the shell, its children and the PTY master fd stay in this
+ * process for good, and the reaper that would clean them up calls this same
+ * function, so it never recovers.
+ */
+export const KILL_AFTER_MS = 2_000;
 
 type Session = {
   pty: IPty;
@@ -34,6 +45,8 @@ type Session = {
   subscribers: Set<(chunk: string) => void>;
   exitHandlers: Set<() => void>;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** Pending SIGKILL escalation, cleared when the shell actually exits. */
+  killTimer: ReturnType<typeof setTimeout> | null;
   exited: boolean;
 };
 
@@ -89,6 +102,7 @@ export function getOrCreate(id: string, cols: number, rows: number, ownerId: str
     subscribers: new Set(),
     exitHandlers: new Set(),
     graceTimer: null,
+    killTimer: null,
     exited: false,
   };
 
@@ -100,6 +114,8 @@ export function getOrCreate(id: string, cols: number, rows: number, ownerId: str
   term.onExit(() => {
     session.exited = true;
     if (session.graceTimer) clearTimeout(session.graceTimer);
+    if (session.killTimer) clearTimeout(session.killTimer);
+    releasePty(term);
     store.delete(id);
     for (const fn of session.exitHandlers) fn();
   });
@@ -170,9 +186,42 @@ export function destroy(id: string, ownerId?: string): void {
   if (!session) return;
   store.delete(id);
   if (session.graceTimer) clearTimeout(session.graceTimer);
+  signal(session, "SIGHUP");
+  if (session.exited || session.killTimer) return;
+
+  // Nothing here may keep the process alive on its own: an unref'd timer lets
+  // Node exit if this is the last thing running, which is what a hung shell
+  // otherwise prevents.
+  session.killTimer = setTimeout(() => {
+    session.killTimer = null;
+    if (session.exited) return;
+    signal(session, "SIGKILL");
+  }, KILL_AFTER_MS);
+  session.killTimer.unref?.();
+}
+
+function signal(session: Session, name: "SIGHUP" | "SIGKILL"): void {
   try {
-    session.pty.kill();
+    session.pty.kill(name);
   } catch {
-    // Already gone.
+    // Already gone, or the platform refused the signal; the escalation (or
+    // the exit that already happened) covers both.
+  }
+}
+
+/**
+ * Drop the PTY's own handles once the child is gone. node-pty closes these
+ * itself on exit, so this is belt and braces for the case where the child is
+ * reaped but the master fd lingers.
+ */
+function releasePty(term: IPty): void {
+  for (const key of ["_socket", "_writeStream"] as const) {
+    const stream = (term as unknown as Record<string, { destroy?: () => void; unref?: () => void } | undefined>)[key];
+    if (!stream) continue;
+    try {
+      stream.unref?.();
+    } catch {
+      // Not every node-pty backend exposes these; absence is fine.
+    }
   }
 }

@@ -51,9 +51,11 @@ above was observed on 2026-10-13 as the live `cubeclashes.com` origin. Do not
 add an AAAA record unless the VM actually has routable IPv6; a DNS64-synthesized
 `64:ff9b::…` address is not the server's address.
 
-The `www` record is required now, not optional: the gateway serves a
-`www.{$APP_DOMAIN}` site that redirects to the apex, and it needs that name to
-resolve in order to obtain a certificate.
+The `www` record is required now, not optional: the gateway serves a separate
+site, `APP_WWW_DOMAIN`, that redirects to the apex, and it needs that name to
+resolve in order to obtain a certificate. Compose derives the value from
+`APP_DOMAIN` (`www.multicode.in`), so there is nothing to set by hand; override
+it only to point some other hostname at this deployment.
 
 ## 2. Point GoDaddy at Cloudflare
 
@@ -67,16 +69,28 @@ and add the DS record at GoDaddy. Wait for **Active** before step 3.
 
 ## 3. Switch the application origin
 
-On the VM, in `/opt/multiplayer-ai/.env.production` (the checkout path is
-unchanged — see "What was deliberately not renamed"):
+Everything the old hostname is written into lives in one file on the VM:
+`/opt/multiplayer-ai/.env.production` (the checkout path is unchanged — see
+"What was deliberately not renamed"). The complete set:
 
-```dotenv
-APP_DOMAIN=multicode.in
-AUTH_PUBLIC_URL=https://multicode.in
-```
+| Variable | New value | Applied by |
+| --- | --- | --- |
+| `APP_DOMAIN` | `multicode.in` | restart (Caddy site + certificate) |
+| `AUTH_PUBLIC_URL` | `https://multicode.in` | restart |
+| `APP_ASSET_DOMAIN` | `assets.multicode.in` | restart — **step 5, not now** |
+| `NEXT_PUBLIC_ASSET_PREFIX` | `https://assets.multicode.in` | **rebuild** — step 5, not now |
+| `DESKTOP_DOWNLOAD_MAC_URL` and the other four `DESKTOP_DOWNLOAD_*` URLs | same paths under `https://multicode.in` | **rebuild** |
+| `INTEGRATIONS_PUBLIC_URL` | `https://multicode.in` — only if Slack/Discord are connected | restart |
+| `EMAIL_FROM` | `Multicode AI <verify@multicode.in>` — only if Resend is still in use | restart |
 
-Leave `APP_ASSET_DOMAIN` and `NEXT_PUBLIC_ASSET_PREFIX` alone for now. Deploy
-through the **Application checks** workflow on `main`; do not rebuild by hand.
+"**rebuild**" means the value is a Docker build argument baked into the web
+image: `NEXT_PUBLIC_ASSET_PREFIX`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and all
+`DESKTOP_DOWNLOAD_*`. Editing the running container's environment does nothing
+for those; the deployment workflow rebuilds, so a normal deploy is enough.
+
+Set `APP_DOMAIN` and `AUTH_PUBLIC_URL` now, leave the asset variables for step
+5, and deploy through the **Application checks** workflow on `main`. Do not
+rebuild by hand.
 
 Caddy requests certificates for `multicode.in` and `www.multicode.in` on
 startup, using its existing persistent certificate storage. Keep port 80
@@ -108,9 +122,16 @@ Work through them before announcing the domain.
   sign-in now; this path is retained for rollback, so update the authorized
   redirect URI to `https://multicode.in/api/auth/google/callback` only if you
   still rely on it.
+- **Slack / Discord** — only if Connections are in use. The OAuth redirect is
+  derived from `INTEGRATIONS_PUBLIC_URL`, so the app registration in each
+  provider's dashboard needs the matching URI added:
+  `https://multicode.in/api/integrations/slack/callback` and
+  `…/discord/callback`. An unlisted redirect URI fails at authorisation time,
+  not at startup, so nothing warns you until someone tries to connect.
 - **GitHub Actions** — the deployment job's summary URL already points at the
-  new domain. `PRODUCTION_DEPLOY_HOST` is an IP/hostname for SSH and does not
-  change with the public domain.
+  new domain. `PRODUCTION_DEPLOY_HOST`, `PRODUCTION_DEPLOY_SSH_KEY` and
+  `PRODUCTION_DEPLOY_KNOWN_HOSTS` address the VM over SSH and do **not** change
+  with the public domain.
 
 ## 4b. Turn the hosted terminal on, if you want it
 
@@ -169,6 +190,23 @@ Two user-visible paths did change name but stay backward compatible: the desktop
 app's `userData` directory and the default worktrees folder
 (`~/multicode-ai/workspaces`) both keep using the old `multiplayer-ai` location
 when it already exists, so nobody has to re-pair or re-clone.
+
+## Verification before you tell anyone
+
+Each of these exercises a different piece of the cutover; a green homepage
+proves only the first.
+
+```sh
+whois multicode.in | grep -i clientHold          # must print nothing
+dig +short NS multicode.in                       # the Cloudflare pair
+curl -sI https://multicode.in/ | head -1         # 200
+curl -sI https://www.multicode.in/ | head -1     # 308 to the apex
+curl -sI https://assets.multicode.in/docs/images/workspace.webp | head -1   # 200, step 5
+```
+
+Then, in a browser: sign in with Clerk; open an invitation link and check it
+carries the new hostname; pair a computer from **Your computers**; send one AI
+prompt. If Connections are configured, reconnect one Slack or Discord channel.
 
 ## What this does not do
 

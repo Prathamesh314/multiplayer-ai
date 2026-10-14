@@ -19,8 +19,28 @@ import { setTimeout as delay } from "node:timers/promises";
 import { terminalAccess } from "../app/lib/terminal/guard.ts";
 import { resolveShell } from "../app/lib/terminal/shell.ts";
 import { policyFor, policy } from "../app/lib/http/api-limit.ts";
+import { KILL_AFTER_MS } from "../app/lib/terminal/pty.ts";
 
 const request = (host = "localhost:3000") => new Request("http://x/api/terminal", { headers: { host } });
+
+/**
+ * Resolves or rejects, never hangs. A terminal test that waits forever turns a
+ * failure into a 35-minute CI timeout with no diagnosis, which is exactly how
+ * the leaked-shell bug first showed up.
+ */
+async function within(ms, label, body) {
+  const deadline = new AbortController();
+  try {
+    return await Promise.race([
+      Promise.resolve(body()).finally(() => deadline.abort()),
+      delay(ms, null, { signal: deadline.signal })
+        .then(() => { throw Error(`timed out after ${ms}ms: ${label()}`); })
+        .catch(cause => { if (cause.name !== "AbortError") throw cause; }),
+    ]);
+  } finally {
+    deadline.abort();
+  }
+}
 
 /** Runs `body` with the given env applied, restoring whatever was there. */
 async function withEnv(values, body) {
@@ -132,19 +152,46 @@ test("a shell really starts, echoes what is typed, and is bound to its owner", a
         subscribe(id, "alice", chunk => { output += chunk; if (output.includes("brillig")) resolve(); }, () => {});
       });
       assert.equal(write(id, "alice", "echo bril''lig\r"), true);
-      // The loser of a race still holds a timer, so the deadline is abortable
-      // rather than keeping the suite alive for its full duration.
-      const deadline = new AbortController();
-      await Promise.race([
-        seen.then(() => deadline.abort()),
-        delay(15000, null, { signal: deadline.signal })
-          .then(() => { throw Error("no output from the shell: " + JSON.stringify(output)); })
-          .catch(cause => { if (cause.name !== "AbortError") throw cause; }),
-      ]);
+      await within(15000, () => "no output from the shell: " + JSON.stringify(output), () => seen);
       assert.equal(intercepted, "", "another account must receive nothing");
 
       destroy(id, "mallory");
       assert.equal(write(id, "alice", "\r"), true, "a foreign kill must not end the shell");
+
+      // The shell must actually be gone before this test returns. A surviving
+      // shell holds the PTY's master fd, which holds the event loop, which
+      // hangs the whole run rather than failing it.
+      const gone = new Promise(resolve => subscribe(id, "alice", () => {}, resolve));
+      destroy(id);
+      await within(KILL_AFTER_MS + 8000, () => "the shell outlived destroy()", () => gone);
+    } finally {
+      destroy(id);
+    }
+  });
+});
+
+test("a shell that ignores SIGHUP is still killed, instead of pinning the process", async () => {
+  // bash traps SIGHUP here, which is what the CI runner's login shell
+  // effectively did: destroy() sent one polite signal and assumed it worked,
+  // so the shell, its children and the master fd stayed for good.
+  const bash = ["/bin/bash", "/usr/bin/bash"].find(path => existsSync(path));
+  if (!bash) return; // dash cannot trap SIGHUP the same way; nothing to prove.
+  const { destroy, getOrCreate, subscribe, write } = await import("../app/lib/terminal/pty.ts");
+
+  await withEnv({ MULTIPLAYER_AI_SHELL: bash }, async () => {
+    const id = "stubborn-" + randomUUID();
+    assert.deepEqual(getOrCreate(id, 80, 24, "alice"), { ok: true });
+    try {
+      let output = "";
+      const ready = new Promise(resolve => {
+        subscribe(id, "alice", chunk => { output += chunk; if (output.includes("trapped")) resolve(); }, () => {});
+      });
+      write(id, "alice", "trap '' HUP; echo trap''ped\r");
+      await within(15000, () => "shell never confirmed the trap: " + JSON.stringify(output), () => ready);
+
+      const gone = new Promise(resolve => subscribe(id, "alice", () => {}, resolve));
+      destroy(id);
+      await within(KILL_AFTER_MS + 8000, () => "SIGHUP was ignored and no SIGKILL followed", () => gone);
     } finally {
       destroy(id);
     }
