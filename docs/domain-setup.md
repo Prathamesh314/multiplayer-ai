@@ -51,9 +51,11 @@ above was observed on 2026-10-13 as the live `cubeclashes.com` origin. Do not
 add an AAAA record unless the VM actually has routable IPv6; a DNS64-synthesized
 `64:ff9b::…` address is not the server's address.
 
-The `www` record is required now, not optional: the gateway serves a
-`www.{$APP_DOMAIN}` site that redirects to the apex, and it needs that name to
-resolve in order to obtain a certificate.
+The `www` record is required now, not optional: the gateway serves a separate
+site, `APP_WWW_DOMAIN`, that redirects to the apex, and it needs that name to
+resolve in order to obtain a certificate. Compose derives the value from
+`APP_DOMAIN` (`www.multicode.in`), so there is nothing to set by hand; override
+it only to point some other hostname at this deployment.
 
 ## 2. Point GoDaddy at Cloudflare
 
