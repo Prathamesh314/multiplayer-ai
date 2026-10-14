@@ -67,8 +67,10 @@ async function handlePOST(request: Request, context: Context) {
       if (["running","queued"].includes(current.status)) throw new Error("Finish or recover the active turn before restoring.");
       if (body.snapshotId) {
         const { rows: [snapshot] } = await tx.query(`SELECT * FROM workspace_snapshots WHERE id = $1 AND run_id = $2 AND repo_ref = $3`, [body.snapshotId, run.id, run.repoId ?? run.sessionId]);
-        const { rows: [repo] } = await tx.query(run.repoId ? `SELECT head_sha FROM room_repos WHERE id = $1` : `SELECT head_sha FROM session_repos WHERE session_id = $1`, [run.repoId ?? run.sessionId]);
-        if (!snapshot || (snapshot.base_sha !== repo?.head_sha && snapshot.head_sha !== repo?.head_sha)) throw new Error("Repository history advanced beyond this checkpoint. Review its files before integrating it; no code was changed.");
+        // An isolated chat restores against its own branch, not the room's.
+        const head = current.isolation === "isolated" ? current.head_sha
+          : (await tx.query(run.repoId ? `SELECT head_sha FROM room_repos WHERE id = $1` : `SELECT head_sha FROM session_repos WHERE session_id = $1`, [run.repoId ?? run.sessionId])).rows[0]?.head_sha;
+        if (!snapshot || (snapshot.base_sha !== head && snapshot.head_sha !== head)) throw new Error("Repository history advanced beyond this checkpoint. Review its files before integrating it; no code was changed.");
       }
       await tx.query(`UPDATE agent_runs SET restore_snapshot_id = $2 WHERE id = $1`, [run.id, body.snapshotId]);
     });

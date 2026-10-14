@@ -1,4 +1,5 @@
 import { queryOne } from "../db/client";
+import { DEFAULT_PARALLEL_CHATS, type RunIsolation } from "./isolation";
 
 /**
  * The cost governor for AI runs.
@@ -35,15 +36,37 @@ export async function checkRunAllowed(params: {
   sessionId: string;
   userId: string;
   isNewRun: boolean;
+  /** A new isolated chat is bounded per person instead of per room. */
+  isolation?: RunIsolation;
 }): Promise<RunGate> {
   const { orgId, projectId, sessionId, userId, isNewRun } = params;
 
-  // One live run per person per room. Watchers share a run's stream, so a second
+  // Isolated chats have their own branches, so several may run at once; the
+  // cap protects the member's machine and spans every room.
+  if (isNewRun && params.isolation === "isolated") {
+    const limit = (orgId ? (await queryOne<{ n: number }>(
+      `SELECT parallel_chats_per_user AS n FROM orgs WHERE id = $1`, [orgId]))?.n : null) ?? DEFAULT_PARALLEL_CHATS;
+    const parallel = await count(
+      `SELECT count(*)::int AS n FROM agent_runs
+        WHERE driver_user_id = $1 AND status = 'running' AND isolation = 'isolated'
+          AND started_at > now() - interval '${STALE}'`,
+      [userId],
+    );
+    if (parallel >= limit) {
+      return {
+        ok: false,
+        limit: "parallel",
+        error: `You already have ${limit} parallel chat(s) running. Wait for one to finish.`,
+      };
+    }
+  }
+
+  // One live shared run per person per room. Watchers share a run's stream, so a second
   // simultaneous run by the same user is duplicated compute, not collaboration.
-  if (isNewRun) {
+  if (isNewRun && params.isolation !== "isolated") {
     const mine = await count(
       `SELECT count(*)::int AS n FROM agent_runs
-        WHERE session_id = $1 AND started_by = $2 AND status = 'running'
+        WHERE session_id = $1 AND started_by = $2 AND status = 'running' AND isolation = 'shared'
           AND started_at > now() - interval '${STALE}'`,
       [sessionId, userId],
     );
@@ -56,7 +79,7 @@ export async function checkRunAllowed(params: {
     }
   }
 
-  // Personal rooms (no org) are governed only by the per-user-room guard above.
+  // Personal rooms (no org) are governed only by the personal guards above.
   if (!orgId) return { ok: true };
 
   const org = await queryOne<OrgLimits>(

@@ -3,6 +3,7 @@ import { closeTurnInputs } from "./close-inputs";
 import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_PARALLEL_CHATS } from "./isolation";
 
 export class ControlError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -23,9 +24,16 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     }
     const { rows: [room] } = await tx.query(`SELECT org_id, project_id FROM sessions WHERE id = $1`, [run.session_id]);
     await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [room.org_id ?? `${run.session_id}:${userId}`]);
+    // The parallel cap spans rooms and orgs, which the lock above does not.
+    if (run.isolation === "isolated") await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`parallel:${userId}`]);
+    // Shared chats in one room race for the same room head, so a person runs
+    // one at a time there. Isolated chats have their own branches; they are
+    // bounded per person across rooms, since they share that person's machine.
     const { rows: [quota] } = await tx.query(
       `SELECT
-        (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running') AS personal,
+        (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running' AND isolation = 'shared') AS personal,
+        (SELECT count(*)::int FROM agent_runs WHERE driver_user_id = $2 AND status = 'running' AND isolation = 'isolated') AS parallel_running,
+        (SELECT parallel_chats_per_user FROM orgs WHERE id = $3) AS parallel_limit,
         (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.org_id = $3 AND r.status = 'running') AS org_running,
         (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.project_id = $4 AND r.status = 'running') AS project_running,
         (SELECT run_concurrency_limit FROM orgs WHERE id = $3) AS org_limit,
@@ -40,7 +48,11 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
           WHERE s.project_id = $4 AND t.created_at >= now() - interval '1 hour') AS hourly_used`,
       [run.session_id, userId, room.org_id, room.project_id],
     );
-    if (quota.personal > 0 || (quota.org_limit != null && quota.org_running >= quota.org_limit) ||
+    const parallelLimit = quota.parallel_limit ?? DEFAULT_PARALLEL_CHATS;
+    if (run.isolation === "isolated" && quota.parallel_running >= parallelLimit) {
+      throw new ControlError(`You already have ${parallelLimit} parallel chat(s) running. Wait for one to finish.`, 429);
+    }
+    if ((run.isolation !== "isolated" && quota.personal > 0) || (quota.org_limit != null && quota.org_running >= quota.org_limit) ||
         (quota.project_limit != null && quota.project_running >= quota.project_limit)) {
       throw new ControlError("The execution limit is reached. Wait for the active turn to finish.", 429);
     }

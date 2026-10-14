@@ -35,6 +35,8 @@ import {
 } from "../../../lib/runner/jobs";
 import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
+import { chatBranchOf } from "../../../lib/session/repo";
+import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 import { terminalAccess } from "../../../lib/terminal/guard";
 
@@ -78,6 +80,12 @@ export type AiRunRequest = {
    * started on — a thread never switches codebases midway.
    */
   repoId?: string;
+  /**
+   * "isolated" opens a new chat on its own branch so it can run alongside the
+   * person's other chats (see lib/ai/isolation.ts). A continued run keeps the
+   * mode it was opened with.
+   */
+  isolation?: "isolated" | "shared";
 };
 
 /**
@@ -171,6 +179,19 @@ async function handlePOST(request: Request) {
   }
   if (run && run.controlVersion > 0 && !useLocal) return Response.json({ error: "Connect your computer and set up this AI tool before continuing the chat that was handed to you.", code: "computer_connection_required" }, { status: 409 });
 
+  if (body.isolation != null && body.isolation !== "isolated" && body.isolation !== "shared") {
+    return Response.json({ error: "Invalid chat isolation." }, { status: 400 });
+  }
+  const isolated = run ? run.isolation === "isolated" : body.isolation === "isolated";
+  if (isolated && !run && !parallelChatsEnabled()) {
+    return Response.json({ error: "Parallel chats are not enabled on this server." }, { status: 400 });
+  }
+  // An older runner keeps one worktree per room repository and cannot hold a
+  // chat's own branch; it would never claim this turn.
+  if (isolated && useLocal && !await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort, false, true)) {
+    return Response.json({ error: "Update the desktop app to run parallel chats, then send your message again.", code: "runner_update_required" }, { status: 409 });
+  }
+
   // Which repo the chat works on. A continued run keeps the repo it started
   // on; a new one takes the picker's choice — an imported room repo, or the
   // room's own project fork by default. Validated against this room before
@@ -179,7 +200,8 @@ async function handlePOST(request: Request) {
   if (!run && typeof body.repoId === "string" && body.repoId) repoId = body.repoId;
   const repository = await resolveRepository(result.session, repoId);
   if (repository instanceof Response) return repository;
-  const headSha = repository.headSha;
+  // An isolated chat continues from its own branch; a new one forks the room head.
+  const headSha = run?.isolation === "isolated" && run.headSha ? run.headSha : repository.headSha;
 
   // "Import context from…" only makes sense for a brand new chat. Resolved
   // (and validated against project room visibility, via listForkableRuns)
@@ -207,6 +229,7 @@ async function handlePOST(request: Request) {
     sessionId,
     userId: result.user.id,
     isNewRun: !run,
+    isolation: isolated ? "isolated" : "shared",
   });
   if (!runGate.ok) {
     return Response.json({ error: runGate.error, limit: runGate.limit }, { status: 429 });
@@ -230,6 +253,7 @@ async function handlePOST(request: Request) {
       baseSha: headSha,
       title: supplied || draftRunTitle(prompt),
       titleSource: supplied ? "manual" : "auto",
+      isolation: isolated ? "isolated" : "shared",
     });
     if (!supplied) void nameChat(sessionId, run.id, prompt);
     await (await events()).publish(sessionId, {
@@ -427,6 +451,7 @@ async function handlePOST(request: Request) {
     projectRepositoryId: await projectRepositoryForRoom(sessionId, repoId),
     workspaceNames: { repository: repository.rootName, room: result.session.name },
     baseSha: headSha,
+    ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,
     agentPrompt,
     projectId: result.session.projectId,

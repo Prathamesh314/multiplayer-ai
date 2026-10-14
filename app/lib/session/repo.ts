@@ -27,6 +27,12 @@ export function sessionBranchOf(id: string): string {
   return `session/${id}`;
 }
 
+/** An isolated chat's own branch, beside the room branch in the same bare repo. */
+export function chatBranchOf(runId: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) throw new Error("Invalid chat ID");
+  return `chat/${runId.toLowerCase()}`;
+}
+
 /** Serialize all server writers on the shared filesystem, including across replicas. */
 export async function withRepoLock<T>(id: string, task: () => Promise<T>): Promise<T> {
   const lock = await repoLock();
@@ -822,15 +828,42 @@ async function stored_commitTurnWork(repoRef: string, turnId: string, baseSha: s
   return sha;
 }
 
-async function stored_promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string): Promise<void> {
+/** Moves `branch` (the room branch by default, or an isolated chat's branch) from the turn's base to its verified candidate. */
+async function stored_promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string, branch = sessionBranchOf(repoRef)): Promise<void> {
   const bare = barePath(repoRef);
   const candidate = (await git(bare, ["rev-parse", `refs/turns/${turnId}`])).trim();
   if (candidate !== sha || !await verifyPushedCommit(repoRef, baseSha, sha)) throw new Error("The turn's candidate commit could not be verified.");
-  const ref = `refs/heads/${sessionBranchOf(repoRef)}`;
+  const ref = `refs/heads/${branch}`;
   const current = (await git(bare, ["rev-parse", ref])).trim();
   if (current === sha) return;
   if (current !== baseSha) throw new Error("Repository changed during execution. Your result is preserved on its turn ref; review it before merging.");
   await git(bare, ["update-ref", ref, sha, baseSha]);
+}
+
+/**
+ * Opens an isolated chat's branch at `sha`, which must already be on the room
+ * branch. The empty old value makes creation race-safe; a retry that finds the
+ * branch already at `sha` succeeds, and one that finds it elsewhere fails.
+ */
+async function stored_createChatBranch(repoRef: string, runId: string, sha: string): Promise<void> {
+  const bare = barePath(repoRef);
+  const ref = `refs/heads/${chatBranchOf(runId)}`;
+  if (!await gitOk(bare, ["merge-base", "--is-ancestor", commitSha(sha), `refs/heads/${sessionBranchOf(repoRef)}`])) {
+    throw new Error("A chat can only branch from the room's history.");
+  }
+  if (await gitOk(bare, ["update-ref", ref, sha, ""])) return;
+  const current = (await git(bare, ["rev-parse", "--verify", "--quiet", ref]).catch(() => "")).trim();
+  if (current !== sha) throw new Error("This chat's branch already exists at another commit.");
+}
+
+/** The best common ancestor of two commits, or null for unrelated histories. */
+async function stored_mergeBase(repoRef: string, a: string, b: string): Promise<string | null> {
+  try {
+    return (await git(barePath(repoRef), ["merge-base", commitSha(a), commitSha(b)])).trim() || null;
+  } catch (cause) {
+    if ((cause as { code?: number }).code === 1) return null;
+    throw cause;
+  }
 }
 
 async function safeWorkFile(id: string, relative: string): Promise<string | null> {
@@ -940,6 +973,10 @@ export const prepareTurnWork = (...args: Parameters<typeof stored_prepareTurnWor
 export const commitTurnWork = (...args: Parameters<typeof stored_commitTurnWork>): ReturnType<typeof stored_commitTurnWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_commitTurnWork(...args)));
 
 export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): ReturnType<typeof stored_promoteTurn> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_promoteTurn(...args)));
+
+export const createChatBranch = (...args: Parameters<typeof stored_createChatBranch>): ReturnType<typeof stored_createChatBranch> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_createChatBranch(...args)));
+
+export const mergeBase = (...args: Parameters<typeof stored_mergeBase>): ReturnType<typeof stored_mergeBase> => withStoredRepo(barePath(args[0]), () => stored_mergeBase(...args));
 
 export const listCommittedTree = (...args: Parameters<typeof stored_listCommittedTree>): ReturnType<typeof stored_listCommittedTree> => withStoredRepo(barePath(args[0]), () => stored_listCommittedTree(...args));
 

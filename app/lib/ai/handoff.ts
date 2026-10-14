@@ -136,8 +136,9 @@ export async function changeHandoff(runId: string, sessionId: string, actorId: s
         : `SELECT head_sha FROM session_repos WHERE session_id = $1`, [run.repo_id ?? sessionId]);
       if (!repo) throw new ControlError("The chat's repository is not ready.");
       await tx.query(`UPDATE agent_runs SET driver_user_id = $2, control_version = control_version + 1 WHERE id = $1`, [runId, actorId]);
+      // An isolated chat hands off its own branch tip, not the room's.
       await tx.query(`UPDATE run_handoffs SET status = 'accepted', accepted_by = $2, resolved_at = now(),
-        checkpoint_sha = $3, checkpoint_seq = $4 WHERE id = $1`, [offer.id, actorId, repo.head_sha, run.message_seq]);
+        checkpoint_sha = $3, checkpoint_seq = $4 WHERE id = $1`, [offer.id, actorId, run.isolation === "isolated" ? run.head_sha : repo.head_sha, run.message_seq]);
     } else {
       await tx.query(`UPDATE run_handoffs SET status = $2, resolved_at = now() WHERE id = $1`, [offer.id, targetStatus]);
     }

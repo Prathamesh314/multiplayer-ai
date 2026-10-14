@@ -4,7 +4,7 @@ import { projectRepositoryForRoom } from "../project/repositories";
 import { queryOne, transaction } from "../db/client";
 import { events } from "../events";
 import { ensureRepoContext } from "../knowledge/repo-context";
-import { diffFilesBare, promoteTurn, withRepoLock, type FileChange } from "../session/repo";
+import { chatBranchOf, diffFilesBare, mergeBase, promoteTurn, withRepoLock, type FileChange } from "../session/repo";
 import { ingestExchange } from "./shared-memory";
 import { ControlError } from "./turns";
 
@@ -67,9 +67,13 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   if (snapshot.done) return snapshot.done;
   const saved = snapshot.input!;
   const repoRef = saved.repoId ?? saved.sessionId;
+  let isolated = false;
   const committed = await withRepoLock(repoRef, () => transaction(async tx => {
     const { rows: [run] } = await tx.query(`SELECT *,room_access_role(session_id,driver_user_id) AS role FROM agent_runs WHERE id = $1 FOR UPDATE`, [saved.runId]);
     const { rows: [turn] } = await tx.query(`SELECT * FROM agent_turns WHERE id = $1 FOR UPDATE`, [saved.turnId]);
+    // An isolated chat's turns promote onto its own branch and leave the room
+    // head alone; the room branch only moves when the chat is merged.
+    isolated = run.isolation === "isolated";
     if (turn.result) return { result: turn.result as FinalizeResult, fresh: false };
     if (turn.status !== 'running' || run.driver_user_id !== turn.driver_user_id || run.control_version !== turn.control_version || !['owner','editor'].includes(run.role)) {
       throw new ControlError("Execution lost access or control before publishing. Its candidate was preserved.");
@@ -79,19 +83,33 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     let status: "completed" | "failed" = saved.code === 0 ? "completed" : "failed";
     if (sha) {
       try {
-        await promoteTurn(repoRef, saved.turnId, saved.baseSha, sha);
+        await promoteTurn(repoRef, saved.turnId, saved.baseSha, sha, isolated ? chatBranchOf(run.id) : undefined);
       } catch (cause) {
         status = "failed";
         failure += `\n${cause instanceof Error ? cause.message : String(cause)}\nCandidate: refs/turns/${saved.turnId}`;
         sha = null;
       }
     }
-    if (sha) {
+    if (sha && isolated) {
+      await tx.query(`UPDATE agent_runs SET head_sha = $2 WHERE id = $1`, [saved.runId, sha]);
+    } else if (sha) {
       await tx.query(saved.repoId
         ? `UPDATE room_repos SET head_sha = $2 WHERE id = $1`
         : `UPDATE session_repos SET head_sha = $2 WHERE session_id = $1`, [repoRef, sha]);
     }
     const changes = sha ? await diffFilesBare(repoRef, saved.baseSha, sha) : [];
+    // The chat list shows an isolated chat's whole proposal against the room,
+    // not just its latest turn: measured from where it last met the room branch.
+    // A turn that changed nothing still leaves the earlier turns' proposal.
+    let totals = changes;
+    const tip: string | null = isolated ? sha ?? run.head_sha : null;
+    if (tip) {
+      const { rows: [room] } = await tx.query(saved.repoId
+        ? `SELECT head_sha FROM room_repos WHERE id = $1`
+        : `SELECT head_sha FROM session_repos WHERE session_id = $1`, [repoRef]);
+      const base = room?.head_sha ? await mergeBase(repoRef, room.head_sha, tip) : null;
+      totals = base ? await diffFilesBare(repoRef, base, tip) : changes;
+    }
     const messages = [
       ...(saved.output.trim() ? [{ role: "agent", body: saved.output.trim() }] : []),
       ...(status === "failed" ? [{ role: "system", body: failure || "Execution failed before producing a confirmed result." }] : []),
@@ -111,7 +129,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     await tx.query(`UPDATE agent_runs SET status = $2, result_sha = $3, exit_code = $4, error = $5,
       added_lines = $6, removed_lines = $7, ended_at = now() WHERE id = $1`,
     [saved.runId, status, sha, status === "failed" ? (saved.code || 1) : 0, status === "failed" ? failure : null,
-      changes.reduce((sum, file) => sum + file.added, 0), changes.reduce((sum, file) => sum + file.removed, 0)]);
+      totals.reduce((sum, file) => sum + file.added, 0), totals.reduce((sum, file) => sum + file.removed, 0)]);
     await tx.query(`UPDATE runner_jobs SET status = 'done' WHERE turn_id = $1`, [saved.turnId]);
     if (status === "completed") {
       await ingestExchange(tx, { sessionId: saved.sessionId, runId: saved.runId, turnId: saved.turnId,
@@ -122,7 +140,9 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   void notifyUsage(saved.sessionId);
   const result = committed.result;
   const bus = await events();
-  if (result.headSha) await bus.publish(saved.sessionId, {
+  // file.saved moves every open editor to a new room head, which an isolated
+  // turn never produces.
+  if (result.headSha && !isolated) await bus.publish(saved.sessionId, {
     type: "file.saved", repoId: saved.repoId, path: "", headSha: result.headSha,
     authorId: "agent", authorName: saved.author.name, originId: null, at: Date.now(),
   }).catch(() => {});
@@ -130,7 +150,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
   if (committed.fresh && result.status === "completed") {
     const session = await queryOne<{ project_id: string | null }>(`SELECT project_id FROM sessions WHERE id = $1`, [saved.sessionId]);
     const publishGated = !!session?.project_id && (saved.repoId === null || !!await projectRepositoryForRoom(saved.sessionId, saved.repoId));
-    if (result.headSha && !publishGated) await ensureRepoContext(repoRef, result.headSha);
+    if (result.headSha && !publishGated && !isolated) await ensureRepoContext(repoRef, result.headSha);
   }
   return result;
 }

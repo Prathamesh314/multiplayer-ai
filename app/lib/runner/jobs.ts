@@ -23,6 +23,7 @@ export async function claimNextJob(input: { userId: string; deviceId: string }):
            AND d.user_id = $1 AND d.revoked_at IS NULL AND d.version = '2'
            AND (d.supports_inputs OR NOT EXISTS (SELECT 1 FROM agent_run_inputs i WHERE i.turn_id=t.id AND i.status='queued'))
            AND j.payload->>'agentId' = ANY(d.agent_ids)
+           AND (j.payload->>'isolation' IS DISTINCT FROM 'isolated' OR d.supports_isolated_chats)
            AND runner_supports_model(d.model_catalog, j.payload->>'agentId', j.payload->>'model', j.payload->>'effort')
            AND r.driver_user_id = $1 AND r.control_version = t.control_version
            AND room_access_role(r.session_id, $1) IN ('owner', 'editor')
