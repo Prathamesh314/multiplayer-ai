@@ -1,5 +1,7 @@
 import { query, queryOne, transaction } from "../db/client";
 import type { AgentId } from "./catalog";
+import type { MergeState, RunIsolation } from "./isolation";
+import { createChatBranch } from "../session/repo";
 
 /**
  * Agent runs: the durable side of what used to be a fire-and-forget stream.
@@ -40,6 +42,14 @@ export type AgentRun = {
   endedAt: number | null;
   /** Set when the starter archived it out of the active list; null while live. */
   archivedAt: number | null;
+  /** "isolated" chats work on their own branch; see isolation.ts. */
+  isolation: RunIsolation;
+  /** Isolated chats only: the room head the branch started from, and its current tip. */
+  forkSha: string | null;
+  headSha: string | null;
+  mergeState: MergeState | null;
+  mergedSha: string | null;
+  mergedAt: number | null;
 };
 
 export type AgentRunMessage = {
@@ -80,6 +90,12 @@ type RunRow = {
   started_at: Date | null;
   ended_at: Date | null;
   archived_at: Date | null;
+  isolation: RunIsolation;
+  fork_sha: string | null;
+  head_sha: string | null;
+  merge_state: MergeState | null;
+  merged_sha: string | null;
+  merged_at: Date | null;
 };
 
 const toRun = (row: RunRow): AgentRun => ({
@@ -105,18 +121,28 @@ const toRun = (row: RunRow): AgentRun => ({
   startedAt: row.started_at ? row.started_at.getTime() : null,
   endedAt: row.ended_at ? row.ended_at.getTime() : null,
   archivedAt: row.archived_at ? row.archived_at.getTime() : null,
+  isolation: row.isolation,
+  forkSha: row.fork_sha,
+  headSha: row.head_sha,
+  mergeState: row.merge_state,
+  mergedSha: row.merged_sha,
+  mergedAt: row.merged_at ? row.merged_at.getTime() : null,
 });
 
 const RUN_COLUMNS = `
   r.id, r.session_id, r.repo_id, r.driver_user_id, r.control_version, r.restore_snapshot_id,
   (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
-  r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at
+  r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at,
+  r.isolation, r.fork_sha, r.head_sha, r.merge_state, r.merged_sha, r.merged_at
 `;
 
 /**
  * Opens a run. The starter is recorded as its owner participant in the same
  * transaction, so a run always has at least the person who began it watching.
+ * An isolated run's branch is created at `baseSha` before that transaction
+ * commits; if the commit then fails, the branch is left behind with no chat
+ * referring to it, which is harmless.
  */
 export async function createRun(input: {
   sessionId: string;
@@ -131,11 +157,15 @@ export async function createRun(input: {
   titleSource?: "auto" | "manual";
   /** Which room repo the chat targets; null/omitted = the project fork. */
   repoId?: string | null;
+  /** "isolated" opens the chat on its own branch at `baseSha`. */
+  isolation?: RunIsolation;
 }): Promise<AgentRun> {
+  const isolated = input.isolation === "isolated";
   return transaction(async (tx) => {
     const inserted = await tx.query<{ id: string }>(
-      `INSERT INTO agent_runs (session_id, repo_id, started_by, driver_user_id, agent_id, base_sha, title, title_source, status, started_at)
-       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'completed', NULL)
+      `INSERT INTO agent_runs (session_id, repo_id, started_by, driver_user_id, agent_id, base_sha, title, title_source, status, started_at,
+         isolation, fork_sha, head_sha, merge_state)
+       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'completed', NULL, $8, $9, $9, $10)
        RETURNING id`,
       [
         input.sessionId,
@@ -145,9 +175,13 @@ export async function createRun(input: {
         input.baseSha,
         input.title ?? null,
         input.titleSource ?? "auto",
+        isolated ? "isolated" : "shared",
+        isolated ? input.baseSha : null,
+        isolated ? "open" : null,
       ],
     );
     const id = inserted.rows[0].id;
+    if (isolated) await createChatBranch(input.repoId ?? input.sessionId, id, input.baseSha);
     await tx.query(
       `INSERT INTO agent_run_participants (run_id, user_id, role) VALUES ($1, $2, 'owner')`,
       [id, input.startedBy],

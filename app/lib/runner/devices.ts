@@ -177,15 +177,16 @@ export async function revokeDevice(deviceId: string, userId: string): Promise<bo
 }
 
 /** Does this user have any device eligible to take a job right now? */
-export async function hasOnlineDevice(userId: string, agentId: string, model?: string, effort?: string, anyModel = false): Promise<boolean> {
+export async function hasOnlineDevice(userId: string, agentId: string, model?: string, effort?: string, anyModel = false, isolated = false): Promise<boolean> {
   const row = await queryOne<{ id: string }>(
     `SELECT id FROM runner_devices
       WHERE user_id = $1 AND revoked_at IS NULL
         AND last_seen_at > now() - make_interval(secs => $2)
         AND version = '2' AND $3 = ANY(agent_ids)
         AND ($6 OR runner_supports_model(model_catalog, $3, $4, $5))
+        AND (NOT $7 OR supports_isolated_chats)
       LIMIT 1`,
-    [userId, DEVICE_ONLINE_MS / 1000, agentId, model ?? "", effort ?? "", anyModel],
+    [userId, DEVICE_ONLINE_MS / 1000, agentId, model ?? "", effort ?? "", anyModel, isolated],
   );
   return row !== null;
 }

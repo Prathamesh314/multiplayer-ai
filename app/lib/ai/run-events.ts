@@ -65,6 +65,13 @@ export type AgentRunJob = {
   workspaceNames?: { repository: string; room: string };
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;
+  /**
+   * Set only for an isolated chat: `baseSha` is the tip of `chatBranch`, not of
+   * the room branch, and the runner prepares a worktree of the chat's own.
+   * Runners that do not understand this never claim the job (runner/jobs.ts).
+   */
+  isolation?: "isolated";
+  chatBranch?: string;
   agentId: string;
   /** The assembled argv prompt (already budgeted and woven). */
   agentPrompt: string;
