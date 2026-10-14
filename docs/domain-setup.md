@@ -118,20 +118,69 @@ Work through them before announcing the domain.
 - **Resend** — follow [email-verification.md](email-verification.md). Verify
   `multicode.in` (or `mail.multicode.in`), publish its DKIM/SPF/DMARC records in
   Cloudflare, and set `EMAIL_FROM="Multicode AI <verify@multicode.in>"`.
-- **Google OAuth** — follow [google-sign-in.md](google-sign-in.md). Clerk owns
-  sign-in now; this path is retained for rollback, so update the authorized
-  redirect URI to `https://multicode.in/api/auth/google/callback` only if you
-  still rely on it.
-- **Slack / Discord** — only if Connections are in use. The OAuth redirect is
-  derived from `INTEGRATIONS_PUBLIC_URL`, so the app registration in each
-  provider's dashboard needs the matching URI added:
-  `https://multicode.in/api/integrations/slack/callback` and
-  `…/discord/callback`. An unlisted redirect URI fails at authorisation time,
-  not at startup, so nothing warns you until someone tries to connect.
+- **Google Cloud Console** — needed, but not for this application's own URLs;
+  see [Clerk and Google](#4a-clerk-and-google) below. Every route under
+  `/api/auth/google/` answers **410 Gone** ("Sign-in has moved to Clerk"), so
+  `https://multicode.in/api/auth/google/callback` is not a URI to register
+  anywhere, and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` /
+  `GOOGLE_OAUTH_CREDENTIALS_FILE` in `.env.production` are dead configuration.
+  [google-sign-in.md](google-sign-in.md) describes the retired flow and is kept
+  for history only.
+- **Slack / Discord** — only if Connections are in use; see
+  [the integration cutover](#4c-slack-and-discord-cutover) below. The two
+  providers are not symmetrical: Slack has a live inbound event URL that stops
+  working the moment the old domain does, Discord has none.
 - **GitHub Actions** — the deployment job's summary URL already points at the
   new domain. `PRODUCTION_DEPLOY_HOST`, `PRODUCTION_DEPLOY_SSH_KEY` and
   `PRODUCTION_DEPLOY_KNOWN_HOSTS` address the VM over SSH and do **not** change
   with the public domain.
+
+## 4a. Clerk and Google
+
+These are one job, not two: a Clerk **production** instance cannot use Clerk's
+shared Google credentials the way a development instance does, so moving to
+`multicode.in` forces a trip through Google Cloud Console as well.
+
+Order matters — each step produces a value the next one needs.
+
+1. **Clerk → create the production instance for `multicode.in`.** An instance
+   is bound to one domain; the existing one cannot be renamed.
+2. **Clerk → DNS.** Clerk lists CNAMEs to publish (`clerk`, `accounts`,
+   `clkmail`, and two `clk*._domainkey` records). Add them to the Cloudflare
+   zone exactly as given and keep every one **DNS only (grey)** — proxying an
+   authentication hostname breaks the flow. Wait for Clerk to show the domain
+   verified before continuing.
+3. **Clerk → SSO connections → Google**, with both *Enable for sign-up and
+   sign-in* and **Use custom credentials** switched on. Clerk then displays an
+   **Authorized Redirect URI**. Copy it; do not guess it. It points at Clerk's
+   own frontend-API hostname on your domain, *not* at this application.
+4. **Google Cloud Console → APIs & Services → Credentials → OAuth client ID**,
+   type *Web application*. Paste Clerk's redirect URI into **Authorized
+   redirect URIs**. Reuse the existing client if you have one — just add the
+   new URI alongside the old, and remove the old after cutover.
+5. **Google Cloud Console → OAuth consent screen.** This is the only place the
+   rebrand is visible to users: the app name and support email appear on
+   Google's consent dialog, so change "Multiplayer AI" to **Multicode AI** and
+   add `multicode.in` under authorised domains. A published external app may
+   need re-verification if you change the domain — check before announcing.
+6. **Back in Clerk**, paste the Google **Client ID** and **Client Secret**.
+7. **Clerk → webhook endpoint** → `https://multicode.in/api/webhooks/clerk`,
+   subscribing to `user.updated`, `user.deleted`, `session.ended`,
+   `session.revoked`, `session.removed`.
+8. **The VM.** Put the new `pk_live_…`, `sk_live_…` and `whsec_…` into
+   `.env.production` and deploy. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is a
+   Docker **build argument**, so a restart is not enough — the deployment
+   workflow rebuilds, which is why a normal deploy is the right way to apply
+   it. The secret key and webhook secret are runtime-only and must never be
+   build arguments.
+
+Expect **every signed-in user to be signed out**: sessions belong to the Clerk
+instance, and this is a different instance. Accounts themselves survive —
+a user signs in again with the same verified primary email and the application
+relinks them to their existing UUID, keeping conversations, repositories and
+project access. The release preflight refuses to replace the running
+application if any of the three Clerk credentials is missing, so a half-done
+configuration fails before it takes traffic rather than after.
 
 ## 4b. Turn the hosted terminal on, if you want it
 
@@ -148,6 +197,66 @@ It is off by default and three separate things have to be true, which is why
 
 The panel prints which of these failed. Read `docker/README.md` first: enabling
 this gives every signed-in member a **root shell inside the web container**.
+
+## 4c. Slack and Discord cutover
+
+Set `INTEGRATIONS_PUBLIC_URL=https://multicode.in` in `.env.production` and
+redeploy. It must be an HTTPS origin with no path, query or fragment — the
+integration code rejects anything else with a 503 rather than guessing. Every
+redirect URI below is derived from it, so the dashboards and this variable have
+to agree exactly.
+
+**Do not change `INTEGRATIONS_ENCRYPTION_KEY`.** Stored tokens are sealed
+against `<provider>:<projectId>`, not against the origin, so the domain change
+does not invalidate them: existing connections keep working and nobody has to
+reconnect. Rotating that key would break all of them.
+
+### Slack — two URLs, one of them time-critical
+
+In [api.slack.com/apps](https://api.slack.com/apps) → your app:
+
+1. **OAuth & Permissions → Redirect URLs** — add
+   `https://multicode.in/api/integrations/slack/callback`. Keep the old entry
+   until the cutover is finished; Slack allows several. This one only affects
+   *new* connect flows, and an unlisted URI fails at authorisation time, not at
+   startup, so nothing warns you until someone tries to connect.
+2. **Event Subscriptions → Request URL** — change to
+   `https://multicode.in/api/integrations/slack/events`. **This is the urgent
+   one.** It is where Slack pushes live messages, and it accepts exactly one
+   URL, so the moment `cubeclashes.com` stops resolving, live Slack messages
+   stop arriving. Update it as soon as the new domain serves HTTPS.
+
+   Slack posts a `url_verification` challenge the instant you save, and the
+   route answers it, so the new origin must already be live — otherwise Slack
+   refuses the URL. The page should show **Verified**.
+3. Confirm the subscribed bot events are unchanged: `message.channels`,
+   `channel_archive`, `channel_deleted`, `channel_left`, `member_left_channel`,
+   `app_uninstalled`, `tokens_revoked`.
+4. Scopes stay `channels:read` and `channels:history`. A redirect-URL change
+   does not require reinstalling the app; a scope change would.
+
+If events are interrupted, the periodic reconciliation sync still imports the
+most recent 15 top-level messages per channel, so a short gap mostly heals
+itself. A long one loses the messages in between.
+
+### Discord — one URL, and no event endpoint
+
+In [discord.com/developers/applications](https://discord.com/developers/applications)
+→ your app → **OAuth2 → Redirects**: add
+`https://multicode.in/api/integrations/discord/callback`.
+
+That is the whole change. Discord messages arrive over a Gateway connection the
+background worker opens **outbound** using `DISCORD_BOT_TOKEN`, so there is no
+inbound webhook to repoint and live Discord context is unaffected by the domain
+move. Leave **Require OAuth2 Code Grant** and the **Message Content Intent**
+as they are.
+
+### Verifying
+
+Reconnect one Slack channel and one Discord channel from **Connections** in a
+project, then post a message in each and confirm it appears. That exercises the
+new redirect URI, the token exchange and live delivery together. Once it works,
+remove the old `cubeclashes.com` redirect entries from both dashboards.
 
 ## 5. Enable the asset CDN
 
