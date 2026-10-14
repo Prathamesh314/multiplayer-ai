@@ -449,7 +449,7 @@ async function handlePOST(request: Request) {
     runId: run.id,
     repoId,
     projectRepositoryId: await projectRepositoryForRoom(sessionId, repoId),
-    workspaceNames: { repository: repository.rootName, room: result.session.name },
+    workspaceNames: { repository: repository.rootName, room: result.session.name, ...(isolated ? { chat: run.title ?? "" } : {}) },
     baseSha: headSha,
     ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,

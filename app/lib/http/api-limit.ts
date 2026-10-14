@@ -31,7 +31,7 @@ export function policy(name: PolicyName, env = process.env): LimitPolicy {
 
 export function usesDeviceToken(route: string) {
   return route.startsWith("/api/git/") || route.startsWith("/api/runner/runs/") ||
-    ["/api/runner/claim", "/api/runner/heartbeat", "/api/runner/me", "/api/runner/events"].includes(route);
+    ["/api/runner/claim", "/api/runner/heartbeat", "/api/runner/me", "/api/runner/events", "/api/runner/workspaces"].includes(route);
 }
 
 export function policyFor(route: string, method: string): PolicyName {

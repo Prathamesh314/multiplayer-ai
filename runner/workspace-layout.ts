@@ -31,6 +31,8 @@ export async function writeWorkspaceMetadata(path: string, value: unknown): Prom
 export async function allocateWorkspaceLocation(input: {
   workspacesDir: string; metadataRoot: string; cacheKey: string; repoRef: string;
   repositoryName?: string; roomName?: string;
+  /** Distinguishes a parallel chat's worktree from its room's; defaults to the room repository. */
+  identity?: string;
 }): Promise<WorkspaceLocation> {
   await mkdir(input.workspacesDir, { recursive: true, mode: 0o700 });
   const workspaceRoot = await realpath(input.workspacesDir);
@@ -48,7 +50,7 @@ export async function allocateWorkspaceLocation(input: {
     repositoryFolder = `${workspaceSlug(input.repositoryName, "repository")}--${hash(`${input.metadataRoot}\0${input.cacheKey}`).slice(0, 12)}`;
     await writeWorkspaceMetadata(manifest, { repositoryFolder });
   }
-  return { workspaceRoot, relativePath: `${repositoryFolder}/${workspaceSlug(input.roomName, "room")}--${hash(input.repoRef).slice(0, 12)}` };
+  return { workspaceRoot, relativePath: `${repositoryFolder}/${workspaceSlug(input.roomName, "room")}--${hash(input.identity ?? input.repoRef).slice(0, 12)}` };
 }
 
 /** Refuse symlinked generated parents instead of writing through them. */
@@ -67,7 +69,7 @@ export async function prepareWorkspaceParent(location: WorkspaceLocation): Promi
 
 export async function listLocalWorkspaces(dataDir: string) {
   const root = resolve(dataDir, "workspaces-v1");
-  const result: { repository: string; room: string; repoRef: string; path: string }[] = [];
+  const result: { repository: string; room: string; chat?: string; repoRef: string; path: string }[] = [];
   let scopes;
   try { scopes = await readdir(root, { withFileTypes: true }); }
   catch (cause) { if ((cause as NodeJS.ErrnoException).code === "ENOENT") return result; throw cause; }
@@ -82,7 +84,7 @@ export async function listLocalWorkspaces(dataDir: string) {
       const binding = JSON.parse(await readFile(join(bindings, file), "utf8"));
       if (binding.version !== 1 || typeof binding.repoRef !== "string") throw new Error(`Invalid workspace binding: ${file}`);
       result.push({ repository: binding.repositoryName || binding.repoRef, room: binding.roomName || binding.sessionId || binding.repoRef,
-        repoRef: binding.repoRef, path: binding.location ? locationPath(binding.location) : join(root, scope.name, "work", file.slice(0, -5)) });
+        ...(binding.chatRunId ? { chat: binding.chatName || binding.chatRunId } : {}), repoRef: binding.repoRef, path: binding.location ? locationPath(binding.location) : join(root, scope.name, "work", file.slice(0, -5)) });
     }
   }
   return result;

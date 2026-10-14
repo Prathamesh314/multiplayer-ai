@@ -13,6 +13,7 @@ import type { AgentRunJob, AiRunEvent } from "../app/lib/ai/run-events";
 import type { ClaimResponse } from "../app/api/runner/claim/route";
 import type { PairResponse } from "../app/api/runner/pair/route";
 import type { RunnerCompleteRequest } from "../app/api/runner/runs/[runId]/complete/route";
+import type { RunnerWorkspacesResponse } from "../app/api/runner/workspaces/route";
 
 export class RunnerHttpError extends Error {
   constructor(message: string, readonly status: number, readonly retryAfterMs = 1000) { super(message); }
@@ -56,7 +57,7 @@ export class RunnerApi {
   async heartbeat(onlyChanged = false): Promise<void> {
     const agents = await detectAgents();
     const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
-    const body = { version: "2", supportsInputs: true, agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
+    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
     // Timestamps change when the CLI cache is refreshed; they are not inventory changes.
     const signature = JSON.stringify(body, (key, value) => ["checkedAt", "refreshedAt"].includes(key) ? undefined : value);
     if (onlyChanged && this.inventory === signature) return;
@@ -90,6 +91,11 @@ export class RunnerApi {
   async claim(waitMs: number): Promise<AgentRunJob | null> {
     const body = await this.post<ClaimResponse>("/api/runner/claim", { waitMs, version: "2" });
     return body.job;
+  }
+
+  /** This device's user and their finished parallel chats, whose worktrees may be pruned. */
+  async workspaces(): Promise<RunnerWorkspacesResponse> {
+    return this.post<RunnerWorkspacesResponse>("/api/runner/workspaces", {});
   }
 
   async postEvents(runId: string, events: AiRunEvent[], sequence?: number): Promise<void> {
