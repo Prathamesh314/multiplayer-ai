@@ -118,18 +118,69 @@ Work through them before announcing the domain.
 - **Resend** — follow [email-verification.md](email-verification.md). Verify
   `multicode.in` (or `mail.multicode.in`), publish its DKIM/SPF/DMARC records in
   Cloudflare, and set `EMAIL_FROM="Multicode AI <verify@multicode.in>"`.
-- **Google OAuth** — follow [google-sign-in.md](google-sign-in.md). Clerk owns
-  sign-in now; this path is retained for rollback, so update the authorized
-  redirect URI to `https://multicode.in/api/auth/google/callback` only if you
-  still rely on it.
+- **Google Cloud Console** — needed, but not for this application's own URLs;
+  see [Clerk and Google](#4a-clerk-and-google) below. Every route under
+  `/api/auth/google/` answers **410 Gone** ("Sign-in has moved to Clerk"), so
+  `https://multicode.in/api/auth/google/callback` is not a URI to register
+  anywhere, and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` /
+  `GOOGLE_OAUTH_CREDENTIALS_FILE` in `.env.production` are dead configuration.
+  [google-sign-in.md](google-sign-in.md) describes the retired flow and is kept
+  for history only.
 - **Slack / Discord** — only if Connections are in use; see
-  [the integration cutover](#slack-and-discord-cutover) below. The two
+  [the integration cutover](#4c-slack-and-discord-cutover) below. The two
   providers are not symmetrical: Slack has a live inbound event URL that stops
   working the moment the old domain does, Discord has none.
 - **GitHub Actions** — the deployment job's summary URL already points at the
   new domain. `PRODUCTION_DEPLOY_HOST`, `PRODUCTION_DEPLOY_SSH_KEY` and
   `PRODUCTION_DEPLOY_KNOWN_HOSTS` address the VM over SSH and do **not** change
   with the public domain.
+
+## 4a. Clerk and Google
+
+These are one job, not two: a Clerk **production** instance cannot use Clerk's
+shared Google credentials the way a development instance does, so moving to
+`multicode.in` forces a trip through Google Cloud Console as well.
+
+Order matters — each step produces a value the next one needs.
+
+1. **Clerk → create the production instance for `multicode.in`.** An instance
+   is bound to one domain; the existing one cannot be renamed.
+2. **Clerk → DNS.** Clerk lists CNAMEs to publish (`clerk`, `accounts`,
+   `clkmail`, and two `clk*._domainkey` records). Add them to the Cloudflare
+   zone exactly as given and keep every one **DNS only (grey)** — proxying an
+   authentication hostname breaks the flow. Wait for Clerk to show the domain
+   verified before continuing.
+3. **Clerk → SSO connections → Google**, with both *Enable for sign-up and
+   sign-in* and **Use custom credentials** switched on. Clerk then displays an
+   **Authorized Redirect URI**. Copy it; do not guess it. It points at Clerk's
+   own frontend-API hostname on your domain, *not* at this application.
+4. **Google Cloud Console → APIs & Services → Credentials → OAuth client ID**,
+   type *Web application*. Paste Clerk's redirect URI into **Authorized
+   redirect URIs**. Reuse the existing client if you have one — just add the
+   new URI alongside the old, and remove the old after cutover.
+5. **Google Cloud Console → OAuth consent screen.** This is the only place the
+   rebrand is visible to users: the app name and support email appear on
+   Google's consent dialog, so change "Multiplayer AI" to **Multicode AI** and
+   add `multicode.in` under authorised domains. A published external app may
+   need re-verification if you change the domain — check before announcing.
+6. **Back in Clerk**, paste the Google **Client ID** and **Client Secret**.
+7. **Clerk → webhook endpoint** → `https://multicode.in/api/webhooks/clerk`,
+   subscribing to `user.updated`, `user.deleted`, `session.ended`,
+   `session.revoked`, `session.removed`.
+8. **The VM.** Put the new `pk_live_…`, `sk_live_…` and `whsec_…` into
+   `.env.production` and deploy. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is a
+   Docker **build argument**, so a restart is not enough — the deployment
+   workflow rebuilds, which is why a normal deploy is the right way to apply
+   it. The secret key and webhook secret are runtime-only and must never be
+   build arguments.
+
+Expect **every signed-in user to be signed out**: sessions belong to the Clerk
+instance, and this is a different instance. Accounts themselves survive —
+a user signs in again with the same verified primary email and the application
+relinks them to their existing UUID, keeping conversations, repositories and
+project access. The release preflight refuses to replace the running
+application if any of the three Clerk credentials is missing, so a half-done
+configuration fails before it takes traffic rather than after.
 
 ## 4b. Turn the hosted terminal on, if you want it
 
