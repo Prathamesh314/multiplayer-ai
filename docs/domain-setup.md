@@ -122,12 +122,10 @@ Work through them before announcing the domain.
   sign-in now; this path is retained for rollback, so update the authorized
   redirect URI to `https://multicode.in/api/auth/google/callback` only if you
   still rely on it.
-- **Slack / Discord** — only if Connections are in use. The OAuth redirect is
-  derived from `INTEGRATIONS_PUBLIC_URL`, so the app registration in each
-  provider's dashboard needs the matching URI added:
-  `https://multicode.in/api/integrations/slack/callback` and
-  `…/discord/callback`. An unlisted redirect URI fails at authorisation time,
-  not at startup, so nothing warns you until someone tries to connect.
+- **Slack / Discord** — only if Connections are in use; see
+  [the integration cutover](#slack-and-discord-cutover) below. The two
+  providers are not symmetrical: Slack has a live inbound event URL that stops
+  working the moment the old domain does, Discord has none.
 - **GitHub Actions** — the deployment job's summary URL already points at the
   new domain. `PRODUCTION_DEPLOY_HOST`, `PRODUCTION_DEPLOY_SSH_KEY` and
   `PRODUCTION_DEPLOY_KNOWN_HOSTS` address the VM over SSH and do **not** change
@@ -148,6 +146,66 @@ It is off by default and three separate things have to be true, which is why
 
 The panel prints which of these failed. Read `docker/README.md` first: enabling
 this gives every signed-in member a **root shell inside the web container**.
+
+## 4c. Slack and Discord cutover
+
+Set `INTEGRATIONS_PUBLIC_URL=https://multicode.in` in `.env.production` and
+redeploy. It must be an HTTPS origin with no path, query or fragment — the
+integration code rejects anything else with a 503 rather than guessing. Every
+redirect URI below is derived from it, so the dashboards and this variable have
+to agree exactly.
+
+**Do not change `INTEGRATIONS_ENCRYPTION_KEY`.** Stored tokens are sealed
+against `<provider>:<projectId>`, not against the origin, so the domain change
+does not invalidate them: existing connections keep working and nobody has to
+reconnect. Rotating that key would break all of them.
+
+### Slack — two URLs, one of them time-critical
+
+In [api.slack.com/apps](https://api.slack.com/apps) → your app:
+
+1. **OAuth & Permissions → Redirect URLs** — add
+   `https://multicode.in/api/integrations/slack/callback`. Keep the old entry
+   until the cutover is finished; Slack allows several. This one only affects
+   *new* connect flows, and an unlisted URI fails at authorisation time, not at
+   startup, so nothing warns you until someone tries to connect.
+2. **Event Subscriptions → Request URL** — change to
+   `https://multicode.in/api/integrations/slack/events`. **This is the urgent
+   one.** It is where Slack pushes live messages, and it accepts exactly one
+   URL, so the moment `cubeclashes.com` stops resolving, live Slack messages
+   stop arriving. Update it as soon as the new domain serves HTTPS.
+
+   Slack posts a `url_verification` challenge the instant you save, and the
+   route answers it, so the new origin must already be live — otherwise Slack
+   refuses the URL. The page should show **Verified**.
+3. Confirm the subscribed bot events are unchanged: `message.channels`,
+   `channel_archive`, `channel_deleted`, `channel_left`, `member_left_channel`,
+   `app_uninstalled`, `tokens_revoked`.
+4. Scopes stay `channels:read` and `channels:history`. A redirect-URL change
+   does not require reinstalling the app; a scope change would.
+
+If events are interrupted, the periodic reconciliation sync still imports the
+most recent 15 top-level messages per channel, so a short gap mostly heals
+itself. A long one loses the messages in between.
+
+### Discord — one URL, and no event endpoint
+
+In [discord.com/developers/applications](https://discord.com/developers/applications)
+→ your app → **OAuth2 → Redirects**: add
+`https://multicode.in/api/integrations/discord/callback`.
+
+That is the whole change. Discord messages arrive over a Gateway connection the
+background worker opens **outbound** using `DISCORD_BOT_TOKEN`, so there is no
+inbound webhook to repoint and live Discord context is unaffected by the domain
+move. Leave **Require OAuth2 Code Grant** and the **Message Content Intent**
+as they are.
+
+### Verifying
+
+Reconnect one Slack channel and one Discord channel from **Connections** in a
+project, then post a message in each and confirm it appears. That exercises the
+new redirect URI, the token exchange and live delivery together. Once it works,
+remove the old `cubeclashes.com` redirect entries from both dashboards.
 
 ## 5. Enable the asset CDN
 
