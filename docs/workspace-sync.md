@@ -85,7 +85,7 @@ The default is **server disk**, with no cloud account or credentials required:
 ```dotenv
 STORAGE_PROVIDER=local
 # Optional separate persistent disk/mount:
-# STORAGE_LOCAL_DIR=/var/lib/multiplayer-ai/objects
+# STORAGE_LOCAL_DIR=/var/lib/multicode-ai/objects
 ```
 
 Compressed activity objects live under `<MULTIPLAYER_AI_DATA>/objects/activity/`

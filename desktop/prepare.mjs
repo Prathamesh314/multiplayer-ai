@@ -27,7 +27,7 @@ const runner = await build({ ...options, entryPoints: [join(root, "runner", "ind
 for (const file of ["preload.js", "setup-preload.js", "setup.html", "setup.css", "setup.js"]) await copyFile(join(root, "desktop", file), join(target, file));
 await sharp(join(root, "desktop", "icon.svg")).png().toFile(join(target, "icon.png"));
 await writeFile(join(target, "release.json"), JSON.stringify({ workspaceUrl: origin, updateUrl }, null, 2));
-await writeFile(join(target, "package.json"), JSON.stringify({ name: "multiplayer-ai-desktop", productName: "Multiplayer AI", version: manifest.version, description: "A shared workspace for your team's AI work", author: "Multiplayer AI", private: true, main: "main.js", dependencies: {} }, null, 2));
+await writeFile(join(target, "package.json"), JSON.stringify({ name: "multicode-ai-desktop", productName: "Multicode AI", version: manifest.version, description: "A shared workspace for your team's AI work", author: "Multicode AI", private: true, main: "main.js", dependencies: {} }, null, 2));
 
 const notices = [];
 const packages = new Set();

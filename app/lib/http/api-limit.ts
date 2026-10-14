@@ -11,6 +11,11 @@ const defaults = {
   ingress: [6000, 1500], anonymous: [120, 40], auth: [20, 10], pair: [10, 5],
   read: [600, 120], write: [180, 60], upload: [120, 60], stream: [60, 20],
   runner: [600, 120], activity: [600, 180], git: [120, 40], webhook: [6000, 1500],
+  // One POST per keystroke. Under the ordinary write budget (180/min) a normal
+  // typing speed starts getting 429s within seconds, and the client drops a
+  // rejected keystroke silently — which reads as "the terminal eats what I
+  // type". Sized for sustained typing and key repeat, still far below ingress.
+  terminal: [1800, 600],
 } as const;
 export type PolicyName = keyof typeof defaults;
 
@@ -36,6 +41,7 @@ export function policyFor(route: string, method: string): PolicyName {
   if (["/api/runner/pair", "/api/runner/pairing"].includes(route)) return "pair";
   if (route.startsWith("/api/git/")) return "git";
   if (["GET", "HEAD"].includes(method) && (route.endsWith("/events") || route === "/api/terminal/pty" || route === "/api/terminal")) return "stream";
+  if (route === "/api/terminal/pty") return "terminal";
   if (route.startsWith("/api/runner/runs/") && route.endsWith("/events")) return "activity";
   if (usesDeviceToken(route)) return "runner";
   if (route.endsWith("/seed")) return "upload";

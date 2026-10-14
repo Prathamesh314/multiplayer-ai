@@ -8,7 +8,7 @@ if (release && (!config.workspaceUrl || !config.updateUrl)) throw new Error("Pre
 
 module.exports = {
   appId: "ai.multiplayer.desktop",
-  productName: "Multiplayer AI",
+  productName: "Multicode AI",
   directories: { app: ".desktop-build/app", output: process.env.DESKTOP_OUTPUT_DIR || "desktop-dist", buildResources: ".desktop-build/app" },
   files: ["main.js", "runner.cjs", "preload.js", "setup-preload.js", "setup.html", "setup.css", "setup.js", "icon.png", "release.json", "package.json", "THIRD-PARTY-NOTICES.txt", "!node_modules/**/*"],
   asar: true,
@@ -23,7 +23,7 @@ module.exports = {
     onlyLoadAppFromAsar: true,
   },
   forceCodeSigning: release,
-  artifactName: "Multiplayer-AI-\${version}-\${os}-\${arch}" + (release ? "" : "-preview") + ".\${ext}",
+  artifactName: "Multicode-AI-\${version}-\${os}-\${arch}" + (release ? "" : "-preview") + ".\${ext}",
   publish: config.updateUrl ? [{ provider: "generic", url: config.updateUrl }] : null,
   mac: {
     target: ["dmg", "zip"], category: "public.app-category.developer-tools",
@@ -32,5 +32,5 @@ module.exports = {
   },
   win: { target: ["nsis"], icon: "icon.png", verifyUpdateCodeSignature: true },
   nsis: { oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false },
-  linux: { target: ["AppImage"], executableName: "multiplayer-ai", icon: "icon.png", category: "Development" },
+  linux: { target: ["AppImage"], executableName: "multicode-ai", icon: "icon.png", category: "Development" },
 };

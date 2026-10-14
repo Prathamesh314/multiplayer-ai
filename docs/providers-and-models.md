@@ -36,7 +36,7 @@ New models appear when the upstream registry/API/installed CLI exposes them and 
 1. Apply `027_runner_model_catalog.sql` with `node --env-file=.env db/migrate.mjs` after backing up the database.
 2. Restart the application, worker, and updated runner. Runner protocol 2 remains compatible; older runners without model inventories can only take default Claude/Codex/Gemini jobs. Update them to advertise explicit models. Old Ollama jobs without a chosen model are no longer eligible.
 3. Install/connect additional providers on each user's own execution machine. For OpenCode: `npm install -g opencode-ai`, then `opencode auth login`. Local models must be installed explicitly through Ollama/LM Studio.
-4. Sign in to the desktop app to start its bundled runner, or install the [standalone runner](../runner/README.md) and run `multiplayer-ai-runner start` from any directory. In the room, open Providers, choose an execution option, then use the model picker.
+4. Sign in to the desktop app to start its bundled runner, or install the [standalone runner](../runner/README.md) and run `multicode-ai-runner start` from any directory. In the room, open Providers, choose an execution option, then use the model picker.
 
 Optional exact-model discovery credentials are `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY` in the execution process environment. They are not stored in the room database, sent to browsers, or included in runner heartbeats. Do not paste API keys into shared chat. The web process only performs server-side CLI discovery when its existing terminal-execution gate allows that environment; otherwise the UI uses the signed-in user's runner snapshots.
 

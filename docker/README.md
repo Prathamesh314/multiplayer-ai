@@ -1,4 +1,4 @@
-# Running multiplayer-ai
+# Running multicode-ai
 
 For an Internet-facing deployment use the standalone
 [`compose.production.yml`](../compose.production.yml) and
@@ -22,9 +22,9 @@ The desktop app pairs its bundled runner automatically. For a standalone runner,
 install and sign into a supported coding CLI, then run these commands from any folder:
 
 ```bash
-npm install --global http://localhost:3000/downloads/multiplayer-ai-runner.tgz
-multiplayer-ai-runner pair --server http://localhost:3000 --code YOUR_PAIRING_CODE
-multiplayer-ai-runner start
+npm install --global http://localhost:3000/downloads/multicode-ai-runner.tgz
+multicode-ai-runner pair --server http://localhost:3000 --code YOUR_PAIRING_CODE
+multicode-ai-runner start
 ```
 
 For a remote deployment, pair against its HTTPS URL instead of localhost.
@@ -67,10 +67,11 @@ enable hosted execution.
 the compose file needs editing. Understand what it grants before you do:
 
 - Every **signed-in member** can open an interactive login shell inside the web
-  container, as the container's user, with the app's environment — including
-  `DATABASE_URL`, `PROXY_SHARED_SECRET`, and the workspace volume. There is no
-  room-level or role-level restriction; a shell is bound only to the account
-  that opened it, so members cannot read each other's shells.
+  container **as root** (the image does not drop privileges), with the app's
+  environment — including `DATABASE_URL`, `PROXY_SHARED_SECRET`, and the
+  workspace volume. There is no room-level or role-level restriction; a shell
+  is bound only to the account that opened it, so members cannot read each
+  other's shells.
 - The same flag lets coding agents run **on this host** when the caller has no
   paired computer, instead of refusing the turn.
 - `WEB_CONCURRENCY` must stay `1` (it already is). The startup check in
@@ -78,9 +79,15 @@ the compose file needs editing. Understand what it grants before you do:
   terminal enabled, because a shell lives in one process's memory.
 - The gateway hashes `/api/terminal*` on the `id` query parameter so a shell's
   stream and its keystrokes always reach the same replica.
+- The shell is whichever of zsh, bash or sh the host actually has; this image
+  supplies bash. `MULTIPLAYER_AI_SHELL` overrides the search. If none is found
+  the terminal reports itself unavailable rather than opening a pane that dies.
 
 Leave it at `0` unless the deployment is a machine you control and every member
-is someone you would give a server shell to.
+is someone you would give a root shell to.
+
+If the panel says the terminal is disabled, read the reason it prints — it
+distinguishes "not opted in", "not signed in" and "no shell on this host".
 
 ## Local development
 

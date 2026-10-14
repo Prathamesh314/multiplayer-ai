@@ -47,7 +47,7 @@ export function ProductPreview() {
             </button>
           ))}
         </div>
-        <span className={styles.previewLabel}>Captured in Multiplayer AI</span>
+        <span className={styles.previewLabel}>Captured in Multicode AI</span>
       </div>
       <AppScreenshot {...view} />
       <figcaption className={styles.screenshotCaption}>

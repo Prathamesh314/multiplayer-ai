@@ -13,7 +13,7 @@ test('missing, unsafe, and old placeholder downloads cannot become live buttons'
 
 test('versioned public download URLs retain filenames and query credentials for external hosts', () => {
   for (const value of [
-    'https://downloads.test/preview-abc/Multiplayer-AI-mac-arm64-preview.dmg',
+    'https://downloads.test/preview-abc/Multicode-AI-mac-arm64-preview.dmg',
     'https://storage.test/app.exe?signature=temporary-token',
     'https://downloads.test/preview-abc/SHA256SUMS.txt',
   ]) assert.equal(desktopDownloadUrl(value), value);

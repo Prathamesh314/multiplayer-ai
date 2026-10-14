@@ -9,7 +9,7 @@ globalThis.fetch=async(input,init)=>{
   assert.equal(init.headers.authorization,'Bearer fixture-resend-key');
   assert.equal(init.headers['content-type'],'application/json');
   const body=JSON.parse(init.body);
-  assert.equal(body.from,'Multiplayer AI <verify@example.test>');
+  assert.equal(body.from,'Multicode AI <verify@example.test>');
   const code=/code is (\d{6})/.exec(body.text)?.[1];assert.ok(code);
   await appendFile(process.env.EMAIL_TEST_OUTBOX,JSON.stringify({email:body.to[0],code})+'\n');
   return body.to[0].endsWith('delivery-fails@example.test')

@@ -743,7 +743,7 @@ async function stored_commitWork(
   if (status.length === 0) return null;
 
   // Attribute the commit to whoever made the edit. `git log` is the audit trail
-  // for a session, and "multiplayer-ai" on every commit would waste it.
+  // for a session, and "multicode-ai" on every commit would waste it.
   const author =
     authorName && authorEmail
       ? ["-c", `user.name=${authorName}`, "-c", `user.email=${authorEmail}`]

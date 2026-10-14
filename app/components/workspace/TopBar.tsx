@@ -75,7 +75,7 @@ export function TopBar({
       >
         <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
         <span className="whitespace-nowrap">
-          multiplayer<span className="text-vs-muted">-ai</span>
+          multicode<span className="text-vs-muted">-ai</span>
         </span>
       </button>
 

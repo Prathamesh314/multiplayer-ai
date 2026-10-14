@@ -5,7 +5,7 @@
 >
 > Implementation update: hosted Compose now requires users' own runners and
 > disables server fallback. Runners use persistent room/repository worktrees,
-> at `~/multiplayer-ai/workspaces/<repository>/<room>`, sharing a local cache
+> at `~/multicode-ai/workspaces/<repository>/<room>`, sharing a local cache
 > across rooms using the same explicitly selected project repository. The historical
 > design below includes earlier clone/fallback proposals; see
 > [runner workspaces](runner-workspaces.md) and [deployment](../docker/README.md)

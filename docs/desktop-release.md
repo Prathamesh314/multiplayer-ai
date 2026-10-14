@@ -87,7 +87,7 @@ first thing users see is the same sign-in page and workspace the browser serves.
 The setup window is not part of that path; it stays available from the
 application menu (**Desktop settings**, `Cmd+,`) and the tray, and it is still
 where connection failures are reported. Local worktrees always default to
-`~/multiplayer-ai/workspaces` and are never requested before first use.
+`~/multicode-ai/workspaces` and are never requested before first use.
 
 Builds without an address start at **Workspace address** instead. The
 `desktop:dist:mac`, `:win` and `:linux` scripts use `--setup`, which clears any
@@ -129,8 +129,8 @@ public GitHub Release or upload to an update feed.
 
 On macOS, open the DMG and drag the app to Applications (or extract the ZIP). On
 Windows, run the NSIS `.exe` and choose an installation location. On Linux, mark
-the AppImage executable with `chmod +x Multiplayer-AI-*.AppImage` and run it;
-systems without FUSE can use `./Multiplayer-AI-…AppImage --appimage-extract-and-run`.
+the AppImage executable with `chmod +x Multicode-AI-*.AppImage` and run it;
+systems without FUSE can use `./Multicode-AI-…AppImage --appimage-extract-and-run`.
 Windows preview builds are unsigned, so normal OS trust checks may warn.
 
 A Mac preview built without a certificate is ad-hoc signed, and macOS does not
@@ -141,7 +141,7 @@ created, and Finder reports that the app is damaged. Clear the flag after
 installing, then open it again:
 
 ```sh
-xattr -dr com.apple.quarantine '/Applications/Multiplayer AI.app'
+xattr -dr com.apple.quarantine '/Applications/Multicode AI.app'
 ```
 
 This is a tester-only workaround. Set `CSC_LINK` or `CSC_NAME` in
@@ -209,9 +209,9 @@ This uploads candidate artifacts only; it does not deploy the application or fee
 Verify the resulting application on a clean Mac:
 
 ```sh
-codesign --verify --deep --strict --verbose=2 'Multiplayer AI.app'
-spctl --assess --type execute --verbose=2 'Multiplayer AI.app'
-xcrun stapler validate 'Multiplayer AI.app'
+codesign --verify --deep --strict --verbose=2 'Multicode AI.app'
+spctl --assess --type execute --verbose=2 'Multicode AI.app'
+xcrun stapler validate 'Multicode AI.app'
 ```
 
 Publish the generated ZIP/DMG/blockmaps first, then `latest-mac.yml` atomically at
@@ -233,12 +233,12 @@ commands. Backend authorization, execution isolation and recovery gates from the
 production plan remain prerequisites for a public service.
 
 Desktop settings and the private `runner.json` live under Electron's userData
-directory (macOS: `~/Library/Application Support/Multiplayer AI`). Saved connection
+directory (macOS: `~/Library/Application Support/Multicode AI`). Saved connection
 profiles live in `connections`; each new account/server combination has a separate
 `runner-data/<profile hash>` directory for its outbox and repository cache. User
 worktrees use the configured workspace directory. Runner tokens are mode-0600 files on POSIX,
 not Keychain-encrypted; Windows relies on the user's profile ACLs. The desktop does
-not silently reuse the CLI's older `~/.config/multiplayer-ai/runner.json` identity.
+not silently reuse the CLI's older `~/.config/multicode-ai/runner.json` identity.
 Revoke unused devices in **Your computers**. Uninstall preserves user data.
 
 CLI tools must be installed, authenticated and discoverable on PATH. Common

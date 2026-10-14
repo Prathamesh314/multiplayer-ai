@@ -22,14 +22,14 @@ if(Object.keys(result.metafile.inputs).some(input=>input.includes('node_modules/
   throw new Error('The runner bundle now includes third-party packages; review distribution dependencies and licenses.');
 }
 await chmod(join(target,'runner.cjs'),0o755);
-await writeFile(join(target,'package.json'),JSON.stringify({name:'multiplayer-ai-runner',version:manifest.version,
-  description:'Connect your computer to a Multiplayer AI workspace',private:true,license:'UNLICENSED',
-  bin:{'multiplayer-ai-runner':'runner.cjs'},engines:{node:'>=22'},files:['runner.cjs','README.md']},null,2)+'\n');
+await writeFile(join(target,'package.json'),JSON.stringify({name:'multicode-ai-runner',version:manifest.version,
+  description:'Connect your computer to a Multicode AI workspace',private:true,license:'UNLICENSED',
+  bin:{'multicode-ai-runner':'runner.cjs'},engines:{node:'>=22'},files:['runner.cjs','README.md']},null,2)+'\n');
 await copyFile(join(root,'runner','README.md'),join(target,'README.md'));
 const {stdout}=await promisify(execFile)(process.execPath,[npmCli,'pack','--json','--ignore-scripts','--pack-destination',join(root,'.runner-build')],
   {cwd:target,env:{...process.env,npm_config_cache:join(root,'.runner-build','npm-cache')},maxBuffer:1024*1024});
 const [packed]=JSON.parse(stdout);
-const artifact=join(downloads,'multiplayer-ai-runner.tgz');
+const artifact=join(downloads,'multicode-ai-runner.tgz');
 await copyFile(join(root,'.runner-build',packed.filename),artifact+'.tmp');
 await rename(artifact+'.tmp',artifact);
 await writeFile(join(root,'.runner-build','bundle-inputs.json'),JSON.stringify(Object.keys(result.metafile.inputs),null,2));

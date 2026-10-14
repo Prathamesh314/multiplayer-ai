@@ -16,16 +16,20 @@ embeddings; measure your workload rather than treating this as a capacity promis
 
 ```sh
 git clone https://github.com/Prathamesh314/multiplayer-ai.git
-cd multiplayer-ai
+cd multicode-ai
 git switch main
 git pull --ff-only origin main
 cp docker/production.env.example .env.production
 chmod 600 .env.production
 ```
 
+To move an existing deployment to a new hostname, follow
+[domain-setup.md](domain-setup.md); it is the ordered cutover for
+`multicode.in`, including the third-party integrations bound to the old name.
+
 Edit `.env.production`: set `APP_DOMAIN` to the hostname without a scheme,
 `AUTH_PUBLIC_URL` to the matching public HTTPS origin (for example,
-`https://cubeclashes.com`, used for invitation links and Clerk session origin checks),
+`https://multicode.in`, used for invitation links and Clerk session origin checks),
 `ACME_EMAIL` to the certificate contact, and generate three **different** secrets
 with `openssl rand -hex 32`. Fill `POSTGRES_PASSWORD`, `PROXY_SHARED_SECRET` and
 `MNEMOSYNE_MCP_TOKEN`. Hex passwords avoid connection-URL escaping problems.
@@ -86,6 +90,7 @@ still run; this limiter does not grant access or cache authorization.
 | `WRITE` | 180 | 60 | User, ordinary API mutations |
 | `UPLOAD` | 120 | 60 | User, folder import batches |
 | `STREAM` | 60 | 20 | User, opening live streams |
+| `TERMINAL` | 1,800 | 600 | User, hosted-terminal keystrokes and resizes |
 | `RUNNER` | 600 | 120 | User, runner control/acknowledgements/checkpoint metadata |
 | `ACTIVITY` | 600 | 180 | User, runner activity/lease event requests |
 | `GIT` | 120 | 40 | User, Git protocol requests |

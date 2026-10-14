@@ -79,7 +79,7 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
   let claimed: string | null = null;
   try {
     if (input.signal?.aborted) abort();
-    await rpc("initialize", { clientInfo: { name: "multiplayer-ai", title: "Multiplayer AI", version: "0.1.0" } });
+    await rpc("initialize", { clientInfo: { name: "multicode-ai", title: "Multicode AI", version: "0.1.0" } });
     write({ method: "initialized", params: {} });
     const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: "never", sandbox: "workspace-write", ephemeral: true });
     if (!thread.thread?.id) throw new Error("Agent did not create a thread.");

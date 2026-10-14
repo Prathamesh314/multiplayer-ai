@@ -1,6 +1,6 @@
 # Clerk authentication
 
-Clerk manages sign-up, Google/email sign-in, verification, password recovery, multi-factor authentication, account settings and browser sessions. Multiplayer AI retains organisation, project, room and shared-chat permissions. Those permissions are not Clerk Organisations.
+Clerk manages sign-up, Google/email sign-in, verification, password recovery, multi-factor authentication, account settings and browser sessions. Multicode AI retains organisation, project, room and shared-chat permissions. Those permissions are not Clerk Organisations.
 
 ## Configure a Clerk application
 
@@ -15,15 +15,15 @@ Clerk manages sign-up, Google/email sign-in, verification, password recovery, mu
    ```
 
 3. Run database migrations (`npm run db:migrate`) and restart the development server. The application uses `/login`, `/login?mode=signup`, `/auth/complete`, and `/account`. Use those sign-in/sign-up URLs if configuring application paths in Clerk. Application links preserve the destination and invitation token through authentication.
-4. In Clerk, add a webhook endpoint at `https://cubeclashes.com/api/webhooks/clerk`. Subscribe to **user.updated**, **user.deleted**, **session.ended**, **session.revoked**, and **session.removed**. Put its signing secret in `CLERK_WEBHOOK_SIGNING_SECRET`. For local delivery, use a development tunnel and the corresponding development webhook secret.
-5. Create a Clerk production instance for `cubeclashes.com` before deploying. Complete Clerk’s DNS and Google OAuth configuration. Use the exact DNS records and Google redirect URI supplied by Clerk; the old `/api/auth/google/callback` is retired. Clerk authentication CNAMEs should follow Clerk's DNS instructions; do not add application CDN caching rules to authentication endpoints.
-6. Put the production `pk_live_...`, `sk_live_...`, `whsec_...`, `AUTH_PUBLIC_URL=https://cubeclashes.com` and `SIGNUP_MODE=open` into the VM’s `.env.production`. The publishable key is a Docker build argument; changing it requires rebuilding the web image. The secret key and webhook signing secret are runtime environment variables, never build arguments.
+4. In Clerk, add a webhook endpoint at `https://multicode.in/api/webhooks/clerk`. Subscribe to **user.updated**, **user.deleted**, **session.ended**, **session.revoked**, and **session.removed**. Put its signing secret in `CLERK_WEBHOOK_SIGNING_SECRET`. For local delivery, use a development tunnel and the corresponding development webhook secret.
+5. Create a Clerk production instance for `multicode.in` before deploying. Complete Clerk’s DNS and Google OAuth configuration. Use the exact DNS records and Google redirect URI supplied by Clerk; the old `/api/auth/google/callback` is retired. Clerk authentication CNAMEs should follow Clerk's DNS instructions; do not add application CDN caching rules to authentication endpoints.
+6. Put the production `pk_live_...`, `sk_live_...`, `whsec_...`, `AUTH_PUBLIC_URL=https://multicode.in` and `SIGNUP_MODE=open` into the VM’s `.env.production`. The publishable key is a Docker build argument; changing it requires rebuilding the web image. The secret key and webhook signing secret are runtime environment variables, never build arguments.
 
 The release preflight refuses to replace the running application if these three Clerk credentials are missing. Keep a database backup and the previous release available while enabling a new authentication provider.
 
 ## Existing users
 
-An existing user signs in or creates their Clerk account with the **same verified primary email** used in Multiplayer AI. The application links that identity to the existing UUID, preserving conversations, repositories, organisation membership and project access. It never trusts an email or user ID submitted by the browser for this link.
+An existing user signs in or creates their Clerk account with the **same verified primary email** used in Multicode AI. The application links that identity to the existing UUID, preserving conversations, repositories, organisation membership and project access. It never trusts an email or user ID submitted by the browser for this link.
 
 Old passwords are not imported into Clerk. Existing users can use Google or an email verification code, then manage their password and security settings in **Account settings**. Enable the email-code method before rollout so users without a Google account have a clear migration path. Old application cookies and password/Google/email-code API endpoints no longer authenticate users.
 

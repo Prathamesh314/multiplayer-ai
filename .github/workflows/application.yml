@@ -179,4 +179,4 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
             -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
             "root@$DEPLOY_HOST" "deploy $GITHUB_SHA" < "$bundle"
-          echo "Deployed $GITHUB_SHA to https://cubeclashes.com after all application checks passed." >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed $GITHUB_SHA to https://multicode.in after all application checks passed." >> "$GITHUB_STEP_SUMMARY"

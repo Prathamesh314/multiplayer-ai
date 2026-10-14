@@ -9,7 +9,6 @@ import { promisify } from "node:util";
 import { test } from "node:test";
 import { listLocalWorkspaces, locationPath } from "../runner/workspace-layout.ts";
 import { defaultWorkspacesDir, resolveWorkspacesDir } from "../runner/config.ts";
-import { homedir } from "node:os";
 import { RunnerGit } from "../runner/git.ts";
 import { checkpointOverwritesIgnored } from "../runner/checkpoints.ts";
 
@@ -273,18 +272,18 @@ test("named worktrees group by repository then room; all chats reuse the room ch
   const f = await fixture(t);
   const visible = join(f.root, "Visible workspaces");
   const runner = new RunnerGit(f.server, "token", f.data, visible);
-  const names = { repository: "Multiplayer AI", room: "Alice's room" };
+  const names = { repository: "Multicode AI", room: "Alice's room" };
   let first, second;
   await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => { first = w.path; });
   await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => assert.equal(w.path, first));
   await runner.withWorkspace(job(f.base, { sessionId: "room-b", workspaceNames: { ...names, room: "Bob" } }), async w => { second = w.path; });
-  assert.match(relative(visible, first).replaceAll("\\", "/"), /^multiplayer-ai--[a-f0-9]{12}\/alice-s-room--[a-f0-9]{12}$/);
+  assert.match(relative(visible, first).replaceAll("\\", "/"), /^multicode-ai--[a-f0-9]{12}\/alice-s-room--[a-f0-9]{12}$/);
   assert.equal(dirname(first), dirname(second));
   assert.notEqual(first, second);
   assert.equal(await common(first), await common(second));
   const workspaces = await listLocalWorkspaces(f.data);
   assert.equal(workspaces.length, 2);
-  assert.equal(workspaces.find(w => w.path === first).repository, "Multiplayer AI");
+  assert.equal(workspaces.find(w => w.path === first).repository, "Multicode AI");
 });
 
 test("renames and changing the root do not strand an existing worktree", async t => {
@@ -360,9 +359,33 @@ test("hostile display names cannot choose filesystem paths and corrupt locations
   assert.throws(()=>locationPath({workspaceRoot:"relative",relativePath:"repo--aaaaaaaaaaaa/room--bbbbbbbbbbbb"}),/Invalid workspace/);
 });
 
-test("CLI and desktop default to a visible directory under the user's home", () => {
-  assert.equal(defaultWorkspacesDir(),join(homedir(),"multiplayer-ai","workspaces"));
-  assert.equal(resolveWorkspacesDir("~/my-worktrees"),join(homedir(),"my-worktrees"));
+test("CLI and desktop default to a visible directory under the user's home", async () => {
+  // homedir() reads $HOME on POSIX, so each case gets its own empty home
+  // rather than depending on what this machine happens to have.
+  const original = process.env.HOME;
+  const home = async layout => {
+    const root = await mkdtemp(join(tmpdir(), "multicode-home-"));
+    process.env.HOME = root;
+    for (const path of layout) await mkdir(join(root, path), { recursive: true });
+    return root;
+  };
+  try {
+    const fresh = await home([]);
+    assert.equal(defaultWorkspacesDir(), join(fresh, "multicode-ai", "workspaces"));
+    assert.equal(resolveWorkspacesDir("~/my-worktrees"), join(fresh, "my-worktrees"));
+
+    // The Multicode AI rename must not make an existing checkout disappear:
+    // a home that only has the pre-rename directory keeps using it.
+    const upgraded = await home(["multiplayer-ai/workspaces"]);
+    assert.equal(defaultWorkspacesDir(), join(upgraded, "multiplayer-ai", "workspaces"));
+
+    // Once the current directory exists it wins, so the fallback cannot pin a
+    // migrated install to the old name forever.
+    const both = await home(["multiplayer-ai/workspaces", "multicode-ai/workspaces"]);
+    assert.equal(defaultWorkspacesDir(), join(both, "multicode-ai", "workspaces"));
+  } finally {
+    if (original === undefined) delete process.env.HOME; else process.env.HOME = original;
+  }
 });
 
 test("restore collision checks protect ignored files and directories in large projects", () => {

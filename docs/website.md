@@ -45,7 +45,7 @@ This keeps the advertised interface and its theme consistent with the docs.
 
 The older images in `public/product/` are retained as historical captures, and
 are no longer shown on the homepage. The original demo frames came from:
-`artifacts/demo-2026-09-22-extended/multiplayer-ai-extended-walkthrough.mp4`.
+`artifacts/demo-2026-09-22-extended/multicode-ai-extended-walkthrough.mp4`.
 The sample Northstar project and Alex/Priya identities are demo fixtures. See the
 recording’s README for provenance. The UI and agent responses are real footage;
 no interface controls, colors, or conversation content have been fabricated.

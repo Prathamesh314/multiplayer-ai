@@ -22,7 +22,7 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "multiplayer-ai · Build together",
+  title: "multicode-ai · Build together",
   description: "A shared workspace for your team and AI coding agents. Open a project, build in your own room, and review changes together.",
 };
 

@@ -12,7 +12,7 @@ the stored email when it matches the provider's verified address.
 ## Configure Resend
 
 1. Add a sending domain in [Resend](https://resend.com/domains), such as
-   `cubeclashes.com` or `mail.cubeclashes.com`, and publish the DNS records Resend
+   `multicode.in` or `mail.multicode.in`, and publish the DNS records Resend
    supplies. Wait until the domain is verified.
 2. Create a Resend API key with permission to send from that domain.
 3. Set these server-only values in `.env.production` on the VM (or `.env` locally):
@@ -20,8 +20,8 @@ the stored email when it matches the provider's verified address.
    ```dotenv
    EMAIL_VERIFICATION_ENABLED=true
    RESEND_API_KEY=re_your_api_key
-   EMAIL_FROM="Multiplayer AI <verify@cubeclashes.com>"
-   AUTH_PUBLIC_URL=https://cubeclashes.com
+   EMAIL_FROM="Multicode AI <verify@multicode.in>"
+   AUTH_PUBLIC_URL=https://multicode.in
    ```
 
    The `EMAIL_FROM` address must use your verified sending domain. The Resend

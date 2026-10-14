@@ -6,7 +6,7 @@ Neither route needs access to this repository or the server's source code.
 
 `npm run runner:pack` bundles `runner/index.ts` into one Node.js executable with
 esbuild, then uses `npm pack` to create
-`public/downloads/multiplayer-ai-runner.tgz`. Only the executable, package
+`public/downloads/multicode-ai-runner.tgz`. Only the executable, package
 manifest, and user README are shipped. The builder fails if a new import pulls
 third-party packages into the bundle, requiring an explicit license/dependency
 review before distribution. Credentials, environment files, server database
@@ -21,8 +21,8 @@ no npm registry publication is required. Regenerate it whenever runner code
 changes. Existing global installations still work and can be reinstalled to upgrade.
 
 Node.js 22+ and npm/npx are required for this standalone option. The connection
-dialog uses `npx --yes --package="<workspace>/downloads/multiplayer-ai-runner.tgz"
-multiplayer-ai-runner` for both pairing and starting. npm downloads the package
+dialog uses `npx --yes --package="<workspace>/downloads/multicode-ai-runner.tgz"
+multicode-ai-runner` for both pairing and starting. npm downloads the package
 into its user cache and supplies the executable's PATH for that invocation.
 This avoids global installation permissions and missing global-bin PATH entries.
 Keep the explicit package URL: this package is not published on the npm registry.

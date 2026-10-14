@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One command to bring up the whole multiplayer-ai stack:
+# One command to bring up the whole multicode-ai stack:
 #
 #   ./start.sh            services (Postgres, Redis, pgAdmin, Mnemosyne) → migrate → dev server
 #   ./start.sh down       stop the services, keep the data

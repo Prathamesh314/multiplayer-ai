@@ -1,5 +1,6 @@
 import * as pty from "node-pty";
 import type { IPty } from "node-pty";
+import { NO_SHELL_REASON, resolveShell } from "./shell";
 
 /**
  * Real pseudo-terminals, one per client terminal tab.
@@ -39,10 +40,6 @@ type Session = {
 const globalStore = globalThis as unknown as { __mp_ptys?: Map<string, Session> };
 const store: Map<string, Session> = (globalStore.__mp_ptys ??= new Map());
 
-function loginShell(): string {
-  if (process.env.SHELL) return process.env.SHELL;
-  return process.platform === "win32" ? "powershell.exe" : "/bin/zsh";
-}
 
 /** A shell `ownerId` is allowed to reach, or null (missing, dead, or theirs). */
 function owned(id: string, ownerId: string): Session | null {
@@ -51,23 +48,39 @@ function owned(id: string, ownerId: string): Session | null {
   return session;
 }
 
-/**
- * Returns the live shell for `id`, spawning one the first time. False means
- * the id is already taken by another account — the caller must not be told
- * anything more specific than "that shell is not available to you".
- */
-export function getOrCreate(id: string, cols: number, rows: number, ownerId: string): boolean {
-  const existing = store.get(id);
-  if (existing && existing.ownerId !== ownerId) return false;
-  if (existing && !existing.exited) return true;
+export type StartResult = { ok: true } | { ok: false; status: number; reason: string };
 
-  const term = pty.spawn(loginShell(), ["-il"], {
-    name: "xterm-256color",
-    cols: Math.max(1, cols || 80),
-    rows: Math.max(1, rows || 24),
-    cwd: process.cwd(),
-    env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
-  });
+/**
+ * Returns the live shell for `id`, spawning one the first time.
+ *
+ * Both failures are reported rather than swallowed: an id already owned by
+ * another account (told only "not available to you", so ids stay unguessable),
+ * and a host with no shell to run — which used to present as a terminal that
+ * opened and instantly died with nothing explaining why.
+ */
+export function getOrCreate(id: string, cols: number, rows: number, ownerId: string): StartResult {
+  const existing = store.get(id);
+  if (existing && existing.ownerId !== ownerId) {
+    return { ok: false, status: 403, reason: "That terminal is not available." };
+  }
+  if (existing && !existing.exited) return { ok: true };
+
+  const shell = resolveShell();
+  if (!shell) return { ok: false, status: 503, reason: NO_SHELL_REASON };
+
+  let term: IPty;
+  try {
+    term = pty.spawn(shell.file, shell.args, {
+      name: "xterm-256color",
+      cols: Math.max(1, cols || 80),
+      rows: Math.max(1, rows || 24),
+      cwd: process.cwd(),
+      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+    });
+  } catch (cause) {
+    console.warn("Terminal shell failed to start", cause);
+    return { ok: false, status: 503, reason: `The shell ${shell.file} could not be started on this server.` };
+  }
 
   const session: Session = {
     pty: term,
@@ -92,7 +105,7 @@ export function getOrCreate(id: string, cols: number, rows: number, ownerId: str
   });
 
   store.set(id, session);
-  return true;
+  return { ok: true };
 }
 
 /**

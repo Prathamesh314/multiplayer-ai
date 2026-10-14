@@ -45,6 +45,15 @@
     }
 }
 
+# The apex is canonical. www exists because people type it; it only redirects,
+# so invitation links, Clerk origin checks and cookies all stay on one origin.
+# This site needs its own certificate, so the www DNS record must exist — see
+# the DNS table in docs/domain-setup.md. Without it Caddy retries ACME for this
+# name alone; the apex and asset sites are unaffected.
+www.{$APP_DOMAIN} {
+    redir https://{$APP_DOMAIN}{uri} 308
+}
+
 {$APP_DOMAIN} {
     # Only the balancer and container health checks use readiness. Application
     # responses retain their own private/no-store policy; no API response cache.
