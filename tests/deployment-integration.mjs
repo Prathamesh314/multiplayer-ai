@@ -45,7 +45,14 @@ async function startContainer(args, targetPort) {
 }
 async function gateway(ports) {
   const started = await startContainer(['--add-host=host.docker.internal:host-gateway',
-    '-e', 'APP_DOMAIN=:8080', '-e', 'ACME_EMAIL=fixture@example.com', '-e', `PROXY_SHARED_SECRET=${secret}`,
+    // Port-only, so the gateway serves plain HTTP and never contacts ACME.
+    // The www redirect therefore needs its own address: prefixing this one
+    // would produce "www.", which Caddy rejects as a certificate subject.
+    // Its http:// scheme is load-bearing — a bare hostname here makes Caddy
+    // turn on automatic HTTPS for the whole listener, and every plain request
+    // below starts coming back 400 instead of reaching the application.
+    '-e', 'APP_DOMAIN=:8080', '-e', 'APP_WWW_DOMAIN=http://www.localhost:8080',
+    '-e', 'ACME_EMAIL=fixture@example.com', '-e', `PROXY_SHARED_SECRET=${secret}`,
     '-e', 'APP_ASSET_DOMAIN=http://assets.test:8080',
     '-e', `APP_UPSTREAMS=${ports.map(port => `host.docker.internal:${port}`).join(' ')}`,
     '-v', `${downloads}:/srv/desktop-downloads:ro`,
@@ -56,6 +63,22 @@ async function gateway(ports) {
   }
   const base = 'http://'+started.address;
   await eventually(async () => { try { return (await fetch(base+'/health/ready')).status === 404; } catch { return false; } }, 'gateway startup');
+
+  // www only redirects. Two live origins would split cookies and fail Clerk's
+  // session origin check, so this must never quietly start proxying instead.
+  // node:http, not fetch: undici rewrites Host, so a fetch would silently test
+  // the catch-all site rather than host-based routing (see fetchAsset below).
+  const www = await new Promise((resolve, reject) => {
+    const probe = httpRequest(new URL(base+'/workspace'), { headers: { host: 'www.localhost:8080' } }, response => {
+      response.resume();
+      resolve({ status: response.statusCode, location: response.headers.location });
+    });
+    probe.on('error', reject);
+    probe.setTimeout(5000, () => probe.destroy(new Error('www probe timed out')));
+    probe.end();
+  });
+  assert.equal(www.status, 308, 'www must redirect to the canonical origin, not proxy');
+  assert.match(www.location ?? '', /\/workspace$/, 'the redirect must preserve the path');
   return base;
 }
 

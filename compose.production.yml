@@ -111,6 +111,9 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?Set the public hostname, without a scheme}
+      # The hostname that redirects to the apex. Override only to point a
+      # different name at this deployment; it must be a real hostname.
+      APP_WWW_DOMAIN: ${APP_WWW_DOMAIN:-www.${APP_DOMAIN}}
       APP_ASSET_DOMAIN: ${APP_ASSET_DOMAIN:-http://localhost:8090}
       ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact email}
       PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set PROXY_SHARED_SECRET}

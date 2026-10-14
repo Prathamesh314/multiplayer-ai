@@ -50,7 +50,13 @@
 # This site needs its own certificate, so the www DNS record must exist — see
 # the DNS table in docs/domain-setup.md. Without it Caddy retries ACME for this
 # name alone; the apex and asset sites are unaffected.
-www.{$APP_DOMAIN} {
+#
+# Supplied whole rather than built as www.{$APP_DOMAIN}: APP_DOMAIN is not
+# always a hostname. The deployment test runs this file with APP_DOMAIN=:8080
+# to get plain HTTP and no ACME, and prefixing that yields "www.", which is not
+# a certificate subject — Caddy then refuses to start at all. The default keeps
+# an ad-hoc `caddy run` valid; .localhost gets an internal certificate.
+{$APP_WWW_DOMAIN:www.localhost} {
     redir https://{$APP_DOMAIN}{uri} 308
 }
 
