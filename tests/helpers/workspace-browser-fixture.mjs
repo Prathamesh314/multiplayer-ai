@@ -98,9 +98,16 @@ export function installFixtures() {
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});
     if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true}]});
     if(path.endsWith("/runs"))return json({runs:state.runs});
-    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join))?$/);
+    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch))?$/);
     if(runPath) {
       const run=state.runs.find(item=>item.id===runPath[1]);
+      if(runPath[2]==="branch") {
+        // A parallel chat's branch: state.branches[runId] is the GET answer;
+        // POSTs are recorded and answered from state.branchOutcomes (a queue).
+        if(init.method==="POST"){const outcome=(state.branchOutcomes??=[]).shift()??{ok:true,sha:"d".repeat(40),changed:true};return new Response(JSON.stringify(outcome),{status:outcome.ok===false?409:200,headers:{"content-type":"application/json"}});}
+        if(u.searchParams.has("path"))return json({diff:(state.diffs??{})[u.searchParams.get("path")]??""});
+        return json(state.branches?.[run.id]);
+      }
       if(runPath[2]==="handoff")return json({run,offers:[],recipients:[]});
       if(runPath[2]==="history")return json({turns:[],snapshots:[],selectedSnapshotId:null});
       if(runPath[2]==="join")return json({ok:true});
@@ -120,8 +127,10 @@ export function installFixtures() {
     if(path === "/api/ai/agents") {
       if(state.agentsFailure)return new Response("Temporarily unavailable",{status:503});
       const ready=state.devices.some(device=>device.online&&device.version==="2")&&state.aiReady;
-      return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it."});
+      return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it.",parallelChats:!!state.parallelChats});
     }
+    // Runs are not executed in the fixture: the request is recorded, then refused.
+    if(path === "/api/ai/run")return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
     if(path === "/api/presence")return json({intervalMs:20000,online:["alice"]});
     if(path === "/api/runner/devices") {
       if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});
