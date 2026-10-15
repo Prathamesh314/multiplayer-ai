@@ -300,4 +300,6 @@ export type AgentsResponse = {
    */
   canRun: boolean;
   reason: string | null;
+  /** Whether new chats may run in parallel on their own branches (PARALLEL_CHATS). */
+  parallelChats: boolean;
 };

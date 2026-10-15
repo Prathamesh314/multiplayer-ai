@@ -137,6 +137,8 @@ export function runAgent(
     contextRefs?: string[];
     /** Which room repo a new chat works on; omitted = the room's project fork. */
     repoId?: string;
+    /** Open a new chat on its own branch, so it can run alongside others. */
+    isolation?: "isolated";
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

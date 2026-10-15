@@ -38,6 +38,7 @@ import { QueuedMessages } from "./QueuedMessages";
 import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
+import { ChatBranchPanel } from "./ChatBranchPanel";
 import { useTitleTransition } from "./useTitleTransition";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { BriefingCard } from "../collaboration/BriefingCard";
@@ -149,6 +150,11 @@ export function AiPanel({
 }: AiPanelProps) {
   const [assignOpen, setAssignOpen] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+  // Whether this server runs chats on their own branches, and whether the next
+  // new chat should. Off by default: an ordinary chat works on the room branch.
+  const [parallelChats, setParallelChats] = useState(false);
+  const [parallel, setParallel] = useState(false);
   const [planMode, setPlanMode] = useState(false);
   const composer = useRef<ComposerHandle>(null);
   const [taskRevision, setTaskRevision] = useState(0);
@@ -400,6 +406,7 @@ export function AiPanel({
       setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
+      setParallelChats(response.parallelChats);
       // Pre-select a ready agent, so the common case is one click. Codex is the
       // default when it is installed; otherwise the first installed one.
       setConnected((previous) => {
@@ -438,6 +445,7 @@ export function AiPanel({
       setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
+      setParallelChats(response.parallelChats);
     } catch { setServerCanRun(false); setAgentsError("We couldn’t check your AI tools. Check your internet connection and try again."); }
     finally { setRefreshing(false); }
   }
@@ -563,6 +571,7 @@ export function AiPanel({
         forkFromRunId: forkFromRun,
         contextRefs,
         repoId: repoForRun,
+        isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
       },
       {
         onEvent: (event) => {
@@ -769,6 +778,11 @@ export function AiPanel({
         )}
         <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="composer-control composer-toggle">ϟ Fast</button>
         <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="composer-control composer-toggle">Plan</button>
+        {!entered && parallelChats && (
+          <button type="button" aria-pressed={parallel} onClick={() => setParallel(value => !value)}
+            title="Work on a branch of its own, so this chat can run alongside your others. Review and merge it into the room when it's ready."
+            className="composer-control composer-toggle">⑂ Parallel</button>
+        )}
         {!entered && forkableRuns.length > 0 && (
           <>
             <span className="mx-0.5 h-3.5 w-px bg-vs-border" />
@@ -869,6 +883,7 @@ export function AiPanel({
           ))}
         {/* Briefing and synchronized history are reference material, not part of
             the conversation, so they open from here instead of sitting above it. */}
+        {entered?.isolation === "isolated" && <button type="button" onClick={() => setBranchOpen(true)} title="Review this parallel chat's changes and merge them into the room" className="rounded px-1.5 py-1 text-[11px] text-vs-accent transition hover:bg-vs-hover">Changes</button>}
         {entered && <button type="button" onClick={() => setBriefingOpen(true)} className="rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">Briefing</button>}
         {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
         <button ref={setProvidersButton} type="button" onClick={() => setShowProviders(previous => !previous)} aria-haspopup="dialog" aria-expanded={showProviders} className={`rounded px-1.5 py-1 text-[11px] transition hover:bg-vs-hover ${showProviders ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>Providers</button>
@@ -885,6 +900,12 @@ export function AiPanel({
       {assignOpen && <Modal title="Assign Tasks" description="Type @ and choose a teammate, then describe the task." onClose={() => setAssignOpen(false)}>
         <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
         {taskPeople.length === 0 && <p className="text-sm text-vs-muted">No teammates are available to assign. Invite a teammate to this room first.</p>}
+      </Modal>}
+      {branchOpen && entered?.isolation === "isolated" && <Modal title="Parallel chat changes" width="max-w-3xl"
+        description="What this chat would bring into the room. Merging creates a merge commit on the room branch; Publish then shares it with the project."
+        onClose={() => setBranchOpen(false)}>
+        <ChatBranchPanel key={`branch-${entered.id}`} sessionId={sessionId} run={entered} myUserId={myUserId} canEdit={canRun} isOwner={isOwner}
+          onAskAgent={prompt => { setBranchOpen(false); onShowConversation?.(); composer.current?.insertPrompt(prompt); }} />
       </Modal>}
       {briefingOpen && entered && <Modal title="Conversation briefing" description="A starting point for joining the work. AI reports are unverified." onClose={() => setBriefingOpen(false)}>
         <BriefingCard key={`briefing-${entered.id}`} runId={entered.id} expanded bare />
