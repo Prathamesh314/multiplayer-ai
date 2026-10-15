@@ -34,7 +34,8 @@ export async function createOrg(input: CreateOrgRequest): Promise<Org> {
 }
 
 export type OrgUsage = {
-  concurrency: { used: number; limit: number };
+  /** `limit` caps only turns running on the app's server; null means none. */
+  concurrency: { used: number; limit: number | null };
   monthly: { used: number; limit: number | null };
 };
 

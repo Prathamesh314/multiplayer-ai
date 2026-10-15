@@ -42,7 +42,8 @@ is stored at `~/.config/multicode-ai/runner.json`; treat it as a private
 credential. Never share its token.
 
 Parallel chats each get a worktree of their own, so several AI tasks can run at
-once (three by default; change it with `start --parallel <1-8>`). When those
+once: every task you start runs, with no cap. To limit it on this computer,
+use `start --parallel <n>`. When those
 chats are merged or discarded, `workspaces prune` lists their worktrees and
 `workspaces prune --apply` removes the clean ones. Nothing is deleted
 automatically.

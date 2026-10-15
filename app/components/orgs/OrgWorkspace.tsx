@@ -869,13 +869,12 @@ function UsageBadge({ orgSlug }: { orgSlug: string }) {
   }, [orgSlug]);
 
   if (!usage) return null;
-  const atCap = usage.concurrency.used >= usage.concurrency.limit && usage.concurrency.limit > 0;
 
   return (
     <div className="flex items-center gap-3 border-b border-vs-border px-3 py-2 text-[11px] text-vs-muted">
-      <span className="flex items-center gap-1.5" title="Agent runs active across the org right now">
-        <span className={`h-1.5 w-1.5 rounded-full ${atCap ? "bg-vs-warn" : "bg-vs-success"}`} />
-        {usage.concurrency.used}/{usage.concurrency.limit} running
+      <span className="flex items-center gap-1.5" title="AI turns running across the organisation right now. Turns on members' own computers have no limit.">
+        <span className="h-1.5 w-1.5 rounded-full bg-vs-success" />
+        {usage.concurrency.used} running
       </span>
       {usage.monthly.limit != null && (
         <span title="Agent runs used this month">

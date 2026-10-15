@@ -27,22 +27,26 @@ export type RunnerConfig = {
   dataDir: string;
   /** Visible repository/room worktrees, separate from private runner state. */
   workspacesDir?: string;
-  /** How many turns run at once; only parallel chats can overlap in one room. */
+  /**
+   * An optional personal cap on turns running at once. Unset means no cap:
+   * every task its user starts runs, as in a desktop orchestrator.
+   */
   maxParallel?: number;
   /** Ignored files copied from a room's worktree into each new parallel-chat worktree. */
   copyIgnoredFiles?: string[];
 };
 
-export const DEFAULT_MAX_PARALLEL = 3;
-
-/** Flag, then environment, then config file; always 1–8. */
+/**
+ * Flag, then environment, then config file: the first positive whole number
+ * wins. Nothing set (or nothing valid) means no cap.
+ */
 export function resolveMaxParallel(...values: unknown[]): number {
   for (const value of values) {
     if (value === undefined || value === null || value === "") continue;
     const number = Number(value);
-    if (Number.isInteger(number) && number >= 1) return Math.min(number, 8);
+    if (Number.isInteger(number) && number >= 1) return number;
   }
-  return DEFAULT_MAX_PARALLEL;
+  return Infinity;
 }
 
 /** Exact relative paths only, such as ".env.local" or "apps/web/.env"; anything else is dropped. */

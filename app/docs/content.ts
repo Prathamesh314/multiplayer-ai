@@ -657,6 +657,8 @@ The organisation rail lets you switch between teams, create an organisation, or 
 Use each project’s **Members** dialog to add existing organisation members as viewer, editor, or manager. Use room settings for private-room access. See [members and permissions](/docs/members) before granting wider access.`, screenshot: "project-members" },
       { id: "usage", title: "Read usage and capacity", body: `The admin view shows **Running now** and **AI turns this month**, alongside configured limits where present. These are application execution counters; they are not your AI provider’s token bill or account balance.
 
+AI tasks on members’ own computers are not limited in how many run at once: each uses that person’s machine and AI account. A limit on tasks at once applies only when they run on the application’s server, and only if the administrator has set one.
+
 If a limit blocks new work, let active work finish or ask the administrator about the configured allowance. Repeatedly sending the same prompt will not bypass a concurrency or usage limit. AI providers can impose their own additional limits.` },
       { id: "hosting", title: "Operating a private deployment", body: `End users do not need to install PostgreSQL, Redis, Docker, or the application source. Those belong to server administration.
 

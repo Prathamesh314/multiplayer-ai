@@ -632,9 +632,9 @@ test("activity delivery always covers batches stored before the call", async t =
 });
 
 test("runner parallelism and copy settings are validated", () => {
-  assert.equal(resolveMaxParallel(undefined, "", null), 3);
+  assert.equal(resolveMaxParallel(undefined, "", null), Infinity, "no setting means no cap");
   assert.equal(resolveMaxParallel("2", "5"), 2);
   assert.equal(resolveMaxParallel("0", "abc", 5), 5);
-  assert.equal(resolveMaxParallel(50), 8);
+  assert.equal(resolveMaxParallel(50), 50, "a chosen cap is honoured as given");
   assert.deepEqual(resolveCopyIgnoredFiles(".env, apps/web/.env.local ,../x,/etc/passwd,a/./b,.env"), [".env", "apps/web/.env.local"]);
 });

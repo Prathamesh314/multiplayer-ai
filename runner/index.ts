@@ -6,9 +6,9 @@ import { ActivityOutbox } from "./activity-outbox";
  * docs/local-execution.md. It pairs once, then loops: heartbeat, claim the
  * next run addressed to its owner, materialize the repo over smart-HTTP,
  * spawn the agent CLI with this machine's own logins, stream the output up,
- * push the commit, and report completion. Up to `--parallel` turns run at
- * once; the server only hands out overlapping turns for separate worktrees
- * (other rooms, or parallel chats). Every durable effect happens
+ * push the commit, and report completion. Every turn its user starts runs at
+ * once unless `--parallel` sets a personal cap; the server only hands out
+ * overlapping turns for separate worktrees (other rooms, or parallel chats). Every durable effect happens
  * server-side — this process holds no state beyond its config and checkouts.
  *
  *   npm run runner -- pair --server https://… --code RN-XXXX-XXXX [--name "My Mac"]
@@ -270,7 +270,7 @@ async function start(): Promise<void> {
     void sync().catch(cause => log(`Sync pending: ${String(cause)}`)).finally(() => { maintenanceBusy = false; });
   }, 30_000);
 
-  log(`up to ${maxParallel} turn${maxParallel === 1 ? "" : "s"} at once`);
+  log(Number.isFinite(maxParallel) ? `up to ${maxParallel} turn${maxParallel === 1 ? "" : "s"} at once` : "runs every task you start, with no cap");
   const running = new Set<Promise<void>>();
   while (!stopping) {
     const revision = jobsReady.version();
@@ -341,7 +341,7 @@ if (command === "--help" || command === "-h" || command === "help") {
     "  workspaces [--json]                       List local worktrees\n" +
     "  workspaces prune [--apply]                Remove finished parallel-chat worktrees\n" +
     "  --version                                Print the runner version\n\n" +
-    "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <1-8>\n" +
+    "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <n> (optional cap)\n" +
     "Works from any directory. No application source checkout is needed.");
 } else if (command === "--version" || command === "-v") {
   console.log(process.env.MULTIPLAYER_RUNNER_VERSION ?? "development");
