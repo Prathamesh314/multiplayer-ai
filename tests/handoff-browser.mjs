@@ -59,6 +59,8 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
   let socket;
   const pending = new Map();
   let sequence = 0;
+  /** Clerk's frontend API, script CDN and telemetry: never contacted by these tests. */
+  const CLERK_FRONTEND = ["*clerk.accounts.dev*", "*clerk-telemetry.com*"];
   const runtimeErrors = [];
   const consoleErrors = [];
   const networkRequests = [];
@@ -183,7 +185,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         else operation?.resolve(message.result);
       }
       if (message.method === "Network.requestWillBeSent") networkRequests.push({ sessionId: message.sessionId, url: message.params.request.url, method: message.params.request.method });
-      if (message.method === "Runtime.exceptionThrown") runtimeErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+      if (message.method === "Runtime.exceptionThrown") {
+        const description = message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text;
+        // The one consequence of blocking Clerk's script on purpose (CLERK_FRONTEND).
+        if (!String(description).includes('code="failed_to_load_clerk_js"')) runtimeErrors.push(description);
+      }
       if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
         consoleErrors.push(message.params.args.map(arg => arg.value ?? arg.description ?? "").join(" "));
       }
@@ -194,6 +200,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
       const command = (method, params) => send(method, params, sessionId);
       await command("Page.enable"); await command("Runtime.enable"); await command("Network.enable");
+      // Keep the browser off Clerk's real servers. Its script would otherwise
+      // load from the fixture key's internet domain, be refused there, and may
+      // sign this tab out at a timing-dependent moment. The server still checks
+      // every request's session with the fixture, which is what these tests cover.
+      const block = (urls = []) => command("Network.setBlockedURLs", { urls: [...CLERK_FRONTEND, ...urls] });
+      await block();
       await command("Page.bringToFront");
       if (initScript) await command("Page.addScriptToEvaluateOnNewDocument", { source: initScript });
       await command("Network.setCookie", { name: "__client_uat", value: "1", url: server });
@@ -230,7 +242,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
         await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(label)});if(!button||button.disabled||!button.checkVisibility())return false;button.scrollIntoView({block:'nearest'});button.focus();button.click();return true;})()`),`enabled picker ${label}`);
         await eventually(()=>evaluate(`(() => {const button=Array.from(document.querySelectorAll('.composer-picker [role="option"]')).find(button=>button.value===${JSON.stringify(value)});if(!button||!button.checkVisibility())return false;button.click();return true;})()`),`picker option ${value}`);
       };
-      return { command, evaluate, navigate, reload, click, selectRepository, selectPicker, targetId, sessionId };
+      return { command, block, evaluate, navigate, reload, click, selectRepository, selectPicker, targetId, sessionId };
     }
     const sender = await tab(tokens[0]);
     const recipient = await tab(tokens[1]);
@@ -287,11 +299,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await writeAssignment(assigner, '@'+aliceHandle+' '+taskText);
     // A failed delivery keeps the draft intact so the user can retry.
     await assigner.command("Network.enable",{});
-    await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await assigner.block(["*/api/tasks"]);
     await assigner.click("Assign task");
     await eventually(() => assigner.evaluate('!!document.querySelector(\'dialog[aria-label="Assign Tasks"] [role="alert"]\')'), "task delivery failure");
     assert.equal(await assigner.evaluate('document.querySelector(\'dialog[aria-label="Assign Tasks"] textarea\').value'),'@'+aliceHandle+' '+taskText);
-    await assigner.command("Network.setBlockedURLs",{urls:[]});
+    await assigner.block([]);
     await assigner.click("Assign task");
     await eventually(() => assigner.evaluate('document.querySelector(\'dialog[aria-label="Assign Tasks"] [role="status"]\')?.textContent.includes("Task assigned")'), "task assignment confirmation");
     await assigner.evaluate(`document.querySelector('button[aria-label="Close Assign Tasks"]').click()`);
@@ -315,6 +327,19 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
     await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
     await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
+    // A session the server rejects on the dashboard leads to the sign-in page,
+    // not a crash. /workspace is prerendered; when that happened without the
+    // publishable key (as in CI builds), a client-side route change to /login
+    // kept a layout with no Clerk provider and the sign-in form threw.
+    const signedOutToken = await clerk.link({ query: sql }, alice, { sessionId: "session_signed_out" });
+    await sql("INSERT INTO clerk_revoked_sessions(session_id) VALUES($1)", ["session_signed_out"]);
+    const errorsBefore = runtimeErrors.length;
+    const signedOut = await tab(signedOutToken, roomId, "body");
+    await signedOut.navigate(`${server}/workspace`);
+    await eventually(() => signedOut.evaluate(`location.pathname === "/login" && new URLSearchParams(location.search).get("next") === "/workspace" && document.readyState === "complete"`), "signed-out dashboard opens sign-in");
+    await delay(500);
+    assert.equal(await signedOut.evaluate(`document.body.innerText.includes("couldn’t load")`), false, "sign-in page renders instead of an error page");
+    assert.deepEqual(runtimeErrors.slice(errorsBefore), [], "no exception while leaving for sign-in");
     await assigner.command("Page.bringToFront");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
     await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] button[aria-label^="Status for"]\')?.textContent === "Done"'), "status refresh in source chat");
@@ -342,11 +367,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await assigner.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);
     const taggedTask='Please verify the release checklist with @'+aliceHandle+'. Keep @'+aliceHandle+' informed.';
     await setComposer('@'+aliceHandle+' '+taggedTask);
-    await assigner.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await assigner.block(["*/api/tasks"]);
     await assigner.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
     await eventually(()=>assigner.evaluate(`document.querySelector(${JSON.stringify(composerSelector)}).disabled === false && document.body.innerText.includes("Failed to fetch")`),"failed task keeps composer draft");
     assert.equal(await assigner.evaluate(`document.querySelector(${JSON.stringify(composerSelector)}).value`),'@'+aliceHandle+' '+taggedTask);
-    await assigner.command("Network.setBlockedURLs",{urls:[]});
+    await assigner.block([]);
     const turnsBefore=(await sql('SELECT count(*)::int AS count FROM agent_turns')).rows[0].count;
     await assigner.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
     await eventually(async()=> (await sql('SELECT count(*)::int AS count FROM room_tasks WHERE run_id=$1',[chat.id])).rows[0].count===2,"composer task delivery");
@@ -398,12 +423,12 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const chatCount=(await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n;
     const turnCount=(await sql('SELECT count(*)::int AS n FROM agent_turns')).rows[0].n;
     await fresh.command("Network.enable",{});
-    await fresh.command("Network.setBlockedURLs",{urls:["*/api/tasks"]});
+    await fresh.block(["*/api/tasks"]);
     await fresh.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
     await eventually(()=>fresh.evaluate('document.body.textContent.includes("Failed to fetch")'),"fresh task send failure");
     assert.equal(await fresh.evaluate(`document.querySelector(${JSON.stringify(freshSelector)}).value`),'@'+bobHandle+' '+freshBody);
     assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatCount);
-    await fresh.command("Network.setBlockedURLs",{urls:[]});
+    await fresh.block([]);
     await fresh.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
     await eventually(()=>fresh.evaluate(`document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(freshBody)})`),"new source chat opens with assigned task");
     const freshTask=(await sql('SELECT t.*,r.repo_id,r.driver_user_id FROM room_tasks t JOIN agent_runs r ON r.id=t.run_id WHERE t.body=$1',[freshBody])).rows;
@@ -579,16 +604,16 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await fresh.selectRepository("First project");
     await eventually(() => fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility() && !document.querySelector(\'button[aria-label="File: lib/second.ts"]\')'), "switching back loads original repository");
     await fresh.command("Network.enable", {});
-    await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/file?*`] });
+    await fresh.block([`*/api/sessions/${freshRoom}/file?*`]);
     await fresh.evaluate('document.querySelector(\'button[aria-label="File: src/first.ts"]\').click()');
     await eventually(() => fresh.evaluate('document.body.textContent.includes("Retry file")'), "failed file read exits loading with retry");
-    await fresh.command("Network.setBlockedURLs", { urls: [] });
+    await fresh.block([]);
     await fresh.click("Retry file");
     await eventually(() => fresh.evaluate('Array.from(document.querySelectorAll("textarea")).some(input => input.value.includes("export const first"))'), "retry opens file successfully");
-    await fresh.command("Network.setBlockedURLs", { urls: [`*/api/sessions/${freshRoom}/tree?*`] });
+    await fresh.block([`*/api/sessions/${freshRoom}/tree?*`]);
     await fresh.evaluate('document.querySelector(\'button[aria-label="Refresh files"]\').click()');
     await eventually(() => fresh.evaluate('!!document.querySelector(\'aside[aria-label="Repository explorer"] [role="alert"]\')'), "tree refresh failure is visible rather than silently empty");
-    await fresh.command("Network.setBlockedURLs", { urls: [] });
+    await fresh.block([]);
     await fresh.evaluate('document.querySelector(\'button[aria-label="Refresh files"]\').click()');
     await eventually(() => fresh.evaluate('!document.querySelector(\'aside[aria-label="Repository explorer"] [role="alert"]\') && document.querySelector(\'button[aria-label="File: src/first.ts"]\')?.checkVisibility()'), "tree retry preserves visible project files");
     console.log("  ok fresh-room uploads, second import, switching back, and recovery from real blocked file/tree requests");
@@ -749,18 +774,18 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal(await sender.evaluate(`document.querySelector('dialog input[type="url"]') === null`), true, "A project does not bind a single repository");
     await sender.click("Cancel");
     await sender.command("Network.enable", {});
-    await sender.command("Network.setBlockedURLs", { urls: ["*/api/ai/agents*"] });
+    await sender.block(["*/api/ai/agents*"]);
     await sender.evaluate('document.querySelector(\'button[aria-label="AI providers"]\').click()');
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect your computer.")'), "AI setup provides next steps");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "AI setup failures surface with a retry");
-    await sender.command("Network.setBlockedURLs", { urls: [] });
+    await sender.block([]);
     await sender.click("Check connections");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
-    await sender.command("Network.setBlockedURLs", { urls: ["*/api/runner/devices*"] });
+    await sender.block(["*/api/runner/devices*"]);
     await sender.click("Connect your computer");
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer to send AI messages")'), "AI setup links to device pairing");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
-    await sender.command("Network.setBlockedURLs", { urls: [] });
+    await sender.block([]);
     await sender.click("Check connection again");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a new computer with commands" && !button.disabled)'), "device loading retry recovers");
     await sender.evaluate('document.querySelector("dialog details summary").click()');

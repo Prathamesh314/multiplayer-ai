@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../ui/Toast";
 import { fetchMe, logout } from "../../lib/auth/client";
-import { loginHref } from "../../lib/auth/return-path";
+import { loginHref, openSignIn } from "../../lib/auth/return-path";
 import type { CurrentUser } from "../../lib/auth/types";
 import {
   acceptInvitation,
@@ -117,7 +117,7 @@ export function OrgWorkspace() {
 
       } catch (cause) {
         if (cancelled) return;
-        if (cause instanceof NotSignedIn) router.replace(loginHref(window.location.pathname + window.location.search));
+        if (cause instanceof NotSignedIn) openSignIn(loginHref(window.location.pathname + window.location.search));
         else setLoadError(cause instanceof Error ? cause.message : "Could not load your workspace.");
       }
     })();
@@ -147,7 +147,7 @@ export function OrgWorkspace() {
         onOpenProviders={() => setDialog({ kind: "connectAi" })}
         onOpenDevices={() => setDialog({ kind: "devices" })}
         onSignOut={async () => {
-          try { await logout(); router.replace("/login"); }
+          try { await logout(); openSignIn(); }
           catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
         }}
       />

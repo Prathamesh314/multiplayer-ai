@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { openSignIn } from "../../lib/auth/return-path";
 import { useEffect, useState } from "react";
 import { relativeTime } from "../../lib/format";
 import { useToast } from "../ui/Toast";
@@ -36,7 +37,7 @@ export function SessionLauncher() {
         if (cancelled) return;
         // Sessions belong to an account now, so there is nothing to show a
         // signed-out visitor here.
-        if (cause instanceof NotSignedIn) router.replace("/login");
+        if (cause instanceof NotSignedIn) openSignIn();
         else setSessions([]);
       }
     })();
@@ -47,7 +48,7 @@ export function SessionLauncher() {
   }, [router]);
 
   async function signOut() {
-    try { await logout(); router.replace("/login"); }
+    try { await logout(); openSignIn(); }
     catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
   }
 

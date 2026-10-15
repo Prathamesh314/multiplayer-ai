@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { openSignIn } from "../../lib/auth/return-path";
 import { useEffect, useState } from "react";
 import { joinSession, loadSession } from "../../lib/session/client";
 import {
@@ -41,7 +42,7 @@ export function SessionRoom({ sessionId }: { sessionId: string }) {
           // signed out would land on a locked screen asking for the code the
           // link already contained.
           if (shared) stashShareCode(sessionId, shared);
-          router.replace(`/login?next=${encodeURIComponent(`/s/${sessionId}`)}`);
+          openSignIn(`/login?next=${encodeURIComponent(`/s/${sessionId}`)}`);
           return;
         }
 
