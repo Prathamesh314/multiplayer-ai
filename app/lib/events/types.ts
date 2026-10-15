@@ -147,6 +147,15 @@ export type RunFinishedEvent = {
   at: number;
 };
 
+/** A parallel chat's branch was merged, updated from the room, discarded or reopened. */
+export type RunBranchEvent = {
+  type: "run.branch";
+  runId: string;
+  mergeState: "open" | "merged" | "discarded";
+  headSha: string;
+  at: number;
+};
+
 export type SessionEvent =
   | { type: "devices.changed" | "tasks.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
   | { type: "run.inputs" | "run.activity"; runId: string; at: number }
@@ -161,7 +170,8 @@ export type SessionEvent =
   | RunOutputEvent
   | RunTurnEvent
   | RunRenamedEvent
-  | RunFinishedEvent;
+  | RunFinishedEvent
+  | RunBranchEvent;
 
 export type EventHandler = (event: SessionEvent) => void;
 
