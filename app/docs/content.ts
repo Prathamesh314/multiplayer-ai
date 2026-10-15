@@ -407,6 +407,34 @@ With edit permission, turn an exchange into a fact or procedure, enter what the 
 Background indexing or optional extraction may be pending. The memory dialog shows that state; manually reviewed evidence remains available. Updating memory does not undo code changes or erase already-visible chat messages.` },
     ],
   },
+  {
+    slug: "parallel-chats", category: "Work with AI", title: "Run chats in parallel",
+    description: "Give several AI chats their own branches, review each one, and merge the work you want.",
+    sections: [
+      { id: "when", title: "When to use a parallel chat", body: `An ordinary chat works directly on the room's branch, so you run one at a time in a room. A **parallel chat** works on a branch of its own, forked from the room when it starts. Several can run at once on the same repository, each in its own folder on your computer, without changing each other's files.
+
+Use parallel chats to try alternatives side by side, or to split independent tasks across agents. Each one's work reaches the room only when someone merges it.
+
+Parallel chats are available when the workspace administrator has turned them on. If you don't see **Parallel** in the composer, they are off for this workspace.` },
+      { id: "start", title: "Start a parallel chat", body: `1. Choose the repository and select **New chat**.
+2. In the composer, turn on **⑂ Parallel**. It stays on for your next new chat, so you can start several in a row.
+3. Write the task and send it.
+
+The setting applies when a chat starts; an existing chat keeps the kind it was started as. Your [connected computer](/docs/connect-computer) needs the current desktop app or runner. An older one is asked to update instead of running the chat. By default a computer runs up to three tasks at once; each person can run up to four parallel chats at a time, and workspace limits still apply.` },
+      { id: "review", title: "Review a parallel chat's changes", body: `In the sidebar, a parallel chat shows **review** when it has changes to merge, **merged** once its work is in the room, or **discarded** when set aside.
+
+Open the chat and select **Changes**. The panel shows how many commits the chat is ahead of and behind the room, every changed file with its added and removed lines, and a line-numbered diff for the file you select. Everyone who can open the room can review; only room editors can merge.` },
+      { id: "merge", title: "Merge into the room", body: `Select **Merge into room**. The merge only happens if neither the chat nor the room has changed since you opened the panel; otherwise refresh and review the latest changes first. It is recorded as a merge in the room's history, which keeps each turn's commit traceable.
+
+Merging changes the room's branch only. Use [Publish](/docs/files-changes#publish) to share the result with the project repository, as with any other room change. If the chat continues after a merge, its new work becomes a new proposal to review.` },
+      { id: "update", title: "Bring in the room's latest work", body: `When the room has moved on, the chat's driver can select **Update from room** to merge the room's newer changes into the chat's branch, so the chat continues from them and merges cleanly later.
+
+If the room and the chat changed the same lines, nothing is changed and the panel lists the files. Select **Bring in changes and ask the agent** to bring the room's changes into the chat's branch with conflict markers and place a prompt in the composer asking the agent to resolve them. Review and send it. Until every marker is resolved, the chat can't be merged and the panel flags the affected files. The room never receives conflict markers.` },
+      { id: "discard", title: "Discard, reopen, and clean up", body: `The chat's driver or the room owner can **Discard** a parallel chat. Its branch and history are kept, it stops taking new prompts, and **Reopen** brings it back.
+
+Each parallel chat has its own folder on the computer that runs it. Nothing is deleted automatically. After chats are merged, discarded, or archived, run \`multicode-ai-runner workspaces prune\` to list their folders, then add \`--apply\` to remove the ones with no unsaved edits whose commits the workspace already has. Removal includes installed dependencies in those folders. Room folders are never pruned.` },
+    ],
+  },
 );
 
 guides.push(

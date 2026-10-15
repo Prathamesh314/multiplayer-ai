@@ -55,6 +55,10 @@ editable room until promoted. Each room can import multiple repositories, and
 each AI chat (`agent_runs`) targets one selected repository in that room.
 Multiple turns belong to the same chat (`agent_turns`); they are distinct
 execution attempts, with one current driver and a versioned handoff state.
+A chat normally works on the room repository's branch. A **parallel chat**
+works on its own `chat/<run id>` branch forked from it, so several can run at
+once, and reaches the room branch only through an explicit, reviewed merge. See
+[parallel chats](docs/parallel-chats.md).
 
 An imported folder is filtered and streamed into Git objects and a private
 import index on the server. Finalization creates a tree and commit. Ordinary
@@ -98,8 +102,9 @@ at the org row and recheck the actor inside the write transaction.
    native steering; one-shot CLI providers consume them after the current
    response. Delivery uncertainty is shown rather than silently replayed.
 5. Candidate commits upload to turn-specific refs. The server verifies ownership,
-   ancestry and expected base before promoting accepted code and recording the
-   transcript, result, diffs and memory work. Local completion outboxes retry
+   ancestry and expected base before promoting accepted code (onto the room
+   branch, or a parallel chat's own branch) and recording the transcript,
+   result, diffs and memory work. Local completion outboxes retry
    reports after disconnects without rerunning an already completed agent.
 6. Teammates read acknowledged messages, code, activity and checkpoints from the
    server while the author's laptop is off. They cannot see unsynchronized
@@ -113,7 +118,10 @@ limits, storage adapters and offline recovery.
 ## Persistent worktrees on each runner
 
 `runner/git.ts` keeps a worktree and local branch per room repository, shared by
-that room's chats and turns. Primary forks of the same project share one local
+that room's ordinary chats and turns. A parallel chat gets a worktree and branch
+of its own, sharing the repository cache, and a runner runs up to `--parallel`
+turns at once (default 3). The server only hands out overlapping turns for
+separate worktrees. Primary forks of the same project share one local
 bare cache; imported repos stay separate. Cache/workspace identities are scoped
 to the server URL and app user. This local optimization does not combine the
 server's separately authorized room repositories.
