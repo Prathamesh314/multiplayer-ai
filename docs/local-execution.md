@@ -9,7 +9,9 @@
 > across rooms using the same explicitly selected project repository. The historical
 > design below includes earlier clone/fallback proposals; see
 > [runner workspaces](runner-workspaces.md) and [deployment](../docker/README.md)
-> for the current lifecycle, safety rules, and configuration.
+> for the current lifecycle, safety rules, and configuration. Parallel chats
+> add a worktree per chat and concurrent turns per runner; see
+> [parallel chats](parallel-chats.md).
 
 The plan for moving agent execution off our servers and onto each member's
 computer — Conductor's economics inside a multiplayer product. The web app we
