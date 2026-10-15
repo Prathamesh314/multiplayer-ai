@@ -44,6 +44,10 @@ export type ChatBranchState = {
   files: ChatFile[];
   /** Files that still carry merge conflict markers; the chat cannot merge until they are resolved. */
   conflictMarkers: string[];
+  /** The chat's live control state, so a view opened earlier acts on current values. */
+  running: boolean;
+  driverUserId: string;
+  controlVersion: number;
 };
 
 export type ChatMergeOutcome =
@@ -119,7 +123,8 @@ export async function chatBranchState(runId: string, sessionId: string, actorId:
     aheadBehind(repoRef, room, chat), proposalFiles(repoRef, base, chat), base === chat ? [] : conflictMarkerFiles(repoRef, base, chat),
   ]);
   return { runId, mergeState: run.merge_state ?? "open", chatHead: chat, roomHead: room, base, ahead, behind,
-    mergedSha: run.merged_sha, files, conflictMarkers };
+    mergedSha: run.merged_sha, files, conflictMarkers,
+    running: ["running", "queued"].includes(run.status), driverUserId: run.driver_user_id, controlVersion: run.control_version };
 }
 
 /** One file's diff in the chat's proposal, from where it last met the room branch. */

@@ -27,6 +27,8 @@ export function useRoomRuns(sessionId: string): { runs: AgentRun[]; refresh: () 
       onRunFinished: refresh,
       onRunControl: refresh,
       onRunTurn: refresh,
+      // A parallel chat was merged, updated, discarded or reopened.
+      onRunBranch: refresh,
       // Patched in place rather than refetched: the sidebar row animates the
       // change, and a full reload would replace the row and lose the animation.
       onRunRenamed: event => setRuns(previous =>

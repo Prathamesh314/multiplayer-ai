@@ -269,6 +269,7 @@ try {
   await test("a chat's state lists its proposal against the room, with per-file diffs", async () => {
     const state = await chatBranchState(first.run.id, mergeRoom, viewer);
     assert.deepEqual([state.ahead, state.behind, state.base, state.roomHead, state.mergeState], [1, 0, start, start, "open"]);
+    assert.deepEqual([state.running, state.driverUserId, state.controlVersion], [false, alice, 0]);
     assert.deepEqual(state.files, [{ path: "a.txt", status: "M", added: 1, removed: 1 }]);
     assert.deepEqual(state.conflictMarkers, []);
     assert.match(await chatFileDiff(first.run.id, mergeRoom, viewer, "a.txt"), /^\+first chat$/m);
