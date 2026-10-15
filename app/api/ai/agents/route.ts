@@ -5,6 +5,7 @@ import { currentUser } from "../../../lib/auth/tokens";
 import { AGENTS, type ModelInventory, type AgentStatus, type AgentsResponse } from "../../../lib/ai/catalog";
 import { detectAgents, invalidateAgentCache } from "../../../lib/ai/detect";
 import { terminalAccess } from "../../../lib/terminal/guard";
+import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,7 @@ async function handleGET(request: Request) {
       agents,
       canRun: access.allowed || localIds.size > 0,
       reason: access.allowed || localIds.size > 0 ? null : "Connect your computer, then install and sign in to an AI tool on it.",
+      parallelChats: parallelChatsEnabled(),
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },
   );

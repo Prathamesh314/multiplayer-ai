@@ -26,7 +26,7 @@
     "desktop:dist:win": "node desktop/package.mjs --win --x64 --setup",
     "desktop:dist:linux": "node desktop/package.mjs --linux --x64 --setup",
     "desktop:release": "node desktop/package.mjs --release",
-    "test:workspace-ui": "node tests/project-repositories.browser.mjs --start-server",
+    "test:workspace-ui": "node tests/project-repositories.browser.mjs --start-server && node tests/parallel-chats.browser.mjs --start-server",
     "test:rate-limit": "node --import tsx --test tests/rate-limit.test.mjs tests/rate-limit-clients.test.mjs",
     "test:team-context": "node --import tsx --test tests/team-context.test.mjs",
     "test:team-context:http": "node --import tsx tests/team-context-http.mjs",

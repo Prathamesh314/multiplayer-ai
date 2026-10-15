@@ -147,6 +147,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
           )}
           <RunTitle runId={run.id} title={run.title ?? `${run.agentId} run`} />
           <DiffStat added={run.addedLines} removed={run.removedLines} />
+          <BranchChip run={run} />
         </button>
 
         <div className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
@@ -303,6 +304,21 @@ function UnarchiveIcon({ className }: { className?: string }) {
       <path d="M8 12V8.5M8 8.5 6.5 10M8 8.5 9.5 10" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+/**
+ * Where a parallel chat's own branch stands: work to review, merged into the
+ * room, or discarded. Ordinary chats work on the room branch and show nothing.
+ */
+function BranchChip({ run }: { run: AgentRun }) {
+  if (run.isolation !== "isolated") return null;
+  const changed = !!(run.addedLines || run.removedLines);
+  const [label, tone, title] =
+    run.mergeState === "merged" ? ["merged", "border-vs-success/40 text-vs-success", "Parallel chat · merged into the room"]
+    : run.mergeState === "discarded" ? ["discarded", "border-vs-border text-vs-muted line-through", "Parallel chat · discarded; its branch is kept"]
+    : changed && run.status === "completed" ? ["review", "border-vs-accent/40 text-vs-accent", "Parallel chat · changes ready to review and merge"]
+    : ["parallel", "border-vs-border text-vs-muted", "Parallel chat · works on a branch of its own"];
+  return <span title={title} className={`shrink-0 rounded border px-1 text-[9.5px] leading-[14px] ${tone}`}>{label}</span>;
 }
 
 /** A run's diff size, `+added -removed`, shown only when it changed something. */
