@@ -183,6 +183,9 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Invalid chat isolation." }, { status: 400 });
   }
   const isolated = run ? run.isolation === "isolated" : body.isolation === "isolated";
+  if (run?.mergeState === "discarded") {
+    return Response.json({ error: "This parallel chat was discarded. Reopen it to continue." }, { status: 409 });
+  }
   if (isolated && !run && !parallelChatsEnabled()) {
     return Response.json({ error: "Parallel chats are not enabled on this server." }, { status: 400 });
   }
