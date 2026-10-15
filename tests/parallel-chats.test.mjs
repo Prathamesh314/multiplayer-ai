@@ -175,7 +175,7 @@ try {
     const first = await createRun({ sessionId: roomId, startedBy: bob, agentId: "codex", baseSha: fork });
     const second = await createRun({ sessionId: roomId, startedBy: bob, agentId: "codex", baseSha: fork });
     const turn = await runTurn(first, bob, { file: "a.txt", text: "shared\n", baseSha: fork });
-    await assert.rejects(reserveTurn(second.id, bob, randomUUID(), 0), /execution limit/);
+    await assert.rejects(reserveTurn(second.id, bob, randomUUID(), 0), /still working/);
     // Bob's isolated chats are not blocked by his running shared chat.
     const parallel = await createRun({ sessionId: roomId, startedBy: bob, agentId: "codex", baseSha: fork, isolation: "isolated" });
     const parallelTurn = await runTurn(parallel, bob, { file: "b.txt", text: "bob parallel\n", baseSha: fork });
@@ -185,15 +185,14 @@ try {
     assert.equal(await roomHead(), turn.sha);
   });
 
-  await test("the parallel cap is per person and spans every isolated chat", async () => {
+  await test("one person runs as many parallel chats as they start, on their computer or this server", async () => {
     const base = await roomHead();
     const runs = [];
-    for (let index = 0; index < 5; index += 1) runs.push(await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: base, isolation: "isolated" }));
-    for (const run of runs.slice(0, 4)) await reserveTurn(run.id, alice, randomUUID(), 0);
-    await assert.rejects(reserveTurn(runs[4].id, alice, randomUUID(), 0), /4 parallel chat/);
-    const gate = await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true, isolation: "isolated" });
-    assert.equal(gate.ok, false);
-    assert.equal(gate.limit, "parallel");
+    for (let index = 0; index < 12; index += 1) runs.push(await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: base, isolation: "isolated" }));
+    for (const [index, run] of runs.entries()) await reserveTurn(run.id, alice, randomUUID(), 0, index % 2 ? "local" : "server");
+    for (const target of ["local", "server"]) {
+      assert.equal((await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true, isolation: "isolated", target })).ok, true);
+    }
     // A shared chat in the room is still allowed: isolated chats don't hold the room slot.
     assert.equal((await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true })).ok, true);
     await sql(`UPDATE agent_turns SET status = 'failed' WHERE run_id = ANY($1) AND status = 'preparing'`, [runs.map(run => run.id)]);

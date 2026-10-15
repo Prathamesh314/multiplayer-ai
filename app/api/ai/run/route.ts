@@ -233,6 +233,8 @@ async function handlePOST(request: Request) {
     userId: result.user.id,
     isNewRun: !run,
     isolation: isolated ? "isolated" : "shared",
+    // Turns on the member's own computer are never capped for concurrency.
+    target: useLocal ? "local" : "server",
   });
   if (!runGate.ok) {
     return Response.json({ error: runGate.error, limit: runGate.limit }, { status: 429 });
@@ -297,7 +299,7 @@ async function handlePOST(request: Request) {
   }
 
   try {
-    await reserveTurn(run.id, result.user.id, turnId, run.controlVersion);
+    await reserveTurn(run.id, result.user.id, turnId, run.controlVersion, useLocal ? "local" : "server");
     await (await events()).publish(sessionId, { type: "run.control", runId: run.id, at: Date.now() }).catch(() => {});
   } catch (cause) {
     if (cause instanceof ControlError) return Response.json({ error: cause.message }, { status: cause.status });

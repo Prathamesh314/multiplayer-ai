@@ -11,9 +11,6 @@
 export type RunIsolation = "shared" | "isolated";
 export type MergeState = "open" | "merged" | "discarded";
 
-/** Per-person cap on concurrently running isolated chats when no org sets one. */
-export const DEFAULT_PARALLEL_CHATS = 4;
-
 /** Off unless the operator opts in; shared chats are unaffected either way. */
 export function parallelChatsEnabled(): boolean {
   return process.env.PARALLEL_CHATS === "1";

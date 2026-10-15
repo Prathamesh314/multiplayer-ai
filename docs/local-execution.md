@@ -196,6 +196,10 @@ protocol calls above.
 - **Org concurrency caps** (`0/3 running`) apply to **cloud fallback only**.
   Local runs are uncapped — the whole point. The badge splits: "2 running
   locally · 0/3 cloud".
+  *Implemented:* turns on members' computers are never counted against org,
+  project or parallel-chat caps; a configured cap counts only active turns
+  executing on the server (`agent_turns.execution_target = 'server'`). The
+  badge shows "N running", and a configured server cap appears in the admin view.
 - **Knowledge layer:** untouched. Recall and ingest are control-plane work
   and stay server-side; publish-gated memory approval is unchanged because
   publish still lands on the server's canonical repo.

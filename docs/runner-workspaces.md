@@ -124,8 +124,9 @@ multicode-ai/workspaces/
     alice-room-fix-login--<chat-id>/           one parallel chat
 ```
 
-- **Concurrency.** The runner runs up to `--parallel` turns at once (default 3,
-  at most 8; also `RUNNER_MAX_PARALLEL` or `maxParallel` in `runner.json`). The
+- **Concurrency.** The runner runs every turn its user starts, with no cap,
+  as a desktop orchestrator does. `--parallel <n>` (or `RUNNER_MAX_PARALLEL`,
+  or `maxParallel` in `runner.json`) sets an optional personal cap. The
   server only hands out overlapping turns for separate worktrees: other rooms,
   or parallel chats. Ordinary chats in one room still run one at a time.
 - **Bases.** Each turn fetches only its chat's branch and fast-forwards the

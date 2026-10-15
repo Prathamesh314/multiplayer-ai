@@ -3,7 +3,6 @@ import { closeTurnInputs } from "./close-inputs";
 import { queryOne, transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_PARALLEL_CHATS } from "./isolation";
 
 export class ControlError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -12,7 +11,24 @@ export class ControlError extends Error {
 export const isUuid = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-export async function reserveTurn(runId: string, userId: string, turnId: string, version: number) {
+/**
+ * Active turns executing on this server (not on members' own computers). Only
+ * these share a machine, so only these count toward configured concurrency caps.
+ */
+export const SERVER_ACTIVE = `t.status IN ('preparing', 'queued', 'running') AND t.execution_target = 'server'`;
+
+/**
+ * Atomically admit one execution turn.
+ *
+ * `target` is where the turn will execute. Turns on a member's own computer
+ * (`local`) use that person's machine and AI account, as in a desktop
+ * orchestrator, so they are not capped: the person starting them is the limit.
+ * Turns on this server share its capacity, so the org, project and parallel
+ * caps apply to them when an operator has set one (NULL means unlimited).
+ * Period quotas and the one-shared-chat-per-room rule apply to every turn.
+ */
+export async function reserveTurn(runId: string, userId: string, turnId: string, version: number, target: "local" | "server" = "server") {
+  const onServer = target === "server";
   return transaction(async (tx) => {
     const { rows: [run] } = await tx.query(
       `SELECT *, room_access_role(session_id, $2) AS role FROM agent_runs WHERE id = $1 FOR UPDATE`,
@@ -25,17 +41,20 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     const { rows: [room] } = await tx.query(`SELECT org_id, project_id FROM sessions WHERE id = $1`, [run.session_id]);
     await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [room.org_id ?? `${run.session_id}:${userId}`]);
     // The parallel cap spans rooms and orgs, which the lock above does not.
-    if (run.isolation === "isolated") await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`parallel:${userId}`]);
+    if (onServer && run.isolation === "isolated") await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`parallel:${userId}`]);
     // Shared chats in one room race for the same room head, so a person runs
-    // one at a time there. Isolated chats have their own branches; they are
-    // bounded per person across rooms, since they share that person's machine.
+    // one at a time there: a correctness rule, not a capacity cap. Parallel
+    // chats have branches of their own and are the way to run several at once.
     const { rows: [quota] } = await tx.query(
       `SELECT
         (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running' AND isolation = 'shared') AS personal,
-        (SELECT count(*)::int FROM agent_runs WHERE driver_user_id = $2 AND status = 'running' AND isolation = 'isolated') AS parallel_running,
+        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
+          WHERE r.driver_user_id = $2 AND r.isolation = 'isolated' AND ${SERVER_ACTIVE}) AS parallel_running,
         (SELECT parallel_chats_per_user FROM orgs WHERE id = $3) AS parallel_limit,
-        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.org_id = $3 AND r.status = 'running') AS org_running,
-        (SELECT count(*)::int FROM agent_runs r JOIN sessions s ON s.id = r.session_id WHERE s.project_id = $4 AND r.status = 'running') AS project_running,
+        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id JOIN sessions s ON s.id = r.session_id
+          WHERE s.org_id = $3 AND ${SERVER_ACTIVE}) AS org_running,
+        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id JOIN sessions s ON s.id = r.session_id
+          WHERE s.project_id = $4 AND ${SERVER_ACTIVE}) AS project_running,
         (SELECT run_concurrency_limit FROM orgs WHERE id = $3) AS org_limit,
         (SELECT run_concurrency_limit FROM projects WHERE id = $4) AS project_limit,
         (SELECT run_monthly_quota FROM orgs WHERE id = $3) AS monthly_limit,
@@ -48,13 +67,17 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
           WHERE s.project_id = $4 AND t.created_at >= now() - interval '1 hour') AS hourly_used`,
       [run.session_id, userId, room.org_id, room.project_id],
     );
-    const parallelLimit = quota.parallel_limit ?? DEFAULT_PARALLEL_CHATS;
-    if (run.isolation === "isolated" && quota.parallel_running >= parallelLimit) {
-      throw new ControlError(`You already have ${parallelLimit} parallel chat(s) running. Wait for one to finish.`, 429);
+    if (run.isolation !== "isolated" && quota.personal > 0) {
+      throw new ControlError("Your chat in this room is still working. Wait for it to finish, or start a parallel chat.", 429);
     }
-    if ((run.isolation !== "isolated" && quota.personal > 0) || (quota.org_limit != null && quota.org_running >= quota.org_limit) ||
-        (quota.project_limit != null && quota.project_running >= quota.project_limit)) {
-      throw new ControlError("The execution limit is reached. Wait for the active turn to finish.", 429);
+    if (onServer && run.isolation === "isolated" && quota.parallel_limit != null && quota.parallel_running >= quota.parallel_limit) {
+      throw new ControlError(`This server runs up to ${quota.parallel_limit} parallel chat(s) per person at once. Wait for one to finish.`, 429);
+    }
+    if (onServer && quota.project_limit != null && quota.project_running >= quota.project_limit) {
+      throw new ControlError(`This server runs up to ${quota.project_limit} AI turn(s) at once for this project. Wait for one to finish.`, 429);
+    }
+    if (onServer && quota.org_limit != null && quota.org_running >= quota.org_limit) {
+      throw new ControlError(`This server runs up to ${quota.org_limit} AI turn(s) at once for your organisation. Wait for one to finish.`, 429);
     }
     // Check and reserve under the same org lock. Every accepted execution turn
     // counts, including continuations of an existing conversation.
@@ -67,9 +90,11 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     const { rows: [existing] } = await tx.query(`SELECT id FROM agent_turns WHERE id = $1`, [turnId]);
     if (existing) throw new ControlError("This prompt has already been submitted. Reload the chat to see its result.");
     if (run.status === "running" || run.status === "queued") throw new ControlError("Wait for the current turn to finish.");
+    // Record where the turn will run from the start, so a burst of turns for
+    // members' computers never counts against a cap on this server.
     await tx.query(
-      `INSERT INTO agent_turns(id, run_id, driver_user_id, control_version) VALUES ($1, $2, $3, $4)`,
-      [turnId, runId, userId, version],
+      `INSERT INTO agent_turns(id, run_id, driver_user_id, control_version, execution_target) VALUES ($1, $2, $3, $4, $5)`,
+      [turnId, runId, userId, version, target],
     );
     await tx.query(`UPDATE agent_runs SET status = 'running', ended_at = NULL, started_at = now() WHERE id = $1`, [runId]);
   });
