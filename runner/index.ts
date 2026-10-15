@@ -6,11 +6,14 @@ import { ActivityOutbox } from "./activity-outbox";
  * docs/local-execution.md. It pairs once, then loops: heartbeat, claim the
  * next run addressed to its owner, materialize the repo over smart-HTTP,
  * spawn the agent CLI with this machine's own logins, stream the output up,
- * push the commit, and report completion. Every durable effect happens
+ * push the commit, and report completion. Up to `--parallel` turns run at
+ * once; the server only hands out overlapping turns for separate worktrees
+ * (other rooms, or parallel chats). Every durable effect happens
  * server-side — this process holds no state beyond its config and checkouts.
  *
  *   npm run runner -- pair --server https://… --code RN-XXXX-XXXX [--name "My Mac"]
- *   npm run runner -- start [--once]
+ *   npm run runner -- start [--once] [--parallel 3]
+ *   npm run runner -- workspaces prune [--apply]
  *
  * `--once` processes a single job and exits — CI and smoke tests use it.
  */
@@ -21,7 +24,7 @@ import { hostname } from "node:os";
 import { agentById } from "../app/lib/ai/catalog";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
 import { pairDevice, RunnerApi, permanentRunnerFailure } from "./api";
-import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDir } from "./config";
+import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDir, resolveMaxParallel, resolveCopyIgnoredFiles } from "./config";
 import { runAgentLocally } from "./execute";
 import { listLocalWorkspaces } from "./workspace-layout";
 import { RunnerGit } from "./git";
@@ -51,6 +54,30 @@ function flag(name: string): string | null {
   return index >= 0 ? (process.argv[index + 1] ?? null) : null;
 }
 
+/**
+ * One pass at a time, with a trailing re-run: concurrent turns and the main
+ * loop share deliveries without double-posting, and a caller always waits
+ * for a pass that started after it asked.
+ */
+function serialized(task: () => Promise<void>): () => Promise<void> {
+  let running: Promise<void> | null = null;
+  let again = false;
+  return () => {
+    again = true;
+    running ??= (async () => {
+      let failure: unknown = null;
+      while (again) {
+        again = false;
+        try { await task(); } catch (cause) { failure = cause; }
+      }
+      if (failure) throw failure;
+    })().finally(() => { running = null; });
+    return running;
+  };
+}
+
+type Deliveries = { checkpoints: () => Promise<void>; completions: () => Promise<void> };
+
 async function pair(): Promise<void> {
   const server = (flag("server") ?? "").replace(/\/$/, "");
   const code = flag("code") ?? "";
@@ -76,10 +103,11 @@ async function processJob(
   git: RunnerGit,
   activity: ActivityOutbox,
   job: NonNullable<Awaited<ReturnType<RunnerApi["claim"]>>>,
+  deliveries: Deliveries,
 ): Promise<void> {
   const repoRef = job.repoId ?? job.sessionId;
   const spec = agentById(job.agentId);
-  log(`run ${job.runId}: claimed (${job.agentId} on ${repoRef})`);
+  log(`run ${job.runId}: claimed (${job.agentId} on ${repoRef}${job.isolation === "isolated" ? ", parallel chat" : ""})`);
 
   let queue: AiRunEvent[] = [];
   let sequence = 0;
@@ -126,7 +154,7 @@ async function processJob(
     sha = await git.withWorkspace(job, async (workspace) => {
       emit({ t: "start", agent: spec.bin, cwd: workspace.path, runId: job.runId });
       let checkpointing = Promise.resolve();
-      const checkpoint = () => { checkpointing = checkpointing.then(() => workspace.checkpoint()).then(() => git.deliverCheckpoints(api)).catch(cause => emit({ t: "notice", message: `Checkpoint pending: ${String(cause)}` })); };
+      const checkpoint = () => { checkpointing = checkpointing.then(() => workspace.checkpoint()).then(() => deliveries.checkpoints()).catch(cause => emit({ t: "notice", message: `Checkpoint pending: ${String(cause)}` })); };
       checkpoint();
       const snapshotTimer = setInterval(checkpoint, 30_000);
       let result;
@@ -166,7 +194,7 @@ async function processJob(
   }
 
   await storeCompletion(dataDir, job.turnId, { code, resultSha: sha, output, errOutput, ms });
-  await deliverCompletions(dataDir, api);
+  await deliveries.completions();
   log(`run ${job.runId}: ${code === 0 ? "completed" : "failed"}${sha ? ` → ${sha.slice(0, 8)}` : ""}`);
 }
 
@@ -179,6 +207,8 @@ async function start(): Promise<void> {
           token: overrides.token,
           name: flag("name") ?? hostname(),
           dataDir: flag("data") ?? defaultDataDir(),
+          maxParallel: undefined,
+          copyIgnoredFiles: undefined,
         }
       : loadConfig();
   if (!config) {
@@ -189,9 +219,23 @@ async function start(): Promise<void> {
   const api = new RunnerApi(config.server, config.token);
   const activity = new ActivityOutbox(config.dataDir, config.server, config.token);
   const workspacesDir = resolveWorkspacesDir(flag("workspaces") ?? ("workspacesDir" in config ? config.workspacesDir : undefined));
-  const git = new RunnerGit(config.server, config.token, config.dataDir, workspacesDir);
+  const git = new RunnerGit(config.server, config.token, config.dataDir, workspacesDir, {
+    copyIgnoredFiles: resolveCopyIgnoredFiles(process.env.RUNNER_COPY_IGNORED ?? config.copyIgnoredFiles),
+  });
   log(`worktrees: ${workspacesDir}`);
   const once = process.argv.includes("--once");
+  const maxParallel = once ? 1 : resolveMaxParallel(flag("parallel"), process.env.RUNNER_MAX_PARALLEL, config.maxParallel);
+  const deliveries: Deliveries = {
+    checkpoints: serialized(() => git.deliverCheckpoints(api)),
+    completions: serialized(() => deliverCompletions(config.dataDir, api)),
+  };
+  const idleCheckpoints = serialized(() => git.checkpointIdleWorkspaces());
+  const sync = async () => {
+    await idleCheckpoints();
+    await deliveries.checkpoints();
+    await activity.deliver(api);
+    await deliveries.completions();
+  };
 
   await api.heartbeat(); // fail fast on a revoked token
   log(`online as "${config.name}" against ${config.server}${once ? " (single job)" : ""}`);
@@ -223,20 +267,19 @@ async function start(): Promise<void> {
   const maintenance = setInterval(() => {
     if (maintenanceBusy || stopping) return;
     maintenanceBusy = true;
-    void (async () => {
-      await git.checkpointIdleWorkspaces();
-      await git.deliverCheckpoints(api);
-      await activity.deliver(api);
-      await deliverCompletions(config.dataDir, api);
-    })().catch(cause => log(`Sync pending: ${String(cause)}`)).finally(() => { maintenanceBusy = false; });
+    void sync().catch(cause => log(`Sync pending: ${String(cause)}`)).finally(() => { maintenanceBusy = false; });
   }, 30_000);
 
+  log(`up to ${maxParallel} turn${maxParallel === 1 ? "" : "s"} at once`);
+  const running = new Set<Promise<void>>();
   while (!stopping) {
     const revision = jobsReady.version();
-    await git.checkpointIdleWorkspaces();
-    await git.deliverCheckpoints(api);
-    await activity.deliver(api);
-    await deliverCompletions(config.dataDir, api);
+    await sync().catch(cause => log(`Sync pending: ${String(cause)}`));
+    if (running.size >= maxParallel) {
+      // A finished turn frees a slot; claim again then.
+      await Promise.race(running);
+      continue;
+    }
     let job: Awaited<ReturnType<RunnerApi["claim"]>> = null;
     try {
       job = await api.claim(0);
@@ -252,11 +295,15 @@ async function start(): Promise<void> {
     }
     if (!job) { await jobsReady.wait(revision, stopSignal.signal); continue; }
 
-    await processJob(api, config.dataDir, git, activity, job).catch((cause) =>
-      console.error(`[runner] run ${job!.runId} failed to report: ${String(cause)}`),
-    );
-    if (once) break;
+    const claimed = job;
+    const turn: Promise<void> = processJob(api, config.dataDir, git, activity, claimed, deliveries).catch((cause) =>
+      console.error(`[runner] run ${claimed.runId} failed to report: ${String(cause)}`),
+    ).finally(() => { running.delete(turn); });
+    running.add(turn);
+    if (once) { await turn; break; }
   }
+  // Stopping aborts each turn's agent; let them record their completions.
+  await Promise.allSettled(running);
   clearInterval(maintenance);
   clearInterval(heartbeat);
   stop();
@@ -265,17 +312,41 @@ async function start(): Promise<void> {
   if (desktopPort) process.exit(0);
 }
 
+/**
+ * Worktrees of parallel chats that were merged, discarded or archived. Lists
+ * them by default; `--apply` removes only clean ones whose commits the server
+ * already holds. Room worktrees are never touched.
+ */
+async function prune(): Promise<void> {
+  const config = loadConfig();
+  if (!config) throw new Error(`No config at ${configPath()} — run \`multicode-ai-runner pair\` first.`);
+  const api = new RunnerApi(config.server, config.token);
+  const apply = process.argv.includes("--apply");
+  const { userId, finishedChats } = await api.workspaces();
+  const git = new RunnerGit(config.server, config.token, flag("data") ?? config.dataDir, resolveWorkspacesDir(flag("workspaces") ?? config.workspacesDir));
+  const results = await git.pruneChatWorkspaces(userId, new Set(finishedChats), apply);
+  if (!results.length) { log("No finished parallel-chat worktrees."); return; }
+  for (const entry of results) {
+    const state = entry.removable ? (apply ? "removed" : "can be removed") : `kept: ${entry.reason}`;
+    log(`${entry.chat} — ${entry.path} (${state})`);
+  }
+  if (!apply && results.some(entry => entry.removable)) log("Run again with --apply to remove them. Ignored files in them, such as installed dependencies, are deleted too.");
+}
+
 const command = process.argv[2];
 if (command === "--help" || command === "-h" || command === "help") {
   console.log("Usage: multicode-ai-runner <pair|start|workspaces> [options]\n\n" +
     "  pair --server <url> --code <RN-XXXX-XXXX>  Connect this computer\n" +
     "  start                                    Run your AI tasks (Ctrl+C to stop)\n" +
     "  workspaces [--json]                       List local worktrees\n" +
+    "  workspaces prune [--apply]                Remove finished parallel-chat worktrees\n" +
     "  --version                                Print the runner version\n\n" +
-    "Options: --name <name>, --workspaces <directory>, --data <directory>\n" +
+    "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <1-8>\n" +
     "Works from any directory. No application source checkout is needed.");
 } else if (command === "--version" || command === "-v") {
   console.log(process.env.MULTIPLAYER_RUNNER_VERSION ?? "development");
+} else if (command === "workspaces" && process.argv[3] === "prune") {
+  void prune().catch(cause => { console.error(cause instanceof Error ? cause.message : String(cause)); process.exitCode = 1; });
 } else if (command === "workspaces") {
   void listLocalWorkspaces(flag("data") ?? loadConfig()?.dataDir ?? defaultDataDir()).then(workspaces => {
     if (process.argv.includes("--json")) console.log(JSON.stringify(workspaces, null, 2));

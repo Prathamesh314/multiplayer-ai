@@ -8,6 +8,7 @@ import type { RunnerApi } from "./api";
 export class ActivityOutbox {
   private readonly directory: string;
   private sending: Promise<void> | null = null;
+  private pending = false;
   constructor(dataDir: string, server: string, token: string) {
     this.directory = join(dataDir, "activity-outbox", createHash("sha256").update(server + "\0" + token).digest("hex"));
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
@@ -18,9 +19,16 @@ export class ActivityOutbox {
     writeFileSync(path + ".tmp", JSON.stringify({ turnId, sequence, events }), { mode: 0o600, flush: true });
     renameSync(path + ".tmp", path);
   }
+  /**
+   * One drain at a time. A call during a drain schedules another pass, so the
+   * returned promise always covers batches stored before the call — parallel
+   * turns finishing together each see their final batch delivered.
+   */
   deliver(api: RunnerApi): Promise<void> {
-    if (this.sending) return this.sending;
-    this.sending = this.drain(api).finally(() => { this.sending = null; });
+    this.pending = true;
+    this.sending ??= (async () => {
+      while (this.pending) { this.pending = false; await this.drain(api); }
+    })().finally(() => { this.sending = null; });
     return this.sending;
   }
   private async drain(api: RunnerApi) {

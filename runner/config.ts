@@ -27,7 +27,30 @@ export type RunnerConfig = {
   dataDir: string;
   /** Visible repository/room worktrees, separate from private runner state. */
   workspacesDir?: string;
+  /** How many turns run at once; only parallel chats can overlap in one room. */
+  maxParallel?: number;
+  /** Ignored files copied from a room's worktree into each new parallel-chat worktree. */
+  copyIgnoredFiles?: string[];
 };
+
+export const DEFAULT_MAX_PARALLEL = 3;
+
+/** Flag, then environment, then config file; always 1–8. */
+export function resolveMaxParallel(...values: unknown[]): number {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    const number = Number(value);
+    if (Number.isInteger(number) && number >= 1) return Math.min(number, 8);
+  }
+  return DEFAULT_MAX_PARALLEL;
+}
+
+/** Exact relative paths only, such as ".env.local" or "apps/web/.env"; anything else is dropped. */
+export function resolveCopyIgnoredFiles(value: unknown): string[] {
+  const list = typeof value === "string" ? value.split(",") : Array.isArray(value) ? value : [];
+  return [...new Set(list.filter((item): item is string => typeof item === "string").map(item => item.trim())
+    .filter(item => /^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/.test(item) && !item.split("/").some(part => part === "." || part === "..")))];
+}
 
 export function configPath(): string {
   if (process.env.RUNNER_CONFIG) return process.env.RUNNER_CONFIG;
@@ -60,6 +83,8 @@ export function loadConfig(): RunnerConfig | null {
       name: parsed.name ?? "runner",
       dataDir: parsed.dataDir ?? defaultDataDir(),
       workspacesDir: resolveWorkspacesDir(parsed.workspacesDir),
+      maxParallel: parsed.maxParallel,
+      copyIgnoredFiles: parsed.copyIgnoredFiles,
     };
   } catch {
     return null;

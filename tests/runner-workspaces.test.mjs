@@ -8,7 +8,8 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
 import { listLocalWorkspaces, locationPath } from "../runner/workspace-layout.ts";
-import { defaultWorkspacesDir, resolveWorkspacesDir } from "../runner/config.ts";
+import { defaultWorkspacesDir, resolveWorkspacesDir, resolveMaxParallel, resolveCopyIgnoredFiles } from "../runner/config.ts";
+import { ActivityOutbox } from "../runner/activity-outbox.ts";
 import { RunnerGit } from "../runner/git.ts";
 import { checkpointOverwritesIgnored } from "../runner/checkpoints.ts";
 
@@ -445,4 +446,195 @@ test("background checkpoints capture manual edits and cannot leak another pairin
   await f.runner().checkpointIdleWorkspaces();
   await f.runner().deliverCheckpoints({ checkpoint: async snapshot => { count++; assert.equal(snapshot.sequence, 2); } });
   assert.equal(count, 1);
+});
+
+// --- Parallel ("isolated") chats -------------------------------------------
+
+/** A parallel chat on room-a whose server branch starts at `sha`. */
+async function openChat(f, sha) {
+  const runId = randomUUID();
+  await git(f.repo("room-a"), "update-ref", `refs/heads/chat/${runId}`, sha);
+  return runId;
+}
+const chatJob = (runId, baseSha, extra = {}) => job(baseSha, { runId, isolation: "isolated", chatBranch: `chat/${runId}`, ...extra });
+
+test("parallel chats on one room repository run at once in their own worktrees and branches", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  const [left, right] = [await openChat(f, f.base), await openChat(f, f.base)];
+  let room;
+  const turns = [chatJob(left, f.base, { workspaceNames: { repository: "app", room: "Alice", chat: "Fix login" } }), chatJob(right, f.base)];
+  const results = await Promise.all(turns.map((turn, index) => runner.withWorkspace(turn, async w => {
+    // Both chats hold their workspaces at the same time, and the room's own checkout stays free.
+    if (index === 0) await runner.withWorkspace(job(f.base), async shared => { room = shared.path; });
+    await writeFile(join(w.path, "code.txt"), `chat ${index}\n`);
+    return { path: w.path, branch: w.branch, sha: await w.commitAndPush(`Chat ${index}`, author) };
+  })));
+  const [a, b] = results;
+  assert.notEqual(a.path, b.path);
+  assert.notEqual(a.branch, b.branch);
+  assert.notEqual(a.path, room);
+  assert.equal(await common(a.path), await common(b.path), "chats share the repository cache");
+  assert.match(relative(join(f.data, "workspaces"), a.path).replaceAll("\\", "/"), /\/alice-fix-login--[a-f0-9]{12}$/);
+  assert.equal(await git(f.repo("room-a"), "rev-parse", `refs/turns/${turns[0].turnId}`), a.sha);
+  assert.equal(await git(f.repo("room-a"), "rev-parse", `refs/turns/${turns[1].turnId}`), b.sha);
+  assert.equal(await git(f.repo("room-a"), "rev-parse", "session/room-a"), f.base, "chats never move the room branch");
+  assert.equal(await readFile(join(room, "code.txt"), "utf8"), "initial\n");
+  const listed = await listLocalWorkspaces(f.data);
+  assert.equal(listed.find(w => w.path === a.path).chat, "Fix login");
+});
+
+test("a parallel chat continues from its own server branch, never the room's", async t => {
+  const f = await fixture(t);
+  const chat = await openChat(f, f.base);
+  let path;
+  const sha = await f.runner().withWorkspace(chatJob(chat, f.base), async w => {
+    path = w.path;
+    await writeFile(join(w.path, "code.txt"), "chat work\n");
+    return w.commitAndPush("Chat", author);
+  });
+  await git(f.repo("room-a"), "update-ref", `refs/heads/chat/${chat}`, sha);
+  // The room moves on independently; its head is not on the chat's branch.
+  const roomTurn = await f.runner().withWorkspace(job(f.base), async w => {
+    await writeFile(join(w.path, "other.txt"), "room work\n");
+    return w.commitAndPush("Room", author);
+  });
+  await f.advance("room-a", roomTurn);
+  await assert.rejects(f.runner().withWorkspace(chatJob(chat, roomTurn), async () => assert.fail("ran on the room's base")), /merge-base failed/);
+  await f.runner().withWorkspace(chatJob(chat, sha), async w => {
+    assert.equal(w.path, path);
+    assert.equal(await git(w.path, "rev-parse", "HEAD"), sha);
+  });
+});
+
+test("a parallel chat job must name its own branch", async t => {
+  const f = await fixture(t);
+  const chat = await openChat(f, f.base);
+  for (const bad of [{ chatBranch: `chat/${randomUUID()}` }, { chatBranch: "session/room-a" }, { runId: "not-a-uuid", chatBranch: "chat/not-a-uuid" }]) {
+    await assert.rejects(f.runner().withWorkspace(chatJob(chat, f.base, bad), async () => assert.fail("ran")), /Invalid parallel chat identity/);
+  }
+});
+
+test("an idle checkpoint in progress delays, rather than fails, an arriving turn", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  let work;
+  await runner.withWorkspace(job(f.base), async w => { work = w.path; await w.checkpoint(); });
+  await writeFile(join(work, "code.txt"), "manual edit\n");
+  const capture = runner.capture;
+  let entered, release;
+  const inside = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  runner.capture = async (...args) => { entered(); await gate; return capture.apply(runner, args); };
+  const idle = runner.checkpointIdleWorkspaces();
+  await inside; // The idle checkpoint now holds the workspace lock.
+  let started = false;
+  const turn = runner.withWorkspace(job(f.base), async () => { started = true; });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(started, false, "the turn waits for the checkpoint");
+  release();
+  await idle;
+  await assert.rejects(turn, /unfinished edits/, "then runs its usual checks instead of failing on the lock");
+  runner.capture = capture;
+});
+
+test("idle checkpoints skip a workspace a turn of this runner holds", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  await runner.withWorkspace(job(f.base), async w => { await w.checkpoint(); });
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args.join(" "));
+  try {
+    await runner.withWorkspace(job(f.base), async () => { await runner.checkpointIdleWorkspaces(); });
+  } finally { console.error = original; }
+  assert.deepEqual(errors, []);
+});
+
+test("a new parallel-chat worktree receives only allowlisted ignored files from the room", async t => {
+  const f = await fixture(t);
+  let room;
+  await f.runner().withWorkspace(job(f.base), async w => {
+    room = w.path;
+    await writeFile(join(w.path, ".env.local"), "API_KEY=local\n");
+    await writeFile(join(w.path, "code.txt"), "uncommitted room edit\n");
+    await mkdir(join(w.path, "node_modules"));
+    await writeFile(join(w.path, "node_modules", "big.txt"), "dependency");
+  });
+  const runner = new RunnerGit(f.server, "private-device-token", f.data, undefined, {
+    copyIgnoredFiles: resolveCopyIgnoredFiles([".env.local", "code.txt", "node_modules/big.txt", "../outside", "missing.env"]),
+  });
+  const chat = await openChat(f, f.base);
+  await runner.withWorkspace(chatJob(chat, f.base), async w => {
+    assert.equal(await readFile(join(w.path, ".env.local"), "utf8"), "API_KEY=local\n");
+    assert.equal(await readFile(join(w.path, "code.txt"), "utf8"), "initial\n", "tracked files are never copied");
+    assert.equal(await readFile(join(w.path, "node_modules", "big.txt"), "utf8"), "dependency", "explicitly listed ignored files are copied");
+    await assert.rejects(readFile(join(w.path, "missing.env")), { code: "ENOENT" });
+  });
+  assert.equal(await readFile(join(room, "code.txt"), "utf8"), "uncommitted room edit\n");
+});
+
+test("pruning removes only finished, clean chat worktrees the server already holds", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  const paths = {};
+  const finish = async (name, { edit, promote }) => {
+    const chat = await openChat(f, f.base);
+    const sha = await runner.withWorkspace(chatJob(chat, f.base, { workspaceNames: { repository: "app", room: "Alice", chat: name } }), async w => {
+      paths[name] = w.path;
+      await writeFile(join(w.path, "code.txt"), `${name}\n`);
+      return w.commitAndPush(name, author);
+    });
+    if (promote) await git(f.repo("room-a"), "update-ref", `refs/heads/chat/${chat}`, sha);
+    if (edit) await writeFile(join(paths[name], "notes.txt"), "unsaved\n");
+    return chat;
+  };
+  const done = await finish("done", { promote: true });
+  const dirty = await finish("dirty", { promote: true, edit: true });
+  const rejected = await finish("rejected", { promote: false });
+  const open = await finish("open", { promote: true });
+  let room;
+  await runner.withWorkspace(job(f.base), async w => { room = w.path; });
+  const finished = new Set([done, dirty, rejected]);
+
+  const preview = await runner.pruneChatWorkspaces("alice", finished, false);
+  assert.deepEqual(preview.map(entry => [entry.chat, entry.removable]).sort(), [["dirty", false], ["done", true], ["rejected", false]]);
+  assert.equal((await lstat(paths.done)).isDirectory(), true, "a preview deletes nothing");
+
+  const applied = await runner.pruneChatWorkspaces("alice", finished, true);
+  assert.match(applied.find(entry => entry.chat === "dirty").reason, /unsaved edits/);
+  assert.match(applied.find(entry => entry.chat === "rejected").reason, /server does not have/);
+  await assert.rejects(lstat(paths.done), { code: "ENOENT" });
+  for (const kept of ["dirty", "rejected", "open"]) assert.equal((await lstat(paths[kept])).isDirectory(), true);
+  assert.equal(await readFile(join(paths.dirty, "notes.txt"), "utf8"), "unsaved\n");
+  assert.equal((await lstat(room)).isDirectory(), true, "room worktrees are never pruned");
+  assert.equal((await listLocalWorkspaces(f.data)).some(w => w.path === paths.done), false);
+  void open;
+});
+
+test("activity delivery always covers batches stored before the call", async t => {
+  const root = await mkdtemp(join(tmpdir(), "activity-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const outbox = new ActivityOutbox(root, "https://server.test", "token");
+  const delivered = [];
+  let releaseFirst;
+  const firstHeld = new Promise(resolve => { releaseFirst = resolve; });
+  const api = { postEvents: async (turnId, events, sequence) => { if (sequence === 1) await firstHeld; delivered.push(`${turnId.slice(0, 1)}${sequence}`); } };
+  const [a, b] = ["a" + randomUUID().slice(1), "b" + randomUUID().slice(1)];
+  outbox.store(a, 1, [{ t: "out", d: "first" }]);
+  const first = outbox.deliver(api);
+  outbox.store(b, 1, [{ t: "out", d: "second" }]);
+  outbox.store(b, 2, [{ t: "out", d: "final" }]);
+  const second = outbox.deliver(api);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(delivered.sort(), ["a1", "b1", "b2"]);
+});
+
+test("runner parallelism and copy settings are validated", () => {
+  assert.equal(resolveMaxParallel(undefined, "", null), 3);
+  assert.equal(resolveMaxParallel("2", "5"), 2);
+  assert.equal(resolveMaxParallel("0", "abc", 5), 5);
+  assert.equal(resolveMaxParallel(50), 8);
+  assert.deepEqual(resolveCopyIgnoredFiles(".env, apps/web/.env.local ,../x,/etc/passwd,a/./b,.env"), [".env", "apps/web/.env.local"]);
 });

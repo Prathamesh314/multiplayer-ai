@@ -62,7 +62,7 @@ export type AgentRunJob = {
   projectRepositoryId?: string | null;
   /** Display labels only; the runner sanitizes and pins local folder names. */
   restoreCheckpoint?: Checkpoint;
-  workspaceNames?: { repository: string; room: string };
+  workspaceNames?: { repository: string; room: string; chat?: string };
   /** HEAD when the run was enqueued: the base the working copy is prepared at. */
   baseSha: string;
   /**

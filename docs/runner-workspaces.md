@@ -4,7 +4,9 @@ The hosted app uses each member's own runner and AI account. A room repository
 has one persistent local Git worktree per server/user/device data directory.
 Chats and successive turns for that repository reuse its files and branch.
 Different rooms have different worktrees. A handoff to another computer fetches
-the accepted commit into that computer's own workspace.
+the accepted commit into that computer's own workspace. A **parallel chat**
+(`isolation = 'isolated'`) is the exception: it gets a worktree and branch of
+its own, so several can run at once (see [Parallel chats](#parallel-chats)).
 
 Room checkouts of the same explicitly selected project repository share a bare repository cache locally. Different repositories in a project have separate caches.
 Imported repositories have separate caches: an import is not assumed to be the
@@ -54,8 +56,9 @@ multicode-ai/workspaces/
     alice-room--<room-repository-id>/
 ```
 
-This means one checkout per repository in a room, shared by all chats in that
-room, not one checkout per chat. A room can contain multiple repositories.
+This means one checkout per repository in a room, shared by all of that room's
+ordinary chats. Parallel chats are the exception (below). A room can contain
+multiple repositories.
 Readable names have short stable ID suffixes to avoid collisions. Names are
 sanitized for all three platforms and pinned when created: renaming a room or
 repository never moves or loses its checkout. These are real Git worktrees;
@@ -103,10 +106,48 @@ stored in cache configuration. Changing provider accounts does not recreate the
 workspace; different app users and server URLs get different cache namespaces.
 
 Ignored files such as `.env.local` and `node_modules` remain between turns.
-They are not automatically copied from another checkout, installed, uploaded,
-or transferred during handoff. A remote update that would overwrite an ignored
+They are not installed, uploaded, or transferred during handoff, and are only
+copied between checkouts through the opt-in parallel-chat allowlist below. A remote update that would overwrite an ignored
 local file is refused. Configure dependencies and local credentials explicitly
 on each execution machine.
+
+## Parallel chats
+
+A parallel chat works on its own server branch, `chat/<chat id>`, forked from
+the room branch. On the runner it gets a worktree and branch of its own,
+next to the room's checkouts and sharing the same repository cache:
+
+```text
+multicode-ai/workspaces/
+  frontend--<repository-id>/
+    alice-room--<room-repository-id>/          the room's shared checkout
+    alice-room-fix-login--<chat-id>/           one parallel chat
+```
+
+- **Concurrency.** The runner runs up to `--parallel` turns at once (default 3,
+  at most 8; also `RUNNER_MAX_PARALLEL` or `maxParallel` in `runner.json`). The
+  server only hands out overlapping turns for separate worktrees: other rooms,
+  or parallel chats. Ordinary chats in one room still run one at a time.
+- **Bases.** Each turn fetches only its chat's branch and fast-forwards the
+  chat's worktree to it. The chat's work reaches the room branch only through
+  an explicit merge on the server; the runner never pushes branches.
+- **Older runners** never claim a parallel chat's turn. They do not advertise
+  `supportsIsolatedChats`, and the run route asks the member to update.
+- **Local configuration.** A new parallel-chat worktree starts without ignored
+  files. To seed it, list exact relative paths in `copyIgnoredFiles` in
+  `runner.json` (or `RUNNER_COPY_IGNORED=.env.local,apps/web/.env`). They are copied
+  from the room's checkout only if Git ignores them there. Tracked files,
+  symlinks, files over 1 MiB and existing destinations are skipped.
+  Dependencies are not copied; the agent or the member installs them.
+- **Idle checkpoints** skip any workspace a turn of this runner holds. A turn
+  that arrives during an idle checkpoint waits for it instead of failing on
+  the lock.
+- **Pruning.** `multicode-ai-runner workspaces prune` lists worktrees of chats
+  that were merged, discarded or archived. Add `--apply` to remove them. Only
+  clean worktrees whose commits the server's chat branch already contains are
+  removed (a local turn ref is written before its push, so it is no proof).
+  Removal includes their ignored files, such as installed dependencies. Room
+  checkouts are never pruned, and nothing is removed automatically.
 
 ## Recovery and upgrade
 
@@ -140,7 +181,8 @@ on each execution machine.
   choice, so subsequent jobs with repository metadata keep the same workspace.
 - **Retention:** local worktrees and caches persist across turns and restarts.
   Cloud room archival does not automatically delete local work. There is no
-  automatic local pruning in this change; do not treat these directories as
+  automatic local pruning; finished parallel-chat worktrees are removed only by
+  an explicit `workspaces prune --apply`. Do not treat these directories as
   disposable while they contain unfinished work or pending results.
 
 Activity and unpublished checkpoints now synchronize independently of the
@@ -153,7 +195,9 @@ for offline review, snapshot restore, optional S3 storage and cold-cache setting
 `npm run test:runner-workspaces` exercises real Git repositories and worktrees,
 including reuse, shared caches, separate room files, process locks, handoff,
 push failures, multi-repository rooms, dirty/ignored file preservation, upgrade
-migration, folder names, root changes, and replay refusal.
+migration, folder names, root changes, replay refusal, concurrent parallel-chat
+worktrees, idle-checkpoint coordination, the ignored-file allowlist and pruning.
+`npm run test:parallel-chats` covers the server side of parallel chats.
 `npm run test:handoff` covers the existing server promotion and ownership rules.
 The optional PostgreSQL/browser handoff suite also uses these worktrees for its
 two successive smart-HTTP runner turns.

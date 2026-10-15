@@ -3,13 +3,15 @@ import { checkpointRef, type Checkpoint } from "../app/lib/runner/checkpoint-typ
 import type { RunnerApi } from "./api";
 /*
  * One persistent branch/worktree per room repository, backed by a bare cache
- * shared by rooms of the same repository on this user's device. The cloud owns
+ * shared by rooms of the same repository on this user's device. A parallel
+ * ("isolated") chat gets a worktree and branch of its own instead, based on
+ * the chat's server branch, so several can run at once. The cloud owns
  * accepted heads; turns still push candidates through server verification.
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
 import { withWorkspaceLock } from "./workspace-lock";
@@ -18,8 +20,23 @@ import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, writeW
 const run = promisify(execFile);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const CONFIG = ["-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
-type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId" | "workspaceNames" | "restoreCheckpoint">;
-type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string; checkpointOwner?: string; checkpointJob?: { turnId: string; baseSha: string }; checkpointSequence?: number; checkpointTree?: string };
+type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "projectRepositoryId" | "userId" | "baseSha" | "turnId" | "workspaceNames" | "restoreCheckpoint"> &
+  Partial<Pick<AgentRunJob, "runId" | "isolation" | "chatBranch">>;
+type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string; checkpointOwner?: string; checkpointJob?: { turnId: string; baseSha: string }; checkpointSequence?: number; checkpointTree?: string;
+  /** Set for a parallel chat's own worktree; absent for the room's shared one. */
+  chatRunId?: string; chatName?: string };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export type RunnerGitOptions = {
+  /**
+   * Ignored files (exact relative paths, such as ".env.local") copied from the
+   * room's shared worktree into a parallel chat's new worktree, so it starts
+   * with the same local configuration. Never tracked files; never overwrites.
+   */
+  copyIgnoredFiles?: string[];
+};
+
+export type PruneCandidate = { chat: string; path: string; removable: boolean; reason?: string };
 
 export type RunnerWorkspace = {
   path: string;
@@ -35,13 +52,23 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export class RunnerGit {
-  constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string, private readonly workspacesDir = join(dataDir, "workspaces")) {}
+  /** Workspace locks held or awaited by jobs in this process; idle checkpoints skip them. */
+  private readonly activeWorkspaces = new Map<string, number>();
+  /** Idle checkpoints in progress, which an arriving job waits out instead of failing. */
+  private readonly idleCaptures = new Map<string, Promise<void>>();
 
-  private async git(cwd: string, args: string[], turnId?: string, checkpointSequence?: number): Promise<string> {
+  constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string, private readonly workspacesDir = join(dataDir, "workspaces"), private readonly options: RunnerGitOptions = {}) {}
+
+  private scopeRoot(userId: string): string {
+    return resolve(this.dataDir, "workspaces-v1", digest(`${this.server.replace(/\/$/, "")}\0${userId}`));
+  }
+
+  /** `turnId` authenticates the call for that turn; null authenticates a read with no turn. */
+  private async git(cwd: string, args: string[], turnId?: string | null, checkpointSequence?: number): Promise<string> {
     // A runner launched from another worktree must not inherit its Git paths.
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
-    const auth = turnId ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, "-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [];
+    const auth = turnId !== undefined ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, ...(turnId ? ["-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [])] : [];
     try {
       const { stdout } = await run("git", [...CONFIG, ...auth, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args], {
         cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
@@ -63,28 +90,51 @@ export class RunnerGit {
   async withWorkspace<T>(job: WorkspaceJob, task: (workspace: RunnerWorkspace) => Promise<T>): Promise<T> {
     const repoRef = job.repoId ?? job.sessionId;
     if (!/^[a-zA-Z0-9_-]+$/.test(repoRef) || !job.userId ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(job.turnId) ||
+        !UUID.test(job.turnId) ||
         !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(job.baseSha)) {
       throw new Error("Invalid workspace job identity or base commit.");
     }
-    const scope = digest(`${this.server.replace(/\/$/, "")}\0${job.userId}`);
-    const root = resolve(this.dataDir, "workspaces-v1", scope);
-    const key = digest(repoRef);
+    const isolated = job.isolation === "isolated";
+    if (isolated && (!job.runId || !UUID.test(job.runId) || job.chatBranch !== `chat/${job.runId}`)) {
+      throw new Error("Invalid parallel chat identity.");
+    }
+    const root = this.scopeRoot(job.userId);
+    // A parallel chat's worktree is keyed by the chat as well as the repository.
+    const identity = isolated ? `${repoRef}\0chat\0${job.runId}` : repoRef;
+    const key = digest(identity);
+    const lockPath = join(root, "locks", `workspace-${key}`);
+    // Registered before any await, so an idle checkpoint cannot start in between.
+    this.activeWorkspaces.set(lockPath, (this.activeWorkspaces.get(lockPath) ?? 0) + 1);
+    try {
+      await this.idleCaptures.get(lockPath);
+      return await this.lockedWorkspace(job, task, { repoRef, isolated, identity, key, root, lockPath });
+    } finally {
+      const count = (this.activeWorkspaces.get(lockPath) ?? 1) - 1;
+      if (count) this.activeWorkspaces.set(lockPath, count); else this.activeWorkspaces.delete(lockPath);
+    }
+  }
+
+  private async lockedWorkspace<T>(job: WorkspaceJob, task: (workspace: RunnerWorkspace) => Promise<T>, context: {
+    repoRef: string; isolated: boolean; identity: string; key: string; root: string; lockPath: string;
+  }): Promise<T> {
+    const { repoRef, isolated, identity, key, root, lockPath } = context;
     const legacyWork = join(root, "work", key);
-    let work: string;
     const branch = `workspace/${key}`;
-    return withWorkspaceLock(join(root, "locks", `workspace-${key}`), job.turnId, async () => {
+    let work: string;
+    return withWorkspaceLock(lockPath, job.turnId, async () => {
       // Pin the cache choice so old queued jobs without repository metadata keep their
       // workspace when a newer server starts supplying the field.
       const bindingPath = join(root, "bindings", `${key}.json`);
       let binding: Binding;
       if (await exists(bindingPath)) {
         binding = JSON.parse(await readFile(bindingPath, "utf8")) as Binding;
-        if (binding.version !== 1 || binding.repoRef !== repoRef || !/^[0-9a-f]{64}$/.test(binding.cacheKey)) {
+        if (binding.version !== 1 || binding.repoRef !== repoRef || !/^[0-9a-f]{64}$/.test(binding.cacheKey) ||
+            binding.chatRunId !== (isolated ? job.runId : undefined)) {
           throw new Error(`Workspace metadata needs recovery: ${bindingPath}. Existing files were preserved.`);
         }
       } else {
-        binding = { version: 1, repoRef, cacheKey: digest(job.projectRepositoryId ? `repository:${job.projectRepositoryId}` : `repo:${repoRef}`) };
+        binding = { version: 1, repoRef, cacheKey: digest(job.projectRepositoryId ? `repository:${job.projectRepositoryId}` : `repo:${repoRef}`),
+          ...(isolated ? { chatRunId: job.runId, chatName: job.workspaceNames?.chat } : {}) };
         await mkdir(dirname(bindingPath), { recursive: true, mode: 0o700 });
         await writeWorkspaceMetadata(bindingPath, binding);
       }
@@ -96,7 +146,8 @@ export class RunnerGit {
       await lockedGit(async () => {
         if (!binding.location) {
           binding.location = await allocateWorkspaceLocation({ workspacesDir: this.workspacesDir, metadataRoot: root,
-            cacheKey: binding.cacheKey, repoRef, repositoryName: job.workspaceNames?.repository, roomName: job.workspaceNames?.room });
+            cacheKey: binding.cacheKey, repoRef, repositoryName: job.workspaceNames?.repository, identity,
+            roomName: isolated ? `${job.workspaceNames?.room ?? "room"} ${job.workspaceNames?.chat ?? "chat"}` : job.workspaceNames?.room });
           binding.repositoryName = job.workspaceNames?.repository;
           binding.roomName = job.workspaceNames?.room;
           binding.sessionId = job.sessionId;
@@ -119,10 +170,11 @@ export class RunnerGit {
           await this.git(dirname(cache), ["init", "--bare", temp]);
           await rename(temp, cache);
         }
-        // Fetch only the authorized room, even when other rooms share objects.
-        // Credentials and remote URLs are per-command, never persisted.
-        const remoteRef = `refs/remotes/rooms/${key}`;
-        await this.git(cache, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(repoRef), `+refs/heads/session/${repoRef}:${remoteRef}`], job.turnId);
+        // Fetch only the authorized room (or chat), even when other rooms share
+        // objects. Credentials and remote URLs are per-command, never persisted.
+        const remoteRef = isolated ? `refs/remotes/chats/${key}` : `refs/remotes/rooms/${key}`;
+        const source = isolated ? `refs/heads/${job.chatBranch}` : `refs/heads/session/${repoRef}`;
+        await this.git(cache, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(repoRef), `+${source}:${remoteRef}`], job.turnId);
         await this.git(cache, ["merge-base", "--is-ancestor", job.baseSha, remoteRef]);
         if (await this.hasRef(cache, attempt)) throw new Error("This turn already started locally. Recover its result instead of replaying the agent.");
 
@@ -130,6 +182,7 @@ export class RunnerGit {
           await mkdir(dirname(work), { recursive: true, mode: 0o700 });
           // Never force: a leftover branch/registration may hold undelivered work.
           await this.git(cache, ["worktree", "add", "-b", branch, work, job.baseSha]);
+          if (isolated) await this.copyIgnoredFiles(root, digest(repoRef), work);
         } else {
           await this.checkWorktree(work, cache, branch);
           if ((await this.git(work, ["status", "--porcelain", "--untracked-files=all"])).trim()) {
@@ -165,7 +218,7 @@ export class RunnerGit {
         path: work!, branch,
         checkpoint: async () => {
           if (!active) throw new Error("Workspace turn ended.");
-          await lockedGit(() => this.capture(bindingPath, binding, work, cache));
+          await lockedGit(() => this.capture(bindingPath, binding, work, cache, branch));
         },
         commitAndPush: async (message, author) => {
           if (!active || committed) throw new Error("This workspace turn is no longer available for committing.");
@@ -191,14 +244,106 @@ export class RunnerGit {
     });
   }
 
+  /**
+   * Seed a new parallel-chat worktree with allowlisted local configuration
+   * from the room's shared worktree. Only regular files that Git ignores
+   * there are copied, and nothing already present is overwritten.
+   */
+  private async copyIgnoredFiles(root: string, sharedKey: string, work: string): Promise<void> {
+    const paths = this.options.copyIgnoredFiles ?? [];
+    if (!paths.length) return;
+    let shared: string;
+    try {
+      const binding = JSON.parse(await readFile(join(root, "bindings", `${sharedKey}.json`), "utf8")) as Binding;
+      if (!binding.location) return;
+      shared = await realpath(locationPath(binding.location));
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw cause;
+    }
+    for (const relativePath of paths) {
+      if (!/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/.test(relativePath) || relativePath.split("/").some(part => part === "." || part === "..")) continue;
+      const from = join(shared, ...relativePath.split("/"));
+      const to = join(work, ...relativePath.split("/"));
+      try {
+        const info = await lstat(from);
+        if (!info.isFile() || info.size > 1024 * 1024) continue;
+        // A symlinked parent directory must not lead outside the shared worktree.
+        if (!(await realpath(from)).startsWith(shared + sep)) continue;
+        await this.git(shared, ["check-ignore", "--quiet", "--no-index", "--", relativePath]);
+        if (await exists(to)) continue;
+        await mkdir(dirname(to), { recursive: true, mode: 0o700 });
+        await copyFile(from, to);
+      } catch {
+        // Missing, tracked or unreadable files are simply not copied.
+      }
+    }
+  }
+
+  /**
+   * Parallel-chat worktrees whose chats are finished (`finished` holds their
+   * run ids). Removal is an explicit user action; with `apply`, each clean
+   * worktree whose commits the server already holds is removed, and anything
+   * else is reported and left alone.
+   */
+  async pruneChatWorkspaces(userId: string, finished: Set<string>, apply: boolean): Promise<PruneCandidate[]> {
+    const root = this.scopeRoot(userId);
+    const results: PruneCandidate[] = [];
+    for (const file of await readdir(join(root, "bindings")).catch(() => [] as string[])) {
+      if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+      const key = file.slice(0, -5);
+      const bindingPath = join(root, "bindings", file);
+      const binding = JSON.parse(await readFile(bindingPath, "utf8")) as Binding;
+      if (!binding.chatRunId || !finished.has(binding.chatRunId) || !binding.location) continue;
+      const work = locationPath(binding.location);
+      const cache = join(root, "repos", `${binding.cacheKey}.git`);
+      const branch = `workspace/${key}`;
+      const lockPath = join(root, "locks", `workspace-${key}`);
+      const candidate: PruneCandidate = { chat: binding.chatName || binding.chatRunId, path: work, removable: false };
+      results.push(candidate);
+      if (this.activeWorkspaces.has(lockPath)) { candidate.reason = "a turn is running"; continue; }
+      const remoteRef = `refs/remotes/chats/${key}`;
+      const check = async () => {
+        if (!await exists(work)) return "already removed";
+        await this.checkWorktree(work, cache, branch);
+        if ((await this.git(work, ["status", "--porcelain", "--untracked-files=all"])).trim()) return "it has unsaved edits";
+        // A local turn ref is written before its push, so it proves nothing:
+        // the server's own chat branch must already contain every commit.
+        await this.git(cache, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(binding.repoRef), `+refs/heads/chat/${binding.chatRunId}:${remoteRef}`], null);
+        try { await this.git(cache, ["merge-base", "--is-ancestor", branch, remoteRef]); }
+        catch { return "it has commits the server does not have"; }
+        return null;
+      };
+      try {
+        const blocked = await check();
+        if (blocked === "already removed") { candidate.reason = blocked; if (apply) await unlink(bindingPath); continue; }
+        if (blocked) { candidate.reason = blocked; continue; }
+        candidate.removable = true;
+        if (!apply) continue;
+        await withWorkspaceLock(lockPath, randomUUID(), () => withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), randomUUID(), async () => {
+          if (await check()) throw new Error("The worktree changed while it was being removed; it was preserved.");
+          // Without --force, Git itself refuses a worktree with untracked or modified files.
+          await this.git(cache, ["worktree", "remove", work]);
+          await this.git(cache, ["branch", "-D", branch]);
+          await this.git(cache, ["update-ref", "-d", remoteRef]);
+          await unlink(bindingPath);
+        }, 125_000));
+      } catch (cause) {
+        candidate.removable = false;
+        candidate.reason = cause instanceof Error ? cause.message : String(cause);
+      }
+    }
+    return results;
+  }
+
   private checkpointDirectory() {
     return join(this.dataDir, "checkpoint-outbox", digest(`${this.server}\0${this.token}`));
   }
 
-  private async capture(bindingPath: string, binding: Binding, work: string, cache: string) {
+  private async capture(bindingPath: string, binding: Binding, work: string, cache: string, branch: string) {
     const job = binding.checkpointJob;
     if (!job || (binding.checkpointSequence ?? 0) >= 120) return;
-    await this.checkWorktree(work, cache, `workspace/${digest(binding.repoRef)}`);
+    await this.checkWorktree(work, cache, branch);
     const sequence = (binding.checkpointSequence ?? 0) + 1;
     const snapshot = await captureCheckpoint(work, cache, job.turnId, job.baseSha, sequence, binding.checkpointTree);
     if (!snapshot) return;
@@ -224,19 +369,29 @@ export class RunnerGit {
       const root = join(this.dataDir, "workspaces-v1", scope.name);
       for (const file of await readdir(join(root, "bindings")).catch(() => [])) {
         if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+        // The binding file is named by its workspace key, which also names
+        // the lock and branch (a room repository, or one parallel chat).
+        const key = file.slice(0, -5);
         const bindingPath = join(root, "bindings", file);
         const binding: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
         // Scope binds the server and account; the stored job was captured by this runner.
         if (!binding.location || !binding.checkpointJob || binding.checkpointOwner !== digest(`${this.server}\0${this.token}`)) continue;
         const work = locationPath(binding.location), cache = join(root, "repos", `${binding.cacheKey}.git`);
-        try {
-          await withWorkspaceLock(join(root, "locks", `workspace-${digest(binding.repoRef)}`), binding.checkpointJob.turnId, () =>
-            withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), binding.checkpointJob!.turnId, async () => {
-              const current: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
-              if (current.checkpointOwner !== digest(`${this.server}\0${this.token}`) || current.repoRef !== binding.repoRef || current.cacheKey !== binding.cacheKey || !current.location || locationPath(current.location) !== work) return;
-              await this.capture(bindingPath, current, work, cache);
-            }));
-        } catch (cause) { console.error(`[runner] checkpoint pending: ${String(cause)}`); }
+        const lockPath = join(root, "locks", `workspace-${key}`);
+        // A job of this process owns it (or is about to): its own checkpoints cover it.
+        if (this.activeWorkspaces.has(lockPath) || this.idleCaptures.has(lockPath)) continue;
+        const capture = (async () => {
+          try {
+            await withWorkspaceLock(lockPath, binding.checkpointJob!.turnId, () =>
+              withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), binding.checkpointJob!.turnId, async () => {
+                const current: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
+                if (current.checkpointOwner !== digest(`${this.server}\0${this.token}`) || current.repoRef !== binding.repoRef || current.cacheKey !== binding.cacheKey || !current.location || locationPath(current.location) !== work) return;
+                await this.capture(bindingPath, current, work, cache, `workspace/${key}`);
+              }, 125_000));
+          } catch (cause) { console.error(`[runner] checkpoint pending: ${String(cause)}`); }
+        })();
+        this.idleCaptures.set(lockPath, capture);
+        try { await capture; } finally { this.idleCaptures.delete(lockPath); }
       }
     }
   }
