@@ -91,7 +91,9 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
       }
     }
     if (sha && isolated) {
-      await tx.query(`UPDATE agent_runs SET head_sha = $2 WHERE id = $1`, [saved.runId, sha]);
+      // New work after a merge is a new proposal; a discarded chat stays discarded.
+      await tx.query(`UPDATE agent_runs SET head_sha = $2,
+        merge_state = CASE WHEN merge_state = 'merged' THEN 'open' ELSE merge_state END WHERE id = $1`, [saved.runId, sha]);
     } else if (sha) {
       await tx.query(saved.repoId
         ? `UPDATE room_repos SET head_sha = $2 WHERE id = $1`

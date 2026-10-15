@@ -6,6 +6,7 @@ import type {
   MessageCreatedEvent,
   RoleChangedEvent,
   RunFinishedEvent,
+  RunBranchEvent,
   RunOutputEvent,
   RunRenamedEvent,
   RunStartedEvent,
@@ -37,6 +38,8 @@ export type SessionStreamOptions = {
   onRunRenamed?: (event: RunRenamedEvent) => void;
   /** A run reached a terminal state. */
   onRunFinished?: (event: RunFinishedEvent) => void;
+  /** A parallel chat was merged, updated from the room, discarded or reopened. */
+  onRunBranch?: (event: RunBranchEvent) => void;
   /** Connection state, for showing whether live updates are actually flowing. */
   onStatus?: (connected: boolean) => void;
 };
@@ -72,6 +75,7 @@ export function openSessionStream(
         case "run.turn": options.onRunTurn?.(event); break;
         case "run.renamed": options.onRunRenamed?.(event); break;
         case "run.finished": options.onRunFinished?.(event); break;
+        case "run.branch": options.onRunBranch?.(event); break;
         case "run.inputs": options.onRunInputs?.(event); break;
         case "run.activity": options.onRunActivity?.(event); break;
         case "tasks.changed": options.onTasksChanged?.(); break;
