@@ -23,6 +23,9 @@ import { enqueueLocalJob, claimNextJob } from "../app/lib/runner/jobs.ts";
 import { candidatePush } from "../app/lib/runner/push.ts";
 import { chatAccess, currentHead } from "../app/lib/collaboration/access.ts";
 import { transaction } from "../app/lib/db/client.ts";
+import { chatBranchState, chatFileDiff, mergeChatIntoRoom, updateChatFromRoom, setChatDiscarded } from "../app/lib/ai/chat-branch.ts";
+import { listRunMessages } from "../app/lib/ai/runs.ts";
+import { moveBranch, repoContainsCommit, sessionBranchOf } from "../app/lib/session/repo.ts";
 
 delete process.env.REDIS_URL;
 delete process.env.MNEMOSYNE_URL;
@@ -56,23 +59,24 @@ async function test(name, task) {
 const sql = (text, params) => embedded.query(text, params);
 const roomId = "parallelroom";
 const author = { name: "Alice", email: "alice@example.test" };
-const roomHead = async () => (await sql(`SELECT head_sha FROM session_repos WHERE session_id = $1`, [roomId])).rows[0].head_sha;
-const branchTip = async runId => (await objectText(barePath(roomId), ["rev-parse", `refs/heads/${chatBranchOf(runId)}`])).trim();
+const roomHead = async (room = roomId) => (await sql(`SELECT head_sha FROM session_repos WHERE session_id = $1`, [room])).rows[0].head_sha;
+const branchTip = async (runId, room = roomId) => (await objectText(barePath(room), ["rev-parse", `refs/heads/${chatBranchOf(runId)}`])).trim();
+const gitRoomTip = async room => (await objectText(barePath(room), ["rev-parse", `refs/heads/${sessionBranchOf(room)}`])).trim();
 
-/** Reserve, prepare and start one server-executed turn, then write `text` to `file` and finalize it. */
-async function runTurn(run, userId, { file, text, baseSha, version = 0 }) {
+/** Reserve, prepare and start one server-executed turn, then write `text` to `file` and commit it. */
+async function runTurn(run, userId, { file, text, baseSha, version = 0, room = roomId }) {
   const job = {
-    turnId: randomUUID(), userId, controlVersion: version, sessionId: roomId, runId: run.id, repoId: null,
+    turnId: randomUUID(), userId, controlVersion: version, sessionId: room, runId: run.id, repoId: null,
     baseSha, agentId: "codex", agentPrompt: "Change the file", userPrompt: "Change the file", author,
     ...(run.isolation === "isolated" ? { isolation: "isolated", chatBranch: chatBranchOf(run.id) } : {}),
   };
   await reserveTurn(run.id, userId, job.turnId, version);
   await prepareTurn(job);
   assert.equal(await startTurn(job), true);
-  const work = await prepareTurnWork(roomId, job.turnId, baseSha);
+  const work = await prepareTurnWork(room, job.turnId, baseSha);
   await writeFile(join(work, file), text);
-  const sha = await commitTurnWork(roomId, job.turnId, baseSha, author);
-  return { job, sha, reserve: null };
+  const sha = await commitTurnWork(room, job.turnId, baseSha, author);
+  return { job, sha };
 }
 const finish = (job, sha) => finalizeAgentRun({
   turnId: job.turnId, sessionId: job.sessionId, runId: job.runId, repoId: job.repoId,
@@ -229,6 +233,162 @@ try {
     const command = `${"0".repeat(40)} ${"a".repeat(40)} refs/heads/${chatBranchOf(left.id)}\0report-status\n`;
     const packet = `${(command.length + 4).toString(16).padStart(4, "0")}${command}`;
     await assert.rejects(candidatePush(Readable.from([`${packet}0000PACK`]), turnId));
+  });
+
+  // --- Review and integration: merge, update, discard ----------------------
+  const mergeRoom = "mergeroomabc";
+  const viewer = await user("viewer");
+  await sql(`INSERT INTO sessions(id, name, join_code, owner_id) VALUES ($1, 'Merge test', 'MERG-ERRM', $2)`, [mergeRoom, alice]);
+  for (const [userId, role] of [[alice, "owner"], [bob, "editor"], [viewer, "viewer"]]) {
+    await sql(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,$3,'owner')`, [mergeRoom, userId, role]);
+  }
+  await createRepo(mergeRoom);
+  await writeSeedBatch(mergeRoom, ["a", "b", "c", "d"].map(name => ({ path: `${name}.txt`, data: Buffer.from(`${name}\n`).toString("base64") })));
+  const mergeSeed = await finishSeed(mergeRoom, "merge fixture");
+  await attachRepo(mergeRoom, mergeSeed, null);
+  const start = mergeSeed.headSha;
+  const actor = (id, name) => ({ id, name, email: `${name.toLowerCase()}@example.test` });
+  const aliceActor = actor(alice, "Alice"), bobActor = actor(bob, "Bob"), viewerActor = actor(viewer, "Viewer");
+  /** Open an isolated chat at the room head and give it one finished turn writing `text` to `file`. */
+  const chatWith = async (file, text, base = start) => {
+    const run = await createRun({ sessionId: mergeRoom, startedBy: alice, agentId: "codex", baseSha: base, isolation: "isolated" });
+    const turn = await runTurn(run, alice, { file, text, baseSha: base, room: mergeRoom });
+    assert.equal((await finish(turn.job, turn.sha)).status, "completed");
+    return { run, sha: turn.sha };
+  };
+  const merge = (run, by = aliceActor, heads = {}) => chatBranchState(run.id, mergeRoom, by.id).then(state =>
+    mergeChatIntoRoom({ runId: run.id, sessionId: mergeRoom, actor: by, expectedChatHead: state.chatHead, expectedRoomHead: state.roomHead, ...heads }));
+  const update = (run, by = aliceActor, extra = {}) => chatBranchState(run.id, mergeRoom, by.id).then(state =>
+    updateChatFromRoom({ runId: run.id, sessionId: mergeRoom, actor: by, version: 0, expectedChatHead: state.chatHead, expectedRoomHead: state.roomHead, ...extra }));
+
+  const first = await chatWith("a.txt", "first chat\n");
+  const second = await chatWith("b.txt", "second chat\n");
+  const stale = await chatWith("c.txt", "stale chat\n");
+  const clashing = await chatWith("a.txt", "clashing chat\n");
+
+  await test("a chat's state lists its proposal against the room, with per-file diffs", async () => {
+    const state = await chatBranchState(first.run.id, mergeRoom, viewer);
+    assert.deepEqual([state.ahead, state.behind, state.base, state.roomHead, state.mergeState], [1, 0, start, start, "open"]);
+    assert.deepEqual(state.files, [{ path: "a.txt", status: "M", added: 1, removed: 1 }]);
+    assert.deepEqual(state.conflictMarkers, []);
+    assert.match(await chatFileDiff(first.run.id, mergeRoom, viewer, "a.txt"), /^\+first chat$/m);
+    await assert.rejects(chatBranchState(randomUUID(), mergeRoom, alice), /not found/);
+  });
+
+  await test("viewers can review but not merge", async () => {
+    await assert.rejects(merge(first.run, viewerActor), error => error.status === 403);
+    assert.equal(await roomHead(mergeRoom), start);
+  });
+
+  await test("the first chat merges by fast-forwarding the room branch", async () => {
+    const outcome = await merge(first.run, bobActor);
+    assert.deepEqual(outcome, { ok: true, sha: first.sha, changed: true });
+    assert.equal(await roomHead(mergeRoom), first.sha);
+    assert.equal(await gitRoomTip(mergeRoom), first.sha);
+    const run = await getRun(first.run.id);
+    assert.equal(run.mergeState, "merged");
+    assert.equal(run.mergedSha, first.sha);
+    assert.match((await listRunMessages(first.run.id)).at(-1).body, /Bob merged this chat into the room/);
+    assert.deepEqual((await chatBranchState(first.run.id, mergeRoom, alice)).files, []);
+  });
+
+  await test("a second chat from the same base merges with a real merge commit", async () => {
+    const outcome = await merge(second.run);
+    assert.equal(outcome.ok, true);
+    const parents = (await objectText(barePath(mergeRoom), ["show", "-s", "--format=%P", outcome.sha])).trim().split(" ");
+    assert.deepEqual(parents, [first.sha, second.sha]);
+    for (const [file, text] of [["a.txt", "first chat\n"], ["b.txt", "second chat\n"]]) {
+      assert.equal((await readCommittedBytes(mergeRoom, outcome.sha, file)).toString(), text);
+    }
+    // Shared memory publishes a turn once its commit is an ancestor of the published branch.
+    assert.equal(await repoContainsCommit(mergeRoom, second.sha, outcome.sha), true);
+  });
+
+  await test("a merge against heads the reviewer no longer sees is refused", async () => {
+    await assert.rejects(merge(stale.run, aliceActor, { expectedRoomHead: start }), /changed/);
+    const head = await roomHead(mergeRoom);
+    assert.equal(await gitRoomTip(mergeRoom), head);
+  });
+
+  await test("conflicting changes are reported and nothing moves", async () => {
+    const before = await roomHead(mergeRoom);
+    const outcome = await merge(clashing.run);
+    assert.deepEqual(outcome, { ok: false, reason: "conflict", files: ["a.txt"] });
+    assert.equal(await roomHead(mergeRoom), before);
+    assert.equal(await gitRoomTip(mergeRoom), before);
+    assert.equal(await branchTip(clashing.run.id, mergeRoom), clashing.sha);
+    assert.equal((await getRun(clashing.run.id)).mergeState, "open");
+  });
+
+  await test("only the chat's driver updates it from the room", async () => {
+    await assert.rejects(update(clashing.run, bobActor), /driver/);
+    assert.deepEqual(await update(clashing.run), { ok: false, reason: "conflict", files: ["a.txt"] });
+    assert.equal(await branchTip(clashing.run.id, mergeRoom), clashing.sha);
+  });
+
+  let resolvedBase;
+  await test("an update can commit conflict markers to the chat's own branch, and merging waits for them", async () => {
+    const room = await roomHead(mergeRoom);
+    const outcome = await update(clashing.run, aliceActor, { allowConflicts: true });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(outcome.conflicts, ["a.txt"]);
+    assert.deepEqual((await objectText(barePath(mergeRoom), ["show", "-s", "--format=%P", outcome.sha])).trim().split(" "), [clashing.sha, room]);
+    assert.match((await readCommittedBytes(mergeRoom, outcome.sha, "a.txt")).toString(), /^<{7} /m);
+    assert.equal(await roomHead(mergeRoom), room, "the room never sees conflict markers");
+    const state = await chatBranchState(clashing.run.id, mergeRoom, alice);
+    assert.deepEqual([state.behind, state.conflictMarkers], [0, ["a.txt"]]);
+    assert.deepEqual(await merge(clashing.run), { ok: false, reason: "markers", files: ["a.txt"] });
+    assert.match((await listRunMessages(clashing.run.id)).at(-1).body, /conflict markers to resolve before merging:\n· a\.txt/);
+    resolvedBase = outcome.sha;
+  });
+
+  await test("once the agent resolves the markers, the chat merges cleanly", async () => {
+    const fix = await runTurn(clashing.run, alice, { file: "a.txt", text: "first chat\nclashing chat\n", baseSha: resolvedBase, room: mergeRoom });
+    assert.equal((await finish(fix.job, fix.sha)).status, "completed");
+    const outcome = await merge(clashing.run);
+    assert.deepEqual(outcome, { ok: true, sha: fix.sha, changed: true });
+    assert.equal((await readCommittedBytes(mergeRoom, await roomHead(mergeRoom), "a.txt")).toString(), "first chat\nclashing chat\n");
+  });
+
+  await test("a chat with nothing new is updated by fast-forwarding to the room", async () => {
+    const idle = await createRun({ sessionId: mergeRoom, startedBy: alice, agentId: "codex", baseSha: start, isolation: "isolated" });
+    const outcome = await update(idle);
+    assert.deepEqual(outcome, { ok: true, sha: await roomHead(mergeRoom), changed: true, conflicts: [] });
+    assert.equal((await getRun(idle.id)).headSha, outcome.sha);
+  });
+
+  await test("discarding needs the driver or room owner, blocks merging and new turns, and can be undone", async () => {
+    await assert.rejects(setChatDiscarded({ runId: stale.run.id, sessionId: mergeRoom, actor: bobActor, discarded: true }), error => error.status === 403);
+    assert.deepEqual(await setChatDiscarded({ runId: stale.run.id, sessionId: mergeRoom, actor: aliceActor, discarded: true }), { mergeState: "discarded" });
+    await assert.rejects(merge(stale.run), /discarded/);
+    await assert.rejects(setChatDiscarded({ runId: first.run.id, sessionId: mergeRoom, actor: aliceActor, discarded: true }), /already merged/);
+    assert.deepEqual(await setChatDiscarded({ runId: stale.run.id, sessionId: mergeRoom, actor: aliceActor, discarded: false }), { mergeState: "open" });
+    assert.equal((await merge(stale.run)).ok, true);
+  });
+
+  await test("new work after a merge reopens the chat's proposal", async () => {
+    const next = await runTurn(first.run, alice, { file: "d.txt", text: "more\n", baseSha: first.sha, room: mergeRoom });
+    assert.equal((await finish(next.job, next.sha)).status, "completed");
+    assert.equal((await getRun(first.run.id)).mergeState, "open");
+  });
+
+  await test("a merge whose Git step landed but whose record did not is finished on retry, and foreign moves are refused", async () => {
+    const chat = await chatWith("d.txt", "interrupted\n", await roomHead(mergeRoom));
+    const room = await roomHead(mergeRoom);
+    // Simulate the crash window: the branch moved, the transaction never committed.
+    await moveBranch(mergeRoom, sessionBranchOf(mergeRoom), chat.sha, room);
+    assert.deepEqual(await mergeChatIntoRoom({ runId: chat.run.id, sessionId: mergeRoom, actor: aliceActor, expectedChatHead: chat.sha, expectedRoomHead: room }),
+      { ok: true, sha: chat.sha, changed: true });
+    assert.equal(await roomHead(mergeRoom), chat.sha);
+
+    const other = await chatWith("b.txt", "other\n", chat.sha);
+    // Someone else's commit on the room branch, which this merge did not produce.
+    const foreign = (await objectText(barePath(mergeRoom), ["commit-tree", `${chat.sha}^{tree}`, "-p", chat.sha, "-m", "Someone else's commit"])).trim();
+    await moveBranch(mergeRoom, sessionBranchOf(mergeRoom), foreign, chat.sha);
+    await assert.rejects(mergeChatIntoRoom({ runId: other.run.id, sessionId: mergeRoom, actor: aliceActor, expectedChatHead: other.sha, expectedRoomHead: chat.sha }), /outside this merge/);
+    assert.equal(await gitRoomTip(mergeRoom), foreign);
+    assert.equal((await getRun(other.run.id)).mergeState, "open");
+    await moveBranch(mergeRoom, sessionBranchOf(mergeRoom), chat.sha, foreign);
   });
 
   console.log(`\n${passed} parallel chat checks passed.`);

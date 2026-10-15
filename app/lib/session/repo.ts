@@ -155,20 +155,35 @@ export type MergeResult =
   /** The room and project diverged on the same lines; nothing was changed. */
   | { ok: false; reason: "conflict"; files: string[] };
 
+export type MergeOptions = {
+  message?: string;
+  author?: { name: string; email: string };
+  /**
+   * Commit a conflicted merge anyway, with Git's conflict markers in the
+   * conflicted files, and report them. Only for a branch an agent will
+   * repair next (a parallel chat's own), never for a shared one.
+   */
+  allowConflicts?: boolean;
+};
+
 /** Merge committed objects without materializing a working directory. */
-async function mergeObjects(bare: string, ours: string, theirs: string): Promise<MergeResult> {
+async function mergeObjects(bare: string, ours: string, theirs: string, options: MergeOptions = {}): Promise<MergeResult & { conflicts?: string[] }> {
   if (await gitOk(bare, ["merge-base", "--is-ancestor", theirs, ours])) return { ok: true, sha: ours };
   if (await gitOk(bare, ["merge-base", "--is-ancestor", ours, theirs])) return { ok: true, sha: theirs };
+  const message = options.message ?? "Merge shared repository";
   let tree: string;
   try { tree = await objectText(bare, ["merge-tree", "--write-tree", "--name-only", "-z", ours, theirs]); }
   catch (cause) {
     const error = cause as { code?: number; stdout?: Buffer };
     if (error.code !== 1 || !error.stdout) throw cause;
-    const records = error.stdout.toString().split("\0").slice(1);
+    // On conflict Git still writes a tree (with markers) as the first record.
+    const [conflictedTree, ...records] = error.stdout.toString().split("\0");
     const end = records.indexOf("");
-    return { ok: false, reason: "conflict", files: records.slice(0, end < 0 ? records.length : end) };
+    const files = [...new Set(records.slice(0, end < 0 ? records.length : end))];
+    if (!options.allowConflicts) return { ok: false, reason: "conflict", files };
+    return { ok: true, sha: await commitTree(bare, commitSha(conflictedTree), [ours, theirs], message, options.author), conflicts: files };
   }
-  return { ok: true, sha: await commitTree(bare, tree.replace(/\0/g, ""), [ours, theirs], "Merge shared repository") };
+  return { ok: true, sha: await commitTree(bare, tree.replace(/\0/g, ""), [ours, theirs], message, options.author) };
 }
 
 async function mergeShared(roomId: string, repositoryId: string, publish: boolean): Promise<MergeResult> {
@@ -856,6 +871,51 @@ async function stored_createChatBranch(repoRef: string, runId: string, sha: stri
   if (current !== sha) throw new Error("This chat's branch already exists at another commit.");
 }
 
+/** Commits only in `left` and only in `right`: how far a chat is behind and ahead of its room. */
+async function stored_aheadBehind(repoRef: string, left: string, right: string): Promise<{ leftOnly: number; rightOnly: number }> {
+  const [leftOnly, rightOnly] = (await git(barePath(repoRef), ["rev-list", "--left-right", "--count", `${commitSha(left)}...${commitSha(right)}`])).trim().split(/\s+/).map(Number);
+  return { leftOnly, rightOnly };
+}
+
+/** A unified diff of one path between two commits, capped like other file reads. */
+async function stored_diffPath(repoRef: string, base: string, head: string, path: string): Promise<string> {
+  const clean = safeRelativePath(path);
+  if (!clean) throw new Error("Invalid file path.");
+  return (await git(barePath(repoRef), ["diff", "--no-ext-diff", "--no-textconv", commitSha(base), commitSha(head), "--", clean])).slice(0, MAX_TEXT_BYTES);
+}
+
+/** Changed files whose new side still has conflict-marker lines from a merge. */
+async function stored_conflictMarkerFiles(repoRef: string, base: string, head: string): Promise<string[]> {
+  const diff = await git(barePath(repoRef), ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "-U0", commitSha(base), commitSha(head)]);
+  const files = new Set<string>();
+  let current: string | null = null;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++ ")) current = line === "+++ /dev/null" ? null : line.slice(6);
+    else if (current && /^\+(?:<{7}|>{7})(?: |$)/.test(line)) files.add(current);
+  }
+  return [...files];
+}
+
+/** The parents of a commit, in order. */
+async function stored_commitParents(repoRef: string, sha: string): Promise<string[]> {
+  return (await git(barePath(repoRef), ["show", "-s", "--format=%P", commitSha(sha)])).trim().split(/\s+/).filter(Boolean);
+}
+
+/** The tip of a branch in a room's bare repo, or null when it does not exist. */
+async function stored_branchTip(repoRef: string, branch: string): Promise<string | null> {
+  return (await git(barePath(repoRef), ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).catch(() => "")).trim() || null;
+}
+
+/** Compare-and-swap a branch: it moves only if it is still at `from`. */
+async function stored_moveBranch(repoRef: string, branch: string, to: string, from: string): Promise<void> {
+  await git(barePath(repoRef), ["update-ref", `refs/heads/${branch}`, commitSha(to), commitSha(from)]);
+}
+
+/** Merges `theirs` into `ours` as objects in a room's bare repo; nothing moves. */
+async function stored_mergeCommits(repoRef: string, ours: string, theirs: string, options: MergeOptions = {}) {
+  return mergeObjects(barePath(repoRef), commitSha(ours), commitSha(theirs), options);
+}
+
 /** The best common ancestor of two commits, or null for unrelated histories. */
 async function stored_mergeBase(repoRef: string, a: string, b: string): Promise<string | null> {
   try {
@@ -977,6 +1037,21 @@ export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): Ret
 export const createChatBranch = (...args: Parameters<typeof stored_createChatBranch>): ReturnType<typeof stored_createChatBranch> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_createChatBranch(...args)));
 
 export const mergeBase = (...args: Parameters<typeof stored_mergeBase>): ReturnType<typeof stored_mergeBase> => withStoredRepo(barePath(args[0]), () => stored_mergeBase(...args));
+
+export const aheadBehind = (...args: Parameters<typeof stored_aheadBehind>): ReturnType<typeof stored_aheadBehind> => withStoredRepo(barePath(args[0]), () => stored_aheadBehind(...args));
+
+export const diffPath = (...args: Parameters<typeof stored_diffPath>): ReturnType<typeof stored_diffPath> => withStoredRepo(barePath(args[0]), () => stored_diffPath(...args));
+
+export const conflictMarkerFiles = (...args: Parameters<typeof stored_conflictMarkerFiles>): ReturnType<typeof stored_conflictMarkerFiles> => withStoredRepo(barePath(args[0]), () => stored_conflictMarkerFiles(...args));
+
+export const commitParents = (...args: Parameters<typeof stored_commitParents>): ReturnType<typeof stored_commitParents> => withStoredRepo(barePath(args[0]), () => stored_commitParents(...args));
+
+export const branchTip = (...args: Parameters<typeof stored_branchTip>): ReturnType<typeof stored_branchTip> => withStoredRepo(barePath(args[0]), () => stored_branchTip(...args));
+
+/** Writers only: callers hold withRepoLock(repoRef) across their read-check-move. */
+export const moveBranch = (...args: Parameters<typeof stored_moveBranch>): ReturnType<typeof stored_moveBranch> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_moveBranch(...args)));
+
+export const mergeCommits = (...args: Parameters<typeof stored_mergeCommits>): ReturnType<typeof stored_mergeCommits> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_mergeCommits(...args)));
 
 export const listCommittedTree = (...args: Parameters<typeof stored_listCommittedTree>): ReturnType<typeof stored_listCommittedTree> => withStoredRepo(barePath(args[0]), () => stored_listCommittedTree(...args));
 
