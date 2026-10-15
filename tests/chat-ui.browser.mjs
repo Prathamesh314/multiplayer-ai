@@ -20,10 +20,12 @@ const directory = await mkdtemp(join(tmpdir(), "multiplayer-chat-ui-"));
 const chrome = spawn(process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
   "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-port=9336", `--user-data-dir=${directory}`, "about:blank",
-], { stdio: "ignore" });
+], { stdio: ["ignore", "ignore", "pipe"] });
+let chromeOutput = "";
+chrome.stderr.on("data", data => { chromeOutput = (chromeOutput + data).slice(-4000); });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function eventually(task, label) {
-  for (let i = 0; i < 100; i++) { if (await task()) return; await delay(100); }
+async function eventually(task, label, attempts = 100) {
+  for (let i = 0; i < attempts; i++) { if (await task()) return; await delay(100); }
   throw new Error(`Timed out: ${label}`);
 }
 
@@ -33,7 +35,10 @@ let socket;
 try {
   if (server) await eventually(async()=>{if(server.exitCode!==null) throw Error(serverOutput);try{return (await fetch(base+"/login")).ok;}catch{return false;}},"preview server");
   let targets;
-  await eventually(async()=>{try {targets=await (await fetch("http://127.0.0.1:9336/json")).json();return targets.length;}catch{return false;}},"browser");
+  // A cold browser on a busy CI runner can take well over ten seconds to open
+  // its debugging port. Wait as long as the other browser suites do, and stop
+  // at once with Chrome's own output if it exits instead.
+  await eventually(async()=>{if(chrome.exitCode!==null)throw Error(`Chrome exited (${chrome.exitCode}): ${chromeOutput}`);try {targets=await (await fetch("http://127.0.0.1:9336/json")).json();return targets.length;}catch{return false;}},"browser",300);
   socket = new WebSocket(targets.find(target=>target.type==="page").webSocketDebuggerUrl);
   await once(socket,"open");
   let sequence=0; const pending=new Map();const errors=[];
