@@ -20,3 +20,16 @@ export function safeReturnPath(value: string | null | undefined): string {
 export function loginHref(returnTo: string): string {
   return `/login?${new URLSearchParams({ next: safeReturnPath(returnTo) })}`;
 }
+
+/**
+ * Leave for the sign-in page with a full page load, never a client-side
+ * route change. The sign-in form needs Clerk's provider, which the root layout
+ * mounts only when the publishable key is present where that layout was
+ * rendered. A prerendered page can carry a layout from build time without it,
+ * and a client-side change keeps that layout. A full load renders /login, a
+ * dynamic page, with the server's runtime configuration and starts the
+ * client's auth state afresh, which is also what a sign-out needs.
+ */
+export function openSignIn(href = "/login"): void {
+  window.location.replace(href);
+}

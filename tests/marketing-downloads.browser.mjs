@@ -30,7 +30,11 @@ try {
   await eventually(()=>evaluate(`!!document.querySelector('#download h2')`),'download section');
   for(const width of [1440,390]){
     await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<600});
-    await delay(150);
+    // Measure only once the new viewport is in effect and layout has settled
+    // (fonts loaded, two frames painted), not after a fixed delay that a slow
+    // CI machine can outrun; the overflow assertion itself stays exact.
+    await eventually(()=>evaluate(`innerWidth===${width}`),`viewport ${width}px`);
+    await evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true)))))');
     assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`no overflow at ${width}px`);
     assert.equal(await evaluate(`document.querySelectorAll('#download article').length`),3);
   }
