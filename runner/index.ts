@@ -28,6 +28,7 @@ import { defaultDataDir, loadConfig, saveConfig, configPath, resolveWorkspacesDi
 import { runAgentLocally } from "./execute";
 import { listLocalWorkspaces } from "./workspace-layout";
 import { RunnerGit } from "./git";
+import { TerminalHost } from "./terminal";
 import { WakeSignal } from "./signals";
 
 const HEARTBEAT_MS = 15_000;
@@ -209,6 +210,7 @@ async function start(): Promise<void> {
           dataDir: flag("data") ?? defaultDataDir(),
           maxParallel: undefined,
           copyIgnoredFiles: undefined,
+          terminal: undefined,
         }
       : loadConfig();
   if (!config) {
@@ -237,6 +239,13 @@ async function start(): Promise<void> {
     await deliveries.completions();
   };
 
+  // Terminals for this computer's owner, in their chats' worktrees. On unless
+  // the owner turns them off (--no-terminal, RUNNER_TERMINAL=0, "terminal": false).
+  const terminalsOn = !process.argv.includes("--no-terminal") && process.env.RUNNER_TERMINAL !== "0" && config.terminal !== false;
+  const terminals = terminalsOn ? new TerminalHost(report => api.terminal(report), open => git.terminalDirectory(open)) : null;
+  api.supportsTerminal = !!terminals;
+  log(terminals ? "terminals: on (in your chats' worktrees)" : "terminals: off");
+
   await api.heartbeat(); // fail fast on a revoked token
   log(`online as "${config.name}" against ${config.server}${once ? " (single job)" : ""}`);
 
@@ -247,7 +256,8 @@ async function start(): Promise<void> {
   const signals = (async () => {
     while (!stopping) {
       try {
-        await api.signals(stopSignal.signal, type => {
+        await api.signals(stopSignal.signal, (type, data) => {
+          if (type.startsWith("terminal.")) { terminals?.handle(type, data); return; }
           if (type === "ready" || type === "runner.work" || type === "resync" || type === "devices.changed") jobsReady.wake();
           if (type === "ready" || type === "run.inputs" || type === "resync") inputsReady.wake();
         });
@@ -306,6 +316,7 @@ async function start(): Promise<void> {
   await Promise.allSettled(running);
   clearInterval(maintenance);
   clearInterval(heartbeat);
+  terminals?.closeAll();
   stop();
   await signals;
   if (fatal) throw fatal;
@@ -341,7 +352,7 @@ if (command === "--help" || command === "-h" || command === "help") {
     "  workspaces [--json]                       List local worktrees\n" +
     "  workspaces prune [--apply]                Remove finished parallel-chat worktrees\n" +
     "  --version                                Print the runner version\n\n" +
-    "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <n> (optional cap)\n" +
+    "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <n> (optional cap), --no-terminal\n" +
     "Works from any directory. No application source checkout is needed.");
 } else if (command === "--version" || command === "-v") {
   console.log(process.env.MULTIPLAYER_RUNNER_VERSION ?? "development");

@@ -62,10 +62,22 @@ No host AI credential directories are mounted into the web or worker.
 The current images still contain legacy CLI binaries; their presence does not
 enable hosted execution.
 
-### Turning the hosted terminal on
+### The terminal
 
-`MULTIPLAYER_AI_TERMINAL=1` in the deployment's `.env` enables it; nothing in
-the compose file needs editing. Understand what it grants before you do:
+Where runners can connect (any deployment with Redis, including these Compose
+profiles), the terminal panel opens shells **on each member's own computer**,
+in their chat's worktree, through their runner — like their AI tasks. The web
+service only relays keystrokes and output (`app/lib/terminal/remote.ts`,
+`/api/runner/terminal`); nothing runs in the container and
+`MULTIPLAYER_AI_TERMINAL` has no effect. Members can stop a computer hosting
+terminals with `--no-terminal`, `RUNNER_TERMINAL=0` or `"terminal": false`.
+
+### A shell on this host (only without runners)
+
+Where runners cannot connect, the panel can instead open a shell on the machine
+serving the app. `MULTIPLAYER_AI_TERMINAL=1` in the deployment's `.env` enables
+that; nothing in the compose file needs editing. Understand what it grants
+before you do:
 
 - Every **signed-in member** can open an interactive login shell inside the web
   container **as root** (the image does not drop privileges), with the app's
@@ -73,8 +85,6 @@ the compose file needs editing. Understand what it grants before you do:
   workspace volume. There is no room-level or role-level restriction; a shell
   is bound only to the account that opened it, so members cannot read each
   other's shells.
-- The same flag lets coding agents run **on this host** when the caller has no
-  paired computer, instead of refusing the turn.
 - `WEB_CONCURRENCY` must stay `1` (it already is). The startup check in
   `scripts/server-config.mjs` refuses more than one web process with the
   terminal enabled, because a shell lives in one process's memory.

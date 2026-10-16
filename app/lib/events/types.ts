@@ -156,6 +156,23 @@ export type RunBranchEvent = {
   at: number;
 };
 
+/**
+ * Terminal relay. `terminal.open|input|resize|kill|detach` go to one runner on
+ * `device:<device id>`; `terminal.output|exit|notice` come back to its owner's
+ * browser on `terminal:<user id>:<terminal id>`. Never published to a room.
+ */
+export type RunnerTerminalEvent =
+  | { type: "terminal.open"; id: string; userId: string; cols: number; rows: number;
+      /** Which worktree to open in: a room repository, and a parallel chat's own when set. */
+      repoRef: string | null; runId: string | null; isolated: boolean; at: number }
+  | { type: "terminal.input"; id: string; data: string; at: number }
+  | { type: "terminal.resize"; id: string; cols: number; rows: number; at: number }
+  | { type: "terminal.kill" | "terminal.detach"; id: string; at: number };
+export type TerminalStreamEvent =
+  | { type: "terminal.output"; id: string; data: string; at: number }
+  | { type: "terminal.exit"; id: string; code: number | null; at: number }
+  | { type: "terminal.notice"; id: string; message: string; at: number };
+
 export type SessionEvent =
   | { type: "devices.changed" | "tasks.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
   | { type: "run.inputs" | "run.activity"; runId: string; at: number }
@@ -171,7 +188,9 @@ export type SessionEvent =
   | RunTurnEvent
   | RunRenamedEvent
   | RunFinishedEvent
-  | RunBranchEvent;
+  | RunBranchEvent
+  | RunnerTerminalEvent
+  | TerminalStreamEvent;
 
 export type EventHandler = (event: SessionEvent) => void;
 

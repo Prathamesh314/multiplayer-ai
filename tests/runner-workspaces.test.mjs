@@ -638,3 +638,19 @@ test("runner parallelism and copy settings are validated", () => {
   assert.equal(resolveMaxParallel(50), 50, "a chosen cap is honoured as given");
   assert.deepEqual(resolveCopyIgnoredFiles(".env, apps/web/.env.local ,../x,/etc/passwd,a/./b,.env"), [".env", "apps/web/.env.local"]);
 });
+
+test("terminals open in the chat's own worktree, else the room's, else nowhere on this computer", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  let room, chatPath;
+  await runner.withWorkspace(job(f.base), async w => { room = w.path; });
+  const chat = await openChat(f, f.base);
+  await runner.withWorkspace(chatJob(chat, f.base), async w => { chatPath = w.path; });
+  const directory = input => runner.terminalDirectory({ userId: "alice", repoRef: "room-a", runId: null, isolated: false, ...input });
+  assert.deepEqual(await directory({ runId: chat, isolated: true }), { path: chatPath, label: "parallel chat worktree" });
+  assert.deepEqual(await directory({}), { path: room, label: "room worktree" });
+  assert.deepEqual(await directory({ runId: randomUUID(), isolated: true }), { path: room, label: "room worktree" }, "a parallel chat that never ran here opens in its room's worktree");
+  assert.equal(await directory({ repoRef: "room-b" }), null, "nothing ran here for that repository");
+  assert.equal(await directory({ userId: "bob" }), null, "another account's worktrees are not reachable");
+  assert.equal(await directory({ repoRef: "../room-a" }), null);
+});

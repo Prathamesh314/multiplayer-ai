@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchTerminalStatus } from "../../lib/terminal/client";
+import { fetchTerminalStatus, type TerminalContext } from "../../lib/terminal/client";
 import type { TerminalStatus } from "../../lib/terminal/protocol";
 import { AlertIcon, CloseIcon, LinkIcon, PlusIcon, TerminalIcon } from "../icons";
 import { XtermView, type XtermHandle } from "./XtermView";
@@ -11,10 +11,15 @@ import { XtermView, type XtermHandle } from "./XtermView";
 // Each tab is one PTY (see app/lib/terminal/pty.ts) rendered by xterm.js.
 // ---------------------------------------------------------------------------
 
-type Tab = { id: string; name: string };
+type Tab = { id: string; name: string; context: TerminalContext | null };
 
-export function TerminalPanel({ onClose }: { onClose: () => void }) {
-  const [tabs, setTabs] = useState<Tab[]>([{ id: freshId(), name: "Terminal" }]);
+/**
+ * `context` is the chat (or room) in view: each new tab opens in its worktree
+ * on the member's computer and keeps it, even when another chat is opened.
+ */
+export function TerminalPanel({ onClose, context = null }: { onClose: () => void; context?: TerminalContext | null }) {
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: freshId(), name: "Terminal", context }]);
+  const [checks, setChecks] = useState(0);
   const [activeId, setActiveId] = useState(() => tabs[0].id);
   const [status, setStatus] = useState<TerminalStatus | null>(null);
   const counter = useRef(1);
@@ -22,13 +27,14 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchTerminalStatus()
+    fetchTerminalStatus(context)
       .then((next) => !cancelled && setStatus(next))
       .catch((cause: unknown) => {
         if (cancelled) return;
         setStatus({
           enabled: false,
           reason: cause instanceof Error ? cause.message : "The terminal route is unreachable.",
+          location: "computer",
           cwd: "",
           shell: "",
           platform: "",
@@ -37,7 +43,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [context?.sessionId, context?.runId, context?.repoId, checks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Focus whichever terminal just became active (switching between open tabs).
   useEffect(() => {
@@ -47,7 +53,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
   function addTab() {
     counter.current += 1;
     const id = freshId();
-    setTabs((previous) => [...previous, { id, name: `Terminal ${counter.current}` }]);
+    setTabs((previous) => [...previous, { id, name: `Terminal ${counter.current}`, context }]);
     setActiveId(id);
   }
 
@@ -96,6 +102,12 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="ml-2 flex shrink-0 items-center gap-1">
+          {status?.enabled && (
+            <span className="hidden max-w-[16rem] truncate px-1 text-[11px] text-vs-muted sm:inline"
+              title={status.location === "computer" ? "Shells run on your computer, in each tab's chat worktree" : "Shells run on the machine serving this app"}>
+              {status.location === "computer" ? `Your computer · ${status.device ?? "connected"}` : "This server"}
+            </span>
+          )}
           {port && (
             <a
               href={`http://localhost:${port}`}
@@ -130,7 +142,13 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
         <div className="flex flex-1 items-center justify-center bg-vs-terminal px-6">
           <p className="flex max-w-md items-start gap-2 text-sm leading-5 text-vs-muted">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-warn" />
-            {status?.reason}
+            <span>
+              {status?.reason}
+              {status?.location === "computer" && (
+                <button type="button" onClick={() => { setStatus(null); setChecks((value) => value + 1); }}
+                  className="ml-2 rounded border border-vs-border px-2 py-0.5 text-xs text-vs-fg hover:bg-vs-hover">Check again</button>
+              )}
+            </span>
           </p>
         </div>
       ) : (
@@ -144,6 +162,7 @@ export function TerminalPanel({ onClose }: { onClose: () => void }) {
           >
             <XtermView
               id={tab.id}
+              context={tab.context}
               ref={(handle) => {
                 if (handle) handles.current.set(tab.id, handle);
                 else handles.current.delete(tab.id);

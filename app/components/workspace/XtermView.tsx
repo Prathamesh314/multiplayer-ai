@@ -1,20 +1,24 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { killPty, postPtyInput, postPtyResize } from "../../lib/terminal/client";
+import { contextQuery, killPty, postPtyInput, postPtyResize, type TerminalContext } from "../../lib/terminal/client";
 
 export type XtermHandle = { clear: () => void; focus: () => void };
 
 /**
- * A real terminal for one tab: xterm.js in the browser, a PTY on the server.
+ * A real terminal for one tab: xterm.js in the browser, a PTY on the member's
+ * computer (in the tab's chat worktree, relayed through the server) or, where
+ * runners cannot connect, on the server itself.
  *
  * Output streams in over SSE (base64-framed) and is written straight to the
  * emulator; keystrokes — including Tab, arrows and Ctrl-C — go back as raw
  * bytes over POST. The emulator, not this component, owns the prompt, history,
  * colours and cwd, which is what makes vim/top/REPLs and completion work.
  */
-export const XtermView = forwardRef<XtermHandle, { id: string }>(function XtermView({ id }, ref) {
+export const XtermView = forwardRef<XtermHandle, { id: string; context?: TerminalContext | null }>(function XtermView({ id, context }, ref) {
+  // Fixed when the tab opens: a terminal stays in the worktree it started in.
+  const [query] = useState(() => contextQuery(context));
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<{ clear: () => void; focus: () => void } | null>(null);
 
@@ -57,8 +61,11 @@ export const XtermView = forwardRef<XtermHandle, { id: string }>(function XtermV
       termRef.current = { clear: () => term.clear(), focus: () => term.focus() };
 
       const source = new EventSource(
-        `/api/terminal/pty?id=${encodeURIComponent(id)}&cols=${term.cols}&rows=${term.rows}`,
+        `/api/terminal/pty?id=${encodeURIComponent(id)}&cols=${term.cols}&rows=${term.rows}${query ? `&${query}` : ""}`,
       );
+      source.addEventListener("notice", (event) => {
+        try { term.write(`\x1b[2m${JSON.parse((event as MessageEvent).data)}\x1b[0m\r\n`); } catch { /* malformed notice */ }
+      });
       source.onmessage = (event) => {
         // base64 → bytes → straight into the emulator.
         term.write(Uint8Array.from(atob(event.data), (c) => c.charCodeAt(0)));
@@ -98,7 +105,7 @@ export const XtermView = forwardRef<XtermHandle, { id: string }>(function XtermV
       disposed = true;
       cleanup();
     };
-  }, [id]);
+  }, [id, query]);
 
   return <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden px-2 py-1.5" />;
 });

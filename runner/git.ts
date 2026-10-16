@@ -361,6 +361,31 @@ export class RunnerGit {
     await writeWorkspaceMetadata(bindingPath, binding);
   }
 
+  /**
+   * The worktree a terminal for this chat should open in: a parallel chat's
+   * own, else its room repository's. Null when none exists on this computer
+   * yet (the first AI turn here creates it).
+   */
+  async terminalDirectory(input: { userId: string; repoRef: string | null; runId: string | null; isolated: boolean }): Promise<{ path: string; label: string } | null> {
+    if (!input.userId || !input.repoRef || !/^[a-zA-Z0-9_-]+$/.test(input.repoRef)) return null;
+    const root = this.scopeRoot(input.userId);
+    const candidates = [
+      ...(input.isolated && input.runId && UUID.test(input.runId) ? [{ key: digest(`${input.repoRef}\0chat\0${input.runId}`), label: "parallel chat worktree" }] : []),
+      { key: digest(input.repoRef), label: "room worktree" },
+    ];
+    for (const candidate of candidates) {
+      try {
+        const binding = JSON.parse(await readFile(join(root, "bindings", `${candidate.key}.json`), "utf8")) as Binding;
+        if (binding.repoRef !== input.repoRef || !binding.location) continue;
+        const path = locationPath(binding.location);
+        if ((await lstat(path)).isDirectory()) return { path, label: candidate.label };
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+      }
+    }
+    return null;
+  }
+
   /** Poll saved workspaces between jobs too, so manual edits can synchronize. */
   async checkpointIdleWorkspaces() {
     const roots = await readdir(join(this.dataDir, "workspaces-v1"), { withFileTypes: true }).catch(() => []);

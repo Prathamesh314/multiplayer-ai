@@ -1144,7 +1144,7 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} min={140} max={600} />
                   <div style={{ height: terminalHeight, maxHeight: "60%" }} className="flex min-h-0 shrink-0">
-                    <div className="flex min-h-0 w-full flex-col"><p className="border-b border-vs-border px-3 py-1 text-[11px] text-vs-muted">Server terminal · not your runner or the selected repository</p><TerminalPanel onClose={() => setTerminalOpen(false)} /></div>
+                    <div className="flex min-h-0 w-full flex-col"><TerminalPanel onClose={() => setTerminalOpen(false)} context={{ sessionId: session.id, runId: enteredRun?.id ?? null, repoId: chatRepoId ?? null }} /></div>
                   </div>
                 </>
               ) : (
