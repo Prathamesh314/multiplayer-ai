@@ -93,6 +93,8 @@ type AiPanelProps = {
   /** Start without files or import a folder into the workspace. */
   onImportRepo: () => void;
   importingRepo: boolean;
+  /** True when the last import ended badly; a held prompt goes back to the composer. */
+  importFailed?: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
   onClose?: () => void;
 };
@@ -145,9 +147,17 @@ export function AiPanel({
   onRepoChange,
   onImportRepo,
   importingRepo,
+  importFailed = false,
   onClose,
 }: AiPanelProps) {
   const [assignOpen, setAssignOpen] = useState(false);
+  /**
+   * A prompt sent while a folder is still importing. Held here and replayed
+   * when the import commits, rather than run against a half-written repo: the
+   * agent would read an incomplete checkout and confidently edit the wrong
+   * thing, which is worse than waiting.
+   */
+  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[] } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [planMode, setPlanMode] = useState(false);
   const composer = useRef<ComposerHandle>(null);
@@ -424,6 +434,26 @@ export function AiPanel({
     };
   }, [computerStatus]);
 
+  // Send a held prompt once the import commits. `ask` is redefined every
+  // render, so it is reached through a ref rather than listed as a dependency.
+  const askRef = useRef(ask);
+  useEffect(() => { askRef.current = ask; });
+  useEffect(() => {
+    if (importingRepo || !heldPrompt) return;
+    // Deferred rather than run here: the repo this should target only exists
+    // now, ask() reads the current selection, and clearing the hold inside the
+    // effect body would cascade a render.
+    const held = heldPrompt;
+    const timer = setTimeout(() => {
+      setHeldPrompt(null);
+      // A failed import leaves the old repository selected, so running the
+      // prompt would answer about the wrong code. Hand it back instead.
+      if (importFailed) composer.current?.insertPrompt(held.prompt);
+      else askRef.current(held.prompt, held.contextRefs);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [importingRepo, heldPrompt, importFailed]);
+
   // Follow the conversation as it grows.
   useEffect(() => {
     const element = scroller.current;
@@ -500,6 +530,10 @@ export function AiPanel({
   }
 
   function ask(prompt: string, contextRefs?: string[]) {
+    if (importingRepo) {
+      setHeldPrompt({ prompt, contextRefs });
+      return;
+    }
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
     if (!modelAvailable || !effortAvailable) { setError("Choose an available model and reasoning effort before sending."); return; }
     setRunning(true);
@@ -932,6 +966,18 @@ export function AiPanel({
       )}
       {!canRun && (
         <Note tone="warn">You can read this chat. Ask a project manager for edit access to send AI requests.</Note>
+      )}
+      {/* Say plainly that the message is kept and why it has not run. Silently
+          swallowing it, or running it against a partly written repository,
+          are both worse than a short wait. */}
+      {heldPrompt && (
+        <Note tone="warn">
+          Your message is waiting for the import to finish, then it will send.
+          {" "}
+          <button type="button" onClick={() => { const held = heldPrompt; setHeldPrompt(null); composer.current?.insertPrompt(held.prompt); }} className="ml-1 font-medium underline">
+            Edit it instead
+          </button>
+        </Note>
       )}
 
       {active && authCapable && (needsLogin || showAccount || authBusy === active.id) && (
