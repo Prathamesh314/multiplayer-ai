@@ -18,6 +18,7 @@ import { processMemoryJob } from "../app/lib/knowledge/memory-jobs";
 import { loadEnvConfig } from "@next/env";
 import { startTeamContext } from './team-context';
 import { recoverAgentTurns } from '../app/lib/ai/recovery';
+import { sweepAttachments } from '../app/lib/ai/attachments';
 import { recoverStorageReservations, storageLimit } from '../app/lib/storage/accounting';
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
@@ -72,6 +73,24 @@ if (process.env.DATABASE_URL) {
         console.warn("Repo context worker retry scheduled", cause instanceof Error ? cause.message : cause);
       }
       if (!stopped) timer = setTimeout(tick, delay);
+    })();
+  };
+  tick();
+  closers.push(async () => { stopped = true; clearTimeout(timer); await running; });
+}
+
+// Attachments: drop uploads never sent within a day, and remove the stored
+// files of deleted ones (see lib/ai/attachments.ts). Every few minutes is ample.
+if (process.env.DATABASE_URL) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let running: Promise<void> = Promise.resolve();
+  const tick = () => {
+    running = (async () => {
+      let removed = 0;
+      try { removed = await sweepAttachments(); }
+      catch (cause) { console.warn("Attachment cleanup will retry", cause instanceof Error ? cause.message : cause); }
+      if (!stopped) timer = setTimeout(tick, removed ? 1000 : 5 * 60_000);
     })();
   };
   tick();

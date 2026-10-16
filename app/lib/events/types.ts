@@ -122,8 +122,11 @@ export type RunTurnEvent = {
   role: "user" | "agent" | "system" | "tool";
   authorName: string | null;
   body: string;
+  /** Files sent with a user message; downloaded from the room's attachments route. */
+  attachments?: MessageAttachment[];
   at: number;
 };
+export type MessageAttachment = { id: string; name: string; size: number; contentType: string };
 
 /**
  * A chat was named. Unlike the other events this carries the new text: the

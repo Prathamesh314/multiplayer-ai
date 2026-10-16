@@ -333,7 +333,9 @@ The centre panel distinguishes human prompts from AI responses. Tool activity an
 The pickers open above the composer. Use search where available, arrow keys to choose an option, Enter to select, and Escape to close. Model names and effort choices can differ by account, tool version, and connected computer.
 
 Use **Enter** to send and **Shift+Enter** for a newline. Starter prompts only fill or guide the draft; choosing a starter does not run an agent.`, screenshot: "model-picker" },
-      { id: "context", title: "Attach files and reference conversations", body: `The attachment control accepts UTF-8 text/code files up to **100 KB per file**. Their contents are inserted into the prompt draft. It is not an image upload, repository import, or a way to attach unlimited binary files. Review the draft before sending.
+      { id: "context", title: "Attach files and reference conversations", body: `Attach files with **+**, by dragging them onto the message box, or by pasting. Any type works: code, logs, data, PDFs, images, archives. Each file can be up to **30 MB**, with up to **20 files** per message, and you can send files without typing anything.
+
+Attachments are not pasted into your message. Like Claude Code, the agent gets them as files on your computer, in the chat's working folder under \`.multicode/attachments/\`, and opens them with its own tools, reading large files in parts. That folder is never committed. Pasting a long block of text turns it into an attachment too, so your message stays short. Everyone in the room can download the files sent with a message.
 
 Type **@** to select an available room/chat reference from the picker. Pick an actual result so the app can resolve its context; simply typing another person’s name is not the same as selecting a conversation reference. Where shown, **Import context from…** starts a new chat using another accessible conversation’s context.
 

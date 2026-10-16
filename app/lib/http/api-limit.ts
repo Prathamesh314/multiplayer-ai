@@ -44,7 +44,7 @@ export function policyFor(route: string, method: string): PolicyName {
   if (route === "/api/terminal/pty" || route === "/api/runner/terminal") return "terminal";
   if (route.startsWith("/api/runner/runs/") && route.endsWith("/events")) return "activity";
   if (usesDeviceToken(route)) return "runner";
-  if (route.endsWith("/seed")) return "upload";
+  if (route.endsWith("/seed") || route === "/api/attachment-uploads") return "upload";
   return ["GET", "HEAD", "OPTIONS"].includes(method) ? "read" : "write";
 }
 
@@ -74,6 +74,12 @@ export function clientAddress(request: Request, env = process.env): string | nul
 /** Resolve the account, not a token-specific bucket: sessions/devices cannot
  * multiply a user's allowance. Route handlers still perform all authorization. */
 export async function requestUserId(request: Request, route: string): Promise<string | null> {
+  // Outside the proxy, so no session: the one-time upload token names its uploader.
+  if (route === "/api/attachment-uploads") {
+    const authorization = request.headers.get("authorization") ?? "";
+    const { uploadTokenUser } = await import("../ai/attachments");
+    return uploadTokenUser(authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "");
+  }
   const device = usesDeviceToken(route);
   if (!device) {
     if (!clerkConfigured()) return null;

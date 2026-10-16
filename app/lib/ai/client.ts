@@ -57,6 +57,8 @@ export function runAgent(
     repoId?: string;
     /** Open a new chat on its own branch, so it can run alongside others. */
     isolation?: "isolated";
+    /** Uploaded attachments to send; they reach the agent as files in its worktree. */
+    attachmentIds?: string[];
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

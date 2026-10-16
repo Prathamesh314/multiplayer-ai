@@ -1,3 +1,4 @@
+import type { MessageAttachment } from "../events/types";
 import { query, queryOne, transaction } from "../db/client";
 import type { AgentId } from "./catalog";
 import type { MergeState, RunIsolation } from "./isolation";
@@ -60,6 +61,8 @@ export type AgentRunMessage = {
   authorUserId: string | null;
   authorName: string | null;
   body: string;
+  /** Files sent with a user message (lib/ai/attachments.ts). */
+  attachments?: MessageAttachment[];
   createdAt: number;
 };
 
@@ -409,9 +412,12 @@ export async function listRunMessages(runId: string, afterSeq = 0): Promise<Agen
     author_name: string | null;
     body: string;
     created_at: Date;
+    attachments: MessageAttachment[] | null;
   }>(
     `SELECT m.id, m.run_id, m.seq, m.role, m.author_user_id, u.display_name AS author_name,
-            m.body, m.created_at
+            m.body, m.created_at,
+            (SELECT jsonb_agg(jsonb_build_object('id', a.id, 'name', a.name, 'size', a.size, 'contentType', a.content_type) ORDER BY a.created_at, a.id)
+               FROM chat_attachments a WHERE a.message_id = m.id) AS attachments
        FROM agent_run_messages m
        LEFT JOIN users u ON u.id = m.author_user_id
       WHERE m.run_id = $1 AND m.seq > $2
@@ -426,6 +432,7 @@ export async function listRunMessages(runId: string, afterSeq = 0): Promise<Agen
     authorUserId: row.author_user_id,
     authorName: row.author_name,
     body: row.body,
+    ...(row.attachments?.length ? { attachments: row.attachments } : {}),
     createdAt: row.created_at.getTime(),
   }));
 }

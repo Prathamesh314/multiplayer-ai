@@ -25,7 +25,8 @@ export default async function proxy(request: NextRequest, event: NextFetchEvent)
 }
 
 export const config = {
-  // Device-authenticated streaming uploads must not be buffered by Next Proxy.
+  // Device- and token-authenticated streaming uploads must not be buffered by
+  // Next Proxy, which truncates bodies over 10 MB (attachment-uploads).
   matcher: ["/login", "/auth/:path*", "/account", "/workspace", "/s/:path*", "/shared/:path*", "/invite/:path*",
-    "/api/((?!git/|runner/(?:claim|heartbeat|me|events|workspaces|terminal)(?:/|$)|runner/runs/|webhooks/).*)"],
+    "/api/((?!git/|runner/(?:claim|heartbeat|me|events|workspaces|terminal)(?:/|$)|runner/runs/|webhooks/|attachment-uploads(?:/|$)).*)"],
 };

@@ -6,6 +6,8 @@ import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } f
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
 import { PlusIcon, SendIcon } from "../icons";
+import type { MessageAttachment } from "../../lib/events/types";
+import { ATTACHMENT_MAX_BYTES, MAX_ATTACHMENTS, PASTE_AS_FILE_CHARS, discardAttachment, formatBytes, uploadAttachment } from "../../lib/ai/attachments-client";
 
 export type ChatMessage = {
   id: string;
@@ -116,11 +118,19 @@ type MentionState =
 
 export type ComposerHandle = { insertPrompt: (text: string) => void };
 
+/** A file in the composer: uploading, uploaded (has `sent`), or failed. */
+type PendingAttachment = { key: string; name: string; size: number; progress: number; sent?: MessageAttachment; error?: string; cancel: AbortController };
+
 export function Composer({
   inputRef,
   placeholder,
   disabled = false,
   onSend,
+  /**
+   * The room to upload attachments to. Files are uploaded as files and reach
+   * the agent in its worktree (lib/ai/attachments.ts), not as prompt text.
+   */
+  attachTo,
   /** A larger, multi-line input — used for the AI chat where prompts are longer. */
   tall,
   /** Constrain the box and centre it, so it does not span the whole pane. */
@@ -135,7 +145,8 @@ export function Composer({
   inputRef?: Ref<ComposerHandle>;
   placeholder: string;
   disabled?: boolean;
-  onSend: (text: string, refs: string[]) => void;
+  onSend: (text: string, refs: string[], attachments: MessageAttachment[]) => void;
+  attachTo?: string;
   tall?: boolean;
   narrow?: boolean;
   footer?: React.ReactNode;
@@ -145,7 +156,9 @@ export function Composer({
 }) {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [attachmentError, setAttachmentError] = useState("");
-  const [readingAttachment, setReadingAttachment] = useState(false);
+  const [attached, setAttached] = useState<PendingAttachment[]>([]);
+  const readingAttachment = attached.some((file) => !file.sent && !file.error);
+  const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState("");
   const [mention, setMention] = useState<MentionState | null>(null);
   const [highlight, setHighlight] = useState(0);
@@ -279,6 +292,45 @@ export function Composer({
     setMention(null);
   }
 
+  function attachFiles(files: File[]) {
+    if (!attachTo || !files.length) return;
+    setAttachmentError("");
+    const room = MAX_ATTACHMENTS - attached.length;
+    if (files.length > room) setAttachmentError(`Attach up to ${MAX_ATTACHMENTS} files to a message.`);
+    for (const file of files.slice(0, Math.max(0, room))) {
+      const key = crypto.randomUUID();
+      if (file.size > ATTACHMENT_MAX_BYTES) {
+        setAttachmentError(`${file.name} is larger than ${formatBytes(ATTACHMENT_MAX_BYTES)}. Attach a smaller file, or put it in the repository.`);
+        continue;
+      }
+      const cancel = new AbortController();
+      setAttached((list) => [...list, { key, name: file.name, size: file.size, progress: 0, cancel }]);
+      const update = (patch: Partial<PendingAttachment>) => setAttached((list) => list.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+      uploadAttachment(attachTo, file, (progress) => update({ progress }), cancel.signal)
+        .then((sent) => update({ sent, progress: 1 }))
+        .catch((cause) => { if (!cancel.signal.aborted) update({ error: cause instanceof Error ? cause.message : "Upload failed." }); });
+    }
+  }
+  function removeAttachment(key: string) {
+    setAttached((list) => {
+      const item = list.find((file) => file.key === key);
+      item?.cancel.abort();
+      if (item?.sent && attachTo) discardAttachment(attachTo, item.sent.id);
+      return list.filter((file) => file.key !== key);
+    });
+  }
+  /** Long pastes become a text attachment, so the message stays readable and small. */
+  function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (!attachTo) return;
+    const files = Array.from(event.clipboardData.files);
+    if (files.length) { event.preventDefault(); attachFiles(files); return; }
+    const text = event.clipboardData.getData("text/plain");
+    if (text.length < PASTE_AS_FILE_CHARS) return;
+    event.preventDefault();
+    const pasted = attached.filter((file) => file.name.startsWith("Pasted text")).length + 1;
+    attachFiles([new File([text], `Pasted text ${pasted}.txt`, { type: "text/plain" })]);
+  }
+
   async function send() {
     if (readingAttachment) return;
     if (assignmentBusy.current) return;
@@ -295,8 +347,12 @@ export function Composer({
     }
     if (disabled) return;
     const text = draft.trim();
-    if (!text) return;
-    onSend(text, refsFromText(text));
+    const files = attached.flatMap((file) => (file.sent ? [file.sent] : []));
+    if (!text && !files.length) return;
+    if (attached.some((file) => file.error)) { setAttachmentError("Remove the files that failed to upload, or attach them again."); return; }
+    onSend(text, refsFromText(text), files);
+    setAttached([]);
+    setAttachmentError("");
     setDraft("");
     setSelectedPerson(null);
     setMention(null);
@@ -381,6 +437,7 @@ export function Composer({
         syncMention(draft, caretRef.current);
       }}
       onKeyDown={onKeyDown}
+      onPaste={onPaste}
       disabled={assigning}
       rows={tall ? 4 : 1}
       placeholder={placeholder}
@@ -394,7 +451,7 @@ export function Composer({
     <button
       type="button"
       onClick={send}
-      disabled={readingAttachment || assigning || (assignee ? !taskBody : disabled || draft.trim().length === 0)}
+      disabled={readingAttachment || assigning || (assignee ? !taskBody : disabled || (draft.trim().length === 0 && !attached.some((file) => file.sent)))}
       aria-label={assignee ? "Assign task" : "Send message"}
       className={`flex h-7 shrink-0 items-center justify-center rounded-lg bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30 ${assignee ? "px-3 text-xs font-medium" : "w-7"}`}
     >
@@ -409,29 +466,34 @@ export function Composer({
         {taskMessage && <p role="status" className="mb-2 text-xs text-vs-success">{taskMessage}</p>}
         {taskError && <p role="alert" className="mb-2 text-xs text-vs-danger">{taskError}</p>}
         {attachmentError && <p role="alert" className="mb-2 text-xs text-vs-danger">{attachmentError}</p>}
-        {tall && <input ref={attachmentInput} type="file" multiple className="hidden" aria-label="Attach text files" onChange={async event => {
+        {attachTo && <input ref={attachmentInput} type="file" multiple className="hidden" aria-label="Attach files" onChange={event => {
           const files = Array.from(event.target.files ?? []);
           event.target.value = "";
-          setReadingAttachment(true); setAttachmentError("");
-          try {
-            const contents = await Promise.all(files.map(async file => {
-              if (file.size > 100_000) throw new Error(`${file.name} exceeds the 100 KB attachment limit.`);
-              const text = await file.text();
-              if (text.includes("\0") || text.includes("�")) throw new Error(`${file.name} is not a supported UTF-8 text file.`);
-              return `Attached file: ${file.name}\n\n${text}\nEnd of attachment: ${file.name}`;
-            }));
-            setDraft(previous => [previous, ...contents].filter(Boolean).join("\n\n"));
-            taRef.current?.focus();
-          } catch (cause) { setAttachmentError(cause instanceof Error ? cause.message : "Could not read attachment."); }
-          finally { setReadingAttachment(false); }
+          attachFiles(files);
         }} />}
         {popover}
         {footer ? (
-          <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
+          <div
+            className={`rounded-2xl border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent ${dragging ? "border-vs-accent" : "border-vs-border"}`}
+            onDragOver={attachTo ? (event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } } : undefined}
+            onDragLeave={attachTo ? () => setDragging(false) : undefined}
+            onDrop={attachTo ? (event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); attachFiles(Array.from(event.dataTransfer.files)); } : undefined}
+          >
+            {attached.length > 0 && (
+              <ul aria-label="Attached files" className="mb-2 flex flex-wrap gap-1.5">
+                {attached.map((file) => (
+                  <li key={file.key} className={`flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] ${file.error ? "border-vs-danger text-vs-danger" : "border-vs-border text-vs-fg"}`} title={file.error ?? file.name}>
+                    <span className="max-w-48 truncate">{file.name}</span>
+                    <span className="shrink-0 text-vs-muted">{file.error ? "failed" : file.sent ? formatBytes(file.size) : `${Math.round(file.progress * 100)}%`}</span>
+                    <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeAttachment(file.key)} className="shrink-0 rounded px-0.5 text-vs-muted hover:text-vs-fg">×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex">{textarea}</div>
             <div className="ai-composer-footer mt-3 flex items-center gap-1 border-t border-vs-border pt-2">
               {footer}
-              {tall && <button type="button" title="Attach text or code files (up to 100 KB each)" aria-label="Attach files" disabled={readingAttachment || assigning} onClick={() => attachmentInput.current?.click()} className="ml-auto rounded p-1.5 text-vs-muted hover:bg-vs-hover"><PlusIcon className="h-4 w-4" /></button>}
+              {attachTo && <button type="button" title={`Attach files: code, logs, documents, images (up to ${formatBytes(ATTACHMENT_MAX_BYTES)} each)`} aria-label="Attach files" disabled={assigning || attached.length >= MAX_ATTACHMENTS} onClick={() => attachmentInput.current?.click()} className="ml-auto rounded p-1.5 text-vs-muted hover:bg-vs-hover"><PlusIcon className="h-4 w-4" /></button>}
               <div className="shrink-0 self-end">{sendButton}</div>
             </div>
           </div>
