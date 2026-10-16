@@ -35,6 +35,7 @@ import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
+import { allowedTools } from "../../../lib/ai/permissions";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 
 export type { AiRunEvent } from "../../../lib/ai/run-events";
@@ -448,6 +449,7 @@ async function handlePOST(request: Request) {
     ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,
     agentPrompt,
+    allowedTools: await allowedTools(run.id),
     projectId: result.session.projectId,
     model: runOptions.model,
     effort: runOptions.effort,

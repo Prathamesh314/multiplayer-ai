@@ -43,7 +43,12 @@ export type AgentAuth = {
 };
 
 /** What the composer's Model / Capacity selectors send back with a prompt. */
-export type RunOptions = { model?: string; effort?: string };
+export type RunOptions = {
+  model?: string;
+  effort?: string;
+  /** Tool rules the chat always allows (lib/ai/permissions.ts). */
+  allowedTools?: string[];
+};
 
 export type AgentSpec = {
   id: AgentId;
@@ -59,6 +64,13 @@ export type AgentSpec = {
    * an empty or absent value means "let the CLI use its own default".
    */
   promptArgs: (prompt: string, opts?: RunOptions) => string[];
+  /**
+   * Set for an agent that takes its prompt on stdin as a JSON line and asks
+   * before using a tool by writing a control request on stdout (Claude Code's
+   * stdio permission protocol). The runner relays each request to the chat and
+   * answers on stdin (runner/claude-control.ts). `promptArgs` then omits the prompt.
+   */
+  stdinPrompt?: (prompt: string) => unknown;
   /**
    * When set, this agent's stdout is newline-delimited JSON rather than plain
    * text. A fresh parser is created per run and fed each line; it yields the
@@ -108,27 +120,37 @@ export const AGENTS: AgentSpec[] = [
     /*
      * -p is print mode: run the prompt, write the answer, exit.
      *
-     * acceptEdits, not bypassPermissions: stdin is closed, so an agent that
-     * stops to ask permission just stalls and reports nothing. This lets it
-     * edit files in the working copy while still refusing the riskier tools —
-     * and everything it writes is committed, so any edit is reversible.
+     * acceptEdits, not bypassPermissions: edits in the working copy go ahead
+     * (everything is committed, so any edit is reversible), and anything else
+     * that needs permission, such as a web fetch, an MCP connector or a shell
+     * command, is asked. --permission-prompt-tool=stdio sends each such request
+     * to the runner as a control request; the runner asks the chat and answers
+     * (runner/claude-control.ts). Rules the chat always allows are passed as
+     * settings, which take any characters safely.
+     *
+     * The prompt goes on stdin as a stream-json user message, so its length is
+     * not bounded by the command line.
      *
      * stream-json + partial messages make the reply stream token by token;
      * without them, print mode buffers the whole answer to the end and the run
      * looks frozen the entire time. --verbose is required to stream under -p.
      * `parseStreamLine` below turns those JSON events back into plain text.
      */
-    promptArgs: (prompt, opts) => [
+    promptArgs: (_prompt, opts) => [
       ...(opts?.model ? ["--model", opts.model] : []),
       "--permission-mode",
       "acceptEdits",
+      ...(opts?.allowedTools?.length ? ["--settings", JSON.stringify({ permissions: { allow: opts.allowedTools } })] : []),
       "--output-format",
       "stream-json",
       "--include-partial-messages",
       "--verbose",
+      "--input-format",
+      "stream-json",
+      "--permission-prompt-tool=stdio",
       "-p",
-      prompt,
     ],
+    stdinPrompt: (prompt) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }),
     createStreamParser: createClaudeStreamParser,
     models: [
       { id: "", label: "Auto" },

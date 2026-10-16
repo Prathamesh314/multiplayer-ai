@@ -5,5 +5,6 @@
   "052_run_auto_title.sql": "c179c1cdf5e376740b1620cf4b3506502505ca855ea725341838796cbfdbdd02",
   "053_isolated_chats.sql": "d861e3b11a3b318f27ea3ddab67beb8c75d62faa23e75d4c1da25d1e50189578",
   "054_optional_concurrency_caps.sql": "94ad13023b027a240388962d0d9c54483cdbc4c06051105a93c338bdd8aba6ed",
-  "055_runner_terminal.sql": "a395d5d3ec548449b9de8447bd682e346976e2647f9ce2f6cf4dc519603ada0f"
+  "055_runner_terminal.sql": "a395d5d3ec548449b9de8447bd682e346976e2647f9ce2f6cf4dc519603ada0f",
+  "057_agent_permission_requests.sql": "ca9e6f7a2f616e3390caa95f7be36ff0dbc557e584779367f7f44b76426b89ee"
 }

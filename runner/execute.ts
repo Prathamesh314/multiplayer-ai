@@ -10,6 +10,8 @@
  * rate limits. Nothing is injected and nothing is read back.
  */
 
+import { Deadline, type PermissionAsker } from "./permissions";
+import { allowResponse, denyResponse, describeToolUse, errorResponse, isControlRequest, type CanUseTool, type ControlRequest } from "./claude-control";
 import { assertAvailableModel } from "../app/lib/ai/model-discovery";
 import type { InputSource } from "./input-types";
 import { runCodexSession } from "./codex-session";
@@ -52,6 +54,10 @@ export type RunInput = {
   onEvent: (event: AiRunEvent) => void;
   inputs?: InputSource;
   signal?: AbortSignal;
+  /** Asks the chat before the agent uses a tool that needs permission. Absent: refused. */
+  permissions?: PermissionAsker;
+  /** Tool rules the chat always allows. */
+  allowedTools?: string[];
 };
 
 export async function runAgentLocally(input: RunInput): Promise<LocalRunResult> {
@@ -106,7 +112,9 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     const args = input.spec.promptArgs(input.prompt, {
       model: input.model,
       effort: input.effort,
+      allowedTools: input.allowedTools,
     });
+    const interactive = !!input.spec.stdinPrompt;
     const parser = input.spec.createStreamParser?.() ?? null;
 
     let child: ReturnType<typeof spawn>;
@@ -115,7 +123,7 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
         cwd: input.cwd,
         detached: process.platform !== "win32",
         env: { ...agentEnv(input.spec.id), CI: "1", NO_COLOR: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [interactive ? "pipe" : "ignore", "pipe", "pipe"],
       });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -135,11 +143,34 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     let outBuf = "";
     let errBuf = "";
 
-    const deadline = setTimeout(() => {
+    // Paused while a person decides on a tool request.
+    const deadline = new Deadline(MAX_RUN_MS, () => {
       input.onEvent({ t: "notice", message: `Stopped after ${MAX_RUN_MS / 60_000} minutes.` });
       kill(child);
-    }, MAX_RUN_MS);
-    deadline.unref?.();
+    });
+    const send = (message: unknown) => { if (child.stdin && !child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`); };
+    if (interactive) {
+      child.stdin?.on("error", () => { /* the agent exited; its close event reports it */ });
+      send(input.spec.stdinPrompt!(input.prompt));
+    }
+    /** A control request from the agent: relay tool permission requests to the chat. */
+    const control = async (message: ControlRequest) => {
+      if (message.request.subtype !== "can_use_tool" || !message.request.tool_name) {
+        send(errorResponse(message.request_id, `Unsupported request: ${message.request.subtype}`));
+        return;
+      }
+      const request = message.request as CanUseTool;
+      if (!input.permissions) {
+        send(denyResponse(message.request_id, "No one can approve tools for this run. Work within the repository, or ask the user to update the desktop app."));
+        return;
+      }
+      try {
+        const answer = await deadline.hold(() => input.permissions!(describeToolUse(request)));
+        send(answer.allow ? allowResponse(message.request_id, request) : denyResponse(message.request_id, "The user declined this tool request in the chat."));
+      } catch (cause) {
+        send(denyResponse(message.request_id, `The request could not reach the user: ${cause instanceof Error ? cause.message : String(cause)}`));
+      }
+    };
 
     const emitReply = (text: string) => {
       if (bytes >= MAX_OUTPUT_BYTES) return;
@@ -183,6 +214,16 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
         const line = lineBuf.slice(0, newline);
         lineBuf = lineBuf.slice(newline + 1);
         if (!line.trim()) continue;
+        if (interactive && line.includes('"control_')) {
+          let message: unknown = null;
+          try { message = JSON.parse(line); } catch { /* not a control frame */ }
+          if (isControlRequest(message)) { void control(message); continue; }
+          if ((message as { type?: string } | null)?.type === "control_cancel_request") continue;
+        }
+        // The answer is complete; closing stdin lets the session end.
+        if (interactive && line.includes('"result"')) {
+          try { if ((JSON.parse(line) as { type?: string }).type === "result") child.stdin?.end(); } catch { /* not JSON */ }
+        }
         for (const piece of parser.push(line)) {
           if (piece.kind === "reply") emitReply(piece.text);
           else if (piece.kind === "thinking") emitThinking(piece.text);
@@ -206,7 +247,7 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
       input.signal?.removeEventListener("abort", abort);
       try { await receipt; } catch { code = 1; }
       if (parserFailed) code = 1;
-      clearTimeout(deadline);
+      deadline.clear();
       resolve({ code, output: outBuf, errOutput: errBuf, ms: Date.now() - startedAt });
     });
   });

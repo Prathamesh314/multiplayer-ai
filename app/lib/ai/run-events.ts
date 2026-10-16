@@ -75,6 +75,12 @@ export type AgentRunJob = {
   agentId: string;
   /** The assembled argv prompt (already budgeted and woven). */
   agentPrompt: string;
+  /**
+   * Tool rules the chat's driver chose to always allow (lib/ai/permissions.ts),
+   * e.g. WebFetch(domain:docs.google.com). Anything else that needs permission
+   * is asked in the chat; older runners ignore this and refuse as before.
+   */
+  allowedTools?: string[];
   model?: string;
   effort?: string;
   /** Attributes the auto-commit, exactly as the inline path always has. */

@@ -1,3 +1,4 @@
+import { permissionAsker } from "./permissions";
 import { ActivityOutbox } from "./activity-outbox";
 /*
  * The multicode-ai runner: agents on your machine, rooms in the cloud.
@@ -167,6 +168,11 @@ async function processJob(
         cwd: workspace.path,
         onEvent: emit,
         signal: execution.signal,
+        allowedTools: job.allowedTools,
+        permissions: permissionAsker(api.permissions(job.turnId), job.allowedTools, {
+          signal: execution.signal,
+          onWaiting: request => emit({ t: "notice", message: `Waiting for you to allow in the chat: ${request.title}` }),
+        }),
         inputs: {
           claim: closeIfEmpty => api.input(job.turnId, { kind: "claim", claimId: randomUUID(), closeIfEmpty }),
           acknowledge: async id => { await api.input(job.turnId, { kind: "ack", id }); },

@@ -33,6 +33,7 @@ import {
   TerminalIcon,
 } from "../icons";
 import { QueuedMessages } from "./QueuedMessages";
+import { PermissionRequests } from "./PermissionRequests";
 import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
 import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
@@ -942,6 +943,16 @@ export function AiPanel({
         {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
       </div>
 
+      {entered && (
+        <PermissionRequests
+          key={`permissions-${entered.id}`}
+          sessionId={sessionId}
+          runId={entered.id}
+          canAnswer={!!myId && entered.driverUserId === myId}
+          driverName={entered.driverName ?? null}
+          agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId}
+        />
+      )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
       {running ? (
         <div className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel p-2.5 text-sm text-vs-muted">
