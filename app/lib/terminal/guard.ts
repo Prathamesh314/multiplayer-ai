@@ -25,6 +25,17 @@ export type TerminalAccess = { allowed: true } | { allowed: false; reason: strin
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0000:0000:0000:0000:0000:0000:0000:0001"]);
 
+/** The request's Host without its port; IPv6 hosts keep their brackets. */
+function requestHostname(request: Request): string {
+  const host = request.headers.get("host") ?? "";
+  return host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+}
+
+/** Whether the request arrived over a loopback Host, i.e. from the machine serving the app. */
+export function isLoopbackRequest(request: Request): boolean {
+  return LOOPBACK_HOSTS.has(requestHostname(request).toLowerCase());
+}
+
 export function terminalAccess(request: Request): TerminalAccess {
   const flag = process.env.MULTIPLAYER_AI_TERMINAL?.toLowerCase();
 
@@ -43,13 +54,8 @@ export function terminalAccess(request: Request): TerminalAccess {
     };
   }
 
-  const host = request.headers.get("host") ?? "";
-  // Strip the port; IPv6 hosts keep their brackets.
-  const hostname = host.startsWith("[")
-    ? host.slice(0, host.indexOf("]") + 1)
-    : host.split(":")[0];
-
-  if (!LOOPBACK_HOSTS.has(hostname.toLowerCase())) {
+  const hostname = requestHostname(request);
+  if (!isLoopbackRequest(request)) {
     return {
       allowed: false,
       reason: `Without MULTIPLAYER_AI_TERMINAL=1 the terminal only accepts loopback requests, and this one arrived for “${hostname || "unknown host"}”.`,

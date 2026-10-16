@@ -45,7 +45,8 @@ It does not fall back to hosted agent execution.
 | Variable | Web | Worker | Purpose |
 | --- | --- | --- | --- |
 | `LOCAL_RUNNERS` | `1` | — | Route coding turns to users' paired machines |
-| `MULTIPLAYER_AI_TERMINAL` | `0` | `0` | Disable hosted terminal and inline agent execution |
+| `MULTIPLAYER_AI_TERMINAL` | `0` | `0` | Disable the hosted terminal (it never affects where agents run) |
+| `AGENT_SERVER_EXECUTION` | `0` | — | Never run AI agents on this host; they run on members' computers |
 | `AGENT_WORKER` | `0` | `0` | Disable hosted agent queue consumption |
 | `REDIS_URL` | Compose Redis | Compose Redis | Live events, presence, and coordination |
 | `DATABASE_URL` | Compose Postgres | Compose Postgres | Metadata, runner jobs, transcripts, and indexing jobs |
@@ -97,13 +98,14 @@ distinguishes "not opted in", "not signed in" and "no shell on this host".
 ./start.sh down         # stop services, keep data
 ```
 
-This path runs Next.js on the host for hot reload. A compatible paired runner
-takes precedence. Without one, the development terminal gate can allow inline
-execution using the developer's machine. Set `MULTIPLAYER_AI_TERMINAL=0` to
-require local runners here too.
+This path runs Next.js on the host for hot reload. Agents run on a paired
+runner, as in production: open the desktop app or start `npm run runner`. Only
+a development server that cannot reach runners at all (no Redis, or
+`LOCAL_RUNNERS=0`) runs agents itself, for requests from `localhost`. Set
+`AGENT_SERVER_EXECUTION=1` to let it run them anyway, or `0` to forbid that.
 
 For deliberate server-worker development, `AGENT_WORKER=1` enables the agent
-queue when Redis is configured and the terminal gate allows the request.
+queue when Redis is configured and `AGENT_SERVER_EXECUTION=1` allows it.
 This is separate from the hosted Compose defaults.
 
 ## Git storage and backups

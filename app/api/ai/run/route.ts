@@ -38,7 +38,7 @@ import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
-import { terminalAccess } from "../../../lib/terminal/guard";
+import { serverExecutionAllowed } from "../../../lib/ai/execution";
 
 export type { AiRunEvent } from "../../../lib/ai/run-events";
 
@@ -141,8 +141,9 @@ async function handlePOST(request: Request) {
     return forbidden("Running an agent changes files, which needs edit access.");
   }
 
-  const gate = terminalAccess(request);
-
+  // Agents run on the member's computer; this server runs one only where that
+  // is explicitly allowed (lib/ai/execution.ts), never because a terminal is on.
+  const onServerAllowed = serverExecutionAllowed(request);
 
   const agent = agentById(String(body.agentId ?? ""));
   if (!agent) return Response.json({ error: "Unknown agent." }, { status: 400 });
@@ -160,12 +161,12 @@ async function handlePOST(request: Request) {
   const hasRunner = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, undefined, undefined, true);
   const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
   if (!useLocal && hasRunner) return Response.json({ error: "Your computer doesn’t have the selected model or effort available. Refresh the model list and choose an available option, then send your message again." }, { status: 409 });
-  if (!useLocal && gate.allowed) {
+  if (!useLocal && onServerAllowed) {
     const inventory = await modelInventory(agent);
     const selected = inventory.choices.find(choice => choice.id === (runOptions.model ?? ""));
     if (!selected || (runOptions.effort && !selected.efforts?.some(effort => effort.id === runOptions.effort))) return Response.json({ error: "This model or effort is no longer available. Refresh the provider inventory." }, { status: 409 });
   }
-  if (!useLocal && !gate.allowed) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
+  if (!useLocal && !onServerAllowed) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
 
   const sessionId = result.session.id;
 
