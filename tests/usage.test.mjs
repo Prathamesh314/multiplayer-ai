@@ -45,11 +45,15 @@ try {
     await f.db.query(`INSERT INTO session_members(session_id,user_id,role,added_via) VALUES ($1,$2,'owner','owner')`, [id, f.alice]);
     runs.push(await createRun({ sessionId: id, startedBy: f.alice, agentId: 'codex', baseSha: 'a'.repeat(40) }));
   }
-  assert.equal((await f.first('SELECT run_concurrency_limit AS n FROM orgs WHERE id=$1', [f.org])).n, 3, 'the org still has the old default cap');
+  assert.deepEqual(await f.first('SELECT run_concurrency_limit, parallel_chats_per_user FROM orgs WHERE id=$1', [f.org]),
+    { run_concurrency_limit: null, parallel_chats_per_user: null }, 'new orgs start uncapped');
+  await f.db.query('UPDATE orgs SET run_concurrency_limit=3 WHERE id=$1', [f.org]);
   for (const run of runs.slice(0, 5)) await reserveTurn(run.id, f.alice, randomUUID(), 0, 'local');
   const serverGate = room => ({ orgId: f.org, projectId: projects[rooms.indexOf(room)], sessionId: room, userId: f.alice, isNewRun: true, target: 'server' });
-  assert.equal((await checkRunAllowed({ ...serverGate(rooms[5]), target: 'local' })).ok, true, 'five turns on members\' computers ignore the cap of 3');
+  assert.equal((await checkRunAllowed({ ...serverGate(rooms[5]), target: 'local' })).ok, true, 'five turns on members\' computers ignore a cap of 3');
   assert.equal((await checkRunAllowed(serverGate(rooms[5]))).ok, true, 'turns on members\' computers do not use server capacity');
+  // With no cap set, the server takes as many turns as are started.
+  await f.db.query('UPDATE orgs SET run_concurrency_limit=NULL WHERE id=$1', [f.org]);
   await reserveTurn(runs[5].id, f.alice, randomUUID(), 0, 'server');
   await reserveTurn(runs[6].id, f.alice, randomUUID(), 0, 'server');
   await f.db.query('UPDATE orgs SET run_concurrency_limit=2 WHERE id=$1', [f.org]);

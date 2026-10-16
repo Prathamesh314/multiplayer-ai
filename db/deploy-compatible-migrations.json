@@ -3,5 +3,6 @@
   "050_clerk_auth.sql": "067251c7a41087c2960510f035576cce6db2b6a4ad4d475a20b0b18d34b2f3a5",
   "051_first_run_setup.sql": "deb2d1bc7e427597702205ee411b48c7a8977090d7adb7aae43685881de51c62",
   "052_run_auto_title.sql": "c179c1cdf5e376740b1620cf4b3506502505ca855ea725341838796cbfdbdd02",
-  "053_isolated_chats.sql": "d861e3b11a3b318f27ea3ddab67beb8c75d62faa23e75d4c1da25d1e50189578"
+  "053_isolated_chats.sql": "d861e3b11a3b318f27ea3ddab67beb8c75d62faa23e75d4c1da25d1e50189578",
+  "054_optional_concurrency_caps.sql": "94ad13023b027a240388962d0d9c54483cdbc4c06051105a93c338bdd8aba6ed"
 }
