@@ -1,7 +1,19 @@
 import type { PtyControl, TerminalStatus } from "./protocol";
 
-export async function fetchTerminalStatus(): Promise<TerminalStatus> {
-  const response = await fetch("/api/terminal", { cache: "no-store" });
+/** The chat a terminal belongs to: it opens in that chat's worktree on the member's computer. */
+export type TerminalContext = { sessionId: string; runId: string | null; repoId: string | null };
+
+export function contextQuery(context: TerminalContext | null | undefined): string {
+  if (!context) return "";
+  const params = new URLSearchParams({ sessionId: context.sessionId });
+  if (context.runId) params.set("runId", context.runId);
+  if (context.repoId) params.set("repoId", context.repoId);
+  return params.toString();
+}
+
+export async function fetchTerminalStatus(context?: TerminalContext | null): Promise<TerminalStatus> {
+  const query = contextQuery(context);
+  const response = await fetch(`/api/terminal${query ? `?${query}` : ""}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Terminal status failed (${response.status})`);
   return (await response.json()) as TerminalStatus;
 }

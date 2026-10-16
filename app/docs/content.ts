@@ -298,19 +298,19 @@ If the driver’s computer went offline, [Activity & checkpoints](/docs/history)
     ],
   },
   {
-    slug: "terminal", category: "Your workspace", title: "Terminal availability",
-    description: "Understand when the built-in terminal works and where its commands actually execute.",
+    slug: "terminal", category: "Your workspace", title: "Terminal",
+    description: "Open a shell on your own computer, in the worktree of the chat you are in, from the browser or the desktop app.",
     sections: [
-      { id: "hosted", title: "On the hosted workspace", body: `The terminal panel can be visible even when interactive shell access is disabled. **A connected AI runner does not make the hosted terminal a shell on your laptop.**
+      { id: "hosted", title: "A terminal on your computer", body: `The terminal panel opens a shell **on your connected computer**, like your AI tasks: in the worktree of the chat you are viewing, with your own tools, Git setup and signed-in AI command-line tools. It works the same from the browser and the desktop app; the website only relays keystrokes and output.
 
-The current terminal implementation runs on the machine serving the web application and accepts only permitted loopback requests. The public hosted workspace therefore does not expose an interactive server shell. Read the panel’s availability message and use your own computer’s terminal when needed.
+The panel header names the computer, for example **Your computer · Alice’s Mac**. Each tab stays in the worktree it opened in: a parallel chat’s own worktree, otherwise the room’s. Open a chat and select **+** for a terminal in that chat’s worktree. If that chat has not run on this computer yet, the terminal opens in your home folder and says so; its worktree is created by the first AI task there.
 
-AI coding tools still run commands through your connected computer as part of their tasks. That execution path is separate from the built-in terminal panel.`, screenshot: "terminal" },
-      { id: "local", title: "In an enabled local installation", body: `When an administrator runs the application locally with terminal access enabled, the panel uses a real PTY rendered with xterm. Use **+** to create another terminal, select a tab to switch, and use **Clear** or **Ctrl+L** to clear the display. Closing a terminal ends that terminal session.
+If no computer is connected, the panel says so. Open the desktop app or [start the runner](/docs/connect-computer), then select **Check again**. A reloaded page reattaches to a running shell for about a minute.`, screenshot: "terminal" },
+      { id: "local", title: "Full terminal, privacy and turning it off", body: `Full-screen programs, colours and Tab completion use a real terminal through Python 3, which is present wherever Git’s developer tools are installed on macOS and on most Linux systems. Without it, and on Windows for now, the terminal is a basic shell and says so.
 
-The shell starts in the application’s working directory, not automatically in the selected room repository. Check your current directory before running commands. The **Open :port** link is a localhost shortcut, not a deployment or preview service for your project.
+Only you can open terminals on your computers. To stop a computer hosting them, start the runner with \`--no-terminal\`, set \`RUNNER_TERMINAL=0\`, or add \`"terminal": false\` to its configuration.
 
-Do not ask an administrator to expose an unrestricted server terminal publicly. For hosted use, work through your connected AI tool or a terminal on your own machine.` },
+A development server that cannot reach runners at all (for example without Redis) opens the shell on the machine serving the application instead, and the header says **This server**. Do not expose such a server terminal publicly.` },
     ],
   },
   {

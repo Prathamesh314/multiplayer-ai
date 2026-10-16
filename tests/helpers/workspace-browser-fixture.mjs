@@ -123,7 +123,9 @@ export function installFixtures() {
     if(path.endsWith("/messages"))return json({messages:[]});
     if(path.endsWith("/forkable-runs"))return json({runs:[]});
     if(path.endsWith("/mention-targets"))return json({rooms:[{sessionId:room.id,name:room.name,chats:state.runs.map(run=>({runId:run.id,title:run.title}))}]});
-    if(path === "/api/terminal")return json({enabled:false,reason:"Terminal disabled in browser fixture"});
+    // Terminal keystrokes, resizes and kills: recorded, answered like the real route.
+    if(path === "/api/terminal/pty")return new Response(null,{status:204});
+    if(path === "/api/terminal")return json(state.terminal??{enabled:false,location:"computer",reason:"Terminal disabled in browser fixture",cwd:"",shell:"",platform:""});
     if(path === "/api/ai/agents") {
       if(state.agentsFailure)return new Response("Temporarily unavailable",{status:503});
       const ready=state.devices.some(device=>device.online&&device.version==="2")&&state.aiReady;

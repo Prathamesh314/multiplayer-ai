@@ -150,6 +150,28 @@ multicode-ai/workspaces/
   Removal includes their ignored files, such as installed dependencies. Room
   checkouts are never pruned, and nothing is removed automatically.
 
+## Terminals
+
+The runner hosts terminals for its owner (`runner/terminal.ts`). The server
+sends `terminal.open|input|resize|kill|detach` on the runner's
+`device:<device id>` event channel; the runner posts output, exit and notices
+to `/api/runner/terminal`, which relays them only to its owner's
+`terminal:<user>:<terminal>` channel.
+
+- **Where:** a parallel chat's own worktree, else the room repository's
+  worktree, else the home folder (with a notice) when nothing ran here yet. The
+  server prefers the computer that last ran the chat.
+- **PTY:** Python 3's standard `pty` module provides a real terminal, with
+  resizes over a control pipe, so the runner bundle needs no native modules.
+  Without Python (and on Windows for now) the shell runs over pipes and the
+  terminal says it is basic.
+- **Lifetime:** output is batched every 40 ms and the last 256 KiB is replayed
+  when a tab reattaches; a shell outlives its last viewer for 60 seconds.
+- **Environment:** the user's own environment with `TERM=xterm-256color`,
+  minus `ELECTRON_*`, `GIT_*` and `RUNNER_CONFIG`.
+- **Opting out:** `--no-terminal`, `RUNNER_TERMINAL=0` or `"terminal": false`
+  in `runner.json`; the heartbeat then advertises no terminal support.
+
 ## Recovery and upgrade
 
 - **Unfinished edits:** the error names the workspace folder. Inspect `git status`

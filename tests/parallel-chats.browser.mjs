@@ -110,6 +110,19 @@ try {
   assert.match(await evaluate(`document.querySelector('.ai-composer textarea').value`), /- src\/login\.ts/);
   assert.equal(await evaluate('window.__model.requests.filter(r=>r.path==="/api/ai/run").length'), 0, "the prompt is not sent automatically");
 
+  // The terminal opens on the member's computer, in the chat's worktree.
+  const terminalHeader = `document.querySelector('button[aria-label="New terminal"]')?.closest('header')`;
+  await eventually(() => evaluate(`!!${terminalHeader}`), "terminal panel");
+  await eventually(() => evaluate(`document.body.innerText.includes("Terminal disabled in browser fixture")`), "terminal without a computer explains why");
+  await evaluate(`window.__model.terminal={enabled:true,location:"computer",device:"Alice’s Mac",cwd:"",shell:"",platform:""}`);
+  await button("Check again");
+  await eventually(() => evaluate(`${terminalHeader}.innerText.includes("Your computer · Alice’s Mac")`), "terminal names the member's computer");
+  await evaluate(`document.querySelector('button[aria-label="New terminal"]').click()`);
+  await eventually(() => evaluate(`window.__model.sources.some(source=>source.url.startsWith("/api/terminal/pty")&&source.url.includes("runId=33333333-3333-4333-8333-333333333333"))`), "terminal opened in the chat");
+  const terminalUrl = new URL(await evaluate(`window.__model.sources.filter(source=>source.url.startsWith("/api/terminal/pty")).at(-1).url`), base);
+  assert.equal(terminalUrl.searchParams.get("sessionId"), "modelroomabc");
+  assert.equal(terminalUrl.searchParams.get("repoId"), "frontendabcd");
+
   // A new chat can be opened in parallel; the request asks for its own branch.
   await evaluate(`document.querySelector('button[aria-label="New chat in frontend"]').click()`);
   const toggle = `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes("Parallel")&&b.hasAttribute("aria-pressed"))`;
