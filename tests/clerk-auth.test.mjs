@@ -6,6 +6,27 @@ import {completeClerkAccount,verifiedClerkProfile,syncClerkProfile,deleteClerkAc
 import {createDesktopSignIn,approveDesktopSignIn,consumeDesktopSignIn} from '../app/lib/auth/clerk-desktop.ts';
 import {issueSignupInvitation} from '../app/lib/auth/admission.ts';
 const profile=(id,email,extra={})=>({id,primary_email_address_id:'primary',email_addresses:[{id:'primary',email_address:email,verification:{status:'verified'}}],first_name:'Test',last_name:'User',updated_at:100,...extra});
+test('a link to a Clerk user that no longer exists is relinked; a live or unknown one is not',async()=>{
+ const f=await memoryFixture({postgres:process.env.CLERK_TEST_POSTGRES==='1'});
+ try{
+  const alice=await completeClerkAccount(profile('user_alice_dev','alice@memory.test'));
+  // The deployment moved to another Clerk instance: same verified email, new Clerk ID.
+  const asked=[];
+  const exists=answer=>async id=>{asked.push(id);return answer;};
+  await assert.rejects(completeClerkAccount(profile('user_alice_live','alice@memory.test')),/Sign in the way you did before/,'no Clerk check, no relink');
+  await assert.rejects(completeClerkAccount(profile('user_alice_live','alice@memory.test'),undefined,exists(true)),/another workspace account/,'the old Clerk user is still live');
+  await assert.rejects(completeClerkAccount(profile('user_alice_live','alice@memory.test'),undefined,exists(null)),/another workspace account/,'Clerk could not say');
+  await assert.rejects(completeClerkAccount(profile('user_alice_live','alice@memory.test'),undefined,async()=>{throw new Error('offline');}),/another workspace account/);
+  const relinked=await completeClerkAccount(profile('user_alice_live','alice@memory.test'),undefined,exists(false));
+  assert.equal(relinked.id,alice.id,'the same workspace account, projects and chats');
+  assert.deepEqual(asked,['user_alice_dev','user_alice_dev','user_alice_dev']);
+  assert.ok(await userForClerkSession('user_alice_live','s1'));
+  assert.equal(await userForClerkSession('user_alice_dev','s2'),null,'the stale identity no longer signs in');
+  // A deleted account is never revived by relinking.
+  await deleteClerkAccount('user_alice_live');
+  await assert.rejects(completeClerkAccount(profile('user_alice_new','alice@memory.test'),undefined,exists(false)),/was deleted/);
+ }finally{await f.close();}
+});
 test('Clerk owns identity while local UUIDs, permissions and admission survive the migration',async()=>{
  const f=await memoryFixture({postgres:process.env.CLERK_TEST_POSTGRES==='1'});const before=process.env.SIGNUP_MODE;process.env.SIGNUP_MODE='open';
  try{

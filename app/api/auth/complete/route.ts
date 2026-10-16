@@ -19,6 +19,9 @@ export const POST = withApiLimit("/api/auth/complete", async request => {
     throw new ClerkAccountError("We couldn’t verify your account right now. Please try again.", 503);
   });
   if (!profile.raw) throw new ClerkAccountError("Your account details are temporarily unavailable. Please try again.", 503);
-  const user = await completeClerkAccount(profile.raw, body.invitationToken);
+  const clerk = await clerkClient();
+  // Only a definite "not found" from Clerk marks an old link as stale.
+  const exists = (id: string) => clerk.users.getUser(id).then(() => true, (error: { status?: number }) => (error?.status === 404 ? false : null));
+  const user = await completeClerkAccount(profile.raw, body.invitationToken, exists);
   return Response.json({ user, connectCode: await connectCodeOf(user.id), onboarded: await hasOnboarded(user.id) });
 });

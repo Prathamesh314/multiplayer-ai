@@ -35,6 +35,12 @@ try{
  assert.equal((await api('/api/orgs',token)).status,401,'Clerk sign-in alone cannot skip workspace admission');
  assert.equal((await api('/api/auth/complete',token,{}, {origin:'https://evil.example'})).status,403);
  const linked=await api('/api/auth/complete',token,{email:'attacker@example.test'});assert.equal(linked.status,200,await linked.clone().text());assert.equal((await linked.json()).user.id,f.bob,'verified provider email wins over request body');
+ // A second Clerk identity for Bob's email is refused while his original one exists...
+ clerk.profile('user_bob_live','bob@memory.test');const bobLive=await clerk.token('user_bob_live',{origin:base});
+ const refused=await api('/api/auth/complete',bobLive,{});assert.equal(refused.status,403);assert.match((await refused.json()).error,/Sign in the way you did before/);
+ // ...and relinks his same account once Clerk no longer has it (e.g. development keys replaced by live keys).
+ clerk.profiles.delete('user_bob');
+ const relinked=await api('/api/auth/complete',bobLive,{});assert.equal(relinked.status,200,await relinked.clone().text());assert.equal((await relinked.json()).user.id,f.bob,'a stale Clerk link is relinked to the same account');
  clerk.profile('user_unverified','unverified@example.test',{email_addresses:[{id:'email_user_unverified',email_address:'unverified@example.test',verification:{status:'unverified'},linked_to:[]}]});
  assert.equal((await api('/api/auth/complete',await clerk.token('user_unverified',{origin:base}),{})).status,403);
  clerk.profile('user_new','new@example.test');
