@@ -41,3 +41,12 @@ function fileObjectKey(key: string) {
 export async function storeFileObject(key: string, path: string) { await objectStore().putFile(fileObjectKey(key), path); }
 export async function readFileObject(key: string) { return objectStore().read(fileObjectKey(key)); }
 export async function removeFileObject(key: string) { await objectStore().remove(fileObjectKey(key)); }
+
+/** Chat attachments, one object per attachment id (see lib/ai/attachments.ts). */
+function attachmentKey(id: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) throw new Error("Invalid attachment id.");
+  return `attachments/${id}`;
+}
+export async function storeAttachmentObject(id: string, path: string) { await objectStore().putFile(attachmentKey(id), path); }
+export async function readAttachmentObject(id: string) { return objectStore().read(attachmentKey(id)); }
+export async function removeAttachmentObject(id: string) { await objectStore().remove(attachmentKey(id)); }

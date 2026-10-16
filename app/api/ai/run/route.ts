@@ -35,6 +35,7 @@ import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
+import { AttachmentError, attachmentFiles, attachmentPromptBlock, bindAttachments, sendableAttachments } from "../../../lib/ai/attachments";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 
 export type { AiRunEvent } from "../../../lib/ai/run-events";
@@ -83,6 +84,11 @@ export type AiRunRequest = {
    * mode it was opened with.
    */
   isolation?: "isolated" | "shared";
+  /**
+   * Files uploaded with POST /api/sessions/[id]/attachments to send with this
+   * message. They reach the agent as files in its worktree, not prompt text.
+   */
+  attachmentIds?: string[];
 };
 
 /**
@@ -141,7 +147,10 @@ async function handlePOST(request: Request) {
   const agent = agentById(String(body.agentId ?? ""));
   if (!agent) return Response.json({ error: "Unknown agent." }, { status: 400 });
 
-  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const attaching = Array.isArray(body.attachmentIds) && body.attachmentIds.length > 0;
+  const typed = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  // Like other assistants, a message may be just files.
+  const prompt = typed || (attaching ? "Take a look at the attached files." : "");
   if (!prompt) return Response.json({ error: "Write a prompt first." }, { status: 400 });
   if (prompt.length > MAX_PROMPT - 8000) {
     return Response.json({ error: "Use at most 12,000 characters, leaving room for conversation context." }, { status: 413 });
@@ -161,8 +170,20 @@ async function handlePOST(request: Request) {
   const onComputer = await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
   if (!onComputer && hasRunner) return Response.json({ error: "Your computer doesn’t have the selected model or effort available. Refresh the model list and choose an available option, then send your message again." }, { status: 409 });
   if (!onComputer) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
+  // Attachments are downloaded into the worktree by the runner; an older one can't.
+  if (attaching && !await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort, false, false, true)) {
+    return Response.json({ error: "Update the desktop app to send attachments, then send your message again.", code: "runner_update_required" }, { status: 409 });
+  }
 
   const sessionId = result.session.id;
+  let attachments: Awaited<ReturnType<typeof sendableAttachments>>;
+  try {
+    attachments = await sendableAttachments(body.attachmentIds, sessionId, result.user.id);
+  } catch (cause) {
+    if (cause instanceof AttachmentError) return Response.json({ error: cause.message }, { status: cause.status });
+    throw cause;
+  }
+  const files = attachmentFiles(turnId, attachments);
 
   // A run is now durable. A follow-up prompt (join-as-editor, or the owner's
   // next turn) continues an existing run; otherwise a fresh one is opened. The
@@ -398,7 +419,7 @@ async function handlePOST(request: Request) {
   // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
   // keeps the full import regardless.
   const agentPrompt = assembleAgentPrompt({
-    prompt,
+    prompt: prompt + attachmentPromptBlock(files),
     handle: coDriven ? result.user.handle : null,
     referencedContext,
     conversationContext: await continuationContext(run.id),
@@ -415,6 +436,7 @@ async function handlePOST(request: Request) {
     authorUserId: result.user.id,
     body: prompt,
   });
+  await bindAttachments(files.map((file) => file.id), turnId, promptTurn.id);
   const bus = await events();
   await bus.publish(sessionId, {
     type: "run.turn",
@@ -423,6 +445,7 @@ async function handlePOST(request: Request) {
     role: "user",
     authorName: result.user.displayName,
     body: prompt,
+    ...(attachments.length ? { attachments: attachments.map((row) => ({ id: row.id, name: row.name, size: Number(row.size), contentType: row.content_type })) } : {}),
     at: Date.now(),
   });
 
@@ -448,6 +471,7 @@ async function handlePOST(request: Request) {
     ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,
     agentPrompt,
+    ...(files.length ? { attachments: files.map(({ id, path, size, sha256 }) => ({ id, path, size, sha256 })) } : {}),
     projectId: result.session.projectId,
     model: runOptions.model,
     effort: runOptions.effort,
@@ -470,7 +494,7 @@ async function handlePOST(request: Request) {
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Could not prepare this turn.";
     await failTurn(turnId, message);
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: message }, { status: cause instanceof AttachmentError ? cause.status : 500 });
   }
 }
 
