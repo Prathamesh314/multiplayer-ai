@@ -4,7 +4,7 @@ import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
 import { AGENTS, type ModelInventory, type AgentStatus, type AgentsResponse } from "../../../lib/ai/catalog";
 import { detectAgents, invalidateAgentCache } from "../../../lib/ai/detect";
-import { terminalAccess } from "../../../lib/terminal/guard";
+import { serverExecutionAllowed } from "../../../lib/ai/execution";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 
 export const runtime = "nodejs";
@@ -26,7 +26,8 @@ async function handleGET(request: Request) {
   const refresh = new URL(request.url).searchParams.get("refresh") === "1";
   if (refresh) invalidateAgentCache();
 
-  const access = terminalAccess(request);
+  // Tools installed on this server only matter where it may run agents itself.
+  const access = { allowed: serverExecutionAllowed(request) };
 
   const devices = localRunnersEnabled() ? await query<{ agent_ids: string[]; model_catalog: Record<string, ModelInventory> }>(
     `SELECT agent_ids, model_catalog FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'

@@ -4,7 +4,7 @@ import { agentById, type AgentAuth } from "../../../lib/ai/catalog";
 import { authStatus, invalidateAgentCache } from "../../../lib/ai/detect";
 import { agentEnv } from "../../../lib/ai/env";
 import { currentUser } from "../../../lib/auth/tokens";
-import { terminalAccess } from "../../../lib/terminal/guard";
+import { serverExecutionAllowed } from "../../../lib/ai/execution";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,8 +47,11 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
 
-  const gate = terminalAccess(request);
-  if (!gate.allowed) return Response.json({ error: gate.reason }, { status: 403 });
+  // Signing a CLI in here only makes sense where this server runs agents.
+  // Members sign their tools in on their own computers.
+  if (!serverExecutionAllowed(request)) {
+    return Response.json({ error: "AI tools run on your computer. Sign in to them there, then refresh." }, { status: 403 });
+  }
 
   let body: AiAuthRequest;
   try {
