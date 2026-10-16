@@ -20,8 +20,7 @@ globalThis.__maPool = {
   connect: async () => ({ query: (sql, params) => db.query(sql, params), release() {} }),
 };
 process.env.MULTIPLAYER_AI_DATA = root;
-process.env.AGENT_WORKER = "1";
-process.env.REDIS_URL = "redis://unused";
+process.env.REPO_INDEX_INLINE = "0";
 delete process.env.MNEMOSYNE_URL;
 process.env.REPO_EMBEDDING_URL = "";
 process.env.REPO_EMBEDDING_MODEL = "";

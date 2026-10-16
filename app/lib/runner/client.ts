@@ -21,7 +21,7 @@ export async function fetchComputerConnection(signal?: AbortSignal): Promise<Dev
     : "We couldn’t check your computer connection. Check your internet connection and try again.");
   const data = await response.json() as DevicesResponse;
   if (!Array.isArray(data.devices)) throw new Error("We couldn’t check your computer connection. Please try again.");
-  return { devices: data.devices, requiresComputer: data.requiresComputer !== false };
+  return { devices: data.devices, requiresComputer: true as const };
 }
 
 export async function fetchDevices(): Promise<RunnerDevice[]> {

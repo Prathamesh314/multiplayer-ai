@@ -420,7 +420,7 @@ Parallel chats are available when the workspace administrator has turned them on
 2. In the composer, turn on **⑂ Parallel**. It stays on for your next new chat, so you can start several in a row.
 3. Write the task and send it.
 
-The setting applies when a chat starts; an existing chat keeps the kind it was started as. Your [connected computer](/docs/connect-computer) needs the current desktop app or runner. An older one is asked to update instead of running the chat. By default a computer runs up to three tasks at once; each person can run up to four parallel chats at a time, and workspace limits still apply.` },
+The setting applies when a chat starts; an existing chat keeps the kind it was started as. Your [connected computer](/docs/connect-computer) needs the current desktop app or runner. An older one is asked to update instead of running the chat. There is no limit on how many parallel chats run at once: each runs on your computer, with your own AI account. Your workspace's hourly and monthly limits still apply.` },
       { id: "review", title: "Review a parallel chat's changes", body: `In the sidebar, a parallel chat shows **review** when it has changes to merge, **merged** once its work is in the room, or **discarded** when set aside.
 
 Open the chat and select **Changes**. The panel shows how many commits the chat is ahead of and behind the room, every changed file with its added and removed lines, and a line-numbered diff for the file you select. Everyone who can open the room can review; only room editors can merge.` },

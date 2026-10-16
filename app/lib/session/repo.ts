@@ -5,7 +5,7 @@ import { filterImportIndex } from "../git/import-index";
 import { objectGit, objectText, withTemporaryIndex, putBlob, putBlobs, commitTree } from "../git/objects";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile, lstat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { buildTree, type TreeEntry } from "../tree";
@@ -520,21 +520,6 @@ async function stored_listTree(id: string, rootName: string): Promise<TreeNode> 
   return listCommittedTree(id, rootName, await headSha(id));
 }
 
-/**
- * Files that differ between the seed commit and HEAD — everything the session's
- * people and agents have changed. Rename/copy lines carry two paths; the new
- * one is what the explorer opens.
- */
-/** Added/removed line totals between two commits, for a run's diff badge. */
-async function stored_diffStat(
-  id: string,
-  base: string,
-  head: string,
-): Promise<{ added: number; removed: number }> {
-  const work = workPath(id);
-  const stdout = await git(work, ["diff", "--numstat", base, head]).catch(() => "");
-  return countNumstat(stdout);
-}
 
 /**
  * Line counts straight from the bare repo — no working copy needed. This is
@@ -591,87 +576,12 @@ function countNumstat(stdout: string): { added: number; removed: number } {
   return { added, removed };
 }
 
-async function stored_listChangedFiles(id: string, baseSha: string): Promise<ChangedFile[]> {
-  const work = workPath(id);
-  const stdout = await git(work, ["diff", "--name-status", "-M", baseSha, "HEAD"]).catch(() => "");
 
-  const changes: ChangedFile[] = [];
-  for (const line of stdout.split("\n")) {
-    if (!line.trim()) continue;
-    const fields = line.split("\t");
-    const letter = (fields[0]?.[0] ?? "M").toUpperCase();
-    const status = (["A", "M", "D", "R", "C"].includes(letter) ? letter : "M") as ChangedFile["status"];
-    // Renames/copies are "R100\told\tnew"; plain changes are "M\tpath".
-    const path = fields.length >= 3 ? fields[fields.length - 1] : fields[1];
-    if (path) changes.push({ path, status });
-  }
-  return changes;
-}
-
-
-
-export type RepoFile = {
-  text: string;
-  size: number;
-  truncated: boolean;
-  binary: boolean;
-};
-
-/**
- * Reads from the working copy rather than from git: the "never uncommitted"
- * invariant makes them equal, and this way a read costs no process spawn.
- */
-async function stored_readRepoFile(id: string, relative: string): Promise<RepoFile | null> {
-  const absolute = await safeWorkFile(id, relative);
-  if (!absolute) return null;
-
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(absolute);
-  } catch {
-    return null;
-  }
-
-  // A NUL byte in the first block is the usual "this is not text" signal.
-  if (bytes.subarray(0, 4096).includes(0)) {
-    return { text: "", size: bytes.byteLength, truncated: false, binary: true };
-  }
-
-  const truncated = bytes.byteLength > MAX_TEXT_BYTES;
-  return {
-    text: (truncated ? bytes.subarray(0, MAX_TEXT_BYTES) : bytes).toString("utf8"),
-    size: bytes.byteLength,
-    truncated,
-    binary: false,
-  };
-}
-
-async function stored_readRepoBytes(id: string, relative: string): Promise<Buffer | null> {
-  const absolute = await safeWorkFile(id, relative);
-  if (!absolute) return null;
-  try {
-    return await readFile(absolute);
-  } catch {
-    return null;
-  }
-}
 
 async function stored_headSha(id: string): Promise<string> {
   return (await git(barePath(id), ["rev-parse", `refs/heads/${sessionBranchOf(id)}`])).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Writing
-// ---------------------------------------------------------------------------
-
-async function stored_writeRepoFile(id: string, relative: string, text: string): Promise<boolean> {
-  const absolute = await safeWorkFile(id, relative);
-  if (!absolute) return false;
-
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, text, "utf8");
-  return true;
-}
 
 export type SaveResult =
   | { status: "clean"; headSha: string }
@@ -747,101 +657,8 @@ async function stored_mergeSave(
   });
 }
 
-/**
- * Commits whatever is dirty and pushes it. Returns null when the tree was
- * already clean, so a redundant save does not manufacture an empty commit.
- */
-async function stored_commitWork(
-  id: string,
-  message: string,
-  authorName?: string,
-  authorEmail?: string,
-): Promise<string | null> {
-  const work = workPath(id);
 
-  await git(work, ["add", "-A"]);
-  const status = (await git(work, ["status", "--porcelain"])).trim();
-  if (status.length === 0) return null;
 
-  // Attribute the commit to whoever made the edit. `git log` is the audit trail
-  // for a session, and "multicode-ai" on every commit would waste it.
-  const author =
-    authorName && authorEmail
-      ? ["-c", `user.name=${authorName}`, "-c", `user.email=${authorEmail}`]
-      : [];
-
-  await git(work, [...author, "commit", "-m", message]);
-  const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
-
-  // A failed push must not lose the commit: it is safe locally, and the next
-  // save will carry it. Surfacing it as an error would be worse.
-  await git(work, ["push", "origin", sessionBranchOf(id)]);
-  return sha;
-}
-
-/** Restores the working copy to a session's recorded HEAD. */
-async function stored_checkoutHead(id: string, sha: string): Promise<void> {
-  const work = workPath(id);
-  await git(work, ["checkout", "--force", sessionBranchOf(id)]);
-  await git(work, ["reset", "--hard", sha]);
-}
-
-/**
- * Rebuilds the working copy from the bare repo when it is missing or damaged.
- *
- * This is what makes the "the sandbox is a cache" claim true rather than
- * aspirational: `<root>/work` can be deleted wholesale and every session still
- * resumes, because the bare repo is the only thing that was ever the record.
- */
-async function stored_ensureWork(id: string, sha: string): Promise<void> {
-  const work = workPath(id);
-  const branch = sessionBranchOf(id);
-
-  if (await isWorkTree(work)) {
-    await git(work, ["fetch", "origin", branch]);
-    const current = (await git(work, ["rev-parse", "HEAD"])).trim();
-    if (current === sha) return;
-    if ((await git(work, ["status", "--porcelain"])).trim() || !await gitOk(work, ["merge-base", "--is-ancestor", current, sha])) {
-      throw new Error("This checkout has unsaved changes or undelivered commits. They were preserved for recovery.");
-    }
-    await checkoutHead(id, sha);
-    return;
-  }
-
-  await rm(work, { recursive: true, force: true });
-  await mkdir(dirname(work), { recursive: true });
-  await git(dirname(work), ["clone", "--branch", branch, barePath(id), work]);
-  await git(work, ["reset", "--hard", sha]);
-}
-
-async function isWorkTree(work: string): Promise<boolean> {
-  try {
-    return (await stat(join(work, ".git"))).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function stored_prepareTurnWork(repoRef: string, turnId: string, baseSha: string): Promise<string> {
-  const work = workPath(`turn-${turnId}`);
-  await mkdir(dirname(work), { recursive: true });
-  await git(dirname(work), ["clone", "--no-checkout", barePath(repoRef), work]);
-  await git(work, ["checkout", "--detach", baseSha]);
-  return work;
-}
-
-async function stored_commitTurnWork(repoRef: string, turnId: string, baseSha: string, author: { name: string; email: string }): Promise<string | null> {
-  const work = workPath(`turn-${turnId}`);
-  await git(work, ["add", "-A"]);
-  if ((await git(work, ["status", "--porcelain"])).trim()) {
-    await git(work, ["-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`, "commit", "-m", "Agent turn"]);
-  }
-  const sha = (await git(work, ["rev-parse", "HEAD"])).trim();
-  if (sha === baseSha) { await rm(work, { recursive: true, force: true }); return null; }
-  await git(work, ["push", "origin", `HEAD:refs/turns/${turnId}`]);
-  await rm(work, { recursive: true, force: true });
-  return sha;
-}
 
 /** Moves `branch` (the room branch by default, or an isolated chat's branch) from the turn's base to its verified candidate. */
 async function stored_promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string, branch = sessionBranchOf(repoRef)): Promise<void> {
@@ -926,20 +743,6 @@ async function stored_mergeBase(repoRef: string, a: string, b: string): Promise<
   }
 }
 
-async function safeWorkFile(id: string, relative: string): Promise<string | null> {
-  const clean = safeRelativePath(relative);
-  if (!clean) return null;
-  let current = workPath(id);
-  for (const segment of clean.split("/")) {
-    current = join(current, segment);
-    const entry = await lstat(current).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code === "ENOENT") return null;
-      throw cause;
-    });
-    if (entry?.isSymbolicLink()) return null;
-  }
-  return current;
-}
 
 async function stored_listCommittedTree(id: string, rootName: string, sha: string): Promise<TreeNode> {
   const bare = barePath(id);
@@ -1004,33 +807,23 @@ export const readRepoRefFileText = (...args: Parameters<typeof stored_readRepoRe
 
 export const listTree = (...args: Parameters<typeof stored_listTree>): ReturnType<typeof stored_listTree> => withStoredRepo(barePath(args[0]), () => stored_listTree(...args));
 
-export const diffStat = (...args: Parameters<typeof stored_diffStat>): ReturnType<typeof stored_diffStat> => withStoredRepo(barePath(args[0]), () => stored_diffStat(...args));
 
 export const diffStatBare = (...args: Parameters<typeof stored_diffStatBare>): ReturnType<typeof stored_diffStatBare> => withStoredRepo(barePath(args[0]), () => stored_diffStatBare(...args));
 
 export const diffFilesBare = (...args: Parameters<typeof stored_diffFilesBare>): ReturnType<typeof stored_diffFilesBare> => withStoredRepo(barePath(args[0]), () => stored_diffFilesBare(...args));
 
-export const listChangedFiles = (...args: Parameters<typeof stored_listChangedFiles>): ReturnType<typeof stored_listChangedFiles> => withStoredRepo(barePath(args[0]), () => stored_listChangedFiles(...args));
 
-export const readRepoFile = (...args: Parameters<typeof stored_readRepoFile>): ReturnType<typeof stored_readRepoFile> => withStoredRepo(barePath(args[0]), () => stored_readRepoFile(...args));
 
-export const readRepoBytes = (...args: Parameters<typeof stored_readRepoBytes>): ReturnType<typeof stored_readRepoBytes> => withStoredRepo(barePath(args[0]), () => stored_readRepoBytes(...args));
 
 export const headSha = (...args: Parameters<typeof stored_headSha>): ReturnType<typeof stored_headSha> => withStoredRepo(barePath(args[0]), () => stored_headSha(...args));
 
-export const writeRepoFile = (...args: Parameters<typeof stored_writeRepoFile>): ReturnType<typeof stored_writeRepoFile> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_writeRepoFile(...args)));
 
 export const mergeSave = (...args: Parameters<typeof stored_mergeSave>): ReturnType<typeof stored_mergeSave> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_mergeSave(...args)));
 
-export const commitWork = (...args: Parameters<typeof stored_commitWork>): ReturnType<typeof stored_commitWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_commitWork(...args)));
 
-export const checkoutHead = (...args: Parameters<typeof stored_checkoutHead>): ReturnType<typeof stored_checkoutHead> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_checkoutHead(...args)));
 
-export const ensureWork = (...args: Parameters<typeof stored_ensureWork>): ReturnType<typeof stored_ensureWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_ensureWork(...args)));
 
-export const prepareTurnWork = (...args: Parameters<typeof stored_prepareTurnWork>): ReturnType<typeof stored_prepareTurnWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_prepareTurnWork(...args)));
 
-export const commitTurnWork = (...args: Parameters<typeof stored_commitTurnWork>): ReturnType<typeof stored_commitTurnWork> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_commitTurnWork(...args)));
 
 export const promoteTurn = (...args: Parameters<typeof stored_promoteTurn>): ReturnType<typeof stored_promoteTurn> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_promoteTurn(...args)));
 

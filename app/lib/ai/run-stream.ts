@@ -5,13 +5,13 @@ import type { AiRunEvent } from "./run-events";
  *
  * When a run executes in a worker, its NDJSON events (`start`/`out`/`think`/…)
  * have to reach the driver's browser, which is connected to the *web* process.
- * The worker publishes each event to a per-run Redis channel and the run route
- * subscribes and forwards them down the response verbatim — so the client sees
- * exactly the same stream it did when the route spawned the agent itself.
+ * The runner's reports are published to a per-run Redis channel and the run
+ * route subscribes and forwards them down the response verbatim, so the member
+ * sees the agent on their computer stream as it works.
  *
  * This is plain Redis pub/sub on the existing `node-redis` client, not BullMQ:
- * the queue moves *jobs*, this moves *tokens*, and keeping ioredis to the queue
- * alone (see `app/lib/queue`) is the boundary we're holding. Watcher fan-out
+ * keeping ioredis to the consolidation queue alone (see
+ * `app/lib/queue/consolidation.ts`) is the boundary we're holding. Watcher fan-out
  * (`run.output`/`run.turn`/`run.finished`) still goes over the session event
  * bus as before; this channel is only the driver's private, full-fidelity feed,
  * which is why `think`/`act` ride it but never the bus.

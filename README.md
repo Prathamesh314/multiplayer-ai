@@ -55,9 +55,10 @@ local configuration. Rooms of the same project share a local bare Git cache.
 Dirty workspaces and undelivered commits stop a new turn instead of being reset.
 See [runner workspaces](docs/runner-workspaces.md) for the lifecycle and recovery.
 
-Local development can still execute inline or opt into `AGENT_WORKER=1` with
-Redis and the terminal execution gate enabled. The hosted background worker
-handles indexing. See `docker/README.md` for deployment defaults.
+AI agents run only on members' computers, in development too: start the stack
+(Redis included) and connect the desktop app or `npm run runner`. Worktrees are
+created there, never on the server. The background worker handles indexing.
+See `docker/README.md` for deployment defaults.
 
 ### Real time over Server-Sent Events
 Live updates (file saved, someone is typing, run output, presence) are broadcast
@@ -263,7 +264,7 @@ migrations automatically. Tasks need only Postgres and the app; no additional
 service or worker is required.
 
 Configuration is read from `.env` — see `.env.example` for every setting,
-including `REDIS_URL`, `AGENT_WORKER`, the memory sidecar, and optional memory
+including `REDIS_URL`, the memory sidecar, and optional memory
 extraction. Postgres memory remains available when those optional services are off.
 
 ### Desktop distribution

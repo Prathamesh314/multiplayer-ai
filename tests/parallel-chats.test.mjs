@@ -11,10 +11,11 @@ import { vector } from "@electric-sql/pglite-pgvector";
 import { citext } from "@electric-sql/pglite/contrib/citext";
 import { migrate } from "../db/migrate.mjs";
 import { createRun, getRun } from "../app/lib/ai/runs.ts";
-import { reserveTurn, prepareTurn, startTurn } from "../app/lib/ai/turns.ts";
+import { reserveTurn, prepareTurn } from "../app/lib/ai/turns.ts";
+import { claimTurn, commitOnComputer } from "./helpers/runner-turn.mjs";
 import { finalizeAgentRun } from "../app/lib/ai/finalize.ts";
 import { checkRunAllowed } from "../app/lib/ai/usage.ts";
-import { createRepo, finishSeed, writeSeedBatch, prepareTurnWork, commitTurnWork, readCommittedBytes,
+import { createRepo, finishSeed, writeSeedBatch, readCommittedBytes,
   createChatBranch, chatBranchOf, headSha } from "../app/lib/session/repo.ts";
 import { attachRepo } from "../app/lib/session/store.ts";
 import { barePath } from "../app/lib/session/paths.ts";
@@ -63,7 +64,7 @@ const roomHead = async (room = roomId) => (await sql(`SELECT head_sha FROM sessi
 const branchTip = async (runId, room = roomId) => (await objectText(barePath(room), ["rev-parse", `refs/heads/${chatBranchOf(runId)}`])).trim();
 const gitRoomTip = async room => (await objectText(barePath(room), ["rev-parse", `refs/heads/${sessionBranchOf(room)}`])).trim();
 
-/** Reserve, prepare and start one server-executed turn, then write `text` to `file` and commit it. */
+/** Reserve and prepare one turn, claim it on the member's computer, write `text` to `file` there and push it. */
 async function runTurn(run, userId, { file, text, baseSha, version = 0, room = roomId }) {
   const job = {
     turnId: randomUUID(), userId, controlVersion: version, sessionId: room, runId: run.id, repoId: null,
@@ -72,10 +73,8 @@ async function runTurn(run, userId, { file, text, baseSha, version = 0, room = r
   };
   await reserveTurn(run.id, userId, job.turnId, version);
   await prepareTurn(job);
-  assert.equal(await startTurn(job), true);
-  const work = await prepareTurnWork(room, job.turnId, baseSha);
-  await writeFile(join(work, file), text);
-  const sha = await commitTurnWork(room, job.turnId, baseSha, author);
+  await claimTurn(sql, job);
+  const sha = await commitOnComputer(room, job.turnId, baseSha, work => writeFile(join(work, file), text), author);
   return { job, sha };
 }
 const finish = (job, sha) => finalizeAgentRun({
@@ -126,9 +125,7 @@ try {
   await test("chat branches are created idempotently and only from room history", async () => {
     await createChatBranch(roomId, left.id, fork);
     const turnId = randomUUID();
-    const work = await prepareTurnWork(roomId, turnId, fork);
-    await writeFile(join(work, "a.txt"), "never promoted\n");
-    const stray = await commitTurnWork(roomId, turnId, fork, author);
+    const stray = await commitOnComputer(roomId, turnId, fork, work => writeFile(join(work, "a.txt"), "never promoted\n"), author);
     await assert.rejects(createChatBranch(roomId, randomUUID(), stray), /room's history/);
     await assert.rejects(createChatBranch(roomId, left.id, "f".repeat(40)), /room's history|Invalid/);
     await assert.rejects(createChatBranch(roomId, "not-a-chat", fork), /Invalid chat ID/);
@@ -185,14 +182,12 @@ try {
     assert.equal(await roomHead(), turn.sha);
   });
 
-  await test("one person runs as many parallel chats as they start, on their computer or this server", async () => {
+  await test("one person runs as many parallel chats as they start", async () => {
     const base = await roomHead();
     const runs = [];
     for (let index = 0; index < 12; index += 1) runs.push(await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: base, isolation: "isolated" }));
-    for (const [index, run] of runs.entries()) await reserveTurn(run.id, alice, randomUUID(), 0, index % 2 ? "local" : "server");
-    for (const target of ["local", "server"]) {
-      assert.equal((await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true, isolation: "isolated", target })).ok, true);
-    }
+    for (const run of runs) await reserveTurn(run.id, alice, randomUUID(), 0);
+    assert.equal((await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true, isolation: "isolated" })).ok, true);
     // A shared chat in the room is still allowed: isolated chats don't hold the room slot.
     assert.equal((await checkRunAllowed({ orgId: null, projectId: null, sessionId: roomId, userId: alice, isNewRun: true })).ok, true);
     await sql(`UPDATE agent_turns SET status = 'failed' WHERE run_id = ANY($1) AND status = 'preparing'`, [runs.map(run => run.id)]);
@@ -207,7 +202,7 @@ try {
       agentId: "codex", agentPrompt: "Change", userPrompt: "Change", author,
     };
     await reserveTurn(run.id, alice, job.turnId, 0);
-    await prepareTurn(job, "local");
+    await prepareTurn(job);
     await enqueueLocalJob(job, alice);
     const device = async (name, supports) => (await sql(`INSERT INTO runner_devices(user_id,name,token_hash,version,agent_ids,supports_isolated_chats)
       VALUES ($1,$2,$3,'2',ARRAY['codex'],$4) RETURNING id`, [alice, name, Buffer.from(randomUUID()), supports])).rows[0].id;

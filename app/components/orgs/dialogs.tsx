@@ -474,11 +474,6 @@ export function OrgAdminDialog({
           <p className="mt-0.5 text-[15px] font-semibold">
             {usage ? usage.concurrency.used : "—"}
           </p>
-          {usage?.concurrency.limit != null && (
-            <p className="mt-0.5 text-[11px] text-vs-muted" title="Applies only to AI turns running on the app's server, not on members' computers">
-              Up to {usage.concurrency.limit} at once on the server
-            </p>
-          )}
         </div>
         <div className="rounded-lg border border-vs-border px-3 py-2">
           <p className="text-[10px] uppercase tracking-wider text-vs-muted">AI turns this month</p>

@@ -1,13 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  fetchAgents,
-  loginAgent,
-  logoutAgent,
-  type AgentStatus,
-  type RunHandle,
-} from "../../lib/ai/client";
+import { useCallback, useEffect, useState } from "react";
+import { fetchAgents, type AgentStatus } from "../../lib/ai/client";
 import { CheckIcon, SpinnerIcon } from "../icons";
 import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
 
@@ -19,13 +13,10 @@ export function agentReady(agent: AgentStatus): boolean {
 
 export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => void; onOpenDevices?: () => void }) {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [loginLog, setLoginLog] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(true);
   const [canRun, setCanRun] = useState(false);
-  const login = useRef<RunHandle | null>(null);
 
   const reload = useCallback((refresh = false) =>
     fetchAgents(refresh).then(response => {
@@ -39,47 +30,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
 
   useEffect(() => {
     void reload();
-    return () => login.current?.cancel();
   }, [reload]);
-
-  function connect(agentId: string) {
-    setBusyId(agentId);
-    setLoginLog("");
-    setError(null);
-    login.current = loginAgent(agentId, {
-      onEvent: (event) => {
-        if (event.t === "out" || event.t === "err") {
-          setLoginLog((previous) => (previous + event.d).slice(-4000));
-        }
-        if (event.t === "exit") {
-          setBusyId(null);
-          setLoginLog("");
-          if (!event.auth?.loggedIn) {
-            setError("Sign-in didn't complete. Try again, or run the CLI's login in a terminal.");
-          }
-          void reload();
-        }
-      },
-      onError: (message) => {
-        setBusyId(null);
-        setError(message);
-      },
-      onDone: () => {},
-    });
-  }
-
-  async function disconnect(agentId: string) {
-    setBusyId(agentId);
-    setError(null);
-    try {
-      await logoutAgent(agentId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign out.");
-    } finally {
-      setBusyId(null);
-      void reload();
-    }
-  }
 
   const readyCount = agents?.filter(agentReady).length ?? 0;
 
@@ -94,7 +45,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
           <span className="mr-auto text-[12px] text-vs-muted">
             {agents === null ? "" : `${readyCount} execution option${readyCount === 1 ? "" : "s"} detected`}
           </span>
-          <PrimaryButton onClick={onClose} disabled={busyId !== null}>
+          <PrimaryButton onClick={onClose}>
             {readyCount > 0 ? "Done" : "Skip for now"}
           </PrimaryButton>
         </>
@@ -109,7 +60,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-vs-muted">{canRun ? "AI tools detected. Choose a model in your chat to get started." : "No AI tool is ready yet. Keep your computer connected while you complete setup."}</p>
-        <GhostButton onClick={() => { setError(null); setRefreshing(true); void reload(true); }} disabled={refreshing || busyId !== null}>{refreshing ? "Checking…" : "Check connections"}</GhostButton>
+        <GhostButton onClick={() => { setError(null); setRefreshing(true); void reload(true); }} disabled={refreshing}>{refreshing ? "Checking…" : "Check connections"}</GhostButton>
       </div>
       {error && (
         <p role="alert" className="rounded-lg border border-vs-danger/40 bg-vs-danger/10 px-3 py-2 text-sm text-vs-danger">
@@ -125,7 +76,6 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
         <ul className="space-y-2">
           {(agents ?? []).map((agent) => {
             const ready = agentReady(agent);
-            const needsLogin = agent.installed && agent.auth && !agent.auth.loggedIn;
             return (
               <li key={agent.id} className="rounded-lg border border-vs-border px-3.5 py-3">
                 <div className="flex items-center gap-3">
@@ -137,27 +87,11 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
                     </p>
                     <p className="mt-0.5 text-[12px] leading-5 text-vs-muted">{agent.blurb}</p>
                     <p className="mt-0.5 text-[12px] text-vs-muted">
-                      {!agent.installed
-                        ? "Not installed"
-                        : agent.auth
-                          ? agent.auth.loggedIn
-                            ? `Connected${agent.auth.email ? ` · ${agent.auth.email}` : ""}${agent.auth.plan ? ` · ${agent.auth.plan}` : ""}`
-                            : "Installed · not signed in"
-                          : agent.execution === "runner" ? "Detected on your paired computer · uses its provider configuration" : "Installed on the app’s machine · provider setup may still be needed"}
+                      {agent.installed ? "Detected on your connected computer · uses its sign-in and provider configuration" : "Not detected on a connected computer. Install it there and sign in to it in a terminal on that computer."}
                     </p>
-                    {agent.installed && !ready && !needsLogin && <p className="mt-1 text-xs text-vs-warn">No models available yet. Connect a provider or install a compatible local model, then check again.</p>}
+                    {agent.installed && !ready && <p className="mt-1 text-xs text-vs-warn">No models available yet. Connect a provider or install a compatible local model, then check again.</p>}
                   </div>
 
-                  {needsLogin && (
-                    <PrimaryButton onClick={() => connect(agent.id)} disabled={busyId !== null}>
-                      {busyId === agent.id ? <SpinnerIcon className="h-4 w-4" /> : null} Connect
-                    </PrimaryButton>
-                  )}
-                  {agent.installed && agent.auth?.loggedIn && (
-                    <GhostButton onClick={() => void disconnect(agent.id)} disabled={busyId !== null}>
-                      Sign out
-                    </GhostButton>
-                  )}
                 </div>
 
                 {!agent.installed && (
@@ -178,11 +112,6 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
                   </div>
                 )}
 
-                {busyId === agent.id && loginLog && (
-                  <pre className="vs-scroll mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-vs-border bg-vs-editor p-2 font-mono text-[11px] leading-4 text-vs-muted">
-                    {loginLog}
-                  </pre>
-                )}
               </li>
             );
           })}

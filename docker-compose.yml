@@ -142,9 +142,7 @@ services:
       <<: *team-context
       LOCAL_RUNNERS: "1"
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
-      AGENT_WORKER: "0"
       MULTIPLAYER_AI_TERMINAL: "0"
-      AGENT_SERVER_EXECUTION: "0"
       PARALLEL_CHATS: ${PARALLEL_CHATS:-0}
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgres://${POSTGRES_USER:-multiplayer}:${POSTGRES_PASSWORD:-localdev}@postgres:5432/${POSTGRES_DB:-multiplayer_ai}
@@ -177,7 +175,6 @@ services:
     environment:
       # Keep background indexing running without consuming agent-run jobs.
       <<: *team-context
-      AGENT_WORKER: "0"
       MULTIPLAYER_AI_TERMINAL: "0"
       REPO_EMBEDDING_QUERY_PREFIX:
       REPO_EMBEDDING_DOCUMENT_PREFIX:

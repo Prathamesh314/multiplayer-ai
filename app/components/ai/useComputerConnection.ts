@@ -5,7 +5,7 @@ import { openUserStream } from "../../lib/events/shared-client";
 import { fetchComputerConnection } from "../../lib/runner/client";
 import type { DevicesResponse } from "../../api/runner/devices/route";
 
-export type ComputerStatus = "checking" | "error" | "not-connected" | "offline" | "update" | "connected" | "server";
+export type ComputerStatus = "checking" | "error" | "not-connected" | "offline" | "update" | "connected";
 export type ComputerConnection = ReturnType<typeof useComputerConnection>;
 
 export function useComputerConnection() {
@@ -49,7 +49,7 @@ export function useComputerConnection() {
   const devices = data?.devices ?? null;
   const online = devices?.filter(device => device.online) ?? [];
   const computer = online.find(device => device.version === "2") ?? online[0] ?? devices?.[0];
-  const status: ComputerStatus = error ? "error" : !data ? "checking" : !data.requiresComputer ? "server"
+  const status: ComputerStatus = error ? "error" : !data ? "checking"
     : online.some(device => device.version === "2") ? "connected" : online.length ? "update"
     : devices?.length ? "offline" : "not-connected";
   return { status, devices, computer, error, checking, refresh };

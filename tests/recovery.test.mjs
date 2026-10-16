@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import nextEnv from '@next/env';
 import {memoryFixture} from './helpers/memory-fixture.mjs';
 import {recoverAgentTurns} from '../app/lib/ai/recovery.ts';
-import {prepareTurn,renewServerTurn,startTurn} from '../app/lib/ai/turns.ts';
+import {prepareTurn} from '../app/lib/ai/turns.ts';
 import {finalizeAgentRun} from '../app/lib/ai/finalize.ts';
 
 if(process.env.RECOVERY_TEST_POSTGRES==='1')nextEnv.loadEnvConfig(process.cwd());
@@ -37,23 +37,26 @@ test('durable recovery: crashes, fresh leases, saved completions, late writers a
       await assert.rejects(prepareTurn(x.job),/no longer waiting/);
     });
     await t.test('local preparation and dispatch are atomic; idle queued work expires without execution',async()=>{
-      const x=await make();await prepareTurn(x.job,'local');
+      const x=await make();await prepareTurn(x.job);
       assert.equal((await f.first('SELECT status FROM runner_jobs WHERE turn_id=$1',[x.id])).status,'queued');
       assert.equal(await recoverAgentTurns(),0);
       await f.db.query(`UPDATE agent_turns SET prepared_at=now()-interval '16 minutes' WHERE id=$1`,[x.id]);
       await recoverAgentTurns();assert.equal((await state(x.id)).status,'failed');
       assert.equal((await f.first('SELECT status FROM runner_jobs WHERE turn_id=$1',[x.id])).status,'failed');
     });
-    await t.test('live server lease survives; expired lease cannot renew, finalize or replay',async()=>{
-      const x=await make();await prepareTurn(x.job);const token=randomUUID();
-      assert.equal(await startTurn(x.job,token),true);
-      assert.equal(await renewServerTurn(x.id,token),true);
-      assert.equal(await recoverAgentTurns(),0);
+    await t.test('a turn recorded as server-executed before that was removed is recovered, and its late completion refused',async()=>{
+      // New turns always run on members' computers; this is data from before.
+      const x=await make('running','server');
+      await f.db.query(`UPDATE agent_turns SET execution_token=$2,execution_lease_until=now()+interval '1 minute' WHERE id=$1`,[x.id,randomUUID()]);
+      assert.equal(await recoverAgentTurns(),0,'a live legacy lease is left alone');
       await f.db.query(`UPDATE agent_turns SET execution_lease_until=now()-interval '1 second' WHERE id=$1`,[x.id]);
-      assert.equal(await renewServerTurn(x.id,token),false);
       await assert.rejects(finalizeAgentRun(x.completion),/lease expired/);
       await recoverAgentTurns();assert.equal((await state(x.id)).status,'failed');
-      assert.equal(await startTurn(x.job,token),false);
+    });
+    await t.test('preparing a turn always hands it to the member\'s computer',async()=>{
+      const x=await make();await prepareTurn(x.job);
+      assert.equal((await state(x.id)).execution_target,'local');
+      assert.equal((await f.first('SELECT status FROM runner_jobs WHERE turn_id=$1',[x.id])).status,'queued');
     });
     await t.test('expired desktop lease closes queued inputs and preserves uncertain delivery',async()=>{
       const x=await make('running','local');

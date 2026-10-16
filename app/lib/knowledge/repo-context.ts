@@ -2,7 +2,6 @@ import { query, queryOne, transaction } from "../db/client";
 import type { Memory } from "../ai/mnemosyne";
 import { sharedRepositoryHeadSha, repoRefHeadSha, repoSnapshotDiff, repoSnapshotPaths, repoSnapshotText } from "../session/repo";
 import { isSessionId } from "../session/paths";
-import { queueEnabled } from "../queue";
 import { chunkSource, identifierText, indexableSourcePath, INDEX_VERSION } from "./repo-chunks";
 import { embedRepoTexts, repoEmbeddingConfig } from "./repo-embeddings";
 
@@ -28,9 +27,8 @@ export async function ensureRepoContext(ref: string, approvedSha?: string): Prom
       ON CONFLICT (repo_ref) DO UPDATE SET head_sha = EXCLUDED.head_sha,
         requested_at = EXCLUDED.requested_at, retry_at = now(), last_error = NULL
       WHERE repo_context_jobs.requested_at <= EXCLUDED.requested_at`, [ref, sha, INDEX_VERSION]);
-    if (!queueEnabled()) {
-      void drainRepoContext(ref);
-    }
+    // REPO_INDEX_INLINE=0 leaves the job to the background worker alone.
+    if (process.env.REPO_INDEX_INLINE !== "0") void drainRepoContext(ref);
   } catch (cause) {
     console.warn("Repo context indexing deferred", cause instanceof Error ? cause.message : cause);
   }

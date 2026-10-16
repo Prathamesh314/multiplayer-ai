@@ -45,8 +45,7 @@ try {
   globalThis.__maPool = testPool;
   process.env.MULTIPLAYER_AI_DATA = root;
   // Enqueue only; this test explicitly drives each worker step.
-  process.env.AGENT_WORKER = "1";
-  process.env.REDIS_URL = "redis://unused-by-this-test";
+  process.env.REPO_INDEX_INLINE = "0";
   await mkdir(join(root, "repos"));
   await mkdir(work);
   git(["init", "--bare", bare], root);

@@ -5,12 +5,10 @@
 # boundary and makes edits laggy. This image is the staging/production build:
 # a production `next start`, no HMR.
 #
-# It serves the UI + API and performs local git READS on the shared workspace
-# volume (diff/branch, and `ensureWork` on a file GET), so it needs git even
-# though the worker does the heavy CLI execution. It also probes the agent CLIs
-# to show the composer what's installed and signed in — without them the panel
-# has no agent to select — so the CLIs are installed here as well; they simply
-# *run* in the worker.
+# It serves the UI + API and drives git against the bare repositories on the
+# shared data root (diffs, merges, promotion), so it needs git. It never runs an
+# AI agent and has no agent CLIs: agents run only on members' own computers,
+# which report which CLIs they have.
 
 # --- build stage: compile the Next app --------------------------------------
 FROM node:24-slim AS build
@@ -49,10 +47,8 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local npm ci --omit=dev
 
-# The agent CLIs the composer probes for installed/login state. Keep in step
-# with app/lib/ai/catalog.ts; pin versions for reproducible images.
-RUN --mount=type=cache,target=/root/.npm \
-    npm_package_config_node_gyp_nodedir=/usr/local npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
+# No AI command-line tools: agents run only on members' own computers, through
+# the desktop app or runner. This image never runs one.
 
 # The built app and the bits `next start` and the migration runner need.
 COPY --from=build /app/.next ./.next

@@ -3,8 +3,6 @@ import { query } from "../../../lib/db/client";
 import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
 import { AGENTS, type ModelInventory, type AgentStatus, type AgentsResponse } from "../../../lib/ai/catalog";
-import { detectAgents, invalidateAgentCache } from "../../../lib/ai/detect";
-import { serverExecutionAllowed } from "../../../lib/ai/execution";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 
 export const runtime = "nodejs";
@@ -17,24 +15,20 @@ export const dynamic = "force-dynamic";
  * given, so the panel can show what is installed and offer install instructions
  * even on a server that refuses to execute anything.
  */
-async function handleGET(request: Request) {
+async function handleGET() {
   const user = await currentUser();
   if (!user) {
     return Response.json({ error: "Sign in to continue." }, { status: 401 });
   }
 
-  const refresh = new URL(request.url).searchParams.get("refresh") === "1";
-  if (refresh) invalidateAgentCache();
-
-  // Tools installed on this server only matter where it may run agents itself.
-  const access = { allowed: serverExecutionAllowed(request) };
-
+  // AI tools run only on members' own computers, so the tools that count are
+  // the ones their connected runners report (refreshed by each heartbeat).
   const devices = localRunnersEnabled() ? await query<{ agent_ids: string[]; model_catalog: Record<string, ModelInventory> }>(
     `SELECT agent_ids, model_catalog FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
       AND last_seen_at > now() - interval '30 seconds'`, [user.id],
   ) : [];
   const localIds = new Set(devices.flatMap(device => device.agent_ids));
-  const detected: AgentStatus[] = access.allowed ? await detectAgents(refresh) : AGENTS.map(spec => ({
+  const detected: AgentStatus[] = AGENTS.map(spec => ({
     id: spec.id, name: spec.name, vendor: spec.vendor, blurb: spec.blurb, installed: false, version: null, auth: null, install: spec.install,
   }));
   const agents = detected.map(agent => {
@@ -58,8 +52,8 @@ async function handleGET(request: Request) {
   return Response.json(
     {
       agents,
-      canRun: access.allowed || localIds.size > 0,
-      reason: access.allowed || localIds.size > 0 ? null : "Connect your computer, then install and sign in to an AI tool on it.",
+      canRun: localIds.size > 0,
+      reason: localIds.size > 0 ? null : "Connect your computer, then install and sign in to an AI tool on it.",
       parallelChats: parallelChatsEnabled(),
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },

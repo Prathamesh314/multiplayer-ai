@@ -66,7 +66,8 @@ export async function completeJob(turnId: string, deviceId: string): Promise<boo
   return !!row;
 }
 
-export async function reclaimForServer(turnId: string): Promise<AgentRunJob | null> {
+/** Fail a job no runner collected in time, so it can never start late. Null when a runner already has it. */
+export async function abandonUnclaimedJob(turnId: string): Promise<AgentRunJob | null> {
   const row = await queryOne<{ payload: AgentRunJob }>(`UPDATE runner_jobs SET status = 'failed'
     WHERE turn_id = $1 AND status = 'queued' RETURNING payload`, [turnId]);
   return row?.payload ?? null;

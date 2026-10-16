@@ -133,22 +133,16 @@ run_migrations() {
   ok "Schema up to date"
 }
 
-# --- agent worker -----------------------------------------------------------
-# When AGENT_WORKER=1, agent runs are dispatched to a separate worker process
-# rather than executed inline in the web server (see app/lib/queue). We start it
+# --- background worker ------------------------------------------------------
+# Memory and repository indexing run in a separate worker process. We start it
 # next to the dev server so `./start.sh` still brings up the whole stack in one
-# command, and tear it down with the app. The trap sends SIGTERM — what Docker
-# would send too — which lets BullMQ drain the in-flight job instead of dropping
-# it mid-commit and leaving a wedged git index.
-#
-# In this first slice web and worker share one host and one MULTIPLAYER_AI_DATA,
-# so the worker's commits are visible to the web server for free — no shared
-# volume to arrange. That only becomes a concern once the worker is a separate
-# container (see the `worker` profile in docker-compose.yml).
+# command, and tear it down with the app (the trap sends SIGTERM, as Docker
+# would). AI agents never run here: they run on your computer through the
+# desktop app or `npm run runner`.
 WORKER_PID=""
 maybe_start_worker() {
-  [ -n "${DATABASE_URL:-}" ] || [ "${AGENT_WORKER:-}" = "1" ] || return 0
-  step "Starting the background worker (memory and repo indexing; agent runs when enabled)"
+  [ -n "${DATABASE_URL:-}" ] || return 0
+  step "Starting the background worker (memory and repository indexing)"
   npm run worker &
   WORKER_PID=$!
   trap 'if [ -n "$WORKER_PID" ]; then kill "$WORKER_PID" 2>/dev/null || true; wait "$WORKER_PID" 2>/dev/null || true; fi' EXIT
@@ -179,11 +173,7 @@ start_services() {
   printf '%s   pgAdmin   http://localhost:%s%s\n' "$DIM" "${PGADMIN_PORT:-5050}" "$RESET"
   printf '%s   Redis     %s%s\n' "$DIM" "${REDIS_URL:-redis://localhost:6380}" "$RESET"
   printf '%s   Memory    %s%s\n' "$DIM" "Postgres; semantic: ${MNEMOSYNE_URL:-off}" "$RESET"
-  if [ "${AGENT_WORKER:-}" = "1" ]; then
-    printf '%s   Runs      worker (AGENT_WORKER=1)%s\n' "$DIM" "$RESET"
-  else
-    printf '%s   Runs      inline (set AGENT_WORKER=1 to use the worker)%s\n' "$DIM" "$RESET"
-  fi
+  printf '%s   AI runs   on your computer: open the desktop app or run npm run runner%s\n' "$DIM" "$RESET"
 }
 
 # --- subcommands ------------------------------------------------------------

@@ -3,8 +3,8 @@
 The production configuration uses Caddy for HTTPS and least-connection routing
 to two identical Next.js web instances. Both use the same PostgreSQL database,
 Redis and Git/object volume. One background worker handles indexing. Coding
-agents run on paired user machines; hosted agent execution is disabled
-(`AGENT_SERVER_EXECUTION=0`) and the hosted terminal is off unless enabled. This is one host with two web instances, not multi-host failover.
+agents run only on paired user machines (the server cannot run them), and
+terminals open there too. This is one host with two web instances, not multi-host failover.
 
 ## Initial deployment
 

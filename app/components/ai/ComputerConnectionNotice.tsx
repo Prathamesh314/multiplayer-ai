@@ -11,7 +11,6 @@ export function ComputerConnectionNotice({ connection, onConnect, onSetUpAi, com
   compact?: boolean;
 }) {
   const { status, computer, error, checking, refresh } = connection;
-  if (status === "server") return null;
   const connected = status === "connected";
   const pending = status === "checking";
   const failed = status === "error";
