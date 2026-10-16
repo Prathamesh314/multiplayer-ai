@@ -34,6 +34,8 @@ try {
 
   // Concurrency: every turn runs on a member's own computer, so nothing caps
   // how many run at once, even where an old deployment left a cap configured.
+  assert.deepEqual(await f.first('SELECT run_concurrency_limit, parallel_chats_per_user FROM orgs WHERE id=$1', [f.org]),
+    { run_concurrency_limit: null, parallel_chats_per_user: null }, 'new orgs start uncapped');
   await f.db.query('UPDATE orgs SET run_monthly_quota=NULL, run_concurrency_limit=2, parallel_chats_per_user=1 WHERE id=$1', [f.org]);
   const rooms = Array.from({ length: 8 }, (_, index) => `capsroom${'abcdefgh'[index]}xyz`);
   const runs = [], projects = [];

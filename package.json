@@ -76,7 +76,7 @@
     "bench:runtime": "node --import tsx benchmarks/runtime/compare.mjs",
     "test:live-chat": "node --import tsx --test tests/live-chat.test.mjs",
     "test:chat-access": "node --import tsx tests/chat-access.test.mjs",
-    "test:usage": "node --import tsx tests/usage.test.mjs",
+    "test:usage": "node --import tsx tests/usage.test.mjs && node tests/optional-caps-migration.test.mjs",
     "test:architecture:postgres": "node --import tsx tests/architecture-postgres.test.mjs",
     "test:docker-context": "node --test tests/docker-context.test.mjs",
     "test:integration": "node --import tsx tests/handoff-integration.mjs",
