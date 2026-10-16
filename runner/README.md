@@ -48,5 +48,11 @@ chats are merged or discarded, `workspaces prune` lists their worktrees and
 `workspaces prune --apply` removes the clean ones. Nothing is deleted
 automatically.
 
+The terminal panel in the workspace opens shells on this computer, in your
+chat's worktree, while the runner is running. Only you can open them. Start with
+`--no-terminal` (or set `RUNNER_TERMINAL=0`) to turn this off. A full terminal
+uses Python 3, which ships with Git's developer tools on macOS; without it the
+terminal is a basic shell.
+
 For local development the workspace address can be `http://localhost:3000`.
 Use your deployed HTTPS workspace address when connecting another computer.

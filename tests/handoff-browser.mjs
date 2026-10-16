@@ -10,6 +10,8 @@ import { createRun } from "../app/lib/ai/runs.ts";
 import { createRepo, finishSeed, writeSeedBatch } from "../app/lib/session/repo.ts";
 import { attachRepo } from "../app/lib/session/store.ts";
 import { RunnerGit } from "../runner/git.ts";
+import { RunnerApi } from "../runner/api.ts";
+import { TerminalHost } from "../runner/terminal.ts";
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 function readRunStream(response) {
@@ -759,6 +761,55 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     console.log("  ok real checkpoint push/report, durable activity retry/replay, offline diff browsing, driver-only restore selection, and history UI");
     assert.deepEqual(runtimeErrors, []);
     console.log("  ok real run/claim/smart-HTTP/completion APIs: two successive turns on recipient device, duplicate completion, old-driver refusal");
+
+    // A terminal on Bob's own computer through the real server and Redis: the
+    // runner's own API receives terminal.open on its event stream, runs a real
+    // shell, and posts output back; only Bob's browser stream receives it.
+    await sql(`UPDATE runner_devices SET supports_terminal = true, last_seen_at = now() WHERE token_hash = $1`, [createHash("sha256").update(deviceToken).digest()]);
+    const runnerApi = new RunnerApi(server, deviceToken);
+    const terminalHost = new TerminalHost(report => runnerApi.terminal(report), async () => ({ path: directory, label: "room worktree" }), { shell: "/bin/sh" });
+    const stopSignals = new AbortController();
+    const signalsDone = runnerApi.signals(stopSignals.signal, (type, data) => { if (type.startsWith("terminal.")) terminalHost.handle(type, data); }).catch(() => {});
+    try {
+      await delay(500);
+      const terminalId = randomUUID();
+      const stream = await fetch(`${server}/api/terminal/pty?id=${terminalId}&cols=90&rows=24&sessionId=${roomId}`, { headers: { cookie: clerkCookie(tokens[1]) } });
+      assert.equal(stream.status, 200);
+      const reader = stream.body.getReader(), decoder = new TextDecoder();
+      let buffer = "", shown = "", exited = false;
+      const readUntil = async (done, label) => {
+        const deadline = Date.now() + 15_000;
+        while (!done()) {
+          if (Date.now() > deadline) throw new Error(`Timed out: terminal ${label}; saw ${JSON.stringify(shown.slice(-400))}`);
+          const { value, done: ended } = await Promise.race([reader.read(), delay(1000).then(() => ({ value: undefined, done: false }))]);
+          if (ended) break;
+          if (!value) continue;
+          buffer += decoder.decode(value, { stream: true });
+          for (let end; (end = buffer.indexOf("\n\n")) >= 0; buffer = buffer.slice(end + 2)) {
+            const frame = buffer.slice(0, end), type = /^event: (.*)$/m.exec(frame)?.[1], data = /^data: (.*)$/m.exec(frame)?.[1] ?? "";
+            if (type === "exit") exited = true;
+            else if (type === "notice") shown += JSON.parse(data) + "\n";
+            else if (!type && data) shown += Buffer.from(data, "base64").toString();
+          }
+        }
+      };
+      await readUntil(() => shown.includes(directory), "opens in the worktree on Bob's computer");
+      const terminalPost = (token, body) => request(token, `/api/terminal/pty?id=${terminalId}`, "POST", { id: terminalId, ...body });
+      assert.equal((await terminalPost(tokens[1], { type: "input", data: "echo through-the-relay-$((6*7))\r" })).status, 204);
+      await readUntil(() => shown.includes("through-the-relay-42"), "relays keystrokes and output");
+      await terminalPost(tokens[0], { type: "input", data: "echo alice-was-here\r" });
+      await terminalPost(tokens[1], { type: "input", data: "echo bob-again\r" });
+      await readUntil(() => shown.includes("bob-again"), "keeps working");
+      assert.equal(shown.includes("alice-was-here"), false, "another member cannot type into Bob's terminal");
+      await terminalPost(tokens[1], { type: "kill" });
+      await readUntil(() => exited, "reports the shell's exit");
+      await reader.cancel().catch(() => {});
+    } finally {
+      stopSignals.abort();
+      terminalHost.closeAll();
+      await signalsDone;
+    }
+    console.log("  ok terminal on the member's computer through the real server: runner event stream, relay, isolation and exit");
     assert.equal((await request(tokens[0], "/api/orgs", "POST", { name: "UX workshop", slug: "ux-workshop" })).status, 201);
     await Promise.all([
       fetch(server),

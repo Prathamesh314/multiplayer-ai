@@ -14,6 +14,7 @@ import type { ClaimResponse } from "../app/api/runner/claim/route";
 import type { PairResponse } from "../app/api/runner/pair/route";
 import type { RunnerCompleteRequest } from "../app/api/runner/runs/[runId]/complete/route";
 import type { RunnerWorkspacesResponse } from "../app/api/runner/workspaces/route";
+import type { RunnerTerminalReport } from "../app/api/runner/terminal/route";
 
 export class RunnerHttpError extends Error {
   constructor(message: string, readonly status: number, readonly retryAfterMs = 1000) { super(message); }
@@ -26,6 +27,8 @@ export function permanentRunnerFailure(error: unknown): boolean {
 
 export class RunnerApi {
   private inventory = "";
+  /** Whether this computer hosts terminals for its owner (see runner/terminal.ts). */
+  supportsTerminal = false;
   constructor(
     private readonly server: string,
     private readonly token: string,
@@ -57,7 +60,7 @@ export class RunnerApi {
   async heartbeat(onlyChanged = false): Promise<void> {
     const agents = await detectAgents();
     const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
-    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
+    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, supportsTerminal: this.supportsTerminal, agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
     // Timestamps change when the CLI cache is refreshed; they are not inventory changes.
     const signature = JSON.stringify(body, (key, value) => ["checkedAt", "refreshedAt"].includes(key) ? undefined : value);
     if (onlyChanged && this.inventory === signature) return;
@@ -91,6 +94,11 @@ export class RunnerApi {
   async claim(waitMs: number): Promise<AgentRunJob | null> {
     const body = await this.post<ClaimResponse>("/api/runner/claim", { waitMs, version: "2" });
     return body.job;
+  }
+
+  /** Output, exit or a notice for one of this computer's terminals. */
+  async terminal(report: RunnerTerminalReport): Promise<void> {
+    await this.post("/api/runner/terminal", report);
   }
 
   /** This device's user and their finished parallel chats, whose worktrees may be pruned. */

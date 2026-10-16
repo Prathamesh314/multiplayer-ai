@@ -34,6 +34,8 @@ export type RunnerConfig = {
   maxParallel?: number;
   /** Ignored files copied from a room's worktree into each new parallel-chat worktree. */
   copyIgnoredFiles?: string[];
+  /** false stops this computer hosting terminals for its owner. */
+  terminal?: boolean;
 };
 
 /**
@@ -89,6 +91,7 @@ export function loadConfig(): RunnerConfig | null {
       workspacesDir: resolveWorkspacesDir(parsed.workspacesDir),
       maxParallel: parsed.maxParallel,
       copyIgnoredFiles: parsed.copyIgnoredFiles,
+      terminal: parsed.terminal,
     };
   } catch {
     return null;

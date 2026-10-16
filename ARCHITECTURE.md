@@ -10,9 +10,11 @@ The supported beta target is one repository-owning server with a persistent
 volume, PostgreSQL, Redis, a Next.js web process, and an indexing worker.
 Desktop runners execute coding agents on members' computers. Keep
 `LOCAL_RUNNERS=1` and `AGENT_WORKER=0` on the hosted service.
-`MULTIPLAYER_AI_TERMINAL` defaults to `0`; setting it to `1` is an explicit
-operator decision that gives every signed-in member a shell inside the web
-container — see `docker/README.md`. It never changes where agents run: the
+The terminal panel opens shells on members' own computers too, in their chats'
+worktrees, relayed through the runner (`app/lib/terminal/remote.ts`).
+`MULTIPLAYER_AI_TERMINAL` only matters where runners cannot connect: setting it
+to `1` is an explicit operator decision that gives every signed-in member a
+shell on the machine serving the app — see `docker/README.md`. It never changes where agents run: the
 server runs an agent itself only with `AGENT_SERVER_EXECUTION=1`, or on a
 development server that cannot reach runners (`app/lib/ai/execution.ts`). This is a
 modular application with separate execution processes; adding independent web
