@@ -76,12 +76,31 @@ history is not backfilled by this bot-only integration.
    `https://app.example.com/api/integrations/discord/callback`.
 2. Enable **Require OAuth2 Code Grant**. The callback accepts only the guild
    returned by Discord's token exchange, never the browser's `guild_id` hint.
-   Enable **Public Bot** when other server administrators should install it.
+   Enable **Public Bot**: members add it to servers they manage, and send
+   invites to other servers' admins. Without it, only the app owner can add it.
 3. Enable the privileged **Message Content Intent**. Obtain Discord approval
    where required for your application's size/status.
-4. **Connect Discord** from a project. The OAuth grant requests `bot identify` and
-   only **View Channel** and **Read Message History** bot permissions. Save the
-   selected public text channels. The bot must actually be able to read them.
+4. **Connect Discord** from a project. The member first signs in with
+   `identify guilds`, which lists every server their account is in, not only
+   the ones they manage (Discord's bot-install picker shows only servers where
+   you have Manage Server). The list marks each server:
+   - **ready**: the bot is already in it, so any member can connect it. The
+     server checks membership against the member's own Discord account and the
+     bot's presence against the bot token, never against the browser.
+   - **install**: the member owns or manages it (Manage Server or
+     Administrator), so they add the bot with the server preselected and
+     locked. That grant requests `bot identify` and only **View Channel** and
+     **Read Message History**.
+   - **ask**: the member gets an invite link for a server admin. Its OAuth state
+     is sealed with the integration key for one project, member and server, and
+     lasts 7 days. When the admin approves, the callback connects that server to
+     the project, provided the member is still its manager. The admin needs no
+     account here. Opening the link again keeps the chosen channels.
+
+   The member's Discord token is kept only while they choose: sealed in an
+   HttpOnly cookie bound to them and the project (10 minutes), and revoked once
+   a server is connected. It is never used to read messages. Save the selected
+   public text channels; the bot must actually be able to read them.
 
 The worker uses discord.js for Gateway heartbeats, resumption, reconnects and
 REST rate handling. Message create/edit/delete and bulk-delete events update
