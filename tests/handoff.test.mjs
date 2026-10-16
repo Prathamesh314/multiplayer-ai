@@ -18,12 +18,13 @@ import { citext } from "@electric-sql/pglite/contrib/citext";
 import pg from "pg";
 import { migrate } from "../db/migrate.mjs";
 import { createRun, getRun, appendMessage, listRunMessages } from "../app/lib/ai/runs.ts";
-import { reserveTurn, prepareTurn, startTurn, failTurn } from "../app/lib/ai/turns.ts";
+import { reserveTurn, prepareTurn, failTurn } from "../app/lib/ai/turns.ts";
+import { claimTurn, commitOnComputer } from "./helpers/runner-turn.mjs";
 import { changeHandoff, handoffState, continuationContext } from "../app/lib/ai/handoff.ts";
 import { finalizeAgentRun } from "../app/lib/ai/finalize.ts";
 import { assembleAgentPrompt } from "../app/lib/ai/prompt.ts";
-import { createRepo, finishSeed, writeSeedBatch, prepareTurnWork, commitTurnWork, readCommittedBytes,
-  listCommittedTree, mergeSave, writeRepoFile, readRepoFile, promoteTurn, committedChanges, headSha } from "../app/lib/session/repo.ts";
+import { createRepo, finishSeed, writeSeedBatch, readCommittedBytes,
+  listCommittedTree, mergeSave, promoteTurn, committedChanges, headSha } from "../app/lib/session/repo.ts";
 import { barePath, workPath } from "../app/lib/session/paths.ts";
 import { RunnerGit } from "../runner/git.ts";
 import { attachRepo } from "../app/lib/session/store.ts";
@@ -126,8 +127,9 @@ try {
     await reserveTurn(run.id, alice, first.turnId, 0);
     await assert.rejects(reserveTurn(run.id, alice, randomUUID(), 0));
     await prepareTurn(first);
-    assert.equal(await startTurn(first), true);
-    assert.equal(await startTurn(first), false);
+    // The turn runs on the member's computer: one device claims it, once.
+    const { deviceId } = await claimTurn(sql, first);
+    assert.equal(await claimNextJob({ userId: alice, deviceId }), null);
   });
   await test("chat inputs are durable, FIFO, driver-fenced, idempotent and sealed atomically", async () => {
     const input = { id: randomUUID(), body: "Add keyboard navigation", controlVersion: 0 };
@@ -164,10 +166,8 @@ try {
     await assert.rejects(changeHandoff(run.id, roomId, bob, { action: "accept", handoffId: offer.id, version: 0 }), /active turn/);
   });
   let firstSha;
-  await test("isolated execution promotes only its verified candidate", async () => {
-    const work = await prepareTurnWork(roomId, first.turnId, first.baseSha);
-    await writeFile(join(work, "shared.txt"), "first turn\n");
-    firstSha = await commitTurnWork(roomId, first.turnId, first.baseSha, author);
+  await test("a candidate from the member's computer is verified, then promoted", async () => {
+    firstSha = await commitOnComputer(roomId, first.turnId, first.baseSha, work => writeFile(join(work, "shared.txt"), "first turn\n"), author);
     assert.equal((await readCommittedBytes(roomId, seed.headSha, "shared.txt")).toString(), "initial\n");
     assert.equal((await complete(first, firstSha)).headSha, firstSha);
     assert.equal((await readCommittedBytes(roomId, firstSha, "shared.txt")).toString(), "first turn\n");
@@ -227,9 +227,7 @@ try {
   });
   await test("candidate promotion refuses stale bases and preserves newer editor changes", async () => {
     const turnId = randomUUID();
-    const work = await prepareTurnWork(roomId, turnId, firstSha);
-    await writeFile(join(work, "shared.txt"), "stale agent\n");
-    const candidate = await commitTurnWork(roomId, turnId, firstSha, author);
+    const candidate = await commitOnComputer(roomId, turnId, firstSha, work => writeFile(join(work, "shared.txt"), "stale agent\n"), author);
     const saved = await mergeSave(roomId, "shared.txt", "first turn\n", "new editor\n", firstSha, author);
     await assert.rejects(promoteTurn(roomId, turnId, firstSha, candidate), /changed during/);
     assert.equal((await readCommittedBytes(roomId, saved.headSha, "shared.txt")).toString(), "new editor\n");
@@ -249,18 +247,6 @@ try {
     assert.equal((await committedChanges(imported.id, initial.headSha, saved.headSha))[0].path, "shared.txt");
     const foreign = await repositoryContext({ id: "otherroomxyz", repo: seed }, request);
     assert.equal(foreign.status, 404);
-  });
-  await test("leaf and parent symlinks cannot escape repository reads or writes", async () => {
-    const outside = join(directory, "outside");
-    await mkdir(outside);
-    await writeFile(join(outside, "secret.txt"), "secret");
-    await mkdir(workPath(roomId), { recursive: true });
-    await symlink(join(outside, "secret.txt"), join(workPath(roomId), "link.txt"));
-    await symlink(outside, join(workPath(roomId), "linked"));
-    assert.equal(await readRepoFile(roomId, "link.txt"), null);
-    assert.equal(await writeRepoFile(roomId, "link.txt", "bad"), false);
-    assert.equal(await writeRepoFile(roomId, "linked/secret.txt", "bad"), false);
-    assert.equal(await readFile(join(outside, "secret.txt"), "utf8"), "secret");
   });
   await test("push protocol accepts one candidate ref and refuses canonical or multiple ref updates", async () => {
     const turnId = randomUUID();
@@ -352,10 +338,8 @@ try {
     const job = { ...makeJob(randomUUID(), alice, 0, base), runId: target.id };
     await reserveTurn(target.id, alice, job.turnId, 0);
     await prepareTurn(job);
-    await startTurn(job);
-    const work = await prepareTurnWork(roomId, job.turnId, base);
-    await writeFile(join(work, "reconciled.txt"), "Durable result\n");
-    const sha = await commitTurnWork(roomId, job.turnId, base, author);
+    await claimTurn(sql, job);
+    const sha = await commitOnComputer(roomId, job.turnId, base, work => writeFile(join(work, "reconciled.txt"), "Durable result\n"), author);
     const report = { turnId: job.turnId, runId: target.id, sessionId: roomId, repoId: null, baseSha: base,
       userPrompt: "Recover", binName: "codex", author, sha, code: 0, output: "Recovered once", errOutput: "" };
     await sql(`UPDATE agent_turns SET completion = $2 WHERE id = $1`, [job.turnId, JSON.stringify(report)]);
@@ -439,7 +423,7 @@ try {
       const job = { ...makeJob(randomUUID(), alice, 0, previous), runId: target.id };
       await reserveTurn(target.id, alice, job.turnId, 0);
       await prepareTurn(job);
-      assert.equal(await startTurn(job), true);
+      await claimTurn(sql, job);
       const sha = await local.withWorkspace(job, async workspace => {
         if (workspacePath) assert.equal(workspace.path, workspacePath);
         workspacePath = workspace.path;
@@ -547,7 +531,7 @@ try {
   await test("failed executions close pending input and preserve uncertain deliveries without replay", async () => {
     const target = await createRun({sessionId:roomId,startedBy:alice,agentId:"codex",baseSha:seed.headSha});
     const job={...makeJob(randomUUID(),alice,0),runId:target.id};
-    await reserveTurn(target.id,alice,job.turnId,0);await prepareTurn(job);await startTurn(job);
+    await reserveTurn(target.id,alice,job.turnId,0);await prepareTurn(job);await claimTurn(sql,job);
     const firstInput={id:randomUUID(),body:"Possibly received",controlVersion:0};
     await enqueueChatInput(target.id,alice,firstInput);
     await enqueueChatInput(target.id,alice,{id:randomUUID(),body:"Never delivered",controlVersion:0});

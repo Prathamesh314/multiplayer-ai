@@ -1,8 +1,7 @@
 import { notifyUsage } from "../events/notifications";
 import { closeTurnInputs } from "./close-inputs";
-import { queryOne, transaction } from "../db/client";
+import { transaction } from "../db/client";
 import type { AgentRunJob } from "./run-events";
-import { randomUUID } from "node:crypto";
 
 export class ControlError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -12,23 +11,14 @@ export const isUuid = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 /**
- * Active turns executing on this server (not on members' own computers). Only
- * these share a machine, so only these count toward configured concurrency caps.
- */
-export const SERVER_ACTIVE = `t.status IN ('preparing', 'queued', 'running') AND t.execution_target = 'server'`;
-
-/**
  * Atomically admit one execution turn.
  *
- * `target` is where the turn will execute. Turns on a member's own computer
- * (`local`) use that person's machine and AI account, as in a desktop
- * orchestrator, so they are not capped: the person starting them is the limit.
- * Turns on this server share its capacity, so the org, project and parallel
- * caps apply to them when an operator has set one (NULL means unlimited).
- * Period quotas and the one-shared-chat-per-room rule apply to every turn.
+ * Every turn runs on the member's own computer, with that person's machine and
+ * AI account, as in a desktop orchestrator, so nothing caps how many run at
+ * once: the person starting them is the limit. Period quotas and the
+ * one-shared-chat-per-room rule apply to every turn.
  */
-export async function reserveTurn(runId: string, userId: string, turnId: string, version: number, target: "local" | "server" = "server") {
-  const onServer = target === "server";
+export async function reserveTurn(runId: string, userId: string, turnId: string, version: number) {
   return transaction(async (tx) => {
     const { rows: [run] } = await tx.query(
       `SELECT *, room_access_role(session_id, $2) AS role FROM agent_runs WHERE id = $1 FOR UPDATE`,
@@ -40,23 +30,12 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     }
     const { rows: [room] } = await tx.query(`SELECT org_id, project_id FROM sessions WHERE id = $1`, [run.session_id]);
     await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [room.org_id ?? `${run.session_id}:${userId}`]);
-    // The parallel cap spans rooms and orgs, which the lock above does not.
-    if (onServer && run.isolation === "isolated") await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`parallel:${userId}`]);
     // Shared chats in one room race for the same room head, so a person runs
     // one at a time there: a correctness rule, not a capacity cap. Parallel
     // chats have branches of their own and are the way to run several at once.
     const { rows: [quota] } = await tx.query(
       `SELECT
         (SELECT count(*)::int FROM agent_runs WHERE session_id = $1 AND driver_user_id = $2 AND status = 'running' AND isolation = 'shared') AS personal,
-        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
-          WHERE r.driver_user_id = $2 AND r.isolation = 'isolated' AND ${SERVER_ACTIVE}) AS parallel_running,
-        (SELECT parallel_chats_per_user FROM orgs WHERE id = $3) AS parallel_limit,
-        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id JOIN sessions s ON s.id = r.session_id
-          WHERE s.org_id = $3 AND ${SERVER_ACTIVE}) AS org_running,
-        (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id JOIN sessions s ON s.id = r.session_id
-          WHERE s.project_id = $4 AND ${SERVER_ACTIVE}) AS project_running,
-        (SELECT run_concurrency_limit FROM orgs WHERE id = $3) AS org_limit,
-        (SELECT run_concurrency_limit FROM projects WHERE id = $4) AS project_limit,
         (SELECT run_monthly_quota FROM orgs WHERE id = $3) AS monthly_limit,
         (SELECT run_hourly_limit FROM projects WHERE id = $4) AS hourly_limit,
         (SELECT count(*)::int FROM agent_turns t JOIN agent_runs r ON r.id = t.run_id
@@ -70,15 +49,6 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     if (run.isolation !== "isolated" && quota.personal > 0) {
       throw new ControlError("Your chat in this room is still working. Wait for it to finish, or start a parallel chat.", 429);
     }
-    if (onServer && run.isolation === "isolated" && quota.parallel_limit != null && quota.parallel_running >= quota.parallel_limit) {
-      throw new ControlError(`This server runs up to ${quota.parallel_limit} parallel chat(s) per person at once. Wait for one to finish.`, 429);
-    }
-    if (onServer && quota.project_limit != null && quota.project_running >= quota.project_limit) {
-      throw new ControlError(`This server runs up to ${quota.project_limit} AI turn(s) at once for this project. Wait for one to finish.`, 429);
-    }
-    if (onServer && quota.org_limit != null && quota.org_running >= quota.org_limit) {
-      throw new ControlError(`This server runs up to ${quota.org_limit} AI turn(s) at once for your organisation. Wait for one to finish.`, 429);
-    }
     // Check and reserve under the same org lock. Every accepted execution turn
     // counts, including continuations of an existing conversation.
     if (quota.hourly_limit != null && quota.hourly_used >= quota.hourly_limit) {
@@ -90,52 +60,32 @@ export async function reserveTurn(runId: string, userId: string, turnId: string,
     const { rows: [existing] } = await tx.query(`SELECT id FROM agent_turns WHERE id = $1`, [turnId]);
     if (existing) throw new ControlError("This prompt has already been submitted. Reload the chat to see its result.");
     if (run.status === "running" || run.status === "queued") throw new ControlError("Wait for the current turn to finish.");
-    // Record where the turn will run from the start, so a burst of turns for
-    // members' computers never counts against a cap on this server.
     await tx.query(
-      `INSERT INTO agent_turns(id, run_id, driver_user_id, control_version, execution_target) VALUES ($1, $2, $3, $4, $5)`,
-      [turnId, runId, userId, version, target],
+      `INSERT INTO agent_turns(id, run_id, driver_user_id, control_version, execution_target) VALUES ($1, $2, $3, $4, 'local')`,
+      [turnId, runId, userId, version],
     );
     await tx.query(`UPDATE agent_runs SET status = 'running', ended_at = NULL, started_at = now() WHERE id = $1`, [runId]);
   });
 }
 
-export async function prepareTurn(job: AgentRunJob, target: "local" | "server" = "server") {
+/**
+ * Hand a reserved turn to the member's computer. Every turn runs there: the
+ * runner job is created in the same transaction, so a web crash before the
+ * notification cannot strand a turn without one. This server never runs it.
+ */
+export async function prepareTurn(job: AgentRunJob) {
   await transaction(async tx => {
     await tx.query(`SELECT id FROM agent_runs WHERE id = $1 FOR UPDATE`, [job.runId]);
-    const prepared = await tx.query(`UPDATE agent_turns SET payload=$2,status='queued',prepared_at=now(),execution_target=$3
-      WHERE id=$1 AND status='preparing' RETURNING id`, [job.turnId, JSON.stringify(job), target]);
+    const prepared = await tx.query(`UPDATE agent_turns SET payload=$2,status='queued',prepared_at=now(),execution_target='local'
+      WHERE id=$1 AND status='preparing' RETURNING id`, [job.turnId, JSON.stringify(job)]);
     if (!prepared.rowCount) throw new ControlError("This turn is no longer waiting for preparation. Refresh the chat.");
-    if (target === "local") {
-      // Dispatch is durable in the same transaction as preparation. A web crash
-      // before the notification cannot strand a turn without a runner job.
-      await tx.query(`INSERT INTO runner_jobs(run_id,turn_id,user_id,payload) VALUES ($1,$2,$3,$4)
-        ON CONFLICT(turn_id) DO NOTHING`, [job.runId,job.turnId,job.userId,JSON.stringify(job)]);
-      await tx.query(`UPDATE agent_runs SET execution='local' WHERE id=$1`,[job.runId]);
-    }
+    await tx.query(`INSERT INTO runner_jobs(run_id,turn_id,user_id,payload) VALUES ($1,$2,$3,$4)
+      ON CONFLICT(turn_id) DO NOTHING`, [job.runId,job.turnId,job.userId,JSON.stringify(job)]);
+    await tx.query(`UPDATE agent_runs SET execution='local' WHERE id=$1`,[job.runId]);
     await tx.query(`UPDATE agent_runs SET agent_id = $2 WHERE id = $1 AND control_version = $3 AND driver_user_id = $4`,
       [job.runId, job.agentId, job.controlVersion, job.userId]);
     if (job.restoreCheckpoint) await tx.query(`UPDATE agent_runs SET restore_snapshot_id = NULL WHERE id = $1 AND restore_snapshot_id = $2`, [job.runId, job.restoreCheckpoint.id]);
   });
-}
-
-export async function startTurn(job: AgentRunJob, token = randomUUID()): Promise<boolean> {
-  const row = await queryOne(
-    `UPDATE agent_turns t SET status = 'running',execution_target='server',execution_token=$2,execution_lease_until=now()+interval '60 seconds' FROM agent_runs r
-     WHERE t.id = $1 AND t.run_id = r.id AND t.status = 'queued'
-       AND NOT EXISTS (SELECT 1 FROM runner_jobs j WHERE j.turn_id=t.id AND j.status IN ('queued','claimed'))
-       AND r.driver_user_id = t.driver_user_id AND r.control_version = t.control_version
-       AND room_access_role(r.session_id, t.driver_user_id) IN ('owner', 'editor') RETURNING t.id`,
-    [job.turnId, token],
-  );
-  if (row) void notifyUsage(job.sessionId);
-  return !!row;
-}
-
-export async function renewServerTurn(turnId: string, token: string): Promise<boolean> {
-  return !!await queryOne(`UPDATE agent_turns SET execution_lease_until=now()+interval '60 seconds'
-    WHERE id=$1 AND execution_token=$2 AND execution_target='server' AND status='running'
-      AND execution_lease_until>now() RETURNING id`,[turnId,token]);
 }
 
 export async function failTurn(turnId: string, message: string) {

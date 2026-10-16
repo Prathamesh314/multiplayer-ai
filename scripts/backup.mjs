@@ -51,7 +51,7 @@ async function configuration(options) {
   // Parse privately: never print resolved Compose configuration (contains secrets).
   const config=JSON.parse(await capture([...args,'config','--format','json']));
   const env=config.services.web.environment;
-  if(env.STORAGE_PROVIDER!=='local'||env.AGENT_WORKER!=='0')throw new Error('This backup profile requires local storage and local-runner execution.');
+  if(env.STORAGE_PROVIDER!=='local')throw new Error('This backup profile requires local storage.');
   if(env.STORAGE_LOCAL_DIR&&env.STORAGE_LOCAL_DIR!==`${env.MULTIPLAYER_AI_DATA}/objects`)throw new Error('External object directories need their own coordinated backup profile.');
   const workspace=config.services.web.volumes.find(v=>v.type==='volume'&&v.target===env.MULTIPLAYER_AI_DATA);
   const memory=config.services.mnemosyne.volumes.find(v=>v.type==='volume'&&v.target==='/data');

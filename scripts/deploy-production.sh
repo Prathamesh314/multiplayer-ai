@@ -102,7 +102,7 @@ APP_VERSION="$revision" compose run --rm --no-deps -T worker node --import tsx s
 # Boot a private candidate with no published ports while the current site serves
 # traffic. Probe real Next startup and dependency readiness, then discard it.
 candidate="multiplayer-preflight-${revision:0:12}-$(date +%s)"
-APP_VERSION="$revision" compose run --rm --no-deps -d --name "$candidate" -e AGENT_WORKER=0 web
+APP_VERSION="$revision" compose run --rm --no-deps -d --name "$candidate" web
 docker exec "$candidate" node scripts/check-web-runtime.mjs
 cleanup_candidate
 active=$(query "SELECT count(*) FROM agent_runs WHERE status IN ('queued','running')")

@@ -10,8 +10,7 @@
  *  3. `MULTIPLAYER_AI_TERMINAL=0` turns it off everywhere, including development.
  *
  * The loopback rule used to apply even to the opt-in, which made the flag
- * useless on a hosted host (every request arrives for the public domain) and
- * also blocked the "run this on the app's machine" path in app/api/ai/run.
+ * useless on a hosted host (every request arrives for the public domain).
  * Lifting it moves the whole burden of authorisation onto the routes: this
  * function answers "is the feature on here", never "may this caller use it".
  * Terminal routes must additionally call `terminalUser()` — on a public host

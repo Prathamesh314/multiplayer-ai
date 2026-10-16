@@ -23,12 +23,9 @@ x-app-environment: &app-environment
   # container. Off by default; WEB_CONCURRENCY must stay 1 when it is on.
   # It does not move AI agents onto this host; they run on members' computers.
   MULTIPLAYER_AI_TERMINAL: ${MULTIPLAYER_AI_TERMINAL:-0}
-  # Agents run on members' own computers. Never run them on this host.
-  AGENT_SERVER_EXECUTION: "0"
   # "1" lets members open parallel chats on branches of their own; see
   # docs/parallel-chats.md. Turning it off only stops new ones.
   PARALLEL_CHATS: ${PARALLEL_CHATS:-0}
-  AGENT_WORKER: "0"
   WEB_CONCURRENCY: "1"
   API_TRUST_PROXY: "1"
   INTEGRATIONS_PUBLIC_URL: ${INTEGRATIONS_PUBLIC_URL:-}

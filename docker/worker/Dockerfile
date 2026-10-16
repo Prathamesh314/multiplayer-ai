@@ -1,15 +1,11 @@
-# The agent-run worker image.
+# The background worker image.
 #
-# It runs `worker/index.ts` (via tsx) and spawns the agent CLIs, so it needs
-# Node, git — the run layer shells out to git for clone/commit/merge — and the
-# CLIs themselves. It is NOT the web server: there is no Next build here, just
-# the queue consumer. See the `worker` service in docker-compose.yml for how it
-# is wired (shared data root at an identical path, mounted CLI credentials,
-# compose-network Redis/Postgres).
-#
-# NOTE: this image is provided for the containerized (Slice-2) deployment and is
-# not exercised by local development, which runs the worker on the host via
-# `AGENT_WORKER=1 ./start.sh`.
+# It runs `worker/index.ts` (via tsx): memory jobs and repository indexing,
+# which read Git objects from the shared data root. It never runs an AI agent —
+# those run only on members' own computers, through the desktop app or runner —
+# so it has no agent CLIs or credentials. It is NOT the web server: there is no
+# Next build here. See the `worker` service in docker-compose.yml for how it is
+# wired (shared data root at an identical path, compose-network Redis/Postgres).
 FROM node:24-slim
 
 # git: repo.ts drives git via execFile. build tools + python3: some deps carry
@@ -29,13 +25,11 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     CXXFLAGS=-std=c++20 npm_package_config_node_gyp_nodedir=/usr/local ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --include=dev
 
-# The agent CLIs the worker spawns. Keep this in step with the agents enabled in
-# app/lib/ai/catalog.ts; pin versions for reproducible images.
-RUN --mount=type=cache,target=/root/.npm \
-    npm_package_config_node_gyp_nodedir=/usr/local npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
+# No AI command-line tools: the worker indexes repositories and memory; agents
+# run only on members' own computers, through the desktop app or runner.
 
 COPY . .
 
-# Unbuffered logs so `docker logs multiplayer-worker` shows run progress live.
+# Unbuffered logs so `docker logs multiplayer-worker` shows progress live.
 ENV NODE_ENV=production
 CMD ["npm", "run", "worker"]

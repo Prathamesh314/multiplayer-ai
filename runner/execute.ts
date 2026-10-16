@@ -1,8 +1,7 @@
 /*
- * Spawning the agent CLI on this machine — the runner-side twin of the
- * server executor's process core (app/lib/ai/execute.ts), with the same
- * caps, the same stream decoding (the shared catalog parser), and the same
- * one-shot discipline. What it deliberately lacks is everything durable:
+ * Spawning the agent CLI on this machine, the only place agents run: with
+ * output caps, the shared catalog's stream decoding, and one-shot
+ * discipline. What it deliberately lacks is everything durable:
  * no database, no events bus — output goes to the caller, who streams it
  * up the protocol and lets the server persist.
  *

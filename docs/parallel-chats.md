@@ -14,8 +14,7 @@ parallel** at `/docs/parallel-chats` in the app (source: `app/docs/content.ts`).
 |---|---|---|
 | `PARALLEL_CHATS=1` | web process (`.env`, or `.env.production` for Compose) | New chats may be opened as parallel. The composer shows **⑂ Parallel** (reported by `/api/ai/agents` as `parallelChats`). |
 | Runner with `supportsIsolatedChats` | members' computers | Current desktop app / `multicode-ai-runner`. Older runners never claim a parallel chat's turn; the run route answers "update the desktop app" instead. |
-| `orgs.parallel_chats_per_user` | database, default 4 (1–32) | Parallel chats one person may run at once, across rooms. |
-| `--parallel` / `RUNNER_MAX_PARALLEL` / `maxParallel` | runner, default 3 (1–8) | Turns one computer runs at once. |
+| `--parallel` / `RUNNER_MAX_PARALLEL` / `maxParallel` | runner, optional | Caps the turns one computer runs at once, if its owner wants a cap. |
 
 Turning the flag off only stops *new* parallel chats. Existing ones keep
 working, and can still be reviewed, merged, updated and discarded, so no work is
@@ -44,12 +43,13 @@ release continues them on the room branch.
 
 ## Admission
 
-`reserveTurn` takes the org advisory lock and, for parallel chats, a per-person
-`parallel:<user>` lock, so the cap holds across rooms and orgs. Shared chats
-keep "one running per person per room". Parallel chats are capped by
-`parallel_chats_per_user` and do not hold the room slot. Org and project
-concurrency, hourly and monthly limits apply to every turn. `checkRunAllowed`
-mirrors this for friendly errors before anything is created.
+Every turn runs on the member's own computer, so nothing caps how many run at
+once. `reserveTurn` takes the org advisory lock. Shared chats keep "one running
+per person per room", because they share the room branch; parallel chats do not
+hold the room slot. Hourly and monthly limits apply to every turn.
+`checkRunAllowed` mirrors this for friendly errors before anything is created.
+The old `run_concurrency_limit` and `parallel_chats_per_user` columns are no
+longer read.
 
 ## Review and integration
 

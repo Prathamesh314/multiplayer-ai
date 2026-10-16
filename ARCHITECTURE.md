@@ -8,15 +8,14 @@ changing the session, repo, or run-execution layers.
 
 The supported beta target is one repository-owning server with a persistent
 volume, PostgreSQL, Redis, a Next.js web process, and an indexing worker.
-Desktop runners execute coding agents on members' computers. Keep
-`LOCAL_RUNNERS=1` and `AGENT_WORKER=0` on the hosted service.
+Coding agents run **only** on members' computers, through the desktop app or
+runner, and only there are worktrees created; the server never runs an agent
+or checks out code. Runners need Redis and `LOCAL_RUNNERS` left on.
 The terminal panel opens shells on members' own computers too, in their chats'
 worktrees, relayed through the runner (`app/lib/terminal/remote.ts`).
 `MULTIPLAYER_AI_TERMINAL` only matters where runners cannot connect: setting it
 to `1` is an explicit operator decision that gives every signed-in member a
-shell on the machine serving the app — see `docker/README.md`. It never changes where agents run: the
-server runs an agent itself only with `AGENT_SERVER_EXECUTION=1`, or on a
-development server that cannot reach runners (`app/lib/ai/execution.ts`). This is a
+shell on the machine serving the app — see `docker/README.md`. This is a
 modular application with separate execution processes; adding independent web
 hosts is not yet a supported storage topology.
 
@@ -136,15 +135,15 @@ clean discards edits, ignored configuration, or undelivered commits. Candidate
 pushes, server verification, and handoff ownership checks remain per turn.
 See [runner workspaces](docs/runner-workspaces.md) for layout and recovery.
 
-## Run execution uses local runners in hosted deployments
+## Run execution happens only on members' computers
 
-Agents execute on the *initiating member's own machine* when one of their
-paired devices is online (docs/local-execution.md) — their CPU, their AI
-login. The hosted Compose profile disables server execution and requires an
-online compatible runner. Local development can explicitly allow server
-execution. One job shape (`AgentRunJob`), three transports, one browser contract:
+Agents execute on the *initiating member's own machine* (docs/local-execution.md)
+— their CPU, their AI login, their worktree — in every deployment, including
+local development. Without an online compatible runner a turn is refused with
+"connect your computer"; nothing falls back to the server. One job shape
+(`AgentRunJob`), one transport:
 
-1. **Local:** the run route parks the job in `runner_jobs`; the user's runner
+1. The run route parks the job in `runner_jobs`; the user's runner
    wakes through `/api/runner/events` and claims it (atomic `SKIP LOCKED`), then fetches
    the repo over the device-authenticated git smart-HTTP endpoint
    (`/api/git/[repoRef]/…` — deny non-fast-forward, deny deletes), executes,
@@ -152,17 +151,15 @@ execution. One job shape (`AgentRunJob`), three transports, one browser contract
    channel), and reports `/complete`, where the claimed commit is verified
    against the bare repo before any head moves. Requires Redis; a job no
    device collects within ~20s fails with a reconnect message, without fallback.
-2. **Server worker:** BullMQ, when the queue is enabled.
-3. **Inline:** in the web process, so local dev needs no extra infrastructure.
 
-Local and cloud runs end through one shared finalization
+Runs end through one shared finalization
 (`app/lib/ai/finalize.ts`): head advance, transcript turn, diff stats, room
 events, memory ingest — indistinguishable from the transcript out. The runner
 itself stays dumb: it states facts and never writes the database.
 
-Legacy server-side execution still uses a local data root and isolated turn
-clones. It is disabled in the hosted profile; local runner worktrees do not
-change that development-only execution path.
+Server-side execution (inline, or a BullMQ worker) and its per-turn clones
+were removed. Turns recorded with `execution_target = 'server'` before that
+are still recovered and finalized; no new ones can be created.
 
 ## Notifications, retention and recovery limits
 

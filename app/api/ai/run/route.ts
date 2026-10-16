@@ -5,9 +5,8 @@ import { randomUUID } from "node:crypto";
 import { continuationContext } from "../../../lib/ai/handoff";
 import { ControlError, isUuid, reserveTurn, prepareTurn, failTurn } from "../../../lib/ai/turns";
 import { queryOne } from "../../../lib/db/client";
-import { modelInventory, validModelId } from "../../../lib/ai/model-discovery";
+import { validModelId } from "../../../lib/ai/model-discovery";
 import { agentById } from "../../../lib/ai/catalog";
-import { executeAgentRun } from "../../../lib/ai/execute";
 import {
   appendMessage,
   autoRenameRun,
@@ -25,20 +24,18 @@ import { buildKnowledgeContext } from "../../../lib/knowledge";
 import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
 import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
 import { subscribeRunEvents } from "../../../lib/ai/run-stream";
-import { enqueueRun, queueEnabled } from "../../../lib/queue";
 import { hasOnlineDevice } from "../../../lib/runner/devices";
 import {
   CLAIM_FALLBACK_MS,
   enqueueLocalJob,
   localRunnersEnabled,
-  reclaimForServer,
+  abandonUnclaimedJob,
 } from "../../../lib/runner/jobs";
 import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
-import { serverExecutionAllowed } from "../../../lib/ai/execution";
 
 export type { AiRunEvent } from "../../../lib/ai/run-events";
 
@@ -46,9 +43,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * How long the response will wait on a worker before giving up. A worker that
- * is SIGKILLed mid-run never emits `exit`; BullMQ fails the stalled job, but
- * this stream would otherwise hang, so it is closed a little past the run cap.
+ * How long the response will wait on the member's runner before giving up. A
+ * runner killed mid-run never emits `exit`, and this stream would otherwise
+ * hang, so it is closed a little past the run cap.
  */
 const RUN_STREAM_TIMEOUT_MS = 11 * 60 * 1000;
 
@@ -141,10 +138,6 @@ async function handlePOST(request: Request) {
     return forbidden("Running an agent changes files, which needs edit access.");
   }
 
-  // Agents run on the member's computer; this server runs one only where that
-  // is explicitly allowed (lib/ai/execution.ts), never because a terminal is on.
-  const onServerAllowed = serverExecutionAllowed(request);
-
   const agent = agentById(String(body.agentId ?? ""));
   if (!agent) return Response.json({ error: "Unknown agent." }, { status: 400 });
 
@@ -158,15 +151,16 @@ async function handlePOST(request: Request) {
   if (body.effort != null && body.effort !== "" && (typeof body.effort !== "string" || !/^[a-z]{1,20}$/.test(body.effort))) return Response.json({ error: "Invalid reasoning effort." }, { status: 400 });
   if (agent.requiresModel && !body.model) return Response.json({ error: "Choose a model available on your execution machine." }, { status: 400 });
   const runOptions = { model: body.model || undefined, effort: body.effort || undefined };
-  const hasRunner = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, undefined, undefined, true);
-  const useLocal = localRunnersEnabled() && await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
-  if (!useLocal && hasRunner) return Response.json({ error: "Your computer doesn’t have the selected model or effort available. Refresh the model list and choose an available option, then send your message again." }, { status: 409 });
-  if (!useLocal && onServerAllowed) {
-    const inventory = await modelInventory(agent);
-    const selected = inventory.choices.find(choice => choice.id === (runOptions.model ?? ""));
-    if (!selected || (runOptions.effort && !selected.efforts?.some(effort => effort.id === runOptions.effort))) return Response.json({ error: "This model or effort is no longer available. Refresh the provider inventory." }, { status: 409 });
+  // AI agents run only on members' own computers: the desktop app or runner
+  // claims the turn and works in a worktree there, with that person's tools and
+  // AI accounts. This server never runs an agent or checks out code.
+  if (!localRunnersEnabled()) {
+    return Response.json({ error: "AI tasks run on members' computers through the desktop app or runner, which needs this server's live connection (Redis). Ask your administrator to configure it.", code: "runners_unavailable" }, { status: 503 });
   }
-  if (!useLocal && !onServerAllowed) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
+  const hasRunner = await hasOnlineDevice(result.user.id, agent.id, undefined, undefined, true);
+  const onComputer = await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort);
+  if (!onComputer && hasRunner) return Response.json({ error: "Your computer doesn’t have the selected model or effort available. Refresh the model list and choose an available option, then send your message again." }, { status: 409 });
+  if (!onComputer) return Response.json({ error: `We couldn’t start ${agent.name} on your computer. Open the desktop app, sign in with this account, and make sure ${agent.name} is installed and signed in. Then send your message again. Your saved chat is still available.`, code: "computer_connection_required" }, { status: 409 });
 
   const sessionId = result.session.id;
 
@@ -178,7 +172,6 @@ async function handlePOST(request: Request) {
   if (run && (run.driverUserId !== result.user.id || body.controlVersion !== run.controlVersion)) {
     return Response.json({ error: "Only the current driver can continue. Refresh or accept a handoff." }, { status: 409 });
   }
-  if (run && run.controlVersion > 0 && !useLocal) return Response.json({ error: "Connect your computer and set up this AI tool before continuing the chat that was handed to you.", code: "computer_connection_required" }, { status: 409 });
 
   if (body.isolation != null && body.isolation !== "isolated" && body.isolation !== "shared") {
     return Response.json({ error: "Invalid chat isolation." }, { status: 400 });
@@ -192,7 +185,7 @@ async function handlePOST(request: Request) {
   }
   // An older runner keeps one worktree per room repository and cannot hold a
   // chat's own branch; it would never claim this turn.
-  if (isolated && useLocal && !await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort, false, true)) {
+  if (isolated && !await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort, false, true)) {
     return Response.json({ error: "Update the desktop app to run parallel chats, then send your message again.", code: "runner_update_required" }, { status: 409 });
   }
 
@@ -234,8 +227,6 @@ async function handlePOST(request: Request) {
     userId: result.user.id,
     isNewRun: !run,
     isolation: isolated ? "isolated" : "shared",
-    // Turns on the member's own computer are never capped for concurrency.
-    target: useLocal ? "local" : "server",
   });
   if (!runGate.ok) {
     return Response.json({ error: runGate.error, limit: runGate.limit }, { status: 429 });
@@ -300,7 +291,7 @@ async function handlePOST(request: Request) {
   }
 
   try {
-    await reserveTurn(run.id, result.user.id, turnId, run.controlVersion, useLocal ? "local" : "server");
+    await reserveTurn(run.id, result.user.id, turnId, run.controlVersion);
     await (await events()).publish(sessionId, { type: "run.control", runId: run.id, at: Date.now() }).catch(() => {});
   } catch (cause) {
     if (cause instanceof ControlError) return Response.json({ error: cause.message }, { status: cause.status });
@@ -308,11 +299,8 @@ async function handlePOST(request: Request) {
   }
   try {
 
-  // Materializing the working copy used to happen here; it now happens inside
-  // executeAgentRun (see below), so it is identical whether the turn runs inline
-  // or in a worker — and, in the worker case, on the machine that will actually
-  // spawn the agent. A prepare failure surfaces as the run's own failure event
-  // rather than a 500, keeping the run row and the live stream consistent.
+  // The working copy is prepared by the member's runner, in a worktree on
+  // their computer; nothing is checked out here.
 
   // Chats referenced with `@room/<run-id>` (picked in the composer, or a pasted
   // path). Run ids are read straight out of the prompt — and out of the explicit
@@ -443,8 +431,8 @@ async function handlePOST(request: Request) {
   const author = { name: result.user.displayName, email: result.user.email };
 
   // Everything the run needs is now plain data. The agent's bin/args/parser are
-  // rebuilt from agentId inside executeAgentRun, because they are functions and
-  // cannot cross a queue (see AgentRunJob).
+  // rebuilt from agentId on the runner, because they are functions and cannot
+  // cross the wire (see AgentRunJob).
   const restoreCheckpoint = run.restoreSnapshotId ? await getCheckpoint(run.restoreSnapshotId, run.id) : null;
   const job: AgentRunJob = {
     ...(restoreCheckpoint ? { restoreCheckpoint } : {}),
@@ -467,7 +455,7 @@ async function handlePOST(request: Request) {
     userPrompt: prompt,
   };
 
-  await prepareTurn(job, useLocal ? "local" : "server");
+  await prepareTurn(job);
 
   const headers = {
     "content-type": "application/x-ndjson; charset=utf-8",
@@ -475,16 +463,10 @@ async function handlePOST(request: Request) {
     "x-accel-buffering": "no",
   };
 
-  // Three ways to run, one client contract. Local-first: when the initiating
-  // user has a runner online, the job goes to *their machine* — their CPU,
-  // their AI login (docs/local-execution.md) — and this response forwards the
-  // runner's events off the same per-run channel a worker would use. No
-  // runner online: with Redis the turn goes to a server worker; without, it
-  // runs inline. The browser reads the same NDJSON stream in every case.
-  if (useLocal) {
-    return new Response(localStream(job, result.user.id), { headers });
-  }
-  return new Response(queueEnabled() ? queuedStream(job) : inlineStream(job), { headers });
+  // The job goes to the member's own machine — their CPU, their AI login
+  // (docs/local-execution.md) — and this response forwards their runner's
+  // events off the per-run channel as an NDJSON stream.
+  return new Response(localStream(job, result.user.id), { headers });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Could not prepare this turn.";
     await failTurn(turnId, message);
@@ -494,116 +476,6 @@ async function handlePOST(request: Request) {
 
 const encoder = new TextEncoder();
 const frame = (event: AiRunEvent) => encoder.encode(`${JSON.stringify(event)}\n`);
-
-/**
- * No Redis: run the turn inline in the web process and stream its events
- * straight down the response. This is the pre-worker behaviour, preserved so
- * local development needs no extra infrastructure.
- */
-function inlineStream(job: AgentRunJob): ReadableStream<Uint8Array> {
-  let closed = false;
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      void executeAgentRun(job, (event) => {
-        if (closed) return;
-        try {
-          controller.enqueue(frame(event));
-        } catch {
-          // The reader went away; the run finishes and commits regardless.
-        }
-      }).finally(() => {
-        if (closed) return;
-        closed = true;
-        try {
-          controller.close();
-        } catch {
-          // Already closed.
-        }
-      });
-    },
-    cancel() {
-      // The run keeps going in this process and still commits; a driver leaving
-      // must not abort work others are watching.
-      closed = true;
-    },
-  });
-}
-
-export const POST = withApiLimit("/api/ai/run", handlePOST);
-
-/**
- * Redis: the worker runs the turn; this forwards its events off the per-run
- * channel. Subscribe *before* enqueuing so no early event slips through the gap
- * between the worker picking the job up and us listening.
- */
-function queuedStream(job: AgentRunJob): ReadableStream<Uint8Array> {
-  let closed = false;
-  let unsubscribe: (() => Promise<void>) | null = null;
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const shutdown = () => {
-        if (closed) return;
-        closed = true;
-        if (timeout) clearTimeout(timeout);
-        void unsubscribe?.().catch(() => {});
-        try {
-          controller.close();
-        } catch {
-          // Already closed.
-        }
-      };
-
-      unsubscribe = await subscribeRunEvents(job.turnId, (event) => {
-        if (closed) return;
-        try {
-          controller.enqueue(frame(event));
-        } catch {
-          // Reader gone; the worker still finishes and commits.
-        }
-        // The worker's terminal event ends the response too.
-        if (event.t === "exit") shutdown();
-      });
-
-      try {
-        await enqueueRun(job);
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        controller.enqueue(frame({ t: "err", d: `Could not queue the run: ${message}` }));
-        controller.enqueue(frame({ t: "exit", code: null, ms: 0, headSha: null, committed: false }));
-        await failTurn(job.turnId, message).catch(() => {});
-        const bus = await events();
-        await bus
-          .publish(job.sessionId, {
-            type: "run.finished",
-            runId: job.runId,
-            status: "failed",
-            headSha: null,
-            at: Date.now(),
-          })
-          .catch(() => {});
-        shutdown();
-        return;
-      }
-
-      // Safety net: a worker SIGKILLed mid-run never emits `exit`. BullMQ fails
-      // the stalled job, but this response would otherwise hang, so close it a
-      // little past the run cap.
-      timeout = setTimeout(() => {
-        if (closed) return;
-        controller.enqueue(frame({ t: "notice", message: "The run stream timed out." }));
-        shutdown();
-      }, RUN_STREAM_TIMEOUT_MS);
-      timeout.unref?.();
-    },
-    cancel() {
-      closed = true;
-      if (timeout) clearTimeout(timeout);
-      void unsubscribe?.().catch(() => {});
-    },
-  });
-}
 
 function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Array> {
   let closed = false;
@@ -665,14 +537,14 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
       fallback = setTimeout(() => {
         void (async () => {
           if (closed) return;
-          const reclaimed = await reclaimForServer(job.turnId).catch(() => null);
-          if (!reclaimed) return; // a runner has it; its events keep flowing
-          await fail("Your runner did not collect this turn. Reconnect it and submit again; nothing ran on the server.");
+          const abandoned = await abandonUnclaimedJob(job.turnId).catch(() => null);
+          if (!abandoned) return; // a runner has it; its events keep flowing
+          await fail("Your computer did not collect this turn. Check that the desktop app or runner is connected, then submit again.");
         })();
       }, CLAIM_FALLBACK_MS);
       fallback.unref?.();
 
-      // Safety net: same stream timeout as the worker path.
+      // Safety net: a runner that dies mid-run never sends `exit`.
       timeout = setTimeout(() => {
         if (closed) return;
         controller.enqueue(frame({ t: "notice", message: "The run stream timed out." }));
@@ -688,3 +560,5 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
     },
   });
 }
+
+export const POST = withApiLimit("/api/ai/run", handlePOST);
