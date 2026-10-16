@@ -52,3 +52,28 @@ from failed file/tree requests. The local production-build run completed the
 uses tiny generated text files and an in-memory browser file selection, so it
 does not measure disk folder-picker scanning. Use isolated test PostgreSQL and
 Redis state.
+
+## Transfer, not Git
+
+The batching above made the Git side cheap — 10,000 files in about 1.5 s — which
+left transfer as nearly all of an import's wall-clock time. Two things were
+spending it.
+
+Batches went out as base64 inside JSON, which adds about a third to the source
+bytes, and nothing was compressed. Source code gzips well: a 2.96 MiB batch of
+this repository's own files measured 3.98 MiB as base64 JSON and 1.25 MiB
+gzipped, so the body is now gzipped when the browser has `CompressionStream` and
+sent as-is when it does not. The server inflates it with a hard ceiling on the
+decompressed size — the gateway caps the *compressed* body, which a bomb slips
+under while expanding to something that would exhaust memory.
+
+The uploader also read, base64-encoded and sent one batch at a time, so reading
+sat idle for every round trip. It now prepares the next batch while the current
+request is in flight. Still one request at a time: server-side writes serialize
+on a repository lock, so overlapping requests would only queue behind it, and
+one-in-flight keeps retry semantics and memory bounded.
+
+Modelled over a 122 MiB, 21,000-file project on a 20 Mbit uplink with 180 ms
+round trips: about 81 s before, about 21 s after. That is a model, not a
+guarantee; it assumes a steady link and excludes scanning and background
+context indexing.

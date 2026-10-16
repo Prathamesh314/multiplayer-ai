@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../lib/http/api-limit";
+import { readSeedBody, SeedBodyError } from "../../../../lib/session/seed-body";
 import { access, denied, forbidden } from "../../../../lib/session/auth";
 import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { finishSeed, writeSeedBatch } from "../../../../lib/session/repo";
@@ -33,9 +34,12 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
 
   let body: SeedRequest;
   try {
-    body = (await request.json()) as SeedRequest;
-  } catch {
-    return Response.json({ error: "Expected a JSON body." }, { status: 400 });
+    body = (await readSeedBody(request)) as SeedRequest;
+  } catch (cause) {
+    return Response.json(
+      { error: cause instanceof SeedBodyError ? cause.message : "Expected a JSON body." },
+      { status: 400 },
+    );
   }
 
   const files = Array.isArray(body.files) ? body.files : [];

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {gunzipSync,gzipSync} from 'node:zlib';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdtemp,rm,writeFile,readFile,access} from 'node:fs/promises';
@@ -120,11 +121,16 @@ test('index contention leaves existing files intact and a retry succeeds (SHA-1 
 
 test('browser uploader batches files, retries unchanged data, bounds payloads and reports finalization',async () => {
   const original=globalThis.fetch;
-  const requests=[],progress=[];
+  const requests=[],progress=[],wire=[];
   let failOnce=true;
   globalThis.fetch=async (url,options) => {
-    const body=JSON.parse(options.body);
+    // The uploader compresses when CompressionStream exists, which it does
+    // under Node, so read the body the way the server does.
+    const encoded=options.headers?.['content-encoding']==='gzip';
+    const raw=encoded?Buffer.from(options.body):Buffer.from(options.body,'utf8');
+    const body=JSON.parse(encoded?gunzipSync(raw).toString('utf8'):raw.toString('utf8'));
     if(url.endsWith('/repos'))return Response.json({repo:{id:'repo',rootName:'fixture'}});
+    wire.push({encoded,bytes:raw.length,plain:JSON.stringify(body).length});
     requests.push(body);
     if(failOnce){failOnce=false;return Response.json({error:'temporary'},{status:503});}
     return Response.json({skipped:[],headSha:body.done?'a'.repeat(40):null});
@@ -146,5 +152,34 @@ test('browser uploader batches files, retries unchanged data, bounds payloads an
     assert.equal(accepted.at(-1).done,true);
     assert.deepEqual(progress[0],{uploaded:0,total:files.length,phase:'uploading'});
     assert.deepEqual(progress.at(-1),{uploaded:files.length,total:files.length,phase:'finalizing'});
+
+    // Transfer is almost all of an import's wall-clock time, so the batches
+    // must actually go out compressed and actually be smaller for it.
+    assert.ok(wire.every(w=>w.encoded),'every batch must be gzip encoded');
+    const text=wire.filter(w=>w.plain>100_000);
+    assert.ok(text.length>0,'fixture should produce at least one large batch');
+    assert.ok(text.every(w=>w.bytes<w.plain),'compression must shrink the payload');
   } finally {globalThis.fetch=original;}
+});
+
+test('the server reads compressed and plain batches, and refuses a decompression bomb',async () => {
+  const {readSeedBody,SeedBodyError}=await import('../app/lib/session/seed-body.ts');
+  const post=(body,headers={})=>new Request('http://x/seed',{method:'POST',body,headers});
+
+  // Older clients, and any browser without CompressionStream, still send JSON.
+  assert.deepEqual(await readSeedBody(post(JSON.stringify({files:[],done:true}))),{files:[],done:true});
+  assert.deepEqual(await readSeedBody(post(JSON.stringify({files:[]}),{'content-encoding':'identity'})),{files:[]});
+
+  const payload={files:[{path:'a.txt',data:Buffer.from('hello').toString('base64')}],done:false};
+  const gz=gzipSync(Buffer.from(JSON.stringify(payload)));
+  assert.deepEqual(await readSeedBody(post(gz,{'content-encoding':'gzip'})),payload);
+
+  // The gateway caps the compressed body, which a bomb slips under while
+  // expanding to something that would exhaust memory here.
+  const bomb=gzipSync(Buffer.alloc(200*1024*1024,0x61));
+  assert.ok(bomb.length<1024*1024,'the bomb must look small on the wire');
+  await assert.rejects(readSeedBody(post(bomb,{'content-encoding':'gzip'})),SeedBodyError);
+
+  await assert.rejects(readSeedBody(post(gzipSync(Buffer.from('not json')),{'content-encoding':'gzip'})),SeedBodyError);
+  await assert.rejects(readSeedBody(post('x',{'content-encoding':'br'})),SeedBodyError);
 });

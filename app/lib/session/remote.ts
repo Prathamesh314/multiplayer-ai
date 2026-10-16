@@ -42,6 +42,39 @@ export type SeedProgress = { uploaded: number; total: number; phase?: "uploading
  * `url`, fires the final (committing) call even when empty, and returns the
  * final response body for the caller to read its own shape out of.
  */
+/**
+ * The request body for one batch, compressed when the browser can.
+ *
+ * An import's cost is almost all bytes on the wire — the Git side writes
+ * 10,000 files in about a second — and base64 inside JSON adds a third on top
+ * of the source. Gzip takes a batch of real source from roughly 4 MiB to 1.2.
+ * CompressionStream is absent in older browsers, so this degrades to the plain
+ * JSON the server still accepts.
+ */
+async function encodeBatch(value: unknown): Promise<{ body: BodyInit; headers: Record<string, string> }> {
+  const json = JSON.stringify(value);
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (typeof CompressionStream === "undefined") return { body: json, headers };
+  try {
+    const compressed = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+    return { body: await new Response(compressed).arrayBuffer(), headers: { ...headers, "content-encoding": "gzip" } };
+  } catch {
+    return { body: json, headers };
+  }
+}
+
+/**
+ * The shared batch uploader behind both seed targets: the session's own repo
+ * and a room repo being imported. Streams the scan in bounded batches to
+ * `url`, fires the final (committing) call even when empty, and returns the
+ * final response body for the caller to read its own shape out of.
+ *
+ * One request is in flight at a time — server-side writes serialize on a
+ * repository lock, so overlapping them would only queue behind it — but the
+ * next batch is read, encoded and compressed *while* that request is in
+ * flight. Reading used to sit idle waiting for each round trip, which on a
+ * link to the server is most of an import's wall-clock time.
+ */
 async function uploadScan<T extends { skipped: string[] }>(
   url: string,
   result: ScanResult,
@@ -54,19 +87,18 @@ async function uploadScan<T extends { skipped: string[] }>(
 
   let batch: { path: string; data: string }[] = [];
   let batchBytes = 0;
+  /** The batch currently on the wire; awaited before another one starts. */
+  let inFlight: Promise<T> | null = null;
 
-  const flush = async (done: boolean): Promise<T> => {
-    if (done) onProgress?.({ uploaded, total: paths.length, phase: "finalizing" });
-    const payload = {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        files: batch,
-        done,
-        rootName: done ? result.rootName : undefined,
-        upstreamUrl: done ? (result.git.remotes[0]?.url ?? null) : undefined,
-      }),
-    };
+  const send = async (files: { path: string; data: string }[], done: boolean): Promise<T> => {
+    const { body, headers } = await encodeBatch({
+      files,
+      done,
+      rootName: done ? result.rootName : undefined,
+      upstreamUrl: done ? (result.git.remotes[0]?.url ?? null) : undefined,
+    });
+    const payload = { method: "POST", headers, body };
+
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -85,14 +117,22 @@ async function uploadScan<T extends { skipped: string[] }>(
     }
     if (!response?.ok) throw new Error(response ? await readError(response, "Could not upload the folder.") : "Upload interrupted. Pick the same folder again to retry.");
 
-    const body = (await response.json()) as T;
-    skipped.push(...body.skipped);
-    uploaded += batch.length;
+    const parsed = (await response.json()) as T;
+    skipped.push(...parsed.skipped);
+    uploaded += files.length;
     onProgress?.({ uploaded, total: paths.length, phase: done ? "finalizing" : "uploading" });
+    return parsed;
+  };
 
+  /** Hand the current batch to the wire, after the previous one lands. */
+  const dispatch = async () => {
+    const files = batch;
     batch = [];
     batchBytes = 0;
-    return body;
+    // Awaiting here, before starting the next request rather than after
+    // building it, is what bounds memory: one batch in flight, one being read.
+    if (inFlight) await inFlight;
+    inFlight = send(files, false);
   };
 
   for (const path of paths) {
@@ -104,15 +144,18 @@ async function uploadScan<T extends { skipped: string[] }>(
 
     // Flush before adding the next file, rather than retaining two large files
     // in the same request. A single allowed file can exceed the batch target.
-    if (batch.length && batchBytes + bytes.byteLength > BYTES_PER_BATCH) await flush(false);
+    if (batch.length && batchBytes + bytes.byteLength > BYTES_PER_BATCH) await dispatch();
     batch.push({ path, data: toBase64(bytes) });
     batchBytes += bytes.byteLength;
 
-    if (batch.length >= FILES_PER_BATCH || batchBytes >= BYTES_PER_BATCH) await flush(false);
+    if (batch.length >= FILES_PER_BATCH || batchBytes >= BYTES_PER_BATCH) await dispatch();
   }
 
-  // The final call always runs, even with an empty batch: it is what commits.
-  const final = await flush(true);
+  // The final call always runs, even with an empty batch: it is what commits,
+  // and it must land after every earlier batch.
+  if (inFlight) await inFlight;
+  onProgress?.({ uploaded, total: paths.length, phase: "finalizing" });
+  const final = await send(batch, true);
   return { final, skipped };
 }
 
