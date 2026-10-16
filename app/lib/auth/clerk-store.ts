@@ -40,11 +40,25 @@ export async function userForClerkSession(clerkUserId: string, sessionId: string
   return row ? toUser(row) : null;
 }
 
+/** Whether a Clerk user still exists: false only when Clerk says it doesn't. */
+export type ClerkUserExists = (clerkUserId: string) => Promise<boolean | null>;
+
 /** Provision once after Clerk sign-in. No provider calls while a DB lock is held.
  * Matching a verified address preserves the UUID of a pre-Clerk account, but can
- * never relink a deleted account or one already bound to another Clerk subject. */
-export async function completeClerkAccount(profile: UserJSON, invitationToken?: string): Promise<CurrentUser> {
+ * never relink a deleted account or one bound to another *live* Clerk subject.
+ *
+ * A link to a Clerk user that no longer exists is stale: the account was
+ * recreated, or the deployment moved to another Clerk instance (development
+ * keys to live keys gives every person a new Clerk ID). The person signing in
+ * has proved they own the verified email, so their account is relinked. */
+export async function completeClerkAccount(profile: UserJSON, invitationToken?: string, clerkUserExists?: ClerkUserExists): Promise<CurrentUser> {
   const identity = verifiedClerkProfile(profile);
+  // Ask Clerk before any lock: is the email's current link still a live user?
+  let stale: string | null = null;
+  const holder = await queryOne<{ clerk_user_id: string }>(
+    `SELECT clerk_user_id FROM users WHERE email=$1 AND clerk_user_id IS NOT NULL AND clerk_user_id<>$2 AND deleted_at IS NULL`,
+    [identity.email, identity.id]);
+  if (holder && clerkUserExists && (await clerkUserExists(holder.clerk_user_id).catch(() => null)) === false) stale = holder.clerk_user_id;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await transaction(async tx => {
@@ -57,8 +71,11 @@ export async function completeClerkAccount(profile: UserJSON, invitationToken?: 
         const existing = (await tx.query<UserRow>(`SELECT * FROM users WHERE clerk_user_id=$1 OR email=$2 ORDER BY id FOR UPDATE`, [identity.id, identity.email])).rows;
         const linked = existing.find(row => row.clerk_user_id === identity.id);
         const row = linked ?? existing[0];
-        if (row?.deleted_at || (row?.clerk_user_id && row.clerk_user_id !== identity.id) || existing.length > 1) {
-          throw new ClerkAccountError("This email is already associated with another workspace account. Contact your workspace administrator.");
+        if (row?.deleted_at) {
+          throw new ClerkAccountError("The workspace account for this email was deleted. Contact your workspace administrator to restore it.");
+        }
+        if ((row?.clerk_user_id && row.clerk_user_id !== identity.id && row.clerk_user_id !== stale) || existing.length > 1) {
+          throw new ClerkAccountError("This email is already associated with another workspace account. Sign in the way you did before (for example with the same Google account or email code), or contact your workspace administrator.");
         }
         if (row) {
           if (row.clerk_disabled_at && Number(row.clerk_updated_at) >= identity.updatedAt) throw new ClerkAccountError("Your account is unavailable. Contact your workspace administrator.");
