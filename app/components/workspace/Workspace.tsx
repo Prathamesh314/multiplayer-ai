@@ -192,6 +192,8 @@ export function Workspace({
   const snapshots = useRef(new Map<string, { tabs: string[]; activePath: string | null; buffers: Map<string, Buffer> }>());
   const [importProgress, setImportProgress] = useState<SeedProgress | null>(null);
   const [importingRepo, setImportingRepo] = useState(false);
+  /** Set when an import ends badly, so a held prompt is returned rather than run. */
+  const [importFailed, setImportFailed] = useState(false);
   function openAddRepository(empty = false) {
     setStartEmptyProject(empty);
     setAddRepositoryOpen(true);
@@ -373,12 +375,20 @@ export function Workspace({
 
   const importRepoFromSource = useCallback(async (source: PickedSource) => {
       setImportingRepo(true);
+      setImportFailed(false);
       setError(null);
       try {
         const scanned =
           source.kind === "handle"
             ? await scanDirectoryHandle(source.handle, "picker", { includeIgnored: false })
             : await scanFileList(source.files, "input", { includeIgnored: false });
+        // Show the folder the moment it is read, rather than after the upload.
+        // The scan is already the real tree — the same one the explorer draws
+        // from while a session's own folder uploads — so this is the files
+        // actually being imported, not a placeholder. The repo-backed tree
+        // replaces it below once the import commits.
+        setResult(scanned);
+        setMobilePane("files");
         const { repo: imported, skipped } = await importRoomRepo(session.id, scanned, setImportProgress);
         setRoomRepos((previous) => [...previous.filter(repo => repo.id !== imported.id), imported]);
         // The next new chat targets what was just imported — that's why it was.
@@ -391,6 +401,7 @@ export function Workspace({
           setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
         }
       } catch (cause) {
+        setImportFailed(true);
         setError(cause instanceof Error ? cause.message : "Could not import that folder.");
       } finally {
         setImportingRepo(false);
@@ -1071,6 +1082,7 @@ export function Workspace({
                         onRepoChange={next => void selectRepository(next)}
                         onImportRepo={() => openAddRepository()}
                         importingRepo={importingRepo}
+                        importFailed={importFailed}
                       />
                   ),
                 }}
