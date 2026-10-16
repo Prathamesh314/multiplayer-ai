@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Org } from "../../lib/org/types";
 import type { Project } from "../../lib/project/types";
 import type { SourceChannel, TeamProvider } from "../../lib/integrations/types";
@@ -30,6 +30,7 @@ type Summary = {
   }[];
 };
 const names = { slack: "Slack", discord: "Discord" };
+type DiscordServer = { id: string; name: string; access: "ready" | "install" | "ask" };
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -45,11 +46,16 @@ export function ConnectionsPanel({
   projects,
   selectedId,
   onSelect,
+  chooseDiscord = false,
+  onDiscordChosen,
 }: {
   org: Org;
   projects: Project[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Open the Discord server list on arrival, after signing in with Discord. */
+  chooseDiscord?: boolean;
+  onDiscordChosen?: () => void;
 }) {
   const project = projects.find((p) => p.id === selectedId) ?? projects[0];
   return (
@@ -87,6 +93,8 @@ export function ConnectionsPanel({
             key={project.id}
             orgSlug={org.slug}
             project={project}
+            chooseDiscord={chooseDiscord}
+            onDiscordChosen={onDiscordChosen}
           />
         ) : (
           <p className="mt-6 text-xs text-vs-muted">
@@ -100,9 +108,13 @@ export function ConnectionsPanel({
 function ProjectConnections({
   orgSlug,
   project,
+  chooseDiscord,
+  onDiscordChosen,
 }: {
   orgSlug: string;
   project: Project;
+  chooseDiscord?: boolean;
+  onDiscordChosen?: () => void;
 }) {
   const base = `/api/orgs/${encodeURIComponent(orgSlug)}/projects/${encodeURIComponent(project.slug)}/integrations`;
   const [data, setData] = useState<Summary | null>(null),
@@ -115,6 +127,9 @@ function ProjectConnections({
     channels: SourceChannel[];
     selected: string[];
   } | null>(null);
+  const [servers, setServers] = useState<DiscordServer[] | null>(null),
+    [serverSearch, setServerSearch] = useState(""),
+    [invite, setInvite] = useState<{ server: string; url: string; copied: boolean } | null>(null);
   const [disconnect, setDisconnect] = useState<TeamProvider | null>(null),
     [shared, setShared] = useState(false),
     [search, setSearch] = useState("");
@@ -156,20 +171,53 @@ function ProjectConnections({
     }
   }
   const openChannels = (provider: TeamProvider) =>
-    action(provider, async () => {
-      const result = await api<{ channels: SourceChannel[] }>(
-        `${base}/${provider}`,
-      );
-      setShared(false);
-      setSearch("");
-      setPicker({
-        provider,
-        channels: result.channels,
-        selected:
-          data?.connections
-            .find((c) => c.provider === provider)
-            ?.channels.map((c) => c.id) ?? [],
+    action(provider, () => loadChannels(provider));
+  async function loadChannels(provider: TeamProvider) {
+    const result = await api<{ channels: SourceChannel[] }>(
+      `${base}/${provider}`,
+    );
+    setShared(false);
+    setSearch("");
+    setPicker({
+      provider,
+      channels: result.channels,
+      selected:
+        data?.connections
+          .find((c) => c.provider === provider)
+          ?.channels.map((c) => c.id) ?? [],
+    });
+  }
+  // Every Discord server the member's account is in, after signing in with Discord.
+  const listedServers = useRef(false);
+  useEffect(() => {
+    if (!chooseDiscord || listedServers.current) return;
+    listedServers.current = true;
+    onDiscordChosen?.();
+    void api<{ servers: DiscordServer[] }>(`${base}/discord/servers`)
+      .then((value) => {
+        setServerSearch("");
+        setInvite(null);
+        setServers(value.servers);
+      })
+      .catch((cause) => setError(cause.message));
+  }, [base, chooseDiscord, onDiscordChosen]);
+  const chooseServer = (server: DiscordServer) =>
+    action(`server:${server.id}`, async () => {
+      const step =
+        server.access === "ready" ? "connect" : server.access === "install" ? "install" : "invite";
+      const result = await api<{ ok?: true; url?: string }>(`${base}/discord/servers`, {
+        method: "POST",
+        body: JSON.stringify({ guildId: server.id, action: step }),
       });
+      if (step === "install" && result.url) return location.assign(result.url);
+      if (step === "invite" && result.url) {
+        const copied = await navigator.clipboard?.writeText(result.url).then(() => true, () => false);
+        setInvite({ server: server.name, url: result.url, copied: !!copied });
+        return;
+      }
+      setServers(null);
+      await reload();
+      await loadChannels("discord");
     });
   const connect = (provider: TeamProvider) =>
     action(provider, async () => {
@@ -442,6 +490,97 @@ function ProjectConnections({
               Deselecting a channel removes its imported context.
             </span>
           </label>
+          {error && <ErrorNote>{error}</ErrorNote>}
+        </Modal>
+      )}
+      {servers && (
+        <Modal
+          title="Choose a Discord server"
+          description={`Every server your Discord account is in. Its public channels can then be shared with ${project.name}.`}
+          onClose={() => {
+            if (!busy) setServers(null);
+          }}
+          footer={
+            <GhostButton disabled={!!busy} onClick={() => setServers(null)}>
+              Close
+            </GhostButton>
+          }
+        >
+          {servers.length > 6 && (
+            <input
+              aria-label="Search servers"
+              type="search"
+              placeholder="Find a server…"
+              value={serverSearch}
+              onChange={(event) => setServerSearch(event.target.value)}
+              className={inputClass}
+            />
+          )}
+          <ul className="space-y-1" aria-label="Your Discord servers">
+            {servers
+              .filter((server) =>
+                server.name.toLowerCase().includes(serverSearch.toLowerCase()),
+              )
+              .map((server) => (
+                <li
+                  key={server.id}
+                  className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-xs hover:bg-vs-hover"
+                >
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-indigo-500/15 font-semibold text-indigo-300">
+                    {server.name.trim().charAt(0).toUpperCase() || "D"}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-vs-fg">{server.name}</span>
+                    <span className="block text-[11px] text-vs-muted">
+                      {server.access === "ready"
+                        ? "Bot added · ready to connect"
+                        : server.access === "install"
+                          ? "You manage this server"
+                          : "A server admin needs to add the bot"}
+                    </span>
+                  </span>
+                  {server.access === "ask" ? (
+                    <GhostButton
+                      disabled={!!busy}
+                      onClick={() => void chooseServer(server)}
+                    >
+                      {busy === `server:${server.id}` && <SpinnerIcon className="h-3.5 w-3.5" />}
+                      Invite an admin
+                    </GhostButton>
+                  ) : (
+                    <PrimaryButton
+                      disabled={!!busy}
+                      onClick={() => void chooseServer(server)}
+                    >
+                      {busy === `server:${server.id}` && <SpinnerIcon className="h-3.5 w-3.5" />}
+                      {server.access === "ready" ? "Connect" : "Add bot & connect"}
+                    </PrimaryButton>
+                  )}
+                </li>
+              ))}
+            {!servers.length && (
+              <li className="py-3 text-xs text-vs-muted">
+                Your Discord account is not in any servers yet.
+              </li>
+            )}
+          </ul>
+          {invite && (
+            <div role="status" className="space-y-2 rounded-lg border border-vs-border bg-vs-editor/50 p-2.5 text-xs leading-5 text-vs-muted">
+              <p>
+                {invite.copied ? "Invite link copied. " : ""}Send it to someone
+                who manages <span className="text-vs-fg">{invite.server}</span>.
+                When they add the bot, the server connects to {project.name}
+                and you can choose its channels. The link works for 7 days.
+              </p>
+              <input
+                aria-label="Invite link for a server admin"
+                readOnly
+                value={invite.url}
+                onFocus={(event) => event.currentTarget.select()}
+                className={inputClass}
+              />
+            </div>
+          )}
           {error && <ErrorNote>{error}</ErrorNote>}
         </Modal>
       )}

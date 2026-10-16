@@ -1,4 +1,5 @@
 import { callbackUrl, unseal } from "./config";
+import { discordSignInUrl, exchangeDiscordCode } from "./discord";
 import {
   IntegrationError,
   type Connection,
@@ -212,7 +213,9 @@ export type DiscordMessage = {
   author?: { id: string; username: string; global_name?: string | null };
   message_reference?: { message_id?: string };
 };
-const READ = 1024n | 65536n;
+/** View Channel and Read Message History: all the bot is ever granted. */
+export const DISCORD_READ = 1024n | 65536n;
+const READ = DISCORD_READ;
 export function publicDiscordChannel(
   channel: DiscordChannel,
   guildId: string,
@@ -251,31 +254,11 @@ export function discordMessage(
   };
 }
 const discordAdapter: TeamAdapter = {
-  authorize(state) {
-    return `https://discord.com/oauth2/authorize?${new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID!,
-      scope: "bot identify",
-      permissions: READ.toString(),
-      response_type: "code",
-      integration_type: "0",
-      redirect_uri: callbackUrl("discord"),
-      state,
-    })}`;
-  },
+  // Connecting starts by signing in as the member, to list every server they
+  // are in (see discord.ts); the bot install comes later, for one server.
+  authorize: discordSignInUrl,
   async exchange(code) {
-    const data = await providerJson<{ guild?: { id: string; name: string } }>(
-      "https://discord.com/api/v10/oauth2/token",
-      {
-        method: "POST",
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          code,
-          client_id: process.env.DISCORD_CLIENT_ID!,
-          client_secret: process.env.DISCORD_CLIENT_SECRET!,
-          redirect_uri: callbackUrl("discord"),
-        }),
-      },
-    );
+    const data = await exchangeDiscordCode(code);
     // Never trust the guild_id query parameter: it is only a browser hint.
     if (!data.guild?.id)
       throw new IntegrationError(

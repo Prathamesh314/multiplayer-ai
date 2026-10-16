@@ -504,6 +504,8 @@ function OrgPanel({
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [connectionProject, setConnectionProject] = useState<string | null>(null);
+  // Back from signing in with Discord: open its server list once.
+  const [chooseDiscord, setChooseDiscord] = useState(false);
 
   if (loadedSlug !== org.slug) {
     setLoadedSlug(org.slug);
@@ -520,6 +522,7 @@ function OrgPanel({
         const requested = new URLSearchParams(window.location.search).get('connections');
         if (requested && list.some(project => project.id === requested)) {
           setConnectionProject(requested);setConnectionsOpen(true);
+          setChooseDiscord(new URLSearchParams(window.location.search).get('discord') === 'choose');
           window.history.replaceState(null,'','/workspace');
         }
       })
@@ -672,7 +675,7 @@ function OrgPanel({
       </aside>
 
       {connectionsOpen ? (
-        <ConnectionsPanel org={org} projects={projects??[]} selectedId={connectionProject} onSelect={setConnectionProject}/>
+        <ConnectionsPanel org={org} projects={projects??[]} selectedId={connectionProject} onSelect={setConnectionProject} chooseDiscord={chooseDiscord} onDiscordChosen={()=>setChooseDiscord(false)}/>
       ) : (
         <ProjectOverview
           computerConnection={computerConnection}
