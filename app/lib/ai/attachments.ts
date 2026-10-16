@@ -3,8 +3,7 @@ import { createWriteStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { once } from "node:events";
 import { query, queryOne, transaction } from "../db/client";
 import { readAttachmentObject, removeAttachmentObject, storeAttachmentObject } from "../storage/blobs";
 
@@ -152,16 +151,23 @@ export async function receiveUpload(token: string, body: ReadableStream<Uint8Arr
   try {
     const path = join(directory, "upload");
     const hash = createHash("sha256");
+    const file = createWriteStream(path, { mode: 0o600 });
     let received = 0;
-    const counter = new Transform({
-      transform(chunk: Buffer, _encoding, done) {
-        received += chunk.length;
-        if (received > expected) return done(new AttachmentError("The file is larger than declared.", 413));
-        hash.update(chunk);
-        done(null, chunk);
-      },
-    });
-    await pipeline(Readable.fromWeb(body as import("node:stream/web").ReadableStream<Uint8Array>), counter, createWriteStream(path, { mode: 0o600 }));
+    // Read the body to its end even when it overflows: cancelling the request
+    // stream makes Next throw an uncaught "ReadableStream is already closed".
+    // The gateway bounds how much a client can send.
+    const reader = body.getReader();
+    try {
+      for (let next = await reader.read(); !next.done; next = await reader.read()) {
+        received += next.value.length;
+        if (received > expected) continue;
+        hash.update(next.value);
+        if (!file.write(next.value)) await once(file, "drain");
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) => file.end((error?: Error | null) => (error ? reject(error) : resolve())));
+    }
+    if (received > expected) throw new AttachmentError("The file is larger than declared.", 413);
     if (received !== expected) throw new AttachmentError("The upload was incomplete. Attach the file again.");
     await storeAttachmentObject(row.id, path);
     const sha256 = hash.digest("hex");

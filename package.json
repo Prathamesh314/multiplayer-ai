@@ -53,6 +53,7 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs",
     "test:attachments": "node --import tsx --test tests/attachments.test.mjs",
+    "test:attachments:http": "node --import tsx tests/attachments-http.mjs",
     "test:parallel-chats": "node --import tsx tests/parallel-chats.test.mjs",
     "test:titles": "node --import tsx tests/titles.test.mjs",
     "test:terminal": "node --import tsx --test tests/terminal.test.mjs tests/runner-terminal.test.mjs && node --import tsx tests/terminal-relay.test.mjs",
