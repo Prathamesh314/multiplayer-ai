@@ -101,7 +101,7 @@
     "test:email-sender": "node --import tsx tests/email-sender-live.mjs",
     "test:email-verification:http": "npm run test:clerk:http",
     "test:google-auth:http": "npm run test:clerk:http",
-    "test:sharing": "node --import tsx tests/shared-chats.test.mjs && node --import tsx --test tests/db-limits.test.mjs",
+    "test:sharing": "node --import tsx tests/shared-chats.test.mjs && node --import tsx --test tests/db-limits.test.mjs tests/chat-link-sharing.test.mjs",
     "test:sharing:http": "node --import tsx tests/shared-chats-http.mjs",
     "test:collaboration": "node --import tsx tests/collaboration-flow.test.mjs",
     "docs:capture": "npm run desktop:prepare && node scripts/capture-docs.mjs --start-server",
