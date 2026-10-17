@@ -12,6 +12,10 @@ import { isUuid } from "./turns";
  * The chat shows it, and only the chat's driver, the member whose computer and
  * AI account are doing the work, can allow or deny it. "Always allow" adds the
  * request's rule to the chat, and later turns pass it to the CLI up front.
+ *
+ * The driver can instead put a chat in Auto mode: then every request is
+ * allowed at once, without asking, and kept as "allowed automatically" so the
+ * chat still shows what the agent did. Manual ("ask") is the default.
  */
 
 export type PermissionStatus = "pending" | "allowed" | "denied" | "expired";
@@ -25,6 +29,8 @@ export type PermissionRequest = {
   rule: string | null;
   status: PermissionStatus;
   remember: boolean;
+  /** Allowed by the chat's Auto mode rather than by a person. */
+  automatic: boolean;
   decidedBy: string | null;
   createdAt: number;
 };
@@ -33,10 +39,10 @@ export class PermissionError extends Error {
 }
 
 type Row = { id: string; turn_id: string; tool: string; title: string; detail: string | null; rule: string | null;
-  status: PermissionStatus; remember: boolean; decided_by_name: string | null; created_at: Date };
+  status: PermissionStatus; remember: boolean; automatic: boolean; decided_by_name: string | null; created_at: Date };
 const toRequest = (row: Row): PermissionRequest => ({
   id: row.id, turnId: row.turn_id, tool: row.tool, title: row.title, detail: row.detail, rule: row.rule,
-  status: row.status, remember: row.remember, decidedBy: row.decided_by_name, createdAt: row.created_at.getTime(),
+  status: row.status, remember: row.remember, automatic: row.automatic, decidedBy: row.decided_by_name, createdAt: row.created_at.getTime(),
 });
 
 const text = (value: unknown, max: number) => typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
@@ -49,22 +55,24 @@ async function signal(sessionId: string, runId: string) {
 }
 
 /**
- * The runner asks. Idempotent by request id; a rule the chat always allows is
- * granted at once. Returns the request's current status.
+ * The runner asks. Idempotent by request id; a rule the chat always allows, or
+ * any request in an Auto chat, is granted at once. Returns its current status.
  */
 export async function requestPermission(job: AgentRunJob, input: { id?: unknown; tool?: unknown; title?: unknown; detail?: unknown; rule?: unknown }): Promise<PermissionStatus> {
   const id = input.id, tool = text(input.tool, 200), title = text(input.title, 300);
   if (!isUuid(id) || !tool || !title) throw new PermissionError("Invalid permission request.");
   const rule = validRule(input.rule) ? input.rule : null;
   const status = await transaction(async (tx) => {
-    const remembered = rule
-      ? (await tx.query(`SELECT 1 FROM agent_runs WHERE id = $1 AND $2 = ANY(allowed_tools)`, [job.runId, rule])).rows.length > 0
-      : false;
+    const chat = (await tx.query<{ remembered: boolean; auto: boolean; driver: string | null }>(
+      `SELECT $2::text IS NOT NULL AND $2 = ANY(allowed_tools) AS remembered, permission_mode = 'auto' AS auto, driver_user_id AS driver
+         FROM agent_runs WHERE id = $1`, [job.runId, rule])).rows[0];
+    const remembered = !!chat?.remembered, automatic = !remembered && !!chat?.auto;
+    const allowed = remembered || automatic;
     await tx.query(
-      `INSERT INTO agent_permission_requests(id, turn_id, run_id, tool, title, detail, rule, status, remember, decided_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO agent_permission_requests(id, turn_id, run_id, tool, title, detail, rule, status, remember, automatic, decided_by, decided_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
       [id, job.turnId, job.runId, tool, title, text(input.detail, 4000), rule,
-        remembered ? "allowed" : "pending", remembered, remembered ? new Date() : null]);
+        allowed ? "allowed" : "pending", remembered, automatic, automatic ? chat!.driver : null, allowed ? new Date() : null]);
     const row = (await tx.query<{ status: PermissionStatus; turn_id: string }>(
       `SELECT status, turn_id FROM agent_permission_requests WHERE id = $1`, [id])).rows[0];
     if (row.turn_id !== job.turnId) throw new PermissionError("Invalid permission request.", 409);
@@ -120,7 +128,7 @@ export async function decidePermission(input: { sessionId: string; runId: string
 export async function listPermissions(runId: string): Promise<PermissionRequest[]> {
   const rows = await query<Row>(
     `SELECT * FROM (
-       SELECT r.id, r.turn_id, r.tool, r.title, r.detail, r.rule, r.remember, r.created_at, u.display_name AS decided_by_name,
+       SELECT r.id, r.turn_id, r.tool, r.title, r.detail, r.rule, r.remember, r.automatic, r.created_at, u.display_name AS decided_by_name,
               CASE WHEN r.status = 'pending' AND t.status NOT IN ('queued', 'running') THEN 'expired' ELSE r.status END AS status
          FROM agent_permission_requests r
          JOIN agent_turns t ON t.id = r.turn_id
@@ -134,4 +142,34 @@ export async function listPermissions(runId: string): Promise<PermissionRequest[
 /** Rules this chat always allows, sent to the runner with each turn. */
 export async function allowedTools(runId: string): Promise<string[]> {
   return (await queryOne<{ allowed_tools: string[] }>(`SELECT allowed_tools FROM agent_runs WHERE id = $1`, [runId]))?.allowed_tools ?? [];
+}
+
+/**
+ * The driver switches a chat between Manual ("ask") and Auto. Switching to
+ * Auto also allows what the agent is waiting for right now.
+ */
+export async function setPermissionMode(input: { sessionId: string; runId: string; userId: string; mode: unknown }) {
+  if (input.mode !== "ask" && input.mode !== "auto") throw new PermissionError("Choose Manual or Auto.");
+  if (!isUuid(input.runId)) throw new PermissionError("Chat not found.", 404);
+  const released = await transaction(async (tx) => {
+    const run = (await tx.query<{ driver_user_id: string | null }>(
+      `SELECT driver_user_id FROM agent_runs WHERE id = $1 AND session_id = $2 FOR UPDATE`, [input.runId, input.sessionId])).rows[0];
+    if (!run) throw new PermissionError("Chat not found.", 404);
+    if (run.driver_user_id !== input.userId)
+      throw new PermissionError("Only the person running this chat can change this: it runs on their computer, with their AI account.", 403);
+    await tx.query(`UPDATE agent_runs SET permission_mode = $2 WHERE id = $1`, [input.runId, input.mode]);
+    if (input.mode !== "auto") return 0;
+    return (await tx.query(
+      `UPDATE agent_permission_requests r SET status = 'allowed', automatic = true, decided_by = $2, decided_at = now()
+        FROM agent_turns t
+        WHERE r.run_id = $1 AND r.status = 'pending' AND t.id = r.turn_id AND t.status IN ('queued', 'running') RETURNING r.id`,
+      [input.runId, input.userId])).rows.length;
+  });
+  await signal(input.sessionId, input.runId);
+  return { mode: input.mode, released };
+}
+
+/** A new message carries the composer's mode; it applies to the sender's own chat only. */
+export async function setRunPermissionMode(runId: string, driverId: string, mode: "ask" | "auto") {
+  await query(`UPDATE agent_runs SET permission_mode = $3 WHERE id = $1 AND driver_user_id = $2 AND permission_mode <> $3`, [runId, driverId, mode]);
 }

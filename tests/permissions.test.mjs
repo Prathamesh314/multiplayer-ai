@@ -170,3 +170,41 @@ test("the runner relays Claude Code's stdio permission protocol and sends the pr
   const nobody = await runAgentLocally({ spec, prompt: "hi", cwd: directory, onEvent: () => {} });
   assert.match(nobody.output, /^prompt=2 deny/, "without an asker, requests are refused as before");
 });
+
+test("Auto approval allows at once and is the driver's choice; switching to Auto releases what waits", async () => {
+  const { setPermissionMode, setRunPermissionMode } = await import("../app/lib/ai/permissions.ts");
+  const { getRun } = await import("../app/lib/ai/runs.ts");
+  const f = await memoryFixture();
+  try {
+    const run = await createRun({ sessionId: f.room, startedBy: f.alice, agentId: "claude", baseSha: "a".repeat(40) });
+    assert.equal((await getRun(run.id)).permissionMode, "ask", "Manual by default");
+    const turnId = randomUUID();
+    await reserveTurn(run.id, f.alice, turnId, 0);
+    await f.db.query(`UPDATE agent_turns SET status='running' WHERE id=$1`, [turnId]);
+    const job = { turnId, runId: run.id, sessionId: f.room };
+    const shell = (title) => ({ id: randomUUID(), tool: "Bash", title, rule: null });
+
+    const waiting = shell("Run: python3 read.py");
+    assert.equal(await requestPermission(job, waiting), "pending", "Manual waits for the driver");
+    await assert.rejects(setPermissionMode({ sessionId: f.room, runId: run.id, userId: f.bob, mode: "auto" }), (e) => e.status === 403, "only the driver chooses Auto");
+    await assert.rejects(setPermissionMode({ sessionId: f.room, runId: run.id, userId: f.alice, mode: "yolo" }), /Manual or Auto/);
+    assert.deepEqual(await setPermissionMode({ sessionId: f.room, runId: run.id, userId: f.alice, mode: "auto" }), { mode: "auto", released: 1 });
+    assert.deepEqual(await permissionStatus(turnId, waiting.id), { status: "allowed", remember: false }, "what was waiting is allowed");
+
+    const auto = shell("Run: unzip sheet.xlsx");
+    assert.equal(await requestPermission(job, auto), "allowed", "Auto answers at once");
+    const listed = (await listPermissions(run.id)).find((item) => item.id === auto.id);
+    assert.deepEqual([listed.status, listed.automatic, listed.decidedBy], ["allowed", true, "Alice"], "kept, marked automatic");
+
+    await setPermissionMode({ sessionId: f.room, runId: run.id, userId: f.alice, mode: "ask" });
+    assert.equal(await requestPermission(job, shell("Run: rm -rf build")), "pending", "back to Manual");
+
+    // A message sets its own chat's mode; it never changes someone else's chat.
+    await setRunPermissionMode(run.id, f.bob, "auto");
+    assert.equal((await getRun(run.id)).permissionMode, "ask");
+    await setRunPermissionMode(run.id, f.alice, "auto");
+    assert.equal((await getRun(run.id)).permissionMode, "auto");
+  } finally {
+    await f.close();
+  }
+});

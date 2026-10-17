@@ -61,6 +61,8 @@ export function runAgent(
     attachmentIds?: string[];
     /** Repository paths tagged with "@" in the prompt (lib/ai/file-mentions.ts). */
     fileRefs?: string[];
+    /** Manual ("ask") or Auto approval for this chat. */
+    permissionMode?: "ask" | "auto";
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

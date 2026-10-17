@@ -129,6 +129,10 @@ export function installFixtures() {
         // Tool requests an agent is waiting on: state.permissions[runId]; answers are recorded.
         const requests=(state.permissions??={})[run.id]??=[];
         if(runPath[3]&&init.method==="POST"){const decision=JSON.parse(init.body).decision;(state.permissionDecisions??=[]).push({id:runPath[3],decision});const request=requests.find(item=>item.id===runPath[3]);if(request)request.status=decision==="deny"?"denied":"allowed";return json({status:request?.status});}
+        // Approvals: Auto allows what is waiting, as the server does.
+        if(!runPath[3]&&init.method==="PUT"){const mode=JSON.parse(init.body).mode;run.permissionMode=mode;(state.modeChanges??=[]).push(mode);
+          let released=0;if(mode==="auto")for(const request of requests)if(request.status==="pending"){request.status="allowed";request.automatic=true;released++;}
+          setTimeout(()=>state.emit?.("run.permission",{runId:run.id,at:Date.now()}),0);return json({mode,released});}
         return json({requests});
       }
       if(runPath[2]==="inputs") {

@@ -1065,6 +1065,7 @@ export function Workspace({
                   node: (
                       <AiPanel
                         computerStatus={computerConnection.status}
+                        computerAsks={computerConnection.computer?.supportsPermissions !== false}
                         onSetUpAi={() => setHelpDialog("providers")}
                         actionsHost={actionsHost}
                         onShowConversation={() => setShowChat(true)}

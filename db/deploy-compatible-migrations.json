@@ -10,5 +10,6 @@
   "057_agent_permission_requests.sql": "ca9e6f7a2f616e3390caa95f7be36ff0dbc557e584779367f7f44b76426b89ee",
   "058_connection_member.sql": "7118283e6688cd4f49894ec50bab6741ebb3f92da9257a57b5b3db21dd60cb1c",
   "059_agent_tools.sql": "3e47c4882c79db044b129f9da45276b2f20f9e20f6451167d6ec1f19fedf961a",
-  "060_chat_link_sharing.sql": "5f48937628b0f3aaab23cc038bbdff6a9c3e592330915e1bfdff574c7c1c18ea"
+  "060_chat_link_sharing.sql": "5f48937628b0f3aaab23cc038bbdff6a9c3e592330915e1bfdff574c7c1c18ea",
+  "061_permission_modes.sql": "01353d6bb90712b1b80f6d3fe486ce9126d4d10d894ac11868de19c771b84efa"
 }
