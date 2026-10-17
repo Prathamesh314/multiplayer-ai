@@ -38,8 +38,8 @@ try{
  // A second Clerk identity for Bob's email is refused while his original one exists...
  clerk.profile('user_bob_live','bob@memory.test');const bobLive=await clerk.token('user_bob_live',{origin:base});
  const refused=await api('/api/auth/complete',bobLive,{});assert.equal(refused.status,403);assert.match((await refused.json()).error,/Sign in the way you did before/);
- // ...and relinks his same account once Clerk no longer has it (e.g. development keys replaced by live keys).
- clerk.profiles.delete('user_bob');
+ // ...and relinks his same account once that identity no longer holds the address (changed, deleted, or another Clerk instance).
+ clerk.profile('user_bob','bob-old-address@memory.test');
  const relinked=await api('/api/auth/complete',bobLive,{});assert.equal(relinked.status,200,await relinked.clone().text());assert.equal((await relinked.json()).user.id,f.bob,'a stale Clerk link is relinked to the same account');
  clerk.profile('user_unverified','unverified@example.test',{email_addresses:[{id:'email_user_unverified',email_address:'unverified@example.test',verification:{status:'unverified'},linked_to:[]}]});
  assert.equal((await api('/api/auth/complete',await clerk.token('user_unverified',{origin:base}),{})).status,403);
@@ -64,6 +64,19 @@ try{
  assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier:'x'.repeat(43)})).status,400);
  assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier})).status,200);
  assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier})).status,400);
+ // One account, several devices at once: each device has its own Clerk session.
+ const laptop=await clerk.token('user_'+f.alice,{origin:base,sessionId:'sess_alice_laptop'}),phone=await clerk.token('user_'+f.alice,{origin:base,sessionId:'sess_alice_phone'});
+ const who=async token=>(await(await api('/api/auth/me',token)).json()).user?.id??null;
+ assert.deepEqual(await Promise.all([who(alice),who(laptop),who(phone)]),[f.alice,f.alice,f.alice],'the same account works on every device at once');
+ assert.equal((await api('/api/auth/complete',phone,{})).status,200,'finishing sign-in on a phone works while other devices are signed in');
+ assert.equal((await api('/api/orgs',laptop)).status,200,'and does not sign the other devices out');
+ assert.equal((await api('/api/auth/me',phone,undefined,{},'DELETE')).status,200);
+ assert.equal(await who(phone),null,'signing out on the phone ends only the phone session');
+ assert.equal(clerk.sessions.get('sess_alice_phone').status,'revoked','and revokes it at Clerk');
+ assert.equal(await who(laptop),f.alice,'the laptop stays signed in');
+ assert.equal(await who(alice),f.alice);
+ // Another person's token can never use this account's session.
+ assert.equal(await who(await clerk.token('user_'+f.alice,{origin:'https://evil.example',sessionId:'sess_alice_laptop'})),null,'a token minted for another site is refused');
  const event={type:'session.revoked',data:{object:'session',id:'sess_alice',user_id:'user_'+f.alice}},raw=JSON.stringify(event),id='msg_fixture',timestamp=String(Math.floor(Date.now()/1000));
  const signature=createHmac('sha256',Buffer.from(clerk.env.CLERK_WEBHOOK_SIGNING_SECRET.slice(6),'base64')).update(`${id}.${timestamp}.${raw}`).digest('base64');
  assert.equal((await api('/api/webhooks/clerk',null,event)).status,400);
