@@ -793,8 +793,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
           }
         }
       };
-      await readUntil(() => shown.includes(directory), "opens in the worktree on Bob's computer");
+      await readUntil(() => shown.includes("Terminal · room worktree"), "announces where it opened, briefly");
+      assert.equal(shown.includes(directory), false, "the notice names the worktree, not its full path");
       const terminalPost = (token, body) => request(token, `/api/terminal/pty?id=${terminalId}`, "POST", { id: terminalId, ...body });
+      assert.equal((await terminalPost(tokens[1], { type: "input", data: "pwd\r" })).status, 204);
+      await readUntil(() => shown.includes(directory), "opens in the worktree on Bob's computer");
       assert.equal((await terminalPost(tokens[1], { type: "input", data: "echo through-the-relay-$((6*7))\r" })).status, 204);
       await readUntil(() => shown.includes("through-the-relay-42"), "relays keystrokes and output");
       await terminalPost(tokens[0], { type: "input", data: "echo alice-was-here\r" });
