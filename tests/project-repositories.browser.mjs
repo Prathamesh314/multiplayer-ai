@@ -124,7 +124,7 @@ try {
   await writeFile(join(tmpdir(),'multiplayer-working-state.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   // The agent asks before opening a link; the driver answers in the chat.
   await evaluate(`window.__model.permissions={"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa":[{id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",turnId:"t",tool:"WebFetch",title:"WebFetch: https://docs.google.com/spreadsheets/d/x",detail:"{}",rule:"WebFetch(domain:docs.google.com)",status:"pending",remember:false,decidedBy:null,createdAt:Date.now()}]};window.__model.emit("run.permission",{runId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",at:Date.now()});`);
-  await eventually(()=>evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].map(b=>b.textContent).join("|")==="Allow once|Always allow in this chat|Deny"`),"tool request with its choices");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].map(b=>b.textContent).join("|")==="Allow once|Always allow in this chat|Deny|Auto-approve this chat"`),"tool request with its choices");
   assert.ok(await evaluate(`document.querySelector('section[aria-label="Tool requests"]').textContent.includes("docs.google.com/spreadsheets")`));
   await evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].find(b=>b.textContent==="Always allow in this chat").click()`);
   await eventually(()=>evaluate(`!document.querySelector('section[aria-label="Tool requests"]') && JSON.stringify(window.__model.permissionDecisions)==='[{"id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","decision":"always"}]'`),"answer sent and the card cleared");
