@@ -2,7 +2,7 @@
 type Listener = { event: (type: string, data: unknown) => void; status?: (ready: boolean) => void };
 const streams = new Map<string, { source: EventSource; listeners: Set<Listener>; ready: boolean }>();
 const names = ["file.saved", "file.editing", "message.created", "members.changed", "role.changed", "run.control",
-  "run.started", "run.output", "run.turn", "run.finished", "run.branch", "run.inputs", "run.activity", "devices.changed", "tasks.changed", "usage.changed", "resync"];
+  "run.started", "run.output", "run.turn", "run.finished", "run.branch", "run.inputs", "run.activity", "run.permission", "devices.changed", "tasks.changed", "usage.changed", "resync"];
 
 export function sharedStream(url: string, listener: Listener): { close(): void } {
   let entry = streams.get(url);

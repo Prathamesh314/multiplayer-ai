@@ -24,7 +24,8 @@ export function PermissionRequests({ sessionId, runId, canAnswer, driverName, ag
         dirty = false;
         try {
           const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
-          if (response.ok && !controller.signal.aborted) setRequests((await response.json()).requests);
+          const body = response.ok ? await response.json().catch(() => null) : null;
+          if (body && !controller.signal.aborted) setRequests(Array.isArray(body.requests) ? body.requests : []);
         } catch { /* the next event or reconnect refreshes */ }
       } while (dirty && !controller.signal.aborted);
       loading = false;
