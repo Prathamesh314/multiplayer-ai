@@ -42,7 +42,7 @@
     "db:test": "node db/schema.test.mjs",
     "test:presence": "tsc app/lib/presence/types.ts app/lib/presence/memory.ts app/lib/presence/redis.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/presence.test.cjs",
     "test:repo": "tsc app/lib/session/repo.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/repo.test.cjs && npm run test:folder-upload",
-    "test:folder-upload": "node --import tsx --test tests/folder-upload.test.mjs",
+    "test:folder-upload": "node --import tsx --test tests/folder-upload.test.mjs tests/add-files.test.mjs",
     "bench:folder-upload": "node --import tsx scripts/benchmark-folder-upload.mjs",
     "test:lock": "node --import tsx --test tests/lock.test.mjs",
     "test:prompt": "tsc app/lib/ai/prompt.ts --outDir .test-build --module commonjs --target es2022 --moduleResolution node --skipLibCheck && node tests/prompt.test.cjs",

@@ -82,7 +82,17 @@ export function installFixtures() {
     }
     if(path.endsWith("/tree")) {
       const repo=state.repos.find(r=>r.id===u.searchParams.get("repoId"));
-      return json({rootName:repo.rootName,root:{name:repo.rootName,path:"",type:"directory",children:repo.empty?[]:[{name:repo.rootName+".txt",path:repo.rootName+".txt",type:"file",size:10}]},headSha:repo.headSha,sessionBranch:"session/"+repo.id});
+      const added=(repo.added??[]).map(path=>({name:path,path,type:"file",size:1}));
+      return json({rootName:repo.rootName,root:{name:repo.rootName,path:"",type:"directory",children:[...(repo.empty?[]:[{name:repo.rootName+".txt",path:repo.rootName+".txt",type:"file",size:10}]),...added]},headSha:repo.headSha,sessionBranch:"session/"+repo.id});
+    }
+    if(path.endsWith("/files") && init.method==="POST") {
+      // Explorer uploads: recorded, added to the repository's tree; an existing file needs overwrite.
+      const repo=state.repos.find(r=>r.id===u.searchParams.get("repoId")),form=init.body,paths=JSON.parse(form.get("paths")),overwrite=form.get("overwrite")==="1";
+      const existing=new Set([...(repo.empty?[]:[repo.rootName+".txt"]),...(repo.added??[])]),clashing=paths.filter(p=>existing.has(p));
+      (state.uploads??=[]).push({paths,overwrite,sizes:form.getAll("file").map(f=>f.size)});
+      if(clashing.length&&!overwrite)return new Response(JSON.stringify({error:"Some files already exist.",exists:clashing}),{status:409,headers:{"content-type":"application/json"}});
+      repo.added=[...(repo.added??[]),...paths.filter(p=>!existing.has(p))];
+      return json({headSha:"d".repeat(40),added:paths.filter(p=>!existing.has(p)),replaced:clashing});
     }
     if(path.endsWith("/changes")) return json({changes:[]});
     if(path.endsWith("/file")) {

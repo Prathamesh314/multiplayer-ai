@@ -280,6 +280,45 @@ export async function fetchChanges(sessionId: string, repoId: string | null = nu
   return body.changes ?? [];
 }
 
+/** Each file is at most the editor's read limit; each request stays under the proxy's buffer. */
+export const ADD_FILE_MAX_BYTES = 8 * 1024 * 1024;
+const ADD_BATCH_BYTES = 8.5 * 1024 * 1024;
+const ADD_BATCH_FILES = 100;
+
+export class FilesExistError extends Error {
+  constructor(public paths: string[]) { super(`${paths.length === 1 ? paths[0] : `${paths.length} files`} already exist${paths.length === 1 ? "s" : ""}.`); }
+}
+
+/**
+ * Add files to the repository (New file, New folder, Upload, drag and drop).
+ * Sent as raw bytes in batches under the request limit; each batch is one
+ * commit. Throws FilesExistError, before anything is written, if a file
+ * already exists and `overwrite` was not confirmed.
+ */
+export async function addRepoFiles(sessionId: string, repoId: string | null, files: { path: string; file: Blob }[], overwrite = false): Promise<{ added: string[]; replaced: string[] }> {
+  const batches: { path: string; file: Blob }[][] = [];
+  let current: { path: string; file: Blob }[] = [], bytes = 0;
+  for (const item of files) {
+    if (item.file.size > ADD_FILE_MAX_BYTES) throw new Error(`${item.path} is larger than 8 MB.`);
+    if (current.length && (bytes + item.file.size > ADD_BATCH_BYTES || current.length >= ADD_BATCH_FILES)) { batches.push(current); current = []; bytes = 0; }
+    current.push(item); bytes += item.file.size;
+  }
+  if (current.length) batches.push(current);
+  const added: string[] = [], replaced: string[] = [];
+  for (const batch of batches) {
+    const form = new FormData();
+    form.append("paths", JSON.stringify(batch.map((item) => item.path)));
+    for (const item of batch) form.append("file", item.file, item.path.split("/").pop() || "file");
+    if (overwrite) form.append("overwrite", "1");
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/files?repoId=${encodeURIComponent(repoId ?? "")}`, { method: "POST", body: form });
+    const body = await response.json().catch(() => ({})) as { added?: string[]; replaced?: string[]; exists?: string[]; error?: string };
+    if (response.status === 409 && body.exists) throw new FilesExistError(body.exists);
+    if (!response.ok) throw new Error(body.error ?? "Could not add these files.");
+    added.push(...(body.added ?? [])); replaced.push(...(body.replaced ?? []));
+  }
+  return { added, replaced };
+}
+
 export async function scanSession(session: Session, repoId: string | null = null): Promise<ScanResult> {
   const id = session.id;
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/tree?repoId=${encodeURIComponent(repoId ?? "")}`, {
