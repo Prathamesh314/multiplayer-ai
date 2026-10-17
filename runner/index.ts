@@ -1,6 +1,7 @@
 import { permissionAsker } from "./permissions";
 import { ATTACHMENT_ROOT, placeAttachments } from "./attachments";
 import { ActivityOutbox } from "./activity-outbox";
+import { prepareTools, secretNamesHere, writeSecret, SECRET_NAME } from "./agent-tools";
 /*
  * The multicode-ai runner: agents on your machine, rooms in the cloud.
  *
@@ -48,8 +49,11 @@ process.on("SIGTERM", stop);
 const desktopPort = (process as NodeJS.Process & {
   parentPort?: { on: (event: string, listener: (event: { data?: { type?: string } }) => void) => void };
 }).parentPort;
+/** Set once online: tells the server at once which keys this computer now holds. */
+let secretsChanged = () => {};
 desktopPort?.on("message", event => {
   if (event.data?.type === "shutdown") stop();
+  if (event.data?.type === "secrets-changed") secretsChanged();
 });
 
 function flag(name: string): string | null {
@@ -162,6 +166,8 @@ async function processJob(
       let checkpointing = Promise.resolve();
       const checkpoint = () => { checkpointing = checkpointing.then(() => workspace.checkpoint()).then(() => deliveries.checkpoints()).catch(cause => emit({ t: "notice", message: `Checkpoint pending: ${String(cause)}` })); };
       checkpoint();
+      const tools = await prepareTools(job.tools, spec.id, dataDir);
+      for (const message of tools.notices) emit({ t: "notice", message });
       const snapshotTimer = setInterval(checkpoint, 30_000);
       let result;
       try { result = await runAgentLocally({
@@ -173,6 +179,7 @@ async function processJob(
         onEvent: emit,
         signal: execution.signal,
         allowedTools: job.allowedTools,
+        tools,
         permissions: permissionAsker(api.permissions(job.turnId), job.allowedTools, {
           signal: execution.signal,
           onWaiting: request => emit({ t: "notice", message: `Waiting for you to allow in the chat: ${request.title}` }),
@@ -183,7 +190,7 @@ async function processJob(
           uncertain: async (id, error) => { await api.input(job.turnId, { kind: "uncertain", id, error }); },
           subscribe: listener => inputsReady.subscribe(listener),
         },
-      }); } finally { clearInterval(snapshotTimer); checkpoint(); await checkpointing; }
+      }); } finally { clearInterval(snapshotTimer); checkpoint(); await checkpointing; await tools.cleanup(); }
       code = result.code;
       output = result.output;
       errOutput = result.errOutput;
@@ -229,6 +236,7 @@ async function start(): Promise<void> {
   }
 
   const api = new RunnerApi(config.server, config.token);
+  api.secretNames = () => secretNamesHere(config.dataDir);
   const activity = new ActivityOutbox(config.dataDir, config.server, config.token);
   const workspacesDir = resolveWorkspacesDir(flag("workspaces") ?? ("workspacesDir" in config ? config.workspacesDir : undefined));
   const git = new RunnerGit(config.server, config.token, config.dataDir, workspacesDir, {
@@ -260,6 +268,7 @@ async function start(): Promise<void> {
   log(`online as "${config.name}" against ${config.server}${once ? " (single job)" : ""}`);
 
   const heartbeat = setInterval(() => void api.heartbeat(true).catch(() => {}), HEARTBEAT_MS);
+  secretsChanged = () => void api.heartbeat(true).catch(() => {});
   heartbeat.unref?.();
 
   let fatal: Error | null = null;
@@ -354,6 +363,35 @@ async function prune(): Promise<void> {
   if (!apply && results.some(entry => entry.removable)) log("Run again with --apply to remove them. Ignored files in them, such as installed dependencies, are deleted too.");
 }
 
+/**
+ * Keys for AI tools (MCP servers and plugins configured in the app), kept on
+ * this computer only. The value is read from stdin, never from the command line.
+ */
+async function secret(): Promise<void> {
+  const action = process.argv[3], name = process.argv[4];
+  const dataDir = flag("data") ?? loadConfig()?.dataDir ?? defaultDataDir();
+  if (action === "list") {
+    const names = secretNamesHere(dataDir);
+    console.log(names.length ? names.join("\n") : "No keys on this computer yet.");
+    return;
+  }
+  if ((action !== "set" && action !== "remove") || !name || !SECRET_NAME.test(name)) {
+    throw new Error("Usage: multicode-ai-runner secret <set|remove> NAME   (NAME like GITHUB_TOKEN)\n       multicode-ai-runner secret list");
+  }
+  if (action === "remove") { writeSecret(dataDir, name, null); log(`removed ${name}`); return; }
+  if (process.stdin.isTTY) process.stderr.write(`Paste the value for ${name}, then press Enter: `);
+  const chunks: Buffer[] = [];
+  if (process.stdin.isTTY) {
+    const line = await new Promise<string>(resolve => process.stdin.once("data", data => resolve(String(data))));
+    process.stdin.pause();
+    chunks.push(Buffer.from(line));
+  } else {
+    for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  }
+  writeSecret(dataDir, name, Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, ""));
+  log(`saved ${name} on this computer; a running runner picks it up for the next chat`);
+}
+
 const command = process.argv[2];
 if (command === "--help" || command === "-h" || command === "help") {
   console.log("Usage: multicode-ai-runner <pair|start|workspaces> [options]\n\n" +
@@ -361,6 +399,7 @@ if (command === "--help" || command === "-h" || command === "help") {
     "  start                                    Run your AI tasks (Ctrl+C to stop)\n" +
     "  workspaces [--json]                       List local worktrees\n" +
     "  workspaces prune [--apply]                Remove finished parallel-chat worktrees\n" +
+    "  secret set|remove <NAME> / secret list    Keys for AI tools, kept on this computer\n" +
     "  --version                                Print the runner version\n\n" +
     "Options: --name <name>, --workspaces <directory>, --data <directory>, --parallel <n> (optional cap), --no-terminal\n" +
     "Works from any directory. No application source checkout is needed.");
@@ -374,6 +413,8 @@ if (command === "--help" || command === "-h" || command === "help") {
     else if (workspaces.length) console.table(workspaces);
     else log("No local worktrees yet. They are created when a repository first runs on this computer.");
   }).catch(cause => { console.error(cause instanceof Error ? cause.message : String(cause)); process.exitCode = 1; });
+} else if (command === "secret") {
+  void secret().catch(cause => { console.error(cause instanceof Error ? cause.message : String(cause)); process.exitCode = 1; });
 } else if (command === "pair") {
   void pair().catch((cause) => {
     console.error(`[runner] ${cause instanceof Error ? cause.message : String(cause)}`);
