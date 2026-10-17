@@ -324,7 +324,9 @@ try {
   // A live run: waiting for the computer, then the agent's steps with readable
   // names, and the working status inside the composer card.
   await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
-    window.__model.runEvents=[{t:"notice",message:"Queued for your runner. No agent has started yet."},{wait:900},{t:"start",agent:"codex",cwd:"/w",runId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd"},{t:"act",d:"ToolSearch"},{t:"act",d:"mcp__claude_ai_Google_Drive__read_file_content"}];`);
+    window.__model.runEvents=[{t:"notice",message:"Queued for your runner. No agent has started yet."},{wait:900},{t:"start",agent:"codex",cwd:"/w",runId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd"},{t:"act",d:"ToolSearch"},{t:"act",d:"mcp__claude_ai_Google_Drive__read_file_content"},{wait:400},
+      {t:"out",d:"## Plan\\n\\nRun \`npm test\` before you start.\\n\\n\`\`\`bash\\nnpm install\\nnpm run dev\\n\`\`\`\\n\\n> [!WARNING]\\n> Back up the database first.\\n\\n| Step | Owner |\\n|---|---|\\n| Build | Alice |\\n\\n"},
+      ...Array.from({length:60},(_,i)=>[{wait:120},{t:"out",d:"Paragraph "+i+": the agent keeps writing so the chat grows well past the screen.\\n\\n"}]).flat()];`);
   await evaluate(`document.querySelector('button[aria-label="Send message"]').click()`);
   await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Waiting for your computer to start"))`),"a soft waiting pill while the computer picks it up");
   await writeFile(join(tmpdir(),'multiplayer-run-waiting.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
@@ -333,6 +335,20 @@ try {
   assert.ok(await evaluate(`!document.body.textContent.includes("mcp__claude_ai")`),"no raw tool identifiers");
   await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Codex is working"))`),"working status in the composer card");
   await writeFile(join(tmpdir(),'multiplayer-run-steps.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  // Copyable text stands apart: a code card with its language and Copy, inline code pills, a callout card.
+  await eventually(()=>evaluate(`!!document.querySelector('.md-code') && !!document.querySelector('.md-inline-code') && !!document.querySelector('.md-callout-warning')`),"answer formatting");
+  assert.ok(await evaluate(`document.querySelector('.md-code').textContent.includes("Terminal") && [...document.querySelectorAll('.md-code button')].some(b=>b.textContent.includes("Copy"))`),"the code card has a header and a copy button");
+  assert.ok(await evaluate(`getComputedStyle(document.querySelector('.md-code')).backgroundColor !== getComputedStyle(document.querySelector('[data-scroller=conversation]')).backgroundColor`),"code sits on its own surface");
+  await writeFile(join(tmpdir(),'multiplayer-markdown.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  // A long chat can be scrolled back while the agent is still writing.
+  const scroller='document.querySelector("[data-scroller=conversation]")';
+  await eventually(()=>evaluate(`${scroller}.scrollHeight > ${scroller}.clientHeight * 2`),"the chat grows past the screen");
+  await evaluate(`(()=>{const el=${scroller};el.scrollTop=0;el.dispatchEvent(new Event("scroll"));})()`);
+  await delay(700);
+  assert.ok(await evaluate(`${scroller}.scrollTop < 50`),"reading earlier messages is not interrupted by new output");
+  await eventually(()=>evaluate(`[...document.querySelectorAll("button")].some(b=>b.textContent.trim()==="↓ Latest")`),"a way back to the latest message");
+  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="↓ Latest").click()`);
+  await eventually(()=>evaluate(`(()=>{const el=${scroller};return el.scrollHeight-el.scrollTop-el.clientHeight<100;})()`),"jumps back to the latest message");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");
