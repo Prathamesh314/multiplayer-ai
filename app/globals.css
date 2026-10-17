@@ -349,3 +349,23 @@ body {
 .provider-row:hover .provider-mark, .provider-row-selected .provider-mark { transform: scale(1.06); }
 .providers-popover .provider-row { animation: provider-row-in 240ms cubic-bezier(0.2, 0.8, 0.3, 1) backwards; }
 @keyframes provider-row-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* An agent at work: a soft highlight sweeps across the status text, the way
+   modern assistants show "thinking" without a spinner. Static when motion is reduced. */
+.shimmer-text {
+  color: var(--vs-muted);
+  background: linear-gradient(90deg, var(--vs-muted) 0%, var(--vs-muted) 40%, var(--vs-fg) 50%, var(--vs-muted) 60%, var(--vs-muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-text 2.2s linear infinite;
+}
+@keyframes shimmer-text { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+/* The step an agent is on right now. */
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; -webkit-text-fill-color: currentColor; background: none; }
+  .pulse-dot { animation: none; }
+}

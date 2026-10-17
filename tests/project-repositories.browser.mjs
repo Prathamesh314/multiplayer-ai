@@ -118,6 +118,10 @@ try {
   await eventually(()=>evaluate(`!!document.querySelector('button[title^="Queue context A ·"]')`),"AI chats");
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`),"working chat queue");
+  // Working state: one composer-shaped card with the status inside, no separate bar.
+  assert.ok(await evaluate(`[...document.querySelectorAll('[aria-label="Chat message queue"] [role=status]')].some(e=>e.textContent.includes("Codex is working"))`),"the status sits in the composer card");
+  assert.equal(await evaluate(`[...document.querySelectorAll("aside div")].filter(e=>/is working…$/.test(e.textContent.trim())).length`),0,"no separate working bar");
+  await writeFile(join(tmpdir(),'multiplayer-working-state.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   // The agent asks before opening a link; the driver answers in the chat.
   await evaluate(`window.__model.permissions={"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa":[{id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",turnId:"t",tool:"WebFetch",title:"WebFetch: https://docs.google.com/spreadsheets/d/x",detail:"{}",rule:"WebFetch(domain:docs.google.com)",status:"pending",remember:false,decidedBy:null,createdAt:Date.now()}]};window.__model.emit("run.permission",{runId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",at:Date.now()});`);
   await eventually(()=>evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].map(b=>b.textContent).join("|")==="Allow once|Always allow in this chat|Deny"`),"tool request with its choices");
@@ -317,6 +321,18 @@ try {
   await type('dialog input',"Ideas and questions");await button("Create conversation space");
   await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Choose another name")'),"duplicate name has actionable feedback");
   await button("Cancel");
+  // A live run: waiting for the computer, then the agent's steps with readable
+  // names, and the working status inside the composer card.
+  await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
+    window.__model.runEvents=[{t:"notice",message:"Queued for your runner. No agent has started yet."},{wait:900},{t:"start",agent:"codex",cwd:"/w",runId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd"},{t:"act",d:"ToolSearch"},{t:"act",d:"mcp__claude_ai_Google_Drive__read_file_content"}];`);
+  await evaluate(`document.querySelector('button[aria-label="Send message"]').click()`);
+  await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Waiting for your computer to start"))`),"a soft waiting pill while the computer picks it up");
+  await writeFile(join(tmpdir(),'multiplayer-run-waiting.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await eventually(()=>evaluate(`document.body.textContent.includes("Google Drive · Read file content") && document.body.textContent.includes("Look up tools")`),"steps read as plain language");
+  assert.ok(await evaluate(`!document.body.textContent.includes("Waiting for your computer") && !document.body.textContent.includes("No agent has started yet")`),"the waiting pill gives way once the agent starts");
+  assert.ok(await evaluate(`!document.body.textContent.includes("mcp__claude_ai")`),"no raw tool identifiers");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Codex is working"))`),"working status in the composer card");
+  await writeFile(join(tmpdir(),'multiplayer-run-steps.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

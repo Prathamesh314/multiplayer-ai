@@ -138,7 +138,11 @@ export function installFixtures() {
       return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it.",parallelChats:!!state.parallelChats});
     }
     // Runs are not executed in the fixture: the request is recorded, then refused.
-    if(path === "/api/ai/run")return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
+    if(path === "/api/ai/run") {
+      // state.runEvents scripts a live run: NDJSON events, {wait:ms} pauses; the stream then stays open (still working).
+      if(state.runEvents){const events=state.runEvents,encoder=new TextEncoder();return new Response(new ReadableStream({async start(controller){for(const event of events){if(event.wait){await new Promise(resolve=>setTimeout(resolve,event.wait));continue;}controller.enqueue(encoder.encode(JSON.stringify(event)+"\n"));}}}),{headers:{"content-type":"application/x-ndjson"}});}
+      return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
+    }
     if(path === "/api/presence")return json({intervalMs:20000,online:["alice"]});
     if(path === "/api/runner/devices") {
       if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});
