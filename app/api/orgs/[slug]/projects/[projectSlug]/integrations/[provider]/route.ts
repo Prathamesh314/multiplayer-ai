@@ -47,6 +47,9 @@ async function handle(request: Request, context: Context) {
     if (request.method === "GET")
       return Response.json({
         channels: await adapterFor(provider).channels(connection),
+        // Discord connections made before the member was recorded list only
+        // channels everyone can read; reconnecting includes the member's own.
+        publicOnly: provider === "discord" && !connection.external_user_id,
       });
     const body = (await limitedJson(request, 8192)) as {
       channelIds?: unknown;
@@ -70,6 +73,8 @@ async function handle(request: Request, context: Context) {
       throw new IntegrationError(
         "A selected channel is no longer available. Refresh the channel list.",
       );
+    const blocked = channels.find((channel) => channel?.unavailable);
+    if (blocked) throw new IntegrationError(`#${blocked.name}: ${blocked.unavailable}`);
     await selectChannels(
       project.id,
       user.id,

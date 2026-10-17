@@ -611,7 +611,7 @@ Admins may see metadata for an access request without gaining access to the priv
   },
   {
     slug: "connections", category: "Work together", title: "Slack & Discord connections",
-    description: "Share selected public channels with a project as attributed context for AI.",
+    description: "Share selected channels with a project as attributed context for AI.",
     sections: [
       { id: "requirements", title: "Before connecting a service", body: `You need project management permission. For Slack you also need authority to install the app in the workspace. For Discord you can choose any server your account is in; if the bot isn't there yet, someone who manages that server adds it. The platform administrator must also have configured that provider. If a button says server setup is needed, ask your administrator to enable it.
 
@@ -629,9 +629,9 @@ Only supported public, unarchived channels containing the app are available. Pri
 - **Add bot & connect**: you manage the server, so you can add the bot yourself. Discord opens with that server already chosen.
 - **Invite an admin**: you are a member but can't add bots there. Copy the invite link and send it to someone who manages the server. When they add the bot, the server connects to your project. The link works for 7 days.
 
-Then choose and save eligible public text channels. The bot only reads channels everyone in the server can read, so it never shows you anything your Discord account couldn't already see. It needs permission to view channels and read message history; server setup must include the required message-content capability.
+Then choose channels and save. The list shows the text and announcement channels **you** can read in Discord, including ones your roles open up; those are marked **Private**, because once shared, everyone in the project can read them. A channel the bot can't read is shown greyed out: ask a server admin to give the bot access to it. If you connected Discord before roles were checked, the list shows only channels everyone can read; **Reconnect Discord** from the list to include your own, and your chosen channels stay. The bot needs permission to view channels and read message history; server setup must include the required message-content capability.
 
-Private channels, DMs, voice, forum, and thread channels are excluded in this integration. Check the connection’s status and error message if the expected channel is missing.` },
+DMs, voice, forum, and thread channels are excluded in this integration. Check the connection’s status and error message if the expected channel is missing.` },
       { id: "desktop", title: "Complete authorisation from desktop", body: `The desktop app opens the web workspace to complete provider authorisation. Sign in there with the same Multicode AI account, confirm the selected organisation/project, and click **Connect Slack/Discord** in that browser.
 
 After authorising and choosing channels, return to desktop and use **Refresh status**. This keeps the external provider login in the browser while preserving the intended project.` },

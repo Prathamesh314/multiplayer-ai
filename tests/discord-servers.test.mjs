@@ -17,7 +17,7 @@ import {
   readInvite,
   serverAccess,
 } from "../app/lib/integrations/discord.ts";
-import { connectionFor, selectChannels } from "../app/lib/integrations/store.ts";
+import { connectProject, connectionFor, selectChannels } from "../app/lib/integrations/store.ts";
 import { seal } from "../app/lib/integrations/config.ts";
 
 Object.assign(process.env, {
@@ -166,4 +166,80 @@ test("an admin's invite connects the server to the project that asked, once", as
   } finally {
     await f.close();
   }
+});
+
+test("channel access is computed as Discord does: owner, administrator, roles, then overwrites", async () => {
+  const { discordChannelPermissions } = await import("../app/lib/integrations/providers.ts");
+  const VIEW = 1024n, HISTORY = 65536n, READ = VIEW | HISTORY;
+  const guild = { id: "g", ownerId: "owner" };
+  const roles = [{ id: "g", permissions: String(READ) }, { id: "team", permissions: "0" }, { id: "admin", permissions: String(1n << 3n) }];
+  const read = (channel, member) => (discordChannelPermissions(channel, guild, roles, member) & READ) === READ;
+  const privateChannel = { id: "c", type: 0, name: "team", permission_overwrites: [{ id: "g", deny: String(VIEW), allow: "0" }, { id: "team", deny: "0", allow: String(VIEW) }] };
+  assert.equal(read(privateChannel, { id: "m", roles: [] }), false, "hidden from @everyone");
+  assert.equal(read(privateChannel, { id: "m", roles: ["team"] }), true, "open to the team role");
+  assert.equal(read(privateChannel, { id: "owner", roles: [] }), true, "the owner sees everything");
+  assert.equal(read(privateChannel, { id: "m", roles: ["admin"] }), true, "administrators see everything");
+  const kicked = { ...privateChannel, permission_overwrites: [...privateChannel.permission_overwrites, { id: "m", deny: String(VIEW), allow: "0" }] };
+  assert.equal(read(kicked, { id: "m", roles: ["team"] }), false, "a member's own overwrite has the last word");
+  const mixed = { ...privateChannel, permission_overwrites: [{ id: "g", deny: "0", allow: "0" }, { id: "team", deny: String(VIEW), allow: "0" }, { id: "other", deny: "0", allow: String(VIEW) }] };
+  assert.equal(read(mixed, { id: "m", roles: ["team", "other"] }), true, "across roles, an allow beats a deny");
+});
+
+test("the channel list follows the connecting member's roles and marks what the bot can't read", async () => {
+  const { adapterFor } = await import("../app/lib/integrations/providers.ts");
+  const VIEW = 1024, READ = String(1024 | 65536);
+  fakeDiscord({
+    "GET /guilds/42": { id: "42", owner_id: "someone-else" },
+    "GET /guilds/42/roles": [{ id: "42", permissions: READ }, { id: "team", permissions: "0" }, { id: "bot-role", permissions: "0" }],
+    "GET /guilds/42/channels": [
+      { id: "1", type: 0, name: "general" },
+      { id: "2", type: 5, name: "announcements" },
+      { id: "3", type: 0, name: "team-only", permission_overwrites: [{ id: "42", deny: String(VIEW), allow: "0" }, { id: "team", deny: "0", allow: String(VIEW) }, { id: "bot-role", deny: "0", allow: String(VIEW) }] },
+      { id: "4", type: 0, name: "leads", permission_overwrites: [{ id: "42", deny: String(VIEW), allow: "0" }, { id: "team", deny: "0", allow: String(VIEW) }] },
+      { id: "5", type: 0, name: "admins", permission_overwrites: [{ id: "42", deny: String(VIEW), allow: "0" }] },
+      { id: "6", type: 2, name: "voice" },
+      { id: "7", type: 15, name: "forum" },
+    ],
+    "GET /users/@me": { id: "bot" },
+    "GET /guilds/42/members/bot": { user: { id: "bot" }, roles: ["bot-role"] },
+    "GET /guilds/42/members/7001": { user: { id: "7001" }, roles: ["team"] },
+  });
+  const connection = { id: "c", project_id: "p", provider: "discord", external_id: "42", name: "Server", credential: "", external_user_id: "7001" };
+  const channels = await adapterFor("discord").channels(connection);
+  assert.deepEqual(channels.map(({ id, restricted, unavailable }) => [id, !!restricted, !!unavailable]), [
+    ["1", false, false],
+    ["2", false, false],
+    ["3", true, false],
+    ["4", true, true],
+  ], "public, announcement and role channels; not admin-only, voice or forum");
+  assert.match(channels[3].unavailable, /Ask a server admin to give the bot access/);
+  const older = await adapterFor("discord").channels({ ...connection, external_user_id: null });
+  assert.deepEqual(older.map((channel) => channel.id), ["1", "2"], "a connection without its member offers public channels only");
+});
+
+test("reconnecting the same server keeps its channels and records who connected; another server resets", async () => {
+  const f = await memoryFixture();
+  try {
+    await f.db.query("UPDATE project_members SET role='manager' WHERE project_id=$1 AND user_id=$2", [f.project, f.alice]);
+    const first = await connectProject(f.project, f.alice, "discord", { externalId: "42", name: "Server", token: "server-bot" });
+    assert.equal(first.external_user_id, null);
+    await selectChannels(f.project, f.alice, first.id, [{ id: "c1", name: "general", url: "https://discord.com/channels/42/c1" }]);
+    const again = await connectProject(f.project, f.alice, "discord", { externalId: "42", name: "Server", token: "server-bot", externalUserId: "7001" });
+    assert.equal(again.id, first.id);
+    assert.equal(again.external_user_id, "7001");
+    const [channel] = (await f.db.query("SELECT channel_id, verified_at FROM context_channels WHERE connection_id=$1", [first.id])).rows;
+    assert.equal(channel.channel_id, "c1", "chosen channels stay");
+    assert.equal(channel.verified_at, null, "and are checked again under the reconnecting member's access");
+    const other = await connectProject(f.project, f.alice, "discord", { externalId: "43", name: "Other", token: "server-bot" });
+    assert.notEqual(other.id, first.id);
+    assert.equal((await f.db.query("SELECT count(*)::int AS n FROM context_channels WHERE connection_id=$1", [first.id])).rows[0].n, 0, "a different server starts fresh");
+  } finally {
+    await f.close();
+  }
+});
+
+test("an admin invite remembers which Discord member asked", () => {
+  const state = inviteState({ projectId: "p", userId: "u", guildId: "42", discordUserId: "7001" });
+  assert.equal(readInvite(state).discordUserId, "7001");
+  assert.equal(readInvite(inviteState({ projectId: "p", userId: "u", guildId: "42", discordUserId: "not-a-snowflake" })).discordUserId, undefined);
 });

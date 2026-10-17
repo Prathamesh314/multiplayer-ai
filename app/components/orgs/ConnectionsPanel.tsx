@@ -126,6 +126,8 @@ function ProjectConnections({
     provider: TeamProvider;
     channels: SourceChannel[];
     selected: string[];
+    /** Only channels everyone can read: an older connection, made before members were recorded. */
+    publicOnly?: boolean;
   } | null>(null);
   const [servers, setServers] = useState<DiscordServer[] | null>(null),
     [serverSearch, setServerSearch] = useState(""),
@@ -173,14 +175,16 @@ function ProjectConnections({
   const openChannels = (provider: TeamProvider) =>
     action(provider, () => loadChannels(provider));
   async function loadChannels(provider: TeamProvider) {
-    const result = await api<{ channels: SourceChannel[] }>(
+    const result = await api<{ channels: SourceChannel[]; publicOnly?: boolean }>(
       `${base}/${provider}`,
     );
     setShared(false);
     setSearch("");
     setPicker({
       provider,
-      channels: result.channels,
+      publicOnly: result.publicOnly,
+      // Channels that can be shared first; those the bot can't read last.
+      channels: [...result.channels].sort((a, b) => Number(!!a.unavailable) - Number(!!b.unavailable)),
       selected:
         data?.connections
           .find((c) => c.provider === provider)
@@ -303,7 +307,7 @@ function ProjectConnections({
                     ? connection.channels.length
                       ? `${connection.channels.length} selected channel${connection.channels.length === 1 ? "" : "s"}`
                       : "Connected. Choose channels to start sharing context."
-                    : "Connect a workspace, then choose which public channels this project can use."}
+                    : "Connect a workspace, then choose which channels this project can use."}
                 </p>
                 {!!connection?.channels.length && (
                   <ul className="mt-3 space-y-2">
@@ -396,7 +400,7 @@ function ProjectConnections({
       {picker && (
         <Modal
           title={`Choose ${names[picker.provider]} channels`}
-          description={`Share selected public channels with everyone in ${project.name}.`}
+          description={`Share selected channels with everyone in ${project.name}.`}
           onClose={() => {
             if (!busy) setPicker(null);
           }}
@@ -439,8 +443,18 @@ function ProjectConnections({
             {picker.selected.length}/10 selected.{" "}
             {picker.provider === "slack"
               ? "Invite the Slack app to a public channel to make it appear here."
-              : "The bot needs View Channel and Read Message History permissions."}
+              : "Channels you can see in Discord, including ones your roles open up. Private ones are shared with everyone in this project."}
           </p>
+          {picker.publicOnly && (
+            <p role="status" className="rounded-lg border border-vs-border bg-vs-editor/50 p-2.5 text-xs leading-5 text-vs-muted">
+              Showing only channels everyone in the server can read, because this connection was made before Discord roles were checked.{" "}
+              <button type="button" className="text-vs-accent underline" disabled={!!busy}
+                onClick={() => { setPicker(null); void connect("discord"); }}>
+                Reconnect Discord
+              </button>{" "}
+              to also see channels your roles give you access to. Your chosen channels stay selected.
+            </p>
+          )}
           <div className="space-y-1">
             {picker.channels
               .filter((c) =>
@@ -449,13 +463,15 @@ function ProjectConnections({
               .map((channel) => (
                 <label
                   key={channel.id}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs hover:bg-vs-hover"
+                  title={channel.unavailable}
+                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs ${channel.unavailable ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-vs-hover"}`}
                 >
                   <input
                     type="checkbox"
                     checked={picker.selected.includes(channel.id)}
                     disabled={
                       !!busy ||
+                      (!!channel.unavailable && !picker.selected.includes(channel.id)) ||
                       (!picker.selected.includes(channel.id) &&
                         picker.selected.length >= 10)
                     }
@@ -468,7 +484,13 @@ function ProjectConnections({
                       })
                     }
                   />
-                  <span className="break-all">#{channel.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="break-all">#{channel.name}</span>
+                    {channel.unavailable && <span className="block text-[11px] text-vs-muted">{channel.unavailable}</span>}
+                  </span>
+                  {channel.restricted && (
+                    <span className="shrink-0 rounded-full border border-vs-border px-1.5 py-0.5 text-[10px] text-vs-muted" title="Not everyone in the server can read this channel">Private</span>
+                  )}
                 </label>
               ))}
             {!picker.channels.length && (
@@ -496,7 +518,7 @@ function ProjectConnections({
       {servers && (
         <Modal
           title="Choose a Discord server"
-          description={`Every server your Discord account is in. Its public channels can then be shared with ${project.name}.`}
+          description={`Every server your Discord account is in. Then choose which of its channels to share with ${project.name}.`}
           onClose={() => {
             if (!busy) setServers(null);
           }}

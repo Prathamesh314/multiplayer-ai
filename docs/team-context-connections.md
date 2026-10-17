@@ -3,7 +3,7 @@
 The workspace's **Connections** view replaces the human channel/DM sidebar.
 AI chats, task assignment, repositories, handoffs and previous chat records stay
 in place. A project manager connects a Slack workspace or Discord server, then
-explicitly shares up to ten public channels with that project's members.
+explicitly shares up to ten channels with that project's members.
 Connecting alone imports nothing. Other members can inspect connections and open
 the original channels, but cannot change them.
 
@@ -99,8 +99,18 @@ history is not backfilled by this bot-only integration.
 
    The member's Discord token is kept only while they choose: sealed in an
    HttpOnly cookie bound to them and the project (10 minutes), and revoked once
-   a server is connected. It is never used to read messages. Save the selected
-   public text channels; the bot must actually be able to read them.
+   a server is connected. It is never used to read messages; its `identify`
+   scope records the member's Discord user ID on the connection.
+5. **Choose channels.** The list is the text and announcement channels the
+   connecting member can read, computed as Discord does (owner, administrator,
+   @everyone and their roles, then the channel's @everyone, role and member
+   overwrites), so role-restricted channels they can see are offered, marked
+   **Private**. Each is also checked against the bot's own roles: one the bot
+   can't read is shown disabled with that reason (an admin gives the bot access
+   to it). The member's access is checked again on every sync, so losing a role
+   stops that channel's import. Connections made before the member was recorded
+   offer public channels only until reconnected; reconnecting the same server
+   keeps its chosen channels and re-verifies them.
 
 The worker uses discord.js for Gateway heartbeats, resumption, reconnects and
 REST rate handling. Message create/edit/delete and bulk-delete events update
@@ -124,7 +134,9 @@ replayed, cross-user or cross-provider states cannot complete a connection.
 Selected channels are deliberately **shared with the whole project**. External
 user identities are attribution, not app accounts. External service membership
 is not mirrored onto each project member; managers confirm their authority to
-share before saving. Only public channels are supported in this version.
+share before saving. A **Private** channel is shared with the whole project,
+including members who can't see it in Discord, which is why the confirmation
+applies to every selection.
 
 PostgreSQL holds bounded source records: provider, workspace/server, channel,
 message ID, author, timestamp, optional reply ID, text and source URL. Attachments,
