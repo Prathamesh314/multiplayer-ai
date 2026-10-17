@@ -135,7 +135,8 @@
 }
 @media (max-width: 700px) {
   .workspaceRail { width: 56px; padding-top: 14px; }
-  .workspaceRail button { max-width: 38px; max-height: 38px; }
+  /* The rail's own icon buttons; the account menu opening beside it keeps its full width. */
+  .workspaceRail button:not([role="menuitem"]) { max-width: 38px; max-height: 38px; }
   .workspaceNavigation { left: 56px; width: min(290px, calc(100vw - 56px)); }
   .conversationHeader { height: 56px; padding: 0 15px; gap: 8px; }
   .conversationHeader h2 { font-size: 14px; }

@@ -161,9 +161,9 @@ export class TerminalHost {
     const session: Session = { child, pty: !!this.python, ring: Buffer.alloc(0), pending: [], pendingBytes: 0, flushTimer: null, sending: Promise.resolve(), graceTimer: null, exited: false };
     this.sessions.set(open.id, session);
     const notices = [
-      directory ? `Terminal on this computer · ${directory.label} · ${directory.path}`
-        : open.repoRef ? "This chat has no worktree on this computer yet; it is created by the first AI turn here. Opened your home folder."
-        : `Terminal on this computer · ${cwd}`,
+      directory ? `Terminal · ${directory.label}`
+        : open.repoRef ? "No worktree for this chat on this computer yet (the first AI turn here creates it). Opened your home folder."
+        : "Terminal · home folder",
       ...(this.python ? [] : ["Basic terminal: full-screen programs and Tab completion need Python 3 on this computer."]),
     ];
     for (const notice of notices) await this.send({ id: open.id, notice });

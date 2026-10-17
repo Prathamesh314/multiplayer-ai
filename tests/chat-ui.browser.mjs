@@ -116,6 +116,18 @@ try {
   await screenshot('organizations-mobile');
   await escape();
   assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Your organizations","Escape restores organization search focus");
+  // On a phone the rail is icon-only, but the account menu beside it keeps its
+  // full width: every entry on one line, inside the screen.
+  await viewport(390);
+  await click(`${rail} button[aria-haspopup="menu"]`);
+  await eventually(()=>evaluate('!!document.querySelector("[role=menu]")'),"account menu opens on a phone");
+  const entries=await evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].map(e=>{const r=e.getBoundingClientRect();return {text:e.innerText.trim(),width:r.width,height:r.height};})`);
+  assert.deepEqual(entries.map(e=>e.text),["AI providers","Your computers","Account settings","Sign out"]);
+  for(const entry of entries){assert.ok(entry.height<=44,`${entry.text} stays on one line (${entry.height}px tall)`);assert.ok(entry.width>=180,`${entry.text} is not squeezed (${entry.width}px wide)`);}
+  assert.ok(await evaluate('(()=>{const r=document.querySelector("[role=menu]").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0;})()'),"the menu fits the screen");
+  await screenshot('account-menu-mobile');
+  await escape();
+  await viewport(320);
   await viewport(1440);
   console.log('PASS: named organization rail, membership search, empty results, keyboard switching, current organization, focus restoration and mobile bounds.');
   await click('button[title="Organisation settings"]');

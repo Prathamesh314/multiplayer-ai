@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
@@ -278,7 +278,9 @@ test("named worktrees group by repository then room; all chats reuse the room ch
   await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => { first = w.path; });
   await runner.withWorkspace(job(f.base, { runId: randomUUID(), workspaceNames: names }), async w => assert.equal(w.path, first));
   await runner.withWorkspace(job(f.base, { sessionId: "room-b", workspaceNames: { ...names, room: "Bob" } }), async w => { second = w.path; });
-  assert.match(relative(visible, first).replaceAll("\\", "/"), /^multicode-ai--[a-f0-9]{12}\/alice-s-room--[a-f0-9]{12}$/);
+  assert.match(relative(visible, first).replaceAll("\\", "/"), /^multicode-ai--[a-f0-9]{12}\/alice-s-room$/, "the worktree is named after the room, with no ID");
+  assert.equal(basename(second), "bob");
+  assert.equal(await git(first, "symbolic-ref", "--short", "HEAD"), "alice-s-room", "its branch has the same readable name");
   assert.equal(dirname(first), dirname(second));
   assert.notEqual(first, second);
   assert.equal(await common(first), await common(second));
@@ -312,6 +314,8 @@ async function legacyWorkspace(f) {
   const cache = await common(work), legacy = join(root, "work", file.slice(0, -5));
   await mkdir(dirname(legacy), { recursive: true });
   await git(cache, "worktree", "move", work, legacy);
+  // v1 worktrees were on a branch named by their workspace key.
+  await git(legacy, "branch", "-m", await git(legacy, "symbolic-ref", "--short", "HEAD"), `workspace/${file.slice(0, -5)}`);
   await writeFile(bindingPath, JSON.stringify({ version: 1, repoRef: binding.repoRef, cacheKey: binding.cacheKey }));
   await rm(join(root, "layouts"), { recursive: true, force: true });
   return { legacy, cache, bindingPath, oldTurn };
@@ -354,7 +358,8 @@ test("hostile display names cannot choose filesystem paths and corrupt locations
   await new RunnerGit(f.server,"token",f.data,root).withWorkspace(job(f.base, { workspaceNames: { repository: "../../CON:<backend>", room: "/tmp/../NUL" } }), async w => {
     const parts = relative(root,w.path).split(/[\\/]/);
     assert.equal(parts.length,2);
-    for (const part of parts) assert.match(part,/^[a-z0-9-]+--[a-f0-9]{12}$/);
+    assert.match(parts[0],/^[a-z0-9-]+--[a-f0-9]{12}$/);
+    assert.match(parts[1],/^[a-z0-9][a-z0-9-]*$/);
   });
   assert.throws(()=>locationPath({workspaceRoot:root,relativePath:"../../outside"}),/Invalid workspace/);
   assert.throws(()=>locationPath({workspaceRoot:"relative",relativePath:"repo--aaaaaaaaaaaa/room--bbbbbbbbbbbb"}),/Invalid workspace/);
@@ -475,7 +480,8 @@ test("parallel chats on one room repository run at once in their own worktrees a
   assert.notEqual(a.branch, b.branch);
   assert.notEqual(a.path, room);
   assert.equal(await common(a.path), await common(b.path), "chats share the repository cache");
-  assert.match(relative(join(f.data, "workspaces"), a.path).replaceAll("\\", "/"), /\/alice-fix-login--[a-f0-9]{12}$/);
+  assert.match(relative(join(f.data, "workspaces"), a.path).replaceAll("\\", "/"), /\/fix-login$/, "a parallel chat's worktree is named after the chat");
+  assert.equal(a.branch, "fix-login");
   assert.equal(await git(f.repo("room-a"), "rev-parse", `refs/turns/${turns[0].turnId}`), a.sha);
   assert.equal(await git(f.repo("room-a"), "rev-parse", `refs/turns/${turns[1].turnId}`), b.sha);
   assert.equal(await git(f.repo("room-a"), "rev-parse", "session/room-a"), f.base, "chats never move the room branch");
@@ -631,6 +637,75 @@ test("activity delivery always covers batches stored before the call", async t =
   assert.deepEqual(delivered.sort(), ["a1", "b1", "b2"]);
 });
 
+/** Turn a current worktree back into the previous layout: an ID-suffixed folder on a workspace/<key> branch. */
+async function idNamedWorkspace(f, names) {
+  let work;
+  await f.runner().withWorkspace(job(f.base, { workspaceNames: names }), async w => { work = w.path; });
+  const [scope] = await readdir(join(f.data, "workspaces-v1"));
+  const root = join(f.data, "workspaces-v1", scope);
+  const [file] = await readdir(join(root, "bindings"));
+  const bindingPath = join(root, "bindings", file), key = file.slice(0, -5);
+  const binding = JSON.parse(await readFile(bindingPath, "utf8"));
+  const old = join(dirname(work), `${basename(work)}--422959a9--5505d74cd314`);
+  await git(await common(work), "worktree", "move", work, old);
+  await git(old, "branch", "-m", binding.branch, `workspace/${key}`);
+  delete binding.branch;
+  binding.location.relativePath = `${binding.location.relativePath.split("/")[0]}/${basename(old)}`;
+  await writeFile(bindingPath, JSON.stringify(binding));
+  return { old, work, key, bindingPath };
+}
+
+test("an older ID-named worktree takes its readable name on the next turn, keeping unsaved work", async t => {
+  const f = await fixture(t);
+  const { old, work } = await idNamedWorkspace(f, { repository: "resume organiser", room: "Prathamesh Kurve" });
+  await writeFile(join(old, "code.txt"), "unsaved edit\n");
+  await writeFile(join(old, ".env.local"), "PRIVATE=kept\n");
+  // The edit stops the turn, as before, but the worktree is renamed first and nothing is lost.
+  await assert.rejects(f.runner().withWorkspace(job(f.base), async () => assert.fail("dirty workspace executed")), /unfinished edits/);
+  assert.equal(basename(work), "prathamesh-kurve");
+  await assert.rejects(lstat(old), { code: "ENOENT" });
+  assert.equal(await git(work, "symbolic-ref", "--short", "HEAD"), "prathamesh-kurve");
+  assert.equal(await readFile(join(work, "code.txt"), "utf8"), "unsaved edit\n");
+  assert.equal(await readFile(join(work, ".env.local"), "utf8"), "PRIVATE=kept\n");
+  await git(work, "checkout", "--", "code.txt");
+  await f.runner().withWorkspace(job(f.base), async w => {
+    assert.equal(w.path, work);
+    assert.equal(w.branch, "prathamesh-kurve");
+  });
+});
+
+test("opening a terminal gives an idle older worktree its readable name; a busy one is left alone", async t => {
+  const f = await fixture(t);
+  const { old, work } = await idNamedWorkspace(f, { repository: "resume organiser", room: "Prathamesh Kurve" });
+  const runner = f.runner();
+  const directory = () => runner.terminalDirectory({ userId: "alice", repoRef: "room-a", runId: null, isolated: false });
+  assert.deepEqual(await directory(), { path: work, label: "resume organiser · prathamesh-kurve" });
+  await assert.rejects(lstat(old), { code: "ENOENT" });
+  assert.equal(await git(work, "symbolic-ref", "--short", "HEAD"), "prathamesh-kurve");
+
+  const second = await fixture(t), busy = await idNamedWorkspace(second, { repository: "app", room: "Room" });
+  const busyRunner = second.runner();
+  await busyRunner.withWorkspace(job(second.base), async () => {
+    // A turn is running there: the terminal opens where it is, under its current name.
+    const result = await busyRunner.terminalDirectory({ userId: "alice", repoRef: "room-a", runId: null, isolated: false });
+    assert.equal(result.path, busy.work, "the running turn already renamed it, and the terminal follows");
+  });
+});
+
+test("two rooms with the same name get distinct readable worktrees and branches", async t => {
+  const f = await fixture(t);
+  const runner = f.runner();
+  let a, b;
+  await runner.withWorkspace(job(f.base, { workspaceNames: { repository: "app", room: "Design" } }), async w => { a = w; });
+  await runner.withWorkspace(job(f.base, { sessionId: "room-b", workspaceNames: { repository: "app", room: "Design" } }), async w => { b = w; });
+  assert.deepEqual([basename(a.path), basename(b.path)], ["design", "design-2"]);
+  assert.deepEqual([a.branch, b.branch], ["design", "design-2"]);
+  await f.addRoom("room-c");
+  await runner.withWorkspace(job(f.base, { sessionId: "room-c", workspaceNames: { repository: "app", room: "NUL" } }), async w => {
+    assert.equal(basename(w.path), "nul-work", "names Windows reserves are never used");
+  });
+});
+
 test("runner parallelism and copy settings are validated", () => {
   assert.equal(resolveMaxParallel(undefined, "", null), Infinity, "no setting means no cap");
   assert.equal(resolveMaxParallel("2", "5"), 2);
@@ -647,9 +722,9 @@ test("terminals open in the chat's own worktree, else the room's, else nowhere o
   const chat = await openChat(f, f.base);
   await runner.withWorkspace(chatJob(chat, f.base), async w => { chatPath = w.path; });
   const directory = input => runner.terminalDirectory({ userId: "alice", repoRef: "room-a", runId: null, isolated: false, ...input });
-  assert.deepEqual(await directory({ runId: chat, isolated: true }), { path: chatPath, label: "parallel chat worktree" });
-  assert.deepEqual(await directory({}), { path: room, label: "room worktree" });
-  assert.deepEqual(await directory({ runId: randomUUID(), isolated: true }), { path: room, label: "room worktree" }, "a parallel chat that never ran here opens in its room's worktree");
+  assert.deepEqual(await directory({ runId: chat, isolated: true }), { path: chatPath, label: "repository · chat" });
+  assert.deepEqual(await directory({}), { path: room, label: "repository · room" });
+  assert.deepEqual(await directory({ runId: randomUUID(), isolated: true }), { path: room, label: "repository · room" }, "a parallel chat that never ran here opens in its room's worktree");
   assert.equal(await directory({ repoRef: "room-b" }), null, "nothing ran here for that repository");
   assert.equal(await directory({ userId: "bob" }), null, "another account's worktrees are not reachable");
   assert.equal(await directory({ repoRef: "../room-a" }), null);

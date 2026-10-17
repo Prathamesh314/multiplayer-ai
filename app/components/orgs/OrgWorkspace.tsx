@@ -407,7 +407,7 @@ function OrgRail({
         {menuOpen && (
           <div
             role="menu"
-            className="absolute bottom-0 left-full z-50 ml-2 w-60 overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
+            className="absolute bottom-0 left-full z-50 ml-2 w-60 max-w-[calc(100vw-72px)] overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
           >
             {me?.email && (
               <div className="px-3 py-2">
@@ -422,7 +422,7 @@ function OrgRail({
                 setMenuOpen(false);
                 onOpenProviders();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
             >
               <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
               AI providers
@@ -434,20 +434,27 @@ function OrgRail({
                 setMenuOpen(false);
                 onOpenDevices();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
             >
               <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
               Your computers
             </button>
-            <a href="/account" className="rounded-lg px-3 py-2 text-sm text-vs-muted hover:text-vs-fg">Account settings</a>
-<button
+            <a
+              href="/account"
+              role="menuitem"
+              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+            >
+              <ShieldIcon className="h-3.5 w-3.5 text-vs-muted" />
+              Account settings
+            </a>
+            <button
               type="button"
               role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
                 onSignOut();
               }}
-              className="flex w-full items-center gap-2 border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
+              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
             >
               <CloseIcon className="h-3.5 w-3.5" />
               Sign out
