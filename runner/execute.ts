@@ -58,6 +58,8 @@ export type RunInput = {
   permissions?: PermissionAsker;
   /** Tool rules the chat always allows. */
   allowedTools?: string[];
+  /** MCP servers and plugins for this run (runner/agent-tools.ts). */
+  tools?: { args: string[]; codexConfig?: object };
 };
 
 export async function runAgentLocally(input: RunInput): Promise<LocalRunResult> {
@@ -109,11 +111,11 @@ async function runSequence(input: RunInput): Promise<LocalRunResult> {
 async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise<LocalRunResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const args = input.spec.promptArgs(input.prompt, {
+    const args = [...(input.tools?.args ?? []), ...input.spec.promptArgs(input.prompt, {
       model: input.model,
       effort: input.effort,
       allowedTools: input.allowedTools,
-    });
+    })];
     const interactive = !!input.spec.stdinPrompt;
     const parser = input.spec.createStreamParser?.() ?? null;
 

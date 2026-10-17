@@ -54,5 +54,12 @@ chat's worktree, while the runner is running. Only you can open them. Start with
 uses Python 3, which ships with Git's developer tools on macOS; without it the
 terminal is a basic shell.
 
+MCP servers and plugins added under **AI tools** in the workspace are given
+to each chat that uses them; your own Claude Code and Codex settings are not
+changed. Keys those tools need stay on this computer: `secret set GITHUB_TOKEN`
+asks for the value (or reads it from stdin), `secret list` shows the names and
+`secret remove GITHUB_TOKEN` deletes one. They are kept in `secrets.json` in
+the runner's data folder, readable only by you.
+
 For local development the workspace address can be `http://localhost:3000`.
 Use your deployed HTTPS workspace address when connecting another computer.

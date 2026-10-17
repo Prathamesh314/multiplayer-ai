@@ -104,7 +104,7 @@ try {
   for(const label of ['AI providers','Your computers']) assert.ok(await evaluate(`!!document.querySelector(${JSON.stringify(rail+' button[aria-label="'+label+'"]')})`),label+" shortcut stays on the card");
   await click(`${rail} button[aria-haspopup="menu"]`);
   await eventually(()=>evaluate('!!document.querySelector("[role=menu]")'),"account menu opens from the profile card");
-  for(const label of ['AI providers','Your computers','Account settings','Sign out']) assert.ok(await evaluate(`document.querySelector("[role=menu]").innerText.includes(${JSON.stringify(label)})`),label+" stays reachable after the avatar button was removed");
+  for(const label of ['AI providers','Your computers','Your AI tools','Account settings','Sign out']) assert.ok(await evaluate(`document.querySelector("[role=menu]").innerText.includes(${JSON.stringify(label)})`),label+" stays reachable after the avatar button was removed");
   await escape();
   await eventually(()=>evaluate('!document.querySelector("[role=menu]")'),"Escape closes the account menu");
   await viewport(320);
@@ -122,11 +122,16 @@ try {
   await click(`${rail} button[aria-haspopup="menu"]`);
   await eventually(()=>evaluate('!!document.querySelector("[role=menu]")'),"account menu opens on a phone");
   const entries=await evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].map(e=>{const r=e.getBoundingClientRect();return {text:e.innerText.trim(),width:r.width,height:r.height};})`);
-  assert.deepEqual(entries.map(e=>e.text),["AI providers","Your computers","Account settings","Sign out"]);
+  assert.deepEqual(entries.map(e=>e.text),["AI providers","Your computers","Your AI tools","Account settings","Sign out"]);
   for(const entry of entries){assert.ok(entry.height<=44,`${entry.text} stays on one line (${entry.height}px tall)`);assert.ok(entry.width>=180,`${entry.text} is not squeezed (${entry.width}px wide)`);}
   assert.ok(await evaluate('(()=>{const r=document.querySelector("[role=menu]").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0;})()'),"the menu fits the screen");
   await screenshot('account-menu-mobile');
+  // Personal AI tools open from the account menu, as a dialog that fits a phone.
+  await evaluate('[...document.querySelectorAll("[role=menu] [role=menuitem]")].find(e=>e.innerText.trim()==="Your AI tools").click()');
+  await eventually(()=>evaluate('document.querySelector("dialog[open]")?.innerText.includes("No tools yet")'),"personal AI tools dialog");
+  await fits("personal AI tools on a phone");
   await escape();
+  await eventually(()=>evaluate('!document.querySelector("dialog")'),"personal AI tools close");
   await viewport(320);
   await viewport(1440);
   console.log('PASS: named organization rail, membership search, empty results, keyboard switching, current organization, focus restoration and mobile bounds.');
@@ -222,6 +227,27 @@ try {
   await evaluate('Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.includes("Save channels")).click()');
   await eventually(()=>evaluate('!document.querySelector("dialog") && document.body.innerText.includes("2 selected channels")'),'channels saved');
   for(const width of [768,390,320]){await viewport(width);await fits(`connections at ${width}`);if(width===390)await screenshot('connections-mobile');}
+  await viewport(1440);
+  // AI tools: a teammate's MCP server waits for Alex to allow it; a preset adds one that needs a key.
+  const button=text=>`Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()===${JSON.stringify(text)})`;
+  await eventually(()=>evaluate('document.body.innerText.includes("context7") && document.body.innerText.includes("Not allowed on your computer yet")'),'project AI tools');
+  await evaluate(`${button("Allow on my computer")}.click()`);
+  await eventually(()=>evaluate('!document.body.innerText.includes("Not allowed on your computer yet") && document.body.innerText.includes("Stop allowing")'),'tool allowed');
+  await evaluate(`${button("Add tool")}.click()`);
+  await eventually(()=>evaluate('!!document.querySelector("dialog[open]")'),'add tool dialog');
+  await evaluate('Array.from(document.querySelectorAll("dialog button")).find(b=>b.textContent.trim()==="GitHub").click()');
+  await eventually(()=>evaluate('document.querySelector("dialog input").value==="github"'),'preset fills the form');
+  assert.match(await evaluate('document.querySelector("dialog textarea").value'),/Authorization: Bearer \$\{GITHUB_TOKEN\}/);
+  await evaluate('Array.from(document.querySelectorAll("dialog footer button")).find(b=>b.textContent.trim()==="Add tool").click()');
+  await eventually(()=>evaluate('!document.querySelector("dialog") && document.body.innerText.includes("Add GITHUB_TOKEN")'),'tool added and needs a key');
+  const added=await evaluate('window.__chatFixture.toolWrites.find(write=>write.method==="POST"&&!write.toolId).body');
+  assert.deepEqual(added,{name:'github',kind:'mcp',spec:{transport:'http',url:'https://api.githubcopilot.com/mcp/',headers:[{name:'Authorization',value:'Bearer ${GITHUB_TOKEN}'}]}},'definitions carry key names, never keys');
+  await evaluate(`${button("Add GITHUB_TOKEN")}.click()`);
+  await eventually(()=>evaluate('document.querySelector("dialog[open]")?.innerText.includes("multicode-ai-runner secret set GITHUB_TOKEN")'),'keys stay on the computer');
+  await escape();
+  await eventually(()=>evaluate('!document.querySelector("dialog")'),'keys dialog closes');
+  for(const width of [390,320]){await viewport(width);await fits(`AI tools at ${width}`);}
+  await evaluate('document.querySelector("[aria-label=\'AI tools for this project\']").scrollIntoView()');await screenshot('ai-tools-mobile');
   await viewport(1440);
   await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Disconnect").click()');
   await eventually(()=>evaluate('!!document.querySelector("dialog")'),'disconnect confirmation');

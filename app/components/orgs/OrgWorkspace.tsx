@@ -32,12 +32,14 @@ import {
   SearchIcon,
   ShieldIcon,
   SparkleIcon,
+  LinkIcon,
   SpinnerIcon,
   TerminalIcon,
   UserPlusIcon,
   UsersIcon,
 } from "../icons";
-import { ErrorNote, GhostButton, PrimaryButton } from "../ui/Modal";
+import { ErrorNote, GhostButton, Modal, PrimaryButton } from "../ui/Modal";
+import { AgentToolsPanel } from "../ai/AgentToolsPanel";
 import { ProjectOverview } from "./ProjectOverview";
 import {
   CreateOrgDialog,
@@ -74,6 +76,7 @@ type Dialog =
   | { kind: "joinOrg" }
   | { kind: "connectAi" }
   | { kind: "devices" }
+  | { kind: "agentTools" }
   | { kind: "invite"; org: Org }
   | { kind: "orgAdmin"; org: Org }
   | { kind: "orgSettings"; org: Org }
@@ -146,6 +149,7 @@ export function OrgWorkspace() {
         onJoin={() => setDialog({ kind: "joinOrg" })}
         onOpenProviders={() => setDialog({ kind: "connectAi" })}
         onOpenDevices={() => setDialog({ kind: "devices" })}
+        onOpenTools={() => setDialog({ kind: "agentTools" })}
         onSignOut={async () => {
           try { await logout(); openSignIn(); }
           catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
@@ -207,6 +211,11 @@ export function OrgWorkspace() {
         />
       )}
       {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} onOpenDevices={() => setDialog({ kind: "devices" })} />}
+      {dialog?.kind === "agentTools" && (
+        <Modal title="Your AI tools" description="MCP servers and plugins for the agents in your chats." width="max-w-3xl" onClose={() => setDialog(null)}>
+          <AgentToolsPanel scope="personal" base="/api/me/agent-tools" />
+        </Modal>
+      )}
       {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
       {dialog?.kind === "joinOrg" && (
         <JoinOrgDialog
@@ -287,6 +296,7 @@ function OrgRail({
   onJoin,
   onOpenProviders,
   onOpenDevices,
+  onOpenTools,
   onSignOut,
 }: {
   orgs: Org[] | null;
@@ -297,6 +307,7 @@ function OrgRail({
   onJoin: () => void;
   onOpenProviders: () => void;
   onOpenDevices: () => void;
+  onOpenTools: () => void;
   onSignOut: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -438,6 +449,18 @@ function OrgRail({
             >
               <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
               Your computers
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenTools();
+              }}
+              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
+            >
+              <LinkIcon className="h-3.5 w-3.5 text-vs-muted" />
+              Your AI tools
             </button>
             <a
               href="/account"
