@@ -59,6 +59,8 @@ export function runAgent(
     isolation?: "isolated";
     /** Uploaded attachments to send; they reach the agent as files in its worktree. */
     attachmentIds?: string[];
+    /** Manual ("ask") or Auto approval for this chat. */
+    permissionMode?: "ask" | "auto";
   },
   handlers: {
     onEvent: (event: AiRunEvent) => void;

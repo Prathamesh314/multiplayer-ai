@@ -128,6 +128,15 @@ try {
   assert.ok(await evaluate(`document.querySelector('section[aria-label="Tool requests"]').textContent.includes("docs.google.com/spreadsheets")`));
   await evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].find(b=>b.textContent==="Always allow in this chat").click()`);
   await eventually(()=>evaluate(`!document.querySelector('section[aria-label="Tool requests"]') && JSON.stringify(window.__model.permissionDecisions)==='[{"id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","decision":"always"}]'`),"answer sent and the card cleared");
+  // Auto approval: from the waiting card, the chat stops asking and what waits is allowed.
+  await evaluate(`window.__model.permissions["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"].push({id:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",turnId:"t",tool:"Bash",title:"Run: python3 read_sheet.py",detail:null,rule:null,status:"pending",remember:false,automatic:false,decidedBy:null,createdAt:Date.now()});window.__model.emit("run.permission",{runId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",at:Date.now()});`);
+  await eventually(()=>evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].some(b=>b.textContent==="Auto-approve this chat")`),"the card offers Auto");
+  await evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].find(b=>b.textContent==="Auto-approve this chat").click()`);
+  await eventually(()=>evaluate(`!document.querySelector('section[aria-label="Tool requests"]') && JSON.stringify(window.__model.modeChanges)==='["auto"]'`),"switching to Auto allows what waits");
+  assert.ok(await evaluate(`!!document.querySelector('button[aria-label="Approvals"]') && document.querySelector('button[aria-label="Approvals"]').textContent.includes("Auto-approve")`),"the composer shows Auto");
+  await click('button[aria-label="Approvals"]');
+  await click('[role="option"][value="ask"]');
+  await eventually(()=>evaluate(`JSON.stringify(window.__model.modeChanges)==='["auto","ask"]'`),"back to asking first");
   assert.deepEqual(keyWarnings,[],"opening a chat has no React key warnings");
   await button('Share chat');
   await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),"guest invitation dialog");
@@ -354,6 +363,7 @@ try {
       ...Array.from({length:60},(_,i)=>[{wait:120},{t:"out",d:"Paragraph "+i+": the agent keeps writing so the chat grows well past the screen.\\n\\n"}]).flat()];`);
   await evaluate(`document.querySelector('button[aria-label="Send message"]').click()`);
   await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Waiting for your computer to start"))`),"a soft waiting pill while the computer picks it up");
+  assert.equal(await evaluate(`JSON.parse(window.__model.requests.filter(r=>r.path==="/api/ai/run").at(-1).body).permissionMode`),"ask","each message carries the approval mode");
   await writeFile(join(tmpdir(),'multiplayer-run-waiting.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await eventually(()=>evaluate(`document.body.textContent.includes("Google Drive · Read file content") && document.body.textContent.includes("Look up tools")`),"steps read as plain language");
   assert.ok(await evaluate(`!document.body.textContent.includes("Waiting for your computer") && !document.body.textContent.includes("No agent has started yet")`),"the waiting pill gives way once the agent starts");

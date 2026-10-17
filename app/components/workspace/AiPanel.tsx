@@ -1,9 +1,11 @@
 "use client";
+import type { PermissionMode } from "../../lib/ai/runs";
+import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
 import { Modal } from "../ui/Modal";
-import { ComposerPicker } from "./ComposerPicker";
+import { ComposerPicker, type ComposerOption } from "./ComposerPicker";
 import { ModelPicker } from "./ModelPicker";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -36,6 +38,7 @@ import {
   SparkleIcon,
   SpinnerIcon,
   TerminalIcon,
+  ShieldIcon,
 } from "../icons";
 import { QueuedMessages, WorkingStatus } from "./QueuedMessages";
 import { PermissionRequests } from "./PermissionRequests";
@@ -53,6 +56,8 @@ import type { ComputerStatus } from "../ai/useComputerConnection";
 
 type AiPanelProps = {
   computerStatus: ComputerStatus;
+  /** False when the connected computer's runner is too old to ask before tools; the CLI refuses them then. */
+  computerAsks?: boolean;
   onSetUpAi: () => void;
   actionsHost?: HTMLDivElement | null;
   onShowConversation?: () => void;
@@ -135,6 +140,7 @@ type Turn = {
 
 export function AiPanel({
   computerStatus,
+  computerAsks = true,
   onSetUpAi,
   actionsHost,
   onShowConversation,
@@ -244,6 +250,28 @@ export function AiPanel({
     .filter(person => myId && !isSelfAssignment(myId, person.userId));
   // Whether the run in view is the current user's (or a fresh compose).
   const enteredIsMine = !entered || entered.driverUserId === myId;
+  // Approvals: Manual ("ask") waits for the driver to allow each command, web
+  // link or connector; Auto allows them without asking. A new chat starts with
+  // the member's last choice on this device; an existing one keeps its own.
+  const [defaultMode, setDefaultMode] = useState<PermissionMode>(readApprovalMode);
+  const [modeChanges, setModeChanges] = useState<Record<string, PermissionMode>>({});
+  const approvalMode: PermissionMode = entered && enteredIsMine ? modeChanges[entered.id] ?? entered.permissionMode ?? "ask" : defaultMode;
+  function changeApprovalMode(value: string) {
+    const mode: PermissionMode = value === "auto" ? "auto" : "ask";
+    setDefaultMode(mode);
+    rememberApprovalMode(mode);
+    if (!entered || !enteredIsMine) return;
+    const runId = entered.id;
+    setModeChanges((changes) => ({ ...changes, [runId]: mode }));
+    void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/permissions`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? "Could not change approvals.");
+    }).catch((cause) => {
+      setModeChanges((changes) => { const next = { ...changes }; delete next[runId]; return next; });
+      setError(cause instanceof Error ? cause.message : "Could not change approvals.");
+    });
+  }
   // When the turn being streamed here started, for the working card's elapsed time.
   const liveTurnStart = [...turns].reverse().find((turn) => turn.role === "agent" && turn.streaming)?.startedAt ?? null;
 
@@ -583,6 +611,7 @@ export function AiPanel({
         repoId: repoForRun,
         isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
         attachmentIds: attachments.length ? attachments.map((file) => file.id) : undefined,
+        permissionMode: approvalMode,
       },
       {
         onEvent: (event) => {
@@ -790,6 +819,16 @@ export function AiPanel({
         )}
         <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="composer-control composer-toggle">ϟ Fast</button>
         <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="composer-control composer-toggle">Plan</button>
+        <SelectChip
+          icon={<ShieldIcon className={`h-3.5 w-3.5 ${approvalMode === "auto" ? "text-vs-warn" : "text-vs-muted"}`} />}
+          value={approvalMode}
+          onChange={changeApprovalMode}
+          options={[
+            { id: "ask", label: "Ask first", description: "Manual: the agent waits here for you to allow each command, web link or connector." },
+            { id: "auto", label: "Auto-approve", description: "Auto: the agent runs commands, opens links and uses connectors on your computer without asking." },
+          ]}
+          title="Approvals"
+        />
         {!entered && parallelChats && (
           <button type="button" aria-pressed={parallel} onClick={() => setParallel(value => !value)}
             title="Work on a branch of its own, so this chat can run alongside your others. Review and merge it into the room when it's ready."
@@ -1000,9 +1039,13 @@ export function AiPanel({
           sessionId={sessionId}
           runId={entered.id}
           canAnswer={!!myId && entered.driverUserId === myId}
+          onAutoApprove={() => changeApprovalMode("auto")}
           driverName={entered.driverName ?? null}
           agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId}
         />
+      )}
+      {ready && !computerAsks && enteredIsMine && (
+        <Note tone="warn">Your computer runs an older version of the Multicode AI app, so the agent can’t ask you before running a command or opening a link: those are refused instead. Update the desktop app (or the runner) and restart it.</Note>
       )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
       {running && !entered ? (
@@ -1691,7 +1734,7 @@ function SelectChip({ icon, value, onChange, options, title }: {
   icon?: React.ReactNode;
   value: string;
   onChange: (value: string) => void;
-  options: AgentChoice[];
+  options: ComposerOption[];
   title: string;
 }) {
   return <ComposerPicker label={title} icon={icon} value={value} options={options} onChange={onChange} />;

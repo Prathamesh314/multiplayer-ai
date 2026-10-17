@@ -35,7 +35,7 @@ import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
-import { allowedTools } from "../../../lib/ai/permissions";
+import { allowedTools, setRunPermissionMode } from "../../../lib/ai/permissions";
 import { AttachmentError, attachmentFiles, attachmentPromptBlock, bindAttachments, sendableAttachments } from "../../../lib/ai/attachments";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 
@@ -90,6 +90,8 @@ export type AiRunRequest = {
    * message. They reach the agent as files in its worktree, not prompt text.
    */
   attachmentIds?: string[];
+  /** Manual ("ask") or Auto approval for this chat, from the composer; only its driver sends turns. */
+  permissionMode?: "ask" | "auto";
 };
 
 /**
@@ -457,6 +459,7 @@ async function handlePOST(request: Request) {
   // Everything the run needs is now plain data. The agent's bin/args/parser are
   // rebuilt from agentId on the runner, because they are functions and cannot
   // cross the wire (see AgentRunJob).
+  if (body.permissionMode === "ask" || body.permissionMode === "auto") await setRunPermissionMode(run.id, result.user.id, body.permissionMode);
   const restoreCheckpoint = run.restoreSnapshotId ? await getCheckpoint(run.restoreSnapshotId, run.id) : null;
   const job: AgentRunJob = {
     ...(restoreCheckpoint ? { restoreCheckpoint } : {}),

@@ -8,8 +8,10 @@ import type { PermissionDecision, PermissionRequest } from "../../lib/ai/permiss
  * command). Only the chat's driver answers: the agent runs on their computer,
  * with their AI account. Everyone else sees that it is waiting.
  */
-export function PermissionRequests({ sessionId, runId, canAnswer, driverName, agentName }: {
+export function PermissionRequests({ sessionId, runId, canAnswer, driverName, agentName, onAutoApprove }: {
   sessionId: string; runId: string; canAnswer: boolean; driverName: string | null; agentName: string;
+  /** Switch this chat to Auto: allows this request and everything after it without asking. */
+  onAutoApprove?: () => void;
 }) {
   const [requests, setRequests] = useState<PermissionRequest[]>([]);
   const [busy, setBusy] = useState<string | null>(null), [error, setError] = useState("");
@@ -75,6 +77,10 @@ export function PermissionRequests({ sessionId, runId, canAnswer, driverName, ag
                 <button type="button" disabled={!!busy} onClick={() => void answer(request, "always")} title={`Remember ${request.rule} for this chat`} className="rounded-lg border border-vs-border px-3 py-1.5 text-vs-fg hover:bg-vs-hover disabled:opacity-50">Always allow in this chat</button>
               )}
               <button type="button" disabled={!!busy} onClick={() => void answer(request, "deny")} className="rounded-lg border border-vs-border px-3 py-1.5 text-vs-fg hover:bg-vs-hover disabled:opacity-50">Deny</button>
+              {onAutoApprove && (
+                <button type="button" disabled={!!busy} onClick={onAutoApprove} title="Allow this and everything this chat's agent asks for from now on, without asking. Switch back with Approvals in the composer."
+                  className="ml-auto rounded-lg px-2 py-1.5 text-vs-muted underline-offset-2 hover:text-vs-fg hover:underline disabled:opacity-50">Auto-approve this chat</button>
+              )}
             </div>
           ) : (
             <p className="mt-2 text-vs-muted">Waiting for {driverName ?? "the person running this chat"} to allow it. It runs on their computer.</p>

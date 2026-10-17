@@ -51,7 +51,10 @@ export type AgentRun = {
   mergeState: MergeState | null;
   mergedSha: string | null;
   mergedAt: number | null;
+  /** Manual ("ask"): tools that need permission wait for the driver. Auto: allowed without asking. */
+  permissionMode: PermissionMode;
 };
+export type PermissionMode = "ask" | "auto";
 
 export type AgentRunMessage = {
   id: string;
@@ -99,6 +102,7 @@ type RunRow = {
   merge_state: MergeState | null;
   merged_sha: string | null;
   merged_at: Date | null;
+  permission_mode: PermissionMode;
 };
 
 const toRun = (row: RunRow): AgentRun => ({
@@ -130,6 +134,7 @@ const toRun = (row: RunRow): AgentRun => ({
   mergeState: row.merge_state,
   mergedSha: row.merged_sha,
   mergedAt: row.merged_at ? row.merged_at.getTime() : null,
+  permissionMode: row.permission_mode ?? "ask",
 });
 
 const RUN_COLUMNS = `
@@ -137,7 +142,7 @@ const RUN_COLUMNS = `
   (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
   r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at,
-  r.isolation, r.fork_sha, r.head_sha, r.merge_state, r.merged_sha, r.merged_at
+  r.isolation, r.fork_sha, r.head_sha, r.merge_state, r.merged_sha, r.merged_at, r.permission_mode
 `;
 
 /**

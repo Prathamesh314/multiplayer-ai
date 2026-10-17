@@ -28,6 +28,8 @@ export type RunnerDevice = {
   revokedAt: number | null;
   /** Seen within the liveness window — eligible to claim jobs. */
   online: boolean;
+  /** Its runner can ask in the chat before an agent uses a tool; older ones make the CLI refuse. */
+  supportsPermissions: boolean;
 };
 
 /** How recent a heartbeat must be for a device to count as online. */
@@ -58,6 +60,7 @@ type DeviceRow = {
   last_seen_at: Date | null;
   created_at: Date;
   revoked_at: Date | null;
+  supports_permissions?: boolean;
 };
 
 const toDevice = (row: DeviceRow): RunnerDevice => ({
@@ -69,13 +72,14 @@ const toDevice = (row: DeviceRow): RunnerDevice => ({
   lastSeenAt: row.last_seen_at ? row.last_seen_at.getTime() : null,
   createdAt: row.created_at.getTime(),
   revokedAt: row.revoked_at ? row.revoked_at.getTime() : null,
+  supportsPermissions: row.supports_permissions === true,
   online:
     row.revoked_at === null &&
     row.last_seen_at !== null &&
     Date.now() - row.last_seen_at.getTime() < DEVICE_ONLINE_MS,
 });
 
-const COLUMNS = "id, user_id, name, platform, version, last_seen_at, created_at, revoked_at";
+const COLUMNS = "id, user_id, name, platform, version, last_seen_at, created_at, revoked_at, supports_permissions";
 
 /** Mint a pairing code for the signed-in user. The raw code is returned once. */
 export async function createPairingCode(userId: string): Promise<{ code: string; expiresAt: number }> {

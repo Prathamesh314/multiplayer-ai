@@ -159,7 +159,14 @@ Each computer executes work for its owning account. Teammates do not gain contro
 - **Always allow in this chat** remembers it for the rest of the chat, for example every page on docs.google.com, so it won't ask again.
 - **Deny** refuses; the agent is told and carries on without it.
 
-Only the person running the chat can answer, because it runs on their computer with their AI account; others in the room see that it is waiting. Time spent waiting doesn't count toward the task's time limit, and a request nobody answers within 15 minutes is refused. A connector only sees what your own account can: a private Google Sheet needs a connector signed in to an account that can open it, while a public link works with a plain web fetch. This works with Claude Code and Codex on the current desktop app.` },
+Only the person running the chat can answer, because it runs on their computer with their AI account; others in the room see that it is waiting. Time spent waiting doesn't count toward the task's time limit, and a request nobody answers within 15 minutes is refused. A connector only sees what your own account can: a private Google Sheet needs a connector signed in to an account that can open it, while a public link works with a plain web fetch. This works with Claude Code and Codex on the current desktop app. If the chat says your computer runs an older version, update the desktop app (or the runner): older versions can't ask, so such actions are refused.
+
+**Approvals** in the composer chooses how a chat handles these requests:
+
+- **Ask first** (Manual, the default): the agent waits in the chat for your answer, as above.
+- **Auto-approve** (Auto): the agent runs commands, opens links and uses connectors on your computer without asking. Choose it only for work you trust it with.
+
+You can switch at any time, also from a waiting request with **Auto-approve this chat**, which allows what is waiting too. The choice is kept for that chat, and new chats start with your last choice on this device. You never need to edit your Claude Code or Codex settings for this.` },
     ],
   },
   {
