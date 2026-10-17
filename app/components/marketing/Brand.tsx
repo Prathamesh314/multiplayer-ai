@@ -1,4 +1,5 @@
+import { LogoMark } from "../LogoMark";
 import styles from "./marketing.module.css";
 export function Brand() {
-  return <span className={styles.brand}><span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span>multicode<span className={styles.brandAi}>ai</span></span>;
+  return <span className={styles.brand}><LogoMark className={styles.brandMark} />multicode<span className={styles.brandAi}>ai</span></span>;
 }
