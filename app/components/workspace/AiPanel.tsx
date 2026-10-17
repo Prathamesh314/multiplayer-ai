@@ -1,4 +1,5 @@
 "use client";
+import { preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
@@ -183,6 +184,8 @@ export function AiPanel({
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
+  // Read by the agents refresh, which outlives renders.
+  const connectedRef = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [installFor, setInstallFor] = useState<string | null>(null);
   // Composer selectors. Reset together with the provider, since the options do.
@@ -421,14 +424,18 @@ export function AiPanel({
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
       setParallelChats(response.parallelChats);
-      // Pre-select a ready agent, so the common case is one click. Codex is the
-      // default when it is installed; otherwise the first installed one.
-      setConnected((previous) => {
-        if (previous) return previous;
-        const installed = response.agents.filter((a) => a.installed);
-        const codex = installed.find((a) => a.id === "codex");
-        return codex?.id ?? installed[0]?.id ?? null;
-      });
+      // Pre-select a ready agent, so the common case is one click: the one this
+      // member last used on this device, else Codex, else the first installed.
+      if (!connectedRef.current) {
+        const chosen = preferredAgent(response.agents);
+        if (chosen) {
+          const picks = savedPicks(response.agents.find((agent) => agent.id === chosen));
+          connectedRef.current = chosen;
+          setConnected(chosen);
+          setModel(picks.model);
+          setEffort(picks.effort);
+        }
+      }
     }).catch(() => {
       if (!cancelled && current === generation) {
         setServerCanRun(false);
@@ -504,13 +511,18 @@ export function AiPanel({
     finally { setRefreshing(false); }
   }
 
-  // Switching provider clears the model/effort picks, whose options differ per agent.
+  // Switching provider restores that agent's own model/effort picks (or the
+  // defaults), since the options differ per agent.
   function selectProvider(id: string) {
+    const picks = savedPicks(agents?.find((agent) => agent.id === id));
+    connectedRef.current = id;
     setConnected(id);
-    setModel("");
-    setEffort("");
+    setModel(picks.model);
+    setEffort(picks.effort);
     setInstallFor(null);
   }
+  // Remembered on this device, so a reload keeps the member's choice.
+  useEffect(() => { if (connected) rememberChoice(connected, model, effort); }, [connected, model, effort]);
 
   function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = []) {
     pinned.current = true; // sending follows the reply
