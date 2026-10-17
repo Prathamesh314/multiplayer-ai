@@ -19,6 +19,11 @@ test("every file and folder becomes taggable", () => {
     ["app/", "app/lib/", "app/lib/auth.ts", "app/lib/oauth-client.ts", "app/page.tsx", "docs-auth.md", "data.csv"]);
 });
 
+test("folders are offered even when a listing only names files", () => {
+  const flat = flattenPaths({ name: "repo", path: "", type: "dir", children: [{ name: "a.csv", path: "data/raw/a.csv", type: "file" }] });
+  assert.deepEqual(flat.map((file) => `${file.path}${file.dir ? "/" : ""}`).sort(), ["data/", "data/raw/", "data/raw/a.csv"]);
+});
+
 test("matches put names that start with the query first", () => {
   assert.deepEqual(matchFiles(files, "auth").map((file) => file.path), ["app/lib/auth.ts", "docs-auth.md", "app/lib/oauth-client.ts"]);
   assert.deepEqual(matchFiles(files, "app/lib").map((file) => file.path).slice(0, 1), ["app/lib"]);

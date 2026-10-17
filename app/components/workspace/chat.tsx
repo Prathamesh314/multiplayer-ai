@@ -416,7 +416,7 @@ export function Composer({
   const popover = popoverOpen && (
     <div className="absolute bottom-full left-0 z-20 mb-2 w-96 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
-        {mention?.stage === "room" ? [onAssignTask && people.length ? "People" : "", files.length ? "Files" : "", rooms.length ? "Chats" : ""].filter(Boolean).join(" · ") || "Reference a room" : "Pick a chat"}
+        {mention?.stage === "room" ? (files.length ? (onAssignTask ? "Files, people & chat references" : "Files & chat references") : onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
         <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>

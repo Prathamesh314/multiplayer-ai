@@ -22,6 +22,14 @@ export function flattenPaths(root: TreeNode): MentionFile[] {
     }
   };
   walk(root);
+  // Folders a listing leaves implicit (only file paths) are still taggable.
+  const known = new Set(out.map((file) => file.path));
+  for (const file of [...out]) {
+    for (let at = file.path.indexOf("/"); at > 0; at = file.path.indexOf("/", at + 1)) {
+      const dir = file.path.slice(0, at);
+      if (!known.has(dir)) { known.add(dir); out.push({ path: dir, dir: true }); }
+    }
+  }
   return out;
 }
 
