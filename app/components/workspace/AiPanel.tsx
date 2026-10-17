@@ -18,6 +18,8 @@ import {
 } from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
+import type { MessageAttachment } from "../../lib/events/types";
+import { attachmentUrl, formatBytes } from "../../lib/ai/attachments-client";
 import { openSessionStream } from "../../lib/events/client";
 import { colorOf, initialsOf } from "../../lib/people";
 import type { SessionMember } from "../../lib/session/types";
@@ -104,6 +106,8 @@ type Turn = {
   id: string;
   role: "user" | "agent" | "system";
   text: string;
+  /** Files sent with a user message. */
+  attachments?: MessageAttachment[];
   author?: string | null;
   agentName?: string | null;
   /** True while the agent is still writing into this turn. */
@@ -157,7 +161,7 @@ export function AiPanel({
    * agent would read an incomplete checkout and confidently edit the wrong
    * thing, which is worse than waiting.
    */
-  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[] } | null>(null);
+  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[] } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
   // Whether this server runs chats on their own branches, and whether the next
@@ -294,6 +298,7 @@ export function AiPanel({
           id: uid(),
           role,
           text: message.body,
+          attachments: message.attachments,
           activities: role === "agent" && pendingSteps.length ? pendingSteps : undefined,
           author: message.authorName ?? null,
           agentName: role === "agent" ? agentName : null,
@@ -371,7 +376,7 @@ export function AiPanel({
         if (event.role === "user") {
           setTurns((prev) => [
             ...prev,
-            { id: uid(), role: "user", text: event.body, author: event.authorName ?? "Prompt" },
+            { id: uid(), role: "user", text: event.body, attachments: event.attachments, author: event.authorName ?? "Prompt" },
           ]);
         }
       },
@@ -447,7 +452,7 @@ export function AiPanel({
       // A failed import leaves the old repository selected, so running the
       // prompt would answer about the wrong code. Hand it back instead.
       if (importFailed) composer.current?.insertPrompt(held.prompt);
-      else askRef.current(held.prompt, held.contextRefs);
+      else askRef.current(held.prompt, held.contextRefs, held.attachments);
     }, 0);
     return () => clearTimeout(timer);
   }, [importingRepo, heldPrompt, importFailed]);
@@ -479,9 +484,9 @@ export function AiPanel({
     setInstallFor(null);
   }
 
-  function ask(prompt: string, contextRefs?: string[]) {
+  function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = []) {
     if (importingRepo) {
-      setHeldPrompt({ prompt, contextRefs });
+      setHeldPrompt({ prompt, contextRefs, attachments });
       return;
     }
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
@@ -513,7 +518,7 @@ export function AiPanel({
     // Continuing appends to the entered run; a fresh run starts a clean thread.
     // On a fork, lead with a notice so the imported memory is visible up top —
     // the messages themselves stay in the agent's context, not the transcript.
-    const userTurn: Turn = { id: uid(), role: "user", text: prompt, author: "You" };
+    const userTurn: Turn = { id: uid(), role: "user", text: prompt, attachments: attachments.length ? attachments : undefined, author: "You" };
     setTurns((prev) => {
       if (continuing) return [...prev, userTurn];
       if (forkSource) {
@@ -548,6 +553,7 @@ export function AiPanel({
         contextRefs,
         repoId: repoForRun,
         isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
+        attachmentIds: attachments.length ? attachments.map((file) => file.id) : undefined,
       },
       {
         onEvent: (event) => {
@@ -923,7 +929,7 @@ export function AiPanel({
 
       <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
-          <Conversation turns={turns} />
+          <Conversation turns={turns} sessionId={sessionId} />
         ) : (
           <EmptyState
             ready={ready}
@@ -990,6 +996,7 @@ export function AiPanel({
                 : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
           }
           onSend={ask}
+          attachTo={sessionId}
         />
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId} startedAt={entered.startedAt} moveDraft={text => composer.current?.insertPrompt(text)} />}
@@ -1249,7 +1256,7 @@ function agentSubtitle(agent: AgentStatus): string {
 // Conversation
 // ---------------------------------------------------------------------------
 
-function Conversation({ turns }: { turns: Turn[] }) {
+function Conversation({ turns, sessionId }: { turns: Turn[]; sessionId: string }) {
   // Agent/system turns carry CLI framing (Codex's banner, model-manager error
   // logs, its echo of the prompt, the token tally). Strip it to the reply;
   // a turn that was nothing but noise is dropped entirely.
@@ -1273,7 +1280,7 @@ function Conversation({ turns }: { turns: Turn[] }) {
         turn.role === "system" ? (
           <SystemLine key={turn.id} text={turn.text} />
         ) : (
-          <TurnBubble key={turn.id} turn={turn} />
+          <TurnBubble key={turn.id} turn={turn} sessionId={sessionId} />
         ),
       )}
     </div>
@@ -1324,7 +1331,7 @@ function cleanRunText(raw: string): string {
   return text.trim();
 }
 
-function TurnBubble({ turn }: { turn: Turn }) {
+function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
   // The user's own prompts sit on the right as a bubble; the agent replies on
   // the left as rendered Markdown — the familiar assistant-chat layout.
   if (turn.role === "user") {
@@ -1332,6 +1339,18 @@ function TurnBubble({ turn }: { turn: Turn }) {
     return (
       <div className="flex flex-col items-end gap-1">
         {author !== "You" && <span className="pr-1 text-[11px] text-vs-muted">{author}</span>}
+        {turn.attachments?.length ? (
+          <ul aria-label="Attached files" className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+            {turn.attachments.map((file) => (
+              <li key={file.id}>
+                <a href={attachmentUrl(sessionId, file.id)} className="flex max-w-64 items-center gap-1.5 rounded-lg border border-vs-border px-2 py-1 text-[11px] text-vs-fg hover:bg-vs-hover" title={`Download ${file.name}`}>
+                  <span className="truncate">{file.name}</span>
+                  <span className="shrink-0 text-vs-muted">{formatBytes(file.size)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="human-message max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-4 py-2.5 text-vs-fg">
           {turn.text}
         </div>

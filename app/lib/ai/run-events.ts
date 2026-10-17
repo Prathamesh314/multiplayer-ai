@@ -81,6 +81,13 @@ export type AgentRunJob = {
    * is asked in the chat; older runners ignore this and refuse as before.
    */
   allowedTools?: string[];
+  /**
+   * Files attached to this message. The runner downloads each one to `path`
+   * (relative to the worktree, under `.multicode/attachments/`, excluded from
+   * Git) before the agent starts, and checks its size and sha256. Runners that
+   * cannot do this never claim the job (runner/jobs.ts).
+   */
+  attachments?: { id: string; path: string; size: number; sha256: string }[];
   model?: string;
   effort?: string;
   /** Attributes the auto-commit, exactly as the inline path always has. */

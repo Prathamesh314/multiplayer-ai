@@ -1,4 +1,5 @@
 import { permissionAsker } from "./permissions";
+import { ATTACHMENT_ROOT, placeAttachments } from "./attachments";
 import { ActivityOutbox } from "./activity-outbox";
 /*
  * The multicode-ai runner: agents on your machine, rooms in the cloud.
@@ -155,6 +156,9 @@ async function processJob(
 
     sha = await git.withWorkspace(job, async (workspace) => {
       emit({ t: "start", agent: spec.bin, cwd: workspace.path, runId: job.runId });
+      // Before the first checkpoint, so attachments are already excluded from it.
+      const attached = await placeAttachments(workspace.path, job.turnId, job.attachments, id => api.attachment(job.turnId, id, execution.signal));
+      if (attached) emit({ t: "notice", message: `${attached} attached file${attached === 1 ? "" : "s"} ready in ${ATTACHMENT_ROOT}/` });
       let checkpointing = Promise.resolve();
       const checkpoint = () => { checkpointing = checkpointing.then(() => workspace.checkpoint()).then(() => deliveries.checkpoints()).catch(cause => emit({ t: "notice", message: `Checkpoint pending: ${String(cause)}` })); };
       checkpoint();
