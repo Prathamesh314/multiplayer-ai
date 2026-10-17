@@ -29,7 +29,8 @@ test("a terminal is a real shell in the chat's worktree, resizable like a TTY", 
   const { terminals, reports, output } = host(directory, { shell: "/bin/sh" });
   t.after(() => terminals.closeAll());
   open(terminals, "term-1");
-  await eventually(() => reports.some(report => report.notice?.includes(directory)), "location notice");
+  await eventually(() => reports.some(report => report.notice === "Terminal · room worktree"), "a short location notice");
+  assert.ok(!reports.some(report => report.notice?.includes(directory)), "no full path in the notice");
   terminals.handle("terminal.input", { id: "term-1", data: "pwd; stty size; echo term=$TERM\r" });
   await eventually(() => output("term-1").includes("30 100") && output("term-1").includes(directory) && output("term-1").includes("term=xterm-256color"), "pwd, size and TERM");
   terminals.handle("terminal.resize", { id: "term-1", cols: 120, rows: 40 });

@@ -11,11 +11,24 @@ export function workspaceSlug(value: string | undefined, fallback: string): stri
   return slug || fallback;
 }
 
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/;
+/**
+ * A worktree's readable name, used for both its folder and its local branch
+ * (as Conductor does): the room's or chat's name, never an ID. Callers make
+ * it unique within the repository.
+ */
+export function readableName(value: string | undefined, fallback: string): string {
+  const slug = workspaceSlug(value, fallback);
+  return WINDOWS_RESERVED.test(slug) ? `${slug}-work` : slug;
+}
+
 export type WorkspaceLocation = { workspaceRoot: string; relativePath: string };
 
 export function locationPath(location: WorkspaceLocation): string {
-  // Exactly two generated components. IDs make reserved Windows names harmless.
-  if (!isAbsolute(location.workspaceRoot) || !/^[a-z0-9-]+--[a-f0-9]{12}\/[a-z0-9-]+--[a-f0-9]{12}$/.test(location.relativePath)) {
+  // Exactly two generated components: the repository folder (its ID keeps
+  // separate installations apart) and the worktree's readable name. Older
+  // worktree folders end in --<id>; both are plain slugs.
+  if (!isAbsolute(location.workspaceRoot) || !/^[a-z0-9-]+--[a-f0-9]{12}\/[a-z0-9][a-z0-9-]{0,79}$/.test(location.relativePath)) {
     throw new Error("Invalid workspace location metadata. Existing files were preserved.");
   }
   return resolve(location.workspaceRoot, ...location.relativePath.split("/"));
@@ -30,9 +43,9 @@ export async function writeWorkspaceMetadata(path: string, value: unknown): Prom
 /** Called under the cache lock, so every room uses the same repository folder. */
 export async function allocateWorkspaceLocation(input: {
   workspacesDir: string; metadataRoot: string; cacheKey: string; repoRef: string;
-  repositoryName?: string; roomName?: string;
-  /** Distinguishes a parallel chat's worktree from its room's; defaults to the room repository. */
-  identity?: string;
+  repositoryName?: string;
+  /** Picks the worktree's folder name inside the repository folder (see readableName). */
+  chooseName: (repositoryFolder: string) => Promise<string>;
 }): Promise<WorkspaceLocation> {
   await mkdir(input.workspacesDir, { recursive: true, mode: 0o700 });
   const workspaceRoot = await realpath(input.workspacesDir);
@@ -50,7 +63,7 @@ export async function allocateWorkspaceLocation(input: {
     repositoryFolder = `${workspaceSlug(input.repositoryName, "repository")}--${hash(`${input.metadataRoot}\0${input.cacheKey}`).slice(0, 12)}`;
     await writeWorkspaceMetadata(manifest, { repositoryFolder });
   }
-  return { workspaceRoot, relativePath: `${repositoryFolder}/${workspaceSlug(input.roomName, "room")}--${hash(input.identity ?? input.repoRef).slice(0, 12)}` };
+  return { workspaceRoot, relativePath: `${repositoryFolder}/${await input.chooseName(join(workspaceRoot, repositoryFolder))}` };
 }
 
 /** Refuse symlinked generated parents instead of writing through them. */

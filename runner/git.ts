@@ -15,7 +15,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
 import { withWorkspaceLock } from "./workspace-lock";
-import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, writeWorkspaceMetadata, type WorkspaceLocation } from "./workspace-layout";
+import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, readableName, writeWorkspaceMetadata, type WorkspaceLocation } from "./workspace-layout";
 
 const run = promisify(execFile);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -24,7 +24,15 @@ type WorkspaceJob = Pick<AgentRunJob, "sessionId" | "repoId" | "projectId" | "pr
   Partial<Pick<AgentRunJob, "runId" | "isolation" | "chatBranch">>;
 type Binding = { version: 1; repoRef: string; cacheKey: string; location?: WorkspaceLocation; repositoryName?: string; roomName?: string; sessionId?: string; checkpointOwner?: string; checkpointJob?: { turnId: string; baseSha: string }; checkpointSequence?: number; checkpointTree?: string;
   /** Set for a parallel chat's own worktree; absent for the room's shared one. */
-  chatRunId?: string; chatName?: string };
+  chatRunId?: string; chatName?: string;
+  /** The worktree's local branch, named like its folder. Absent on older worktrees, whose branch is workspace/<key>. */
+  branch?: string;
+  /** Where an older worktree was before it got its readable name; set only while moving it. */
+  previousLocation?: WorkspaceLocation };
+/** Older worktrees' branch, named by their workspace key. */
+const legacyBranch = (key: string) => `workspace/${key}`;
+const branchOf = (binding: Binding, key: string) => binding.branch ?? legacyBranch(key);
+const bindingName = (binding: Binding) => readableName(binding.chatRunId ? binding.chatName : binding.roomName, binding.chatRunId ? "chat" : "room");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type RunnerGitOptions = {
@@ -107,7 +115,7 @@ export class RunnerGit {
     this.activeWorkspaces.set(lockPath, (this.activeWorkspaces.get(lockPath) ?? 0) + 1);
     try {
       await this.idleCaptures.get(lockPath);
-      return await this.lockedWorkspace(job, task, { repoRef, isolated, identity, key, root, lockPath });
+      return await this.lockedWorkspace(job, task, { repoRef, isolated, key, root, lockPath });
     } finally {
       const count = (this.activeWorkspaces.get(lockPath) ?? 1) - 1;
       if (count) this.activeWorkspaces.set(lockPath, count); else this.activeWorkspaces.delete(lockPath);
@@ -115,11 +123,11 @@ export class RunnerGit {
   }
 
   private async lockedWorkspace<T>(job: WorkspaceJob, task: (workspace: RunnerWorkspace) => Promise<T>, context: {
-    repoRef: string; isolated: boolean; identity: string; key: string; root: string; lockPath: string;
+    repoRef: string; isolated: boolean; key: string; root: string; lockPath: string;
   }): Promise<T> {
-    const { repoRef, isolated, identity, key, root, lockPath } = context;
+    const { repoRef, isolated, key, root, lockPath } = context;
     const legacyWork = join(root, "work", key);
-    const branch = `workspace/${key}`;
+    let branch = legacyBranch(key);
     let work: string;
     return withWorkspaceLock(lockPath, job.turnId, async () => {
       // Pin the cache choice so old queued jobs without repository metadata keep their
@@ -145,11 +153,15 @@ export class RunnerGit {
 
       await lockedGit(async () => {
         if (!binding.location) {
-          binding.location = await allocateWorkspaceLocation({ workspacesDir: this.workspacesDir, metadataRoot: root,
-            cacheKey: binding.cacheKey, repoRef, repositoryName: job.workspaceNames?.repository, identity,
-            roomName: isolated ? `${job.workspaceNames?.room ?? "room"} ${job.workspaceNames?.chat ?? "chat"}` : job.workspaceNames?.room });
           binding.repositoryName = job.workspaceNames?.repository;
           binding.roomName = job.workspaceNames?.room;
+          if (isolated) binding.chatName = job.workspaceNames?.chat;
+          let name = "";
+          binding.location = await allocateWorkspaceLocation({ workspacesDir: this.workspacesDir, metadataRoot: root,
+            cacheKey: binding.cacheKey, repoRef, repositoryName: job.workspaceNames?.repository,
+            chooseName: async (folder) => (name = await this.freeName(root, key, binding, folder, cache, bindingName(binding))) });
+          // Brand-new worktrees take the readable name as their branch too.
+          if (!await exists(legacyWork)) binding.branch = name;
           binding.sessionId = job.sessionId;
           // Pin the destination before moving, so an interrupted upgrade can
           // find either the old path or the verified destination on restart.
@@ -159,11 +171,16 @@ export class RunnerGit {
         await prepareWorkspaceParent(binding.location);
         if (await exists(legacyWork)) {
           if (await exists(work)) throw new Error(`Both old and new workspace paths exist. Recover ${legacyWork} and ${work}; neither was overwritten.`);
-          await this.checkWorktree(legacyWork, cache, branch);
+          await this.checkWorktree(legacyWork, cache, legacyBranch(key));
           // Git updates both ends of the linked worktree, including its index.
           // Dirty, untracked and ignored files travel together; no reset/copy.
           await this.git(cache, ["worktree", "move", legacyWork, work]);
         }
+        if (await exists(cache)) {
+          await this.adoptReadableName(root, key, bindingPath, binding, cache);
+          work = locationPath(binding.location!);
+        }
+        branch = branchOf(binding, key);
         if (!await exists(cache)) {
           await mkdir(dirname(cache), { recursive: true, mode: 0o700 });
           const temp = `${cache}.${randomUUID()}.tmp`;
@@ -297,7 +314,7 @@ export class RunnerGit {
       if (!binding.chatRunId || !finished.has(binding.chatRunId) || !binding.location) continue;
       const work = locationPath(binding.location);
       const cache = join(root, "repos", `${binding.cacheKey}.git`);
-      const branch = `workspace/${key}`;
+      const branch = branchOf(binding, key);
       const lockPath = join(root, "locks", `workspace-${key}`);
       const candidate: PruneCandidate = { chat: binding.chatName || binding.chatRunId, path: work, removable: false };
       results.push(candidate);
@@ -370,20 +387,120 @@ export class RunnerGit {
     if (!input.userId || !input.repoRef || !/^[a-zA-Z0-9_-]+$/.test(input.repoRef)) return null;
     const root = this.scopeRoot(input.userId);
     const candidates = [
-      ...(input.isolated && input.runId && UUID.test(input.runId) ? [{ key: digest(`${input.repoRef}\0chat\0${input.runId}`), label: "parallel chat worktree" }] : []),
-      { key: digest(input.repoRef), label: "room worktree" },
+      ...(input.isolated && input.runId && UUID.test(input.runId) ? [digest(`${input.repoRef}\0chat\0${input.runId}`)] : []),
+      digest(input.repoRef),
     ];
-    for (const candidate of candidates) {
+    for (const key of candidates) {
       try {
-        const binding = JSON.parse(await readFile(join(root, "bindings", `${candidate.key}.json`), "utf8")) as Binding;
+        const bindingPath = join(root, "bindings", `${key}.json`);
+        let binding = JSON.parse(await readFile(bindingPath, "utf8")) as Binding;
         if (binding.repoRef !== input.repoRef || !binding.location) continue;
-        const path = locationPath(binding.location);
-        if ((await lstat(path)).isDirectory()) return { path, label: candidate.label };
+        binding = await this.tidyIdle(root, key, bindingPath, binding);
+        const path = locationPath(binding.location!);
+        // Just the repository and the worktree's (= branch's) readable name.
+        if ((await lstat(path)).isDirectory()) return { path, label: `${binding.repositoryName || "repository"} · ${binding.branch ?? bindingName(binding)}` };
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
       }
     }
     return null;
+  }
+
+  /**
+   * A readable name no other worktree of this repository uses: not as a
+   * folder, not as a branch, not pinned by another workspace's metadata.
+   */
+  private async freeName(root: string, selfKey: string, binding: Binding, folder: string, cache: string, base: string): Promise<string> {
+    const taken = new Set<string>();
+    for (const file of await readdir(join(root, "bindings")).catch(() => [] as string[])) {
+      if (!/^[a-f0-9]{64}\.json$/.test(file) || file === `${selfKey}.json`) continue;
+      try {
+        const other = JSON.parse(await readFile(join(root, "bindings", file), "utf8")) as Binding;
+        if (other.cacheKey !== binding.cacheKey) continue;
+        if (other.branch) taken.add(other.branch);
+        for (const location of [other.location, other.previousLocation]) if (location) taken.add(location.relativePath.split("/")[1]);
+      } catch { /* unreadable metadata: folders and branches below are still checked */ }
+    }
+    const hasCache = await exists(cache);
+    for (let n = 1; n < 1000; n += 1) {
+      const name = n === 1 ? base : `${base}-${n}`;
+      if (taken.has(name) || await exists(join(folder, name))) continue;
+      if (hasCache && await this.hasRef(cache, `refs/heads/${name}`)) continue;
+      return name;
+    }
+    throw new Error("No free worktree name in this repository. Files were preserved.");
+  }
+
+  /**
+   * Older worktrees had ID-suffixed folders and workspace/<key> branches; give
+   * them the readable name new ones get. Called with the workspace and cache
+   * locks held. The destination is pinned before anything moves, so an
+   * interrupted rename finishes next time; uncommitted files travel with
+   * `git worktree move`. Never fatal: on any problem the worktree keeps
+   * working where it is, under its old names, and this is tried again later.
+   */
+  private async adoptReadableName(root: string, key: string, bindingPath: string, binding: Binding, cache: string): Promise<void> {
+    if (!binding.location) return;
+    const legacy = legacyBranch(key);
+    const head = async (path: string) => (await this.git(path, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => "")).trim();
+    try {
+      if (!binding.branch) {
+        const [repositoryFolder, current] = binding.location.relativePath.split("/");
+        const folder = resolve(binding.location.workspaceRoot, repositoryFolder);
+        const readable = bindingName(binding);
+        // Older folders end in --<id>. One without it was already allocated a
+        // readable, unique name (a worktree moved from the very first layout).
+        const name = current.includes("--") ? await this.freeName(root, key, binding, folder, cache, readable) : current;
+        if (name !== current) {
+          binding.previousLocation = binding.location;
+          binding.location = { workspaceRoot: binding.location.workspaceRoot, relativePath: `${repositoryFolder}/${name}` };
+        }
+        binding.branch = name;
+        await writeWorkspaceMetadata(bindingPath, binding);
+      }
+      const target = locationPath(binding.location);
+      if (binding.previousLocation) {
+        const from = locationPath(binding.previousLocation);
+        if (await exists(from)) {
+          if (await exists(target)) throw new Error(`Both ${from} and ${target} exist; neither was moved.`);
+          await this.git(cache, ["worktree", "move", from, target]);
+        }
+      }
+      if (await exists(target)) {
+        if (await head(target) === `refs/heads/${legacy}`) await this.git(target, ["branch", "-m", legacy, binding.branch!]);
+      } else if (await this.hasRef(cache, `refs/heads/${legacy}`) && !await this.hasRef(cache, `refs/heads/${binding.branch}`)) {
+        await this.git(cache, ["branch", "-m", legacy, binding.branch!]);
+      }
+      if (binding.previousLocation) {
+        delete binding.previousLocation;
+        await writeWorkspaceMetadata(bindingPath, binding);
+      }
+    } catch (cause) {
+      // Settle on what is actually on disk, so nothing is created twice.
+      if (binding.previousLocation && await exists(locationPath(binding.previousLocation))) binding.location = binding.previousLocation;
+      delete binding.previousLocation;
+      const path = locationPath(binding.location);
+      const current = (await exists(path)) ? await head(path) : "";
+      if (current === `refs/heads/${legacy}`) delete binding.branch;
+      else if (current.startsWith("refs/heads/")) binding.branch = current.slice("refs/heads/".length);
+      await writeWorkspaceMetadata(bindingPath, binding).catch(() => {});
+      console.error(`[runner] worktree keeps its current name for now: ${String(cause)}`);
+    }
+  }
+
+  /** Readable names for an idle worktree before a terminal opens there; skipped while it is busy. */
+  private async tidyIdle(root: string, key: string, bindingPath: string, binding: Binding): Promise<Binding> {
+    if (binding.branch && !binding.previousLocation) return binding;
+    const lockPath = join(root, "locks", `workspace-${key}`);
+    if (this.activeWorkspaces.has(lockPath) || this.idleCaptures.has(lockPath)) return binding;
+    const cache = join(root, "repos", `${binding.cacheKey}.git`);
+    try {
+      return await withWorkspaceLock(lockPath, randomUUID(), () => withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), randomUUID(), async () => {
+        const current = JSON.parse(await readFile(bindingPath, "utf8")) as Binding;
+        if (await exists(cache)) await this.adoptReadableName(root, key, bindingPath, current, cache);
+        return current;
+      }, 10_000));
+    } catch { return binding; } // busy: rename on a later turn
   }
 
   /** Poll saved workspaces between jobs too, so manual edits can synchronize. */
@@ -411,7 +528,7 @@ export class RunnerGit {
               withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), binding.checkpointJob!.turnId, async () => {
                 const current: Binding = JSON.parse(await readFile(bindingPath, "utf8"));
                 if (current.checkpointOwner !== digest(`${this.server}\0${this.token}`) || current.repoRef !== binding.repoRef || current.cacheKey !== binding.cacheKey || !current.location || locationPath(current.location) !== work) return;
-                await this.capture(bindingPath, current, work, cache, `workspace/${key}`);
+                await this.capture(bindingPath, current, work, cache, branchOf(current, key));
               }, 125_000));
           } catch (cause) { console.error(`[runner] checkpoint pending: ${String(cause)}`); }
         })();
