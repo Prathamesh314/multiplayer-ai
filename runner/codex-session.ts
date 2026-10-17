@@ -2,6 +2,36 @@ import { spawn } from "node:child_process";
 import { agentEnv } from "../app/lib/ai/env";
 import { WakeSignal } from "./signals";
 import type { RunInput, LocalRunResult } from "./execute";
+import { Deadline, type ToolRequest } from "./permissions";
+
+type ApprovalParams = {
+  command?: string | null; reason?: string | null; grantRoot?: string | null;
+  networkApprovalContext?: { host: string; protocol: string } | null;
+  permissions?: { network: unknown; fileSystem: unknown };
+};
+/** What the chat shows for a Codex approval request, and what "always" remembers. */
+export function describeCodexApproval(method: string, params: ApprovalParams): ToolRequest | null {
+  const reason = params.reason ? ` (${params.reason})` : "";
+  if (method === "item/commandExecution/requestApproval") {
+    const host = params.networkApprovalContext?.host;
+    if (host) return { tool: "network", title: `Connect to ${host}${reason}`.slice(0, 300), detail: params.command ?? undefined, rule: `CodexNetwork(${host})` };
+    return { tool: "shell", title: `Run: ${params.command ?? "a command"}${reason}`.slice(0, 300), detail: params.command ?? undefined, rule: null };
+  }
+  if (method === "item/fileChange/requestApproval")
+    return { tool: "write", title: `Write files${params.grantRoot ? ` under ${params.grantRoot}` : " outside the workspace"}${reason}`.slice(0, 300), rule: null };
+  if (method === "item/permissions/requestApproval")
+    return { tool: "permissions", title: `Extra access${params.permissions?.network ? ": network" : ""}${params.permissions?.fileSystem ? ": files outside the workspace" : ""}${reason}`.slice(0, 300),
+      detail: JSON.stringify(params.permissions ?? {}, null, 2).slice(0, 4000), rule: null };
+  return null;
+}
+/** The JSON-RPC result Codex expects for an approval decision. */
+export function codexApprovalResult(method: string, params: ApprovalParams, allow: boolean, always: boolean) {
+  if (method === "item/permissions/requestApproval") {
+    const granted = allow ? Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)) : {};
+    return { permissions: granted, scope: always ? "session" : "turn" };
+  }
+  return { decision: allow ? (always ? "acceptForSession" : "accept") : "decline" };
+}
 
 /** Codex's app-server keeps one thread alive and accepts native turn/steer input. */
 export async function runCodexSession(input: RunInput): Promise<LocalRunResult> {
@@ -27,7 +57,17 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
   };
   const abort = () => { fail(new Error("Execution stopped.")); stop(); };
   input.signal?.addEventListener("abort", abort, { once: true });
-  const deadline = setTimeout(() => { fail(new Error("Stopped after 10 minutes.")); stop(); }, 600_000);
+  // Paused while a person decides on an approval request.
+  const deadline = new Deadline(600_000, () => { fail(new Error("Stopped after 10 minutes.")); stop(); });
+  const approvals = input.permissions ? "on-request" : "never";
+  const approve = async (id: number, method: string, params: ApprovalParams) => {
+    const request = describeCodexApproval(method, params);
+    if (!request || !input.permissions) { write({ id, error: { code: -32601, message: "No one can approve this request. Stay within the workspace sandbox." } }); return; }
+    try {
+      const answer = await deadline.hold(() => input.permissions!(request));
+      write({ id, result: codexApprovalResult(method, params, answer.allow, answer.always) });
+    } catch { write({ id, result: codexApprovalResult(method, params, false, false) }); }
+  };
   const off = input.inputs?.subscribe(() => wake.wake());
   const write = (value: unknown) => child.stdin.write(JSON.stringify(value) + "\n");
   const rpc = (method: string, params: object): Promise<Reply> => new Promise((resolve, reject) => {
@@ -58,8 +98,8 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
         if (request) { pending.delete(frame.id); clearTimeout(request.timer); if (frame.error) request.reject(new Error(frame.error.message)); else request.resolve(frame.result ?? {}); }
         continue;
       }
-      // This app does not have an approval UI for CLI requests. Never auto-approve.
-      if (frame.id != null && frame.method) { write({ id: frame.id, error: { code: -32601, message: "Interactive approvals are unavailable. Stay within the workspace sandbox." } }); continue; }
+      // Approval requests are relayed to the chat; anything else is refused.
+      if (frame.id != null && frame.method) { void approve(frame.id, frame.method, (frame.params ?? {}) as ApprovalParams); continue; }
       const params = frame.params;
       if (frame.method === "item/agentMessage/delta" && params?.delta) {
         output += params.delta; input.onEvent({ t: "out", d: params.delta });
@@ -81,11 +121,11 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
     if (input.signal?.aborted) abort();
     await rpc("initialize", { clientInfo: { name: "multicode-ai", title: "Multicode AI", version: "0.1.0" } });
     write({ method: "initialized", params: {} });
-    const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: "never", sandbox: "workspace-write", ephemeral: true });
+    const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: approvals, sandbox: "workspace-write", ephemeral: true });
     if (!thread.thread?.id) throw new Error("Agent did not create a thread.");
     const threadId = thread.thread.id;
     const start = async (text: string) => {
-      const reply = await rpc("turn/start", { threadId, cwd: input.cwd, model: input.model, effort: input.effort, approvalPolicy: "never",
+      const reply = await rpc("turn/start", { threadId, cwd: input.cwd, model: input.model, effort: input.effort, approvalPolicy: approvals,
         sandboxPolicy: { type: "workspaceWrite", writableRoots: [input.cwd], networkAccess: false }, input: [{ type: "text", text }] });
       if (!reply.turn?.id) throw new Error("Agent did not create a turn.");
       active = completed.has(reply.turn.id) ? null : reply.turn.id;
@@ -121,7 +161,7 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
     input.onEvent({ t: "err", d: message });
     return { code: 1, output, errOutput: `${errOutput}\n${message}`, ms: Date.now() - started };
   } finally {
-    ending = true; off?.(); clearTimeout(deadline); input.signal?.removeEventListener("abort", abort);
+    ending = true; off?.(); deadline.clear(); input.signal?.removeEventListener("abort", abort);
     stop(); await closed;
   }
 }

@@ -1,3 +1,4 @@
+import type { PermissionTransport } from "./permissions";
 import type { Checkpoint } from "../app/lib/runner/checkpoint-types";
 import { detectAgents } from "../app/lib/ai/detect";
 import { readSignals } from "./signals";
@@ -66,6 +67,22 @@ export class RunnerApi {
     if (onlyChanged && this.inventory === signature) return;
     await this.post("/api/runner/heartbeat", body);
     this.inventory = signature;
+  }
+
+  /** Ask the chat before the agent uses a tool (runner/permissions.ts). */
+  permissions(turnId: string): PermissionTransport {
+    const path = `/api/runner/runs/${encodeURIComponent(turnId)}/permissions`;
+    return {
+      ask: async (body) => (await this.post<{ status: string }>(path, body)).status,
+      status: async (id) => {
+        const response = await fetch(`${this.server}${path}?id=${encodeURIComponent(id)}`, {
+          headers: { authorization: `Bearer ${this.token}` }, signal: AbortSignal.timeout(15_000), redirect: "error",
+        });
+        if (!response.ok) throw new RunnerHttpError(`Permission status failed with ${response.status}`, response.status, 1000);
+        return (await response.json()) as { status: string; remember?: boolean };
+      },
+      expire: async (id) => { await this.post(path, { id, expire: true }); },
+    };
   }
 
   /** One attachment of a turn this device holds the lease for, as a stream. */

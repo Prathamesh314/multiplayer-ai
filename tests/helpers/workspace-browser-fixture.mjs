@@ -98,7 +98,7 @@ export function installFixtures() {
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});
     if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true}]});
     if(path.endsWith("/runs"))return json({runs:state.runs});
-    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch))?$/);
+    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch|permissions)(?:\/([^/]+))?)?$/);
     if(runPath) {
       const run=state.runs.find(item=>item.id===runPath[1]);
       if(runPath[2]==="branch") {
@@ -111,6 +111,12 @@ export function installFixtures() {
       if(runPath[2]==="handoff")return json({run,offers:[],recipients:[]});
       if(runPath[2]==="history")return json({turns:[],snapshots:[],selectedSnapshotId:null});
       if(runPath[2]==="join")return json({ok:true});
+      if(runPath[2]==="permissions") {
+        // Tool requests an agent is waiting on: state.permissions[runId]; answers are recorded.
+        const requests=(state.permissions??={})[run.id]??=[];
+        if(runPath[3]&&init.method==="POST"){const decision=JSON.parse(init.body).decision;(state.permissionDecisions??=[]).push({id:runPath[3],decision});const request=requests.find(item=>item.id===runPath[3]);if(request)request.status=decision==="deny"?"denied":"allowed";return json({status:request?.status});}
+        return json({requests});
+      }
       if(runPath[2]==="inputs") {
         const inputs=state.inputs[run.id]??=[];
         if(init.method==="POST") {const input={...JSON.parse(init.body),runId:run.id,status:"queued",createdAt:new Date().toISOString()};inputs.push(input);return json({input});}

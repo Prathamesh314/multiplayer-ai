@@ -118,6 +118,12 @@ try {
   await eventually(()=>evaluate(`!!document.querySelector('button[title^="Queue context A ·"]')`),"AI chats");
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate(`!!document.querySelector('textarea[aria-label="Message working agent"]')`),"working chat queue");
+  // The agent asks before opening a link; the driver answers in the chat.
+  await evaluate(`window.__model.permissions={"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa":[{id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",turnId:"t",tool:"WebFetch",title:"WebFetch: https://docs.google.com/spreadsheets/d/x",detail:"{}",rule:"WebFetch(domain:docs.google.com)",status:"pending",remember:false,decidedBy:null,createdAt:Date.now()}]};window.__model.emit("run.permission",{runId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",at:Date.now()});`);
+  await eventually(()=>evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].map(b=>b.textContent).join("|")==="Allow once|Always allow in this chat|Deny"`),"tool request with its choices");
+  assert.ok(await evaluate(`document.querySelector('section[aria-label="Tool requests"]').textContent.includes("docs.google.com/spreadsheets")`));
+  await evaluate(`[...document.querySelectorAll('section[aria-label="Tool requests"] button')].find(b=>b.textContent==="Always allow in this chat").click()`);
+  await eventually(()=>evaluate(`!document.querySelector('section[aria-label="Tool requests"]') && JSON.stringify(window.__model.permissionDecisions)==='[{"id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","decision":"always"}]'`),"answer sent and the card cleared");
   assert.deepEqual(keyWarnings,[],"opening a chat has no React key warnings");
   await button('Share chat');
   await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),"guest invitation dialog");

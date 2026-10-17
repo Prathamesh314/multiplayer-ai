@@ -76,6 +76,12 @@ export type AgentRunJob = {
   /** The assembled argv prompt (already budgeted and woven). */
   agentPrompt: string;
   /**
+   * Tool rules the chat's driver chose to always allow (lib/ai/permissions.ts),
+   * e.g. WebFetch(domain:docs.google.com). Anything else that needs permission
+   * is asked in the chat; older runners ignore this and refuse as before.
+   */
+  allowedTools?: string[];
+  /**
    * Files attached to this message. The runner downloads each one to `path`
    * (relative to the worktree, under `.multicode/attachments/`, excluded from
    * Git) before the agent starts, and checks its size and sha256. Runners that

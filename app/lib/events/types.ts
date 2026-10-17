@@ -178,7 +178,7 @@ export type TerminalStreamEvent =
 
 export type SessionEvent =
   | { type: "devices.changed" | "tasks.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
-  | { type: "run.inputs" | "run.activity"; runId: string; at: number }
+  | { type: "run.inputs" | "run.activity" | "run.permission"; runId: string; at: number }
   | { type: "run.control"; runId: string; at: number }
   | FileSavedEvent
   | FileEditingEvent

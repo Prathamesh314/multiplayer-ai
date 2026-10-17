@@ -35,6 +35,7 @@ import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
+import { allowedTools } from "../../../lib/ai/permissions";
 import { AttachmentError, attachmentFiles, attachmentPromptBlock, bindAttachments, sendableAttachments } from "../../../lib/ai/attachments";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 
@@ -471,6 +472,7 @@ async function handlePOST(request: Request) {
     ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,
     agentPrompt,
+    allowedTools: await allowedTools(run.id),
     ...(files.length ? { attachments: files.map(({ id, path, size, sha256 }) => ({ id, path, size, sha256 })) } : {}),
     projectId: result.session.projectId,
     model: runOptions.model,

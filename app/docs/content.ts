@@ -153,6 +153,13 @@ Saved chats and uploaded files remain readable with the correct permissions even
       { id: "remove-device", title: "Disconnect or revoke a computer", body: `Use **Your computers** to inspect or revoke a device. Revocation removes its permission to claim work; reconnect explicitly if you need that computer again. To pause temporarily, use **Pause after current task** in desktop settings or stop the standalone runner with **Ctrl+C**.
 
 Each computer executes work for its owning account. Teammates do not gain control of your machine simply by joining a project. Your AI tool can run commands with your local user permissions when executing your tasks.` },
+      { id: "tool-requests", title: "Allow web links, connectors and commands", body: `The agent edits files in its working folder without asking. Before it does anything that needs your permission, such as opening a web link, using an MCP connector you set up in Claude Code (Google Drive, Gmail, and others), or running a shell command, the chat shows what it wants and waits:
+
+- **Allow once** lets it do this one thing.
+- **Always allow in this chat** remembers it for the rest of the chat, for example every page on docs.google.com, so it won't ask again.
+- **Deny** refuses; the agent is told and carries on without it.
+
+Only the person running the chat can answer, because it runs on their computer with their AI account; others in the room see that it is waiting. Time spent waiting doesn't count toward the task's time limit, and a request nobody answers within 15 minutes is refused. A connector only sees what your own account can: a private Google Sheet needs a connector signed in to an account that can open it, while a public link works with a plain web fetch. This works with Claude Code and Codex on the current desktop app.` },
     ],
   },
   {

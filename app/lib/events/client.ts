@@ -17,6 +17,8 @@ import type {
 export type SessionStreamOptions = {
   onRunControl?: () => void;
   onRunInputs?: (event: { runId: string }) => void;
+  /** An agent asked to use a tool, or a request was answered (refetch the list). */
+  onRunPermission?: (event: { runId: string }) => void;
   onRunActivity?: (event: { runId: string }) => void;
   onTasksChanged?: () => void;
   /** Fires for changes made by any *other* tab. */
@@ -77,6 +79,7 @@ export function openSessionStream(
         case "run.finished": options.onRunFinished?.(event); break;
         case "run.branch": options.onRunBranch?.(event); break;
         case "run.inputs": options.onRunInputs?.(event); break;
+        case "run.permission": options.onRunPermission?.(event); break;
         case "run.activity": options.onRunActivity?.(event); break;
         case "tasks.changed": options.onTasksChanged?.(); break;
       }
