@@ -20,12 +20,14 @@ import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
 import type { MessageAttachment } from "../../lib/events/types";
 import { attachmentUrl, formatBytes } from "../../lib/ai/attachments-client";
+import { describeStep } from "../../lib/ai/steps";
 import { openSessionStream } from "../../lib/events/client";
 import { colorOf, initialsOf } from "../../lib/people";
 import type { SessionMember } from "../../lib/session/types";
 import {
   AlertIcon,
   CheckIcon,
+  ChevronIcon,
   CloseIcon,
   EyeIcon,
   GitBranchIcon,
@@ -34,7 +36,7 @@ import {
   SpinnerIcon,
   TerminalIcon,
 } from "../icons";
-import { QueuedMessages } from "./QueuedMessages";
+import { QueuedMessages, WorkingStatus } from "./QueuedMessages";
 import { PermissionRequests } from "./PermissionRequests";
 import { Composer, type ComposerHandle, type MentionRoom, type MentionPerson } from "./chat";
 import { WorkspaceHistory } from "./WorkspaceHistory";
@@ -126,6 +128,8 @@ type Turn = {
   errText?: string;
   /** Set from the exit event when the run ended non-zero. */
   failed?: boolean;
+  /** A live "waiting for your computer" line, removed once the agent starts. */
+  waiting?: boolean;
 };
 
 export function AiPanel({
@@ -239,6 +243,8 @@ export function AiPanel({
     .filter(person => myId && !isSelfAssignment(myId, person.userId));
   // Whether the run in view is the current user's (or a fresh compose).
   const enteredIsMine = !entered || entered.driverUserId === myId;
+  // When the turn being streamed here started, for the working card's elapsed time.
+  const liveTurnStart = [...turns].reverse().find((turn) => turn.role === "agent" && turn.streaming)?.startedAt ?? null;
 
   // Refs the live event handlers read, so the one-time subscription below never
   // closes over stale state.
@@ -560,7 +566,7 @@ export function AiPanel({
           if (event.t === "start") {
             localRunIdRef.current = event.runId; // so the room broadcast of our own run is ignored
             setTurns((prev) => [
-              ...prev,
+              ...prev.filter((turn) => !turn.waiting),
               {
                 id: agentTurnId,
                 role: "agent",
@@ -629,7 +635,12 @@ export function AiPanel({
               return next;
             });
           } else if (event.t === "notice") {
-            setTurns((prev) => [...prev, { id: uid(), role: "system", text: event.message }]);
+            // The server's "queued" notice is a live state, not history: it shows
+            // until the computer picks the turn up, then gives way to the agent.
+            const waiting = event.message.startsWith("Queued for your runner");
+            setTurns((prev) => [...prev, waiting
+              ? { id: uid(), role: "system", text: "Waiting for your computer to start…", waiting: true }
+              : { id: uid(), role: "system", text: event.message }]);
           } else if (event.t === "exit") {
             const failed = event.code !== 0;
             const summary = failed
@@ -960,24 +971,18 @@ export function AiPanel({
         />
       )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
-      {running ? (
-        <div className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel p-2.5 text-sm text-vs-muted">
-          <SpinnerIcon className="h-3.5 w-3.5 text-vs-accent" />
-          <span className="text-vs-fg">{active?.name ?? "Agent"} is working…</span>
-          <button
-            type="button"
-            onClick={() => run.current?.cancel()}
-            className="ml-auto rounded border border-vs-border px-2 py-0.5 text-[12px] transition hover:bg-vs-hover hover:text-vs-fg"
-          >
-            Detach
-          </button>
+      {running && !entered ? (
+        // A brand-new chat before it is entered: the same working card, no queue yet.
+        <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2">
+          <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onDetach={() => run.current?.cancel()} />
         </div>
       ) : entered && !enteredIsMine ? (
         <>
         <div className="border-t border-vs-border p-3 text-sm text-vs-muted">You’re watching {entered.driverName}’s chat. Accept a handoff to continue here, or <button className="text-vs-accent underline" onClick={() => onForkEntered(entered)}>fork a new chat</button>.</div>
         </>
-      ) : entered && ["running", "queued"].includes(entered.status) ? (
-        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">The agent is working. You can queue another instruction below.</div>
+      ) : entered && (running || ["running", "queued"].includes(entered.status)) ? (
+        // The queue below shows the working card and takes follow-ups.
+        null
       ) : (
         <Composer
           inputRef={composer}
@@ -999,7 +1004,9 @@ export function AiPanel({
           attachTo={sessionId}
         />
       )}
-      {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId} startedAt={entered.startedAt} moveDraft={text => composer.current?.insertPrompt(text)} />}
+      {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
+        agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId} startedAt={entered.startedAt} workingSince={liveTurnStart}
+        onDetach={running ? () => run.current?.cancel() : undefined} moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
   );
 }
@@ -1275,10 +1282,10 @@ function Conversation({ turns, sessionId }: { turns: Turn[]; sessionId: string }
     <div className="conversation-transcript mx-auto flex w-full max-w-4xl flex-col gap-8 px-10 py-8">
       {/* Metadata, not content: kept at chrome size so it never competes with
           the answer below it. */}
-      <details className="text-[11px] text-vs-muted"><summary className="cursor-pointer">{turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0)} tool calls · {visible.filter(turn => turn.role !== "system").length} messages</summary><p className="mt-2">Tool calls reflect available activity in this conversation. Expand a response’s steps to inspect them.</p></details>
+      <details className="text-[11px] text-vs-muted"><summary className="cursor-pointer">{plural(turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0), "step")} · {plural(visible.filter(turn => turn.role !== "system").length, "message")}</summary><p className="mt-2">Steps are the agent’s tool calls in this conversation. Expand a response’s steps to inspect them.</p></details>
       {visible.map((turn) =>
         turn.role === "system" ? (
-          <SystemLine key={turn.id} text={turn.text} />
+          <SystemLine key={turn.id} text={turn.text} waiting={turn.waiting} />
         ) : (
           <TurnBubble key={turn.id} turn={turn} sessionId={sessionId} />
         ),
@@ -1371,7 +1378,6 @@ function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
           <span className="truncate text-[14px] font-semibold text-vs-fg">
             {turn.agentName ?? "Agent"}
           </span>
-          {turn.streaming && <SpinnerIcon className="h-3 w-3 shrink-0 text-vs-muted" />}
           {turn.startedAt && (
             <LiveTimer startedAt={turn.startedAt} running={!!turn.streaming} />
           )}
@@ -1384,7 +1390,7 @@ function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
           />
         )}
         {turn.streaming && !hasReply ? (
-          hasTrace ? null : <p className="text-[15px] leading-6 text-vs-muted">Thinking…</p>
+          hasTrace ? null : <p role="status" className="shimmer-text text-[15px] leading-6">Thinking</p>
         ) : (
           <Markdown text={turn.text} />
         )}
@@ -1425,10 +1431,11 @@ function LiveTimer({ startedAt, running }: { startedAt: number; running: boolean
 }
 
 /**
- * The live "it's working" trace: the reasoning stream plus each tool step as it
- * happens. Expanded while the agent is still thinking (no answer yet), then
- * auto-collapses to a toggle once the reply starts — the answer is the point,
- * the trace is there if you want to see how it got there.
+ * The live "it's working" trace: what the agent is doing right now, as one
+ * shimmering line, and its steps as a short timeline (finished ones checked,
+ * the current one pulsing), with readable names instead of tool identifiers.
+ * Open while the agent works, folded once the answer starts; a choice the
+ * person makes sticks.
  */
 function ActivityTrace({
   thinking,
@@ -1439,49 +1446,55 @@ function ActivityTrace({
   activities?: string[];
   live: boolean;
 }) {
-  // Follow `live` by default — expanded while working, folded once the answer
-  // starts — until the user makes an explicit choice, which then sticks.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? live;
-
-  const steps = activities ?? [];
+  const steps = (activities ?? []).map(describeStep);
   const trace = thinking?.trim() ?? "";
+  const current = live ? steps[steps.length - 1] : undefined;
+  const count = steps.length ? `${steps.length} ${steps.length === 1 ? "step" : "steps"}` : "";
 
   return (
-    <div className="mb-3 text-vs-muted">
+    <div className="mb-3">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setUserOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-[13px] text-vs-muted transition hover:text-vs-fg"
+        className="group inline-flex max-w-full items-center gap-2 rounded-full py-1 pr-2 text-[13px] text-vs-muted transition hover:text-vs-fg"
       >
         {live ? (
-          <SpinnerIcon className="h-3 w-3 text-vs-accent" />
+          <span className="shimmer-text truncate font-medium">{current ? `${current.label}${current.detail ? ` ${current.detail}` : ""}` : "Thinking"}</span>
         ) : (
-          <SparkleIcon className="h-3 w-3 text-vs-muted" />
+          <span className="truncate">{count ? `Worked through ${count}` : "Reasoning"}</span>
         )}
-        <span>{live ? "Working" : "Thought & steps"}</span>
-        {steps.length > 0 && <span className="text-vs-muted/70">· {steps.length} tool calls</span>}
-        <span className="ml-auto">{open ? "▾" : "▸"}</span>
+        {live && count && <span className="shrink-0 text-vs-muted/70">· {count}</span>}
+        <ChevronIcon className={`h-3 w-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
-      {open && (
-        <div className="space-y-1.5 border-t border-vs-border px-2 py-1.5">
+      {open && (trace || steps.length > 0) && (
+        <div className="mt-1.5 space-y-2 border-l border-vs-border pl-3.5">
           {trace && (
-            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[12px] italic leading-5 text-vs-muted">
+            <p className="vs-scroll max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[12.5px] italic leading-5 text-vs-muted">
               {trace}
             </p>
           )}
           {steps.length > 0 && (
-            <ul className="space-y-0.5">
-              {steps.map((step, i) => (
-                <li
-                  key={`${i}-${step}`}
-                  className="flex items-center gap-1.5 font-mono text-[11.5px] leading-4 text-vs-fg"
-                >
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-vs-accent" />
-                  <span className="truncate">{step}</span>
-                </li>
-              ))}
-            </ul>
+            <ol className="space-y-1">
+              {steps.map((step, i) => {
+                const now = live && i === steps.length - 1;
+                return (
+                  <li key={`${i}-${step.label}-${step.detail ?? ""}`} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5">
+                    {now ? (
+                      <span aria-label="In progress" className="pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-vs-accent" />
+                    ) : (
+                      <CheckIcon aria-hidden className="h-3 w-3 shrink-0 text-vs-muted/70" />
+                    )}
+                    <span className={`shrink-0 ${now ? "text-vs-fg" : "text-vs-muted"}`}>{step.label}</span>
+                    {step.detail && (
+                      <span className="min-w-0 truncate font-mono text-[11.5px] text-vs-muted/80" title={step.detail}>{step.detail}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
           )}
         </div>
       )}
@@ -1489,15 +1502,19 @@ function ActivityTrace({
   );
 }
 
-function SystemLine({ text }: { text: string }) {
-  // Short run boundaries read as a centered divider; a long stderr dump is shown
-  // as a wrapped, muted note so it never blows out the panel width.
-  if (text.length <= 52 && !text.includes("\n")) {
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+function SystemLine({ text, waiting }: { text: string; waiting?: boolean }) {
+  // A live wait is a soft pill that pulses; short run boundaries ("Finished in
+  // 12.4s") are a quiet pill too; a long stderr dump is a wrapped, muted note
+  // so it never blows out the panel width.
+  if (waiting || (text.length <= 80 && !text.includes("\n"))) {
     return (
-      <div className="flex items-center gap-2 px-1">
-        <span className="h-px flex-1 bg-vs-border" />
-        <span className="shrink-0 text-[11px] text-vs-muted">{text}</span>
-        <span className="h-px flex-1 bg-vs-border" />
+      <div className="flex justify-center px-1" role={waiting ? "status" : undefined}>
+        <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-vs-border bg-vs-panel/60 px-3 py-1 text-[11.5px] text-vs-muted">
+          {waiting && <span className="pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-vs-accent" />}
+          <span className={`truncate ${waiting ? "shimmer-text" : ""}`}>{text}</span>
+        </span>
       </div>
     );
   }
