@@ -11,6 +11,7 @@ import {
   exchangeDiscordCode,
   isInviteState,
   memberToken,
+  memberUserId,
   readInvite,
 } from "../../../../lib/integrations/discord";
 import { adapterFor } from "../../../../lib/integrations/providers";
@@ -81,7 +82,9 @@ async function handleGET(
           },
         });
       const server = await botServer(grant.guild.id);
-      source = { externalId: server.id, name: server.name, token: "server-bot" };
+      // The install grant includes `identify`: record who connected it.
+      source = { externalId: server.id, name: server.name, token: "server-bot",
+        externalUserId: grant.access_token ? await memberUserId(grant.access_token) : undefined };
     } else source = await adapterFor(provider).exchange(code);
     await connectProject(project, user.id, provider, source);
     return Response.redirect(back({ connected: provider }), 303);
@@ -111,7 +114,7 @@ async function discordInvite(url: URL, state: string) {
     const server = await botServer(invite.guildId);
     // The link can be opened again; that must not reset chosen channels.
     if ((await connectionFor(invite.projectId, "discord"))?.external_id !== server.id)
-      await connectProject(invite.projectId, invite.userId, "discord", { externalId: server.id, name: server.name, token: "server-bot" });
+      await connectProject(invite.projectId, invite.userId, "discord", { externalId: server.id, name: server.name, token: "server-bot", externalUserId: invite.discordUserId });
     return notice(`Done. The bot was added to ${server.name}, and your teammate can now choose its channels. You can close this tab.`);
   } catch (error) {
     return notice(error instanceof IntegrationError ? error.message : "Could not finish connecting. Try the invite link again.", 502);

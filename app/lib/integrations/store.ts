@@ -95,20 +95,31 @@ export async function connectProject(
   projectId: string,
   userId: string,
   provider: TeamProvider,
-  source: { externalId: string; name: string; token: string },
+  source: { externalId: string; name: string; token: string; externalUserId?: string | null },
 ) {
+  const externalUserId = source.externalUserId && /^[0-9]{1,25}$/.test(source.externalUserId) ? source.externalUserId : null;
   return transaction(async (tx) => {
     await manager(tx, projectId, userId);
-    // A reconnect is an explicit reset. Old channels never carry over to a
-    // different external workspace, even when channel identifiers collide.
+    // Reconnecting the same workspace or server keeps its chosen channels; they
+    // are re-verified under the reconnecting member's access before the next
+    // import. A different one is an explicit reset: old channels never carry
+    // over, even when channel identifiers collide.
+    const same = (await tx.query<Connection>(
+      `UPDATE context_connections SET name=$4, credential=$5, created_by=$6, external_user_id=COALESCE($7, external_user_id)
+        WHERE project_id=$1 AND provider=$2 AND external_id=$3 RETURNING *`,
+      [projectId, provider, source.externalId, source.name.slice(0, 200), seal(source.token, `${provider}:${projectId}`), userId, externalUserId])).rows[0];
+    if (same) {
+      await tx.query(`UPDATE context_channels SET verified_at=NULL, access_version=access_version+1, next_sync_at=now() WHERE connection_id=$1`, [same.id]);
+      return same;
+    }
     await tx.query(
       "DELETE FROM context_connections WHERE project_id=$1 AND provider=$2",
       [projectId, provider],
     );
     return (
       await tx.query<Connection>(
-        `INSERT INTO context_connections(project_id,provider,external_id,name,credential,created_by)
-      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        `INSERT INTO context_connections(project_id,provider,external_id,name,credential,created_by,external_user_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [
           projectId,
           provider,
@@ -116,6 +127,7 @@ export async function connectProject(
           source.name.slice(0, 200),
           seal(source.token, `${provider}:${projectId}`),
           userId,
+          externalUserId,
         ],
       )
     ).rows[0];

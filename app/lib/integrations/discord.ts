@@ -85,6 +85,12 @@ export function memberToken(grant: DiscordGrant) {
   return grant.access_token;
 }
 
+/** The member's Discord user ID (`identify`), so channels are offered as they can see them. */
+export async function memberUserId(token: string): Promise<string | undefined> {
+  const user = await providerJson<{ id?: string }>(`${API}/users/@me`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  return user?.id && /^[0-9]{1,25}$/.test(user.id) ? user.id : undefined;
+}
+
 /** Best effort: the token is no longer needed once a server is chosen. */
 export async function revokeMemberToken(token: string) {
   await fetch(`${API}/oauth2/token/revoke`, {
@@ -168,7 +174,9 @@ export function readChoice(value: string | undefined, userId: string, projectId:
   }
 }
 
-export type DiscordInvite = { projectId: string; userId: string; guildId: string };
+export type DiscordInvite = { projectId: string; userId: string; guildId: string;
+  /** The requesting member's Discord user ID, when known. */
+  discordUserId?: string };
 
 /** OAuth state for an admin's bot install, made for one project and server. */
 export function inviteState(invite: DiscordInvite) {
@@ -179,9 +187,10 @@ export function readInvite(state: string): DiscordInvite | null {
   if (!isInviteState(state) || state.length > 1024) return null;
   try {
     const invite = JSON.parse(unseal(state.slice(INVITE_PREFIX.length), "discord-invite")) as Record<string, unknown>;
-    const { projectId, userId, guildId, expires } = invite;
+    const { projectId, userId, guildId, expires, discordUserId } = invite;
     if (typeof projectId !== "string" || typeof userId !== "string" || typeof guildId !== "string") return null;
-    return typeof expires === "number" && expires > Date.now() ? { projectId, userId, guildId } : null;
+    if (typeof expires !== "number" || expires <= Date.now()) return null;
+    return { projectId, userId, guildId, ...(typeof discordUserId === "string" && /^[0-9]{1,25}$/.test(discordUserId) ? { discordUserId } : {}) };
   } catch {
     return null;
   }

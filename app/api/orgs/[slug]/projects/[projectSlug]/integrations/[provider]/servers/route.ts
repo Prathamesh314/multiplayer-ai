@@ -18,6 +18,7 @@ import {
   discordServers,
   inviteState,
   memberServer,
+  memberUserId,
   readChoice,
   revokeMemberToken,
   serverAccess,
@@ -77,6 +78,7 @@ async function handle(request: Request, context: Context) {
         externalId: server.id,
         name: server.name,
         token: "server-bot",
+        externalUserId: await memberUserId(token),
       });
       await revokeMemberToken(token);
       return Response.json(
@@ -96,7 +98,7 @@ async function handle(request: Request, context: Context) {
     if (body?.action === "invite")
       return Response.json({
         url: discordInstallUrl(
-          inviteState({ projectId: project.id, userId: user.id, guildId }),
+          inviteState({ projectId: project.id, userId: user.id, guildId, discordUserId: await memberUserId(token) }),
           guildId,
         ),
       });

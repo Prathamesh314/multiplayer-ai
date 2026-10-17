@@ -204,6 +204,7 @@ type DiscordChannel = {
   permission_overwrites?: { id: string; allow: string; deny: string }[];
 };
 type DiscordRole = { id: string; permissions: string };
+type DiscordMember = { user?: { id: string }; roles: string[] };
 export type DiscordMessage = {
   id: string;
   channel_id: string;
@@ -216,26 +217,60 @@ export type DiscordMessage = {
 /** View Channel and Read Message History: all the bot is ever granted. */
 export const DISCORD_READ = 1024n | 65536n;
 const READ = DISCORD_READ;
+const ADMINISTRATOR = 1n << 3n;
+const ALL = (1n << 64n) - 1n;
+/** Text and announcement channels: both are read through the messages API. */
+export const discordChannelReadable = (channel: DiscordChannel) => channel.type === 0 || channel.type === 5;
+
+/**
+ * A member's permissions in a channel, computed as Discord does: the owner
+ * and administrators have everything; otherwise @everyone plus the member's
+ * roles, then the channel's @everyone overwrite, its role overwrites (denies,
+ * then allows), and finally the member's own overwrite.
+ */
+export function discordChannelPermissions(
+  channel: DiscordChannel,
+  guild: { id: string; ownerId?: string | null },
+  roles: DiscordRole[],
+  member: { id: string; roles: string[] },
+): bigint {
+  if (guild.ownerId && member.id === guild.ownerId) return ALL;
+  const byId = new Map(roles.map((role) => [role.id, BigInt(role.permissions)]));
+  let permissions = byId.get(guild.id) ?? 0n;
+  for (const role of member.roles) permissions |= byId.get(role) ?? 0n;
+  if (permissions & ADMINISTRATOR) return ALL;
+  const overwrites = channel.permission_overwrites ?? [];
+  const everyone = overwrites.find((item) => item.id === guild.id);
+  if (everyone) permissions = (permissions & ~BigInt(everyone.deny)) | BigInt(everyone.allow);
+  let deny = 0n, allow = 0n;
+  for (const item of overwrites) if (member.roles.includes(item.id)) { deny |= BigInt(item.deny); allow |= BigInt(item.allow); }
+  permissions = (permissions & ~deny) | allow;
+  const own = overwrites.find((item) => item.id === member.id);
+  if (own) permissions = (permissions & ~BigInt(own.deny)) | BigInt(own.allow);
+  return permissions;
+}
+const canRead = (permissions: bigint) => (permissions & READ) === READ;
+
+/** Readable by everyone in the server (no roles needed). */
 export function publicDiscordChannel(
   channel: DiscordChannel,
   guildId: string,
   roles: DiscordRole[],
 ) {
-  let permissions = BigInt(
-    roles.find((role) => role.id === guildId)?.permissions ?? "0",
-  );
-  const overwrite = channel.permission_overwrites?.find(
-    (item) => item.id === guildId,
-  );
-  if (overwrite)
-    permissions =
-      (permissions & ~BigInt(overwrite.deny)) | BigInt(overwrite.allow);
-  return channel.type === 0 && (permissions & READ) === READ;
+  return discordChannelReadable(channel) && canRead(discordChannelPermissions(channel, { id: guildId }, roles, { id: "", roles: [] }));
 }
 const discord = <T>(path: string) =>
   providerJson<T>(`https://discord.com/api/v10${path}`, {
     headers: { authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
   });
+let botUser: Promise<string> | null = null;
+/** The bot's own roles in a server, to know which channels it can read. */
+async function discordBotMember(guildId: string) {
+  botUser ??= discord<{ id: string }>("/users/@me").then((user) => user.id, (error) => { botUser = null; throw error; });
+  const id = await botUser;
+  const member = await discord<DiscordMember>(`/guilds/${guildId}/members/${id}`);
+  return { id, roles: member.roles };
+}
 export function discordMessage(
   guild: string,
   message: DiscordMessage,
@@ -269,26 +304,45 @@ const discordAdapter: TeamAdapter = {
     );
     return { externalId: guild.id, name: guild.name, token: "server-bot" };
   },
+  /*
+   * The channels the connecting member can read, by their roles (not only the
+   * ones everyone can read), each marked if it is restricted and whether the
+   * bot can read it too. Connections made before the member was recorded
+   * offer public channels only. The member's access is checked again on every
+   * sync, so losing a role stops that channel's import.
+   */
   async channels(connection) {
-    const [channels, roles] = await Promise.all([
-      discord<DiscordChannel[]>(`/guilds/${connection.external_id}/channels`),
-      discord<DiscordRole[]>(`/guilds/${connection.external_id}/roles`),
+    const guildId = connection.external_id;
+    const [guild, channels, roles, bot, member] = await Promise.all([
+      discord<{ id: string; owner_id?: string }>(`/guilds/${guildId}`),
+      discord<DiscordChannel[]>(`/guilds/${guildId}/channels`),
+      discord<DiscordRole[]>(`/guilds/${guildId}/roles`),
+      discordBotMember(guildId),
+      connection.external_user_id
+        ? discord<DiscordMember>(`/guilds/${guildId}/members/${connection.external_user_id}`).catch(() => null)
+        : Promise.resolve(null),
     ]);
+    const server = { id: guildId, ownerId: guild.owner_id };
+    const viewer = member && connection.external_user_id ? { id: connection.external_user_id, roles: member.roles } : null;
     return channels
-      .filter((channel) =>
-        publicDiscordChannel(channel, connection.external_id, roles),
-      )
+      .filter(discordChannelReadable)
+      .filter((channel) => viewer
+        ? canRead(discordChannelPermissions(channel, server, roles, viewer))
+        : publicDiscordChannel(channel, guildId, roles))
       .map((channel) => ({
         id: channel.id,
         name: channel.name,
-        url: `https://discord.com/channels/${connection.external_id}/${channel.id}`,
+        url: `https://discord.com/channels/${guildId}/${channel.id}`,
+        ...(publicDiscordChannel(channel, guildId, roles) ? {} : { restricted: true }),
+        ...(canRead(discordChannelPermissions(channel, server, roles, bot))
+          ? {} : { unavailable: "The bot can't read this channel. Ask a server admin to give the bot access to it." }),
       }));
   },
   async history(connection, channel) {
-    const available = await this.channels(connection);
+    const available = (await this.channels(connection)).filter((item) => !item.unavailable);
     if (!available.some((item) => item.id === channel.id))
       throw new IntegrationError(
-        "This channel is no longer public or accessible.",
+        "This channel is no longer accessible to you or the bot.",
         403,
       );
     const messages = await discord<DiscordMessage[]>(
