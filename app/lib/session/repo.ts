@@ -661,6 +661,65 @@ async function stored_mergeSave(
 
 
 /** Moves `branch` (the room branch by default, or an isolated chat's branch) from the turn's base to its verified candidate. */
+export type AddFilesResult =
+  | { status: "clean"; headSha: string; added: string[]; replaced: string[] }
+  | { status: "exists"; headSha: string; paths: string[] };
+/** Up to this many files per request; each is at most the editor's read limit. */
+export const MAX_ADD_FILES = 100;
+export const MAX_ADD_FILE_BYTES = MAX_SEED_FILE_BYTES;
+
+/**
+ * Add files to the room's branch as one commit, the way a person drops files
+ * into a project in their editor: any bytes (CSV, images, PDFs, code), any
+ * folder (created as needed). An existing file is replaced only when the
+ * caller confirms; a path can never replace a folder, sit beneath a file or
+ * symlink, or enter `.git`. Callers hold the repository lock.
+ */
+async function stored_addFiles(
+  id: string,
+  files: { path: string; bytes: Buffer }[],
+  overwrite: boolean,
+  author: { name: string; email: string },
+  onCommitted?: (sha: string) => Promise<void>,
+): Promise<AddFilesResult> {
+  if (!files.length || files.length > MAX_ADD_FILES) throw new Error(`Add between 1 and ${MAX_ADD_FILES} files at a time.`);
+  const bare = barePath(id);
+  const canonical = await headSha(id);
+  const seen = new Set<string>();
+  const clean = files.map((file) => {
+    const path = safeRelativePath(file.path);
+    if (!path || path.split("/").some((part) => part.toLowerCase() === ".git")) throw new Error(`Not a valid file path: ${file.path}`);
+    if (seen.has(path.toLowerCase())) throw new Error(`${path} is listed twice.`);
+    seen.add(path.toLowerCase());
+    if (file.bytes.length > MAX_ADD_FILE_BYTES) throw new Error(`${path} is larger than ${MAX_ADD_FILE_BYTES / 1024 / 1024} MB.`);
+    return { path, bytes: file.bytes };
+  });
+  await requireStorageGrowth(clean.reduce((sum, file) => sum + file.bytes.length, 0) * 2 + 2 * 1024 * 1024);
+  const replaced: string[] = [];
+  for (const file of clean) {
+    const entry = await git(bare, ["ls-tree", "-z", canonical, "--", file.path]);
+    if (entry.startsWith("040000")) throw new Error(`A folder named ${file.path} already exists.`);
+    if (entry && !entry.startsWith("100")) throw new Error(`${file.path} is a link and cannot be replaced.`);
+    if (entry) replaced.push(file.path);
+    const parts = file.path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const parent = await git(bare, ["ls-tree", "-z", canonical, "--", parts.slice(0, i).join("/")]);
+      if (parent && !parent.startsWith("040000")) throw new Error(`${parts.slice(0, i).join("/")} is a file, so it cannot hold ${file.path}.`);
+    }
+  }
+  if (replaced.length && !overwrite) return { status: "exists", headSha: canonical, paths: replaced };
+  const message = clean.length === 1 ? `Add ${clean[0].path}` : `Add ${clean.length} files`;
+  const sha = await withTemporaryIndex(bare, async (env) => {
+    await objectGit(bare, ["read-tree", canonical], undefined, env);
+    await putBlobs(bare, env, clean);
+    return commitTree(bare, await objectText(bare, ["write-tree"], undefined, env), [canonical], message, author);
+  });
+  await git(bare, ["update-ref", `refs/heads/${sessionBranchOf(id)}`, sha, canonical]);
+  await onCommitted?.(sha);
+  const added = clean.map((file) => file.path).filter((path) => !replaced.includes(path));
+  return { status: "clean", headSha: sha, added, replaced };
+}
+
 async function stored_promoteTurn(repoRef: string, turnId: string, baseSha: string, sha: string, branch = sessionBranchOf(repoRef)): Promise<void> {
   const bare = barePath(repoRef);
   const candidate = (await git(bare, ["rev-parse", `refs/turns/${turnId}`])).trim();
@@ -818,6 +877,7 @@ export const diffFilesBare = (...args: Parameters<typeof stored_diffFilesBare>):
 export const headSha = (...args: Parameters<typeof stored_headSha>): ReturnType<typeof stored_headSha> => withStoredRepo(barePath(args[0]), () => stored_headSha(...args));
 
 
+export const addFiles = (...args: Parameters<typeof stored_addFiles>): ReturnType<typeof stored_addFiles> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_addFiles(...args)));
 export const mergeSave = (...args: Parameters<typeof stored_mergeSave>): ReturnType<typeof stored_mergeSave> => withStoredRepo(barePath(args[0]), () => withRepoLock(args[0], () => stored_mergeSave(...args)));
 
 

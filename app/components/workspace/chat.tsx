@@ -475,9 +475,9 @@ export function Composer({
         {footer ? (
           <div
             className={`rounded-2xl border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent ${dragging ? "border-vs-accent" : "border-vs-border"}`}
-            onDragOver={attachTo ? (event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } } : undefined}
+            onDragOver={attachTo ? (event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); setDragging(true); } } : undefined}
             onDragLeave={attachTo ? () => setDragging(false) : undefined}
-            onDrop={attachTo ? (event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); attachFiles(Array.from(event.dataTransfer.files)); } : undefined}
+            onDrop={attachTo ? (event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); setDragging(false); attachFiles(Array.from(event.dataTransfer.files)); } : undefined}
           >
             {attached.length > 0 && (
               <ul aria-label="Attached files" className="mb-2 flex flex-wrap gap-1.5">

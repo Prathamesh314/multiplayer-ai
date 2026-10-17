@@ -19,6 +19,7 @@ import type { ChatMessage } from "../../lib/session/types";
 import { startHeartbeat } from "../../lib/presence/client";
 import { takeFolder } from "../../lib/session/handoff";
 import {
+  addRepoFiles,
   createSaver,
   fetchRoomRepos,
   importRoomRepo,
@@ -1127,6 +1128,7 @@ export function Workspace({
                     editing={people.editing}
                     sessionId={hasRepo ? session.id : undefined}
                     repoId={chatRepoId}
+                    onAddFiles={hasRepo && !readOnly ? (files, overwrite) => addRepoFiles(session.id, chatRepoId, files, overwrite).then(added => { refreshTree(); return added; }) : undefined}
                   />
                 ) : (
                     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">

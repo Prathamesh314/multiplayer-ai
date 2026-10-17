@@ -11,6 +11,7 @@ import type { ScanResult } from "../../lib/types";
 import { AlertIcon, ChevronIcon, FileIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { baseName } from "./EditorArea";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
+import { useAddFiles, type AddFilesFn } from "./AddFiles";
 
 type ExplorerPanelProps = {
   actionsRef?: (node: HTMLDivElement | null) => void;
@@ -31,6 +32,8 @@ type ExplorerPanelProps = {
   /** When set, an "All files / Changes" switcher backed by this session's diff. */
   sessionId?: string;
   repoId?: string | null;
+  /** When set (editors), New file / New folder / Upload files and drag-and-drop. */
+  onAddFiles?: AddFilesFn;
 };
 
 export function ExplorerPanel({
@@ -50,6 +53,7 @@ export function ExplorerPanel({
   editing,
   sessionId,
   repoId = null,
+  onAddFiles,
 }: ExplorerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
@@ -58,6 +62,18 @@ export function ExplorerPanel({
   const [changesError, setChangesError] = useState<string | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
   const changesRequest = useRef(0);
+  const adding = useAddFiles({
+    root: result.root,
+    activePath,
+    onAdd: onAddFiles ?? (async () => ({ added: [], replaced: [] })),
+    onOpenFile,
+    // Show where new things landed: open the folder and its parents.
+    onExpand: (folder) => setExpanded((previous) => {
+      const next = new Set(previous);
+      folder.split("/").forEach((_, index, parts) => next.add(parts.slice(0, index + 1).join("/")));
+      return next;
+    }),
+  });
 
   function toggle(path: string) {
     setExpanded((previous) => {
@@ -133,9 +149,15 @@ export function ExplorerPanel({
             <span className="truncate" title={result.rootName}>{result.rootName}</span>
             <span className="ml-auto shrink-0 text-[10px] font-normal normal-case text-vs-muted">{humanCount(result.stats.files)} {result.stats.files === 1 ? "file" : "files"}</span>
             {scanning && <SpinnerIcon className="h-3 w-3 text-vs-muted" />}
+            {onAddFiles && adding.toolbar}
           </div>
+          {onAddFiles && adding.inline}
+          {onAddFiles && adding.error && <p role="alert" className="mx-3 mb-1.5 text-[11px] text-vs-danger">{adding.error}</p>}
 
-          <div className="vs-scroll min-h-0 flex-1 overflow-auto">
+          <div
+            {...(onAddFiles ? adding.dropProps : {})}
+            className={`vs-scroll min-h-0 flex-1 overflow-auto ${onAddFiles && adding.dragging ? "rounded-md outline-dashed outline-2 -outline-offset-4 outline-vs-accent bg-vs-accent/5" : ""}`}
+          >
             {result.stats.files === 0 && !error && !scanning && <div className="m-3 rounded-xl border border-dashed border-vs-border p-3 text-xs leading-5 text-vs-muted">
               <p className="font-medium text-vs-fg">No files yet — you can start chatting</p>
               {repositories.length > 0 && onSelectRepository && <div className="my-2.5 space-y-1">
@@ -143,6 +165,7 @@ export function ExplorerPanel({
                 {repositories.map(repository => <button type="button" key={repository.id} onClick={() => onSelectRepository(repository.id)} className="block w-full truncate rounded-lg border border-vs-border px-2 py-1 text-left text-[11px] text-vs-fg hover:bg-vs-hover">Open {repository.label}</button>)}
               </div>}
               <p className="mt-1">Files are optional. Use the conversation to ask questions, or ask AI to create your first files here.</p>
+              {onAddFiles && <p className="mt-1">Add your own with the <span className="text-vs-fg">New file</span>, <span className="text-vs-fg">New folder</span> and <span className="text-vs-fg">Upload files</span> buttons above, or drop files here.</p>}
               {onImport && <p className="mt-1">Have existing code? Import a folder as a separate project.</p>}
               {onImport && <button type="button" onClick={onImport} className="mt-2.5 rounded-lg bg-vs-accent px-2.5 py-1 text-[11px] font-medium text-vs-accent-fg">Import project files</button>}
             </div>}
@@ -166,6 +189,7 @@ export function ExplorerPanel({
         />
       )}
 
+      {onAddFiles && adding.dialog}
       <RepoInfo
         result={result}
         includeIgnored={includeIgnored}

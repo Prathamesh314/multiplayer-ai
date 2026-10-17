@@ -321,6 +321,28 @@ try {
   await type('dialog input',"Ideas and questions");await button("Create conversation space");
   await eventually(()=>evaluate('document.querySelector("dialog [role=alert]")?.textContent.includes("Choose another name")'),"duplicate name has actionable feedback");
   await button("Cancel");
+  // Adding files to the empty project, VS Code style: New file, then several
+  // files dropped at once, with a replace prompt for one that already exists.
+  assert.ok(await evaluate(`document.body.textContent.includes("Upload files")`),"the empty project says how to add files");
+  await click('button[aria-label="New file"]');
+  await eventually(()=>evaluate(`!!document.querySelector('input[aria-label="New file path"]')`),"new file name box");
+  await type('input[aria-label="New file path"]',"data/report.csv");
+  await evaluate(`document.querySelector('input[aria-label="New file path"]').form.requestSubmit()`);
+  await eventually(()=>evaluate(`JSON.stringify(window.__model.uploads?.[0]?.paths)==='["data/report.csv"]'`),"new file created");
+  await eventually(()=>evaluate(`!document.querySelector('input[aria-label="New file path"]') && document.body.textContent.includes("data/report.csv")`),"new file in the tree");
+  await evaluate(`(()=>{const dt=new DataTransfer();dt.items.add(new File(["name,score\\nalice,3\\n"],"scores.csv",{type:"text/csv"}));dt.items.add(new File(["fresh"],"report.csv",{type:"text/csv"}));
+    const zone=document.querySelector('aside[aria-label="Repository explorer"] .vs-scroll.flex-1');zone.dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:dt}));zone.dispatchEvent(new DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer:dt}));})()`);
+  await eventually(()=>evaluate(`!!document.querySelector('input[aria-label="Destination folder"]')`),"upload dialog for dropped files");
+  await type('input[aria-label="Destination folder"]',"data");
+  await eventually(()=>evaluate(`document.querySelector('ul[aria-label="Files to add"]').textContent.includes("replaces existing")`),"the existing file is flagged");
+  await button("Add 2 files");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('[role=alert]')].some(e=>e.textContent.includes("data/report.csv already exists"))`),"asks before replacing");
+  assert.equal(await evaluate(`window.__model.uploads.length`),1,"nothing is sent before confirming");
+  await button("Replace 1 and add");
+  await eventually(()=>evaluate(`window.__model.uploads.length===2 && window.__model.uploads[1].overwrite===true && JSON.stringify(window.__model.uploads[1].paths)==='["data/scores.csv","data/report.csv"]'`),"both files sent together, replacing confirmed");
+  await eventually(()=>evaluate(`!document.querySelector('input[aria-label="Destination folder"]') && document.body.textContent.includes("data/scores.csv")`),"dialog closes and the tree shows them");
+  assert.ok(await evaluate(`!document.body.textContent.includes("Drop a folder, not a single file")`),"a drop on the explorer is not taken as a project-folder import");
+  await writeFile(join(tmpdir(),'multiplayer-explorer-add.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   // A live run: waiting for the computer, then the agent's steps with readable
   // names, and the working status inside the composer card.
   await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
