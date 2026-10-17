@@ -488,33 +488,39 @@ Removing one type of invitation is not the same as removing every permission a p
     slug: "sharing", category: "Work together", title: "Share a chat with a guest",
     description: "Invite someone outside your organisation to read or comment on one conversation.",
     sections: [
-      { id: "create-link", title: "Create and send a guest link", body: `The chat host can open **Share chat** in an existing AI conversation.
+      { id: "create-link", title: "Share with people by email", body: `Sharing works like sharing a document. The chat host opens **Share chat** in an existing AI conversation.
 
-1. Enter the guest’s email address.
-2. Choose **Can view** or **Can comment**.
-3. Select **Create invitation link**.
-4. Select **Copy link** and send the complete link to your guest.
+1. Type an email address under **Add people by email**.
+2. Choose **Viewer** or **Commenter**.
+3. Optionally leave **Notify by email** on and add a message (shown when your workspace can send email).
+4. Select **Share**.
 
-The link includes an invitation fragment. Do not remove the part after \`#invite=\`. The guest signs in with the exact invited email, or creates and verifies an account for it. Creating a link does not automatically email it.`, screenshot: "share-chat" },
-      { id: "guest-scope", title: "What the guest can see", body: `A guest can read that chat’s existing and future human/AI messages, including code or sensitive text included in those messages. **Can comment** also enables feedback. Other chats, repository files, tool access, and workspace settings are not automatically shared.
+The person opens the chat's address, for example from **Copy link**, and signs in with that exact email, or creates and verifies an account for it. They don't need a special invitation link, and they don't have to join your organisation.`, screenshot: "share-chat" },
+      { id: "general-access", title: "Anyone with the link", body: `Under **General access**, choose:
 
-A host can separately publish the conversation briefing and its evidence. Review that content before enabling guest visibility.
+- **Restricted**: only the people listed under **People with access** (and people in the room) can open the chat.
+- **Anyone with the link**: anyone on the internet with the link can read it, without signing in. Choose **Viewer** or **Commenter** beside it; commenting asks the person to sign in first.
 
-Guest access lasts **7 days from invitation creation**, or until revoked. A replacement invitation replaces the same person’s previous chat access. This is different from the 14-day organisation invitation. Accepted guest chats appear in **Shared with me**.` },
+Select **Copy link** to copy the right address. With link sharing on, it contains a secret part after \`#link=\`; keep it whole. Switching back to **Restricted** turns the link off at once, and turning it on again later makes a new one. Only share a link this way when everything in the conversation can be public.` },
+      { id: "guest-scope", title: "What the guest can see", body: `A guest can read that chat’s existing and future human/AI messages, including code or sensitive text included in those messages. **Commenter** also enables feedback. Other chats, repository files, tool access, and workspace settings are not shared.
+
+A host can separately publish the conversation briefing and its evidence to people added by email. Review that content before enabling guest visibility. Link-only viewers don't see the briefing.
+
+Access for people added by email lasts until you remove it. Older invitation links still work until they expire (7 days). Chats shared with you appear in **Shared with me**.` },
       { id: "feedback", title: "Read and respond to feedback", body: `Guests with commenting permission write in the shared conversation’s feedback area. Hosts and authorised teammates can open **Feedback** directly in the room’s chat. The workspace **Collaboration inbox** links to unread feedback and review requests.
 
-Use **Preview shared chat & reply to comments** if you want to inspect the guest-facing view. See [feedback and inbox](/docs/feedback) for the direct reply flow.` },
-      { id: "revoke", title: "Revoke or renew a guest invitation", body: `Open **Share chat** again to see **Waiting to join**, **Joined**, **Expired**, or **Access removed** status. Use **Revoke chat invitation** to remove that grant. To extend access, create a new invitation for the intended email and send the new link.
+Use **Preview the shared chat & reply to comments** if you want to inspect the guest-facing view. See [feedback and inbox](/docs/feedback) for the direct reply flow.` },
+      { id: "revoke", title: "Change or remove access", body: `Open **Share chat** again. Each person shows **Opened** or **Hasn’t opened yet**. Use the menu beside them to switch between **Viewer** and **Commenter**, or choose **Remove access**.
 
-Revocation stops future access through that invitation; it cannot recall text someone already saw. If you separately granted project or room editing access, manage that membership separately.` },
+Removing access stops future access; it cannot recall text someone already saw. If you separately granted project or room editing access, manage that membership separately.` },
     ],
   },
   {
     slug: "guest-to-editor", category: "Work together", title: "Let a guest help with code",
     description: "Preview and explicitly grant additional access before offering control of the chat.",
     sections: [
-      { id: "grant", title: "Promote an accepted guest", body: `1. Ask the guest to accept the conversation invitation first.
-2. Open **Share chat** and find their active, accepted invitation.
+      { id: "grant", title: "Promote a guest", body: `1. Ask the guest to open the shared conversation first.
+2. Open **Share chat** and find them under **People with access** (they must have opened the chat).
 3. Select **Allow guest to help with code…**.
 4. Read the access preview. It lists the organisation, project, and room permissions that would be added.
 5. If you have authority, check **I approve the additional access described above** and select **Grant editing access**.
@@ -700,7 +706,7 @@ Starting without files still requires computer and AI setup to send a prompt.` }
 
 Use **Check connection again**. If the app asks for an update, install the newer desktop/runner. If the device was revoked, pair it again explicitly. Repeated disconnects can indicate a proxy/firewall blocking the workspace’s streaming connections.` },
       { id: "invites", title: "An invitation link does not work", body: `- **Wrong hostname:** a public invitation must use your workspace’s public domain, not \`0.0.0.0\` or someone else’s \`localhost\`. For this service use \`https://multicode.in\` and preserve the rest of the link.
-- **Expired/replaced link:** ask the host for a fresh invitation. Organisation links expire after 14 days; guest chat access lasts 7 days from creation; handoff offers last one hour.
+- **Expired/replaced link:** ask the host for a fresh invitation. Organisation links expire after 14 days; older guest invitation links last 7 days, while people added by email keep access until removed; handoff offers last one hour.
 - **Wrong email:** guest links are bound to the invited email. Sign in with that account.
 - **Incomplete URL:** preserve the entire guest link, including its \`#invite=\` fragment.
 - **Already accepted:** open the workspace or Shared with me; an organisation invitation is single-use.

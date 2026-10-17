@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 
-export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,revoke}) {
+export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,revoke,shareByLink}) {
   const directory=await mkdtemp(join(tmpdir(),'shared-chat-browser-'));
   const chrome=spawn(process.env.CHROME_BIN??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',[
     '--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${directory}`,'about:blank',
@@ -37,9 +37,10 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
       await eventually(()=>evaluate('document.body.innerText.includes("Briefing saved.")'),'briefing persisted');
       await send('Network.deleteCookies',{name:'__session',url:base});
     }
-    await send('Page.navigate',{url:`${base}/shared/${runId}#invite=${token}`});
+    // People added by email open the chat's own address; older invitations carry a token.
+    await send('Page.navigate',{url:`${base}/shared/${runId}${token?`#invite=${token}`:''}`});
     await eventually(()=>evaluate('!!document.body?.innerText.includes("You’re invited to a conversation")'),'signed-out invitation');
-    assert.equal(await evaluate(`sessionStorage.getItem('shared-chat-invite:${runId}')`),token);
+    if(token)assert.equal(await evaluate(`sessionStorage.getItem('shared-chat-invite:${runId}')`),token);
     await evaluate(`document.querySelector('a[href^="/login?mode=signup"]').click()`);
     await eventually(()=>evaluate('location.pathname==="/login"'),'signup preserves next');
     assert.equal(await evaluate('new URL(location.href).searchParams.get("next")'),`/shared/${runId}`);
@@ -64,6 +65,19 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
     await revoke();
     await eventually(()=>evaluate('!document.querySelector("#shared-comment")&&document.body.innerText.includes("This chat needs an invitation")'),'revocation clears stale page');
     assert.equal(await evaluate('document.body.innerText.includes("Review this change")'),false,'revoked content cleared');
+    if(shareByLink){
+      // Anyone with the link: no account needed to read; commenting asks to sign in.
+      const link=await shareByLink();
+      await send('Network.deleteCookies',{name:'__session',url:base});
+      await send('Page.navigate',{url:`${base}/shared/${runId}#link=${link}`});
+      await eventually(()=>evaluate('document.body.innerText.includes("Review this change")&&document.body.innerText.includes("anyone with the link")'),'link opens without signing in');
+      assert.equal(await evaluate('!!document.querySelector("#shared-comment")'),false,'signed-out link viewers cannot comment');
+      assert.ok(await evaluate('document.body.innerText.includes("to join the discussion")'));
+      assert.equal(await evaluate('document.body.innerText.includes("PRIVATE TOOL OUTPUT")'),false);
+      await send('Emulation.setDeviceMetricsOverride',{width:390,height:900,deviceScaleFactor:1,mobile:false});await delay(100);
+      assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth'),'link view fits a phone');
+      await writeFile(join(tmpdir(),'multiplayer-shared-chat-link-390.png'),Buffer.from((await send('Page.captureScreenshot')).data,'base64'));
+    }
     assert.deepEqual(errors,[]);
     console.log('PASS: real browser invitation/signup return, mobile layouts, comments, and revocation without refresh.');
   }finally{
