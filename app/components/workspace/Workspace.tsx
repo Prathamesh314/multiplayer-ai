@@ -1,5 +1,6 @@
 "use client";
 
+import { flattenPaths } from "../../lib/ai/file-mentions";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -101,6 +102,8 @@ export function Workspace({
 
   const [picked, setPicked] = useState<PickedSource | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
+  // The repository's paths, for tagging with "@" in the AI chat.
+  const mentionFiles = useMemo(() => (result ? flattenPaths(result.root) : []), [result]);
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -1079,6 +1082,7 @@ export function Workspace({
                         onNewRun={startNewRun}
                         repoOptions={repoOptions}
                         hasFiles={result ? result.stats.files > 0 : undefined}
+                        files={mentionFiles}
                         repoId={chatRepoId}
                         onRepoChange={next => void selectRepository(next)}
                         onImportRepo={() => openAddRepository()}

@@ -5,7 +5,8 @@ import { assignmentDraft } from "../../lib/tasks/composer";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
-import { PlusIcon, SendIcon } from "../icons";
+import { FileIcon, FolderIcon, PlusIcon, SendIcon } from "../icons";
+import { fileRefsFromText, fileToken, matchFiles, type MentionFile } from "../../lib/ai/file-mentions";
 import type { MessageAttachment } from "../../lib/events/types";
 import { ATTACHMENT_MAX_BYTES, MAX_ATTACHMENTS, PASTE_AS_FILE_CHARS, discardAttachment, formatBytes, uploadAttachment } from "../../lib/ai/attachments-client";
 
@@ -116,6 +117,8 @@ type MentionState =
   | { stage: "room"; at: number; query: string }
   | { stage: "chat"; at: number; roomId: string; query: string };
 
+const NO_FILES: MentionFile[] = [];
+
 export type ComposerHandle = { insertPrompt: (text: string) => void };
 
 /** A file in the composer: uploading, uploaded (has `sent`), or failed. */
@@ -141,11 +144,13 @@ export function Composer({
   mentions,
   people = [],
   onAssignTask,
+  /** Files and folders of the current repository, tagged by typing "@". */
+  files = NO_FILES,
 }: {
   inputRef?: Ref<ComposerHandle>;
   placeholder: string;
   disabled?: boolean;
-  onSend: (text: string, refs: string[], attachments: MessageAttachment[]) => void;
+  onSend: (text: string, refs: string[], attachments: MessageAttachment[], fileRefs: string[]) => void;
   attachTo?: string;
   tall?: boolean;
   narrow?: boolean;
@@ -153,6 +158,7 @@ export function Composer({
   mentions?: MentionRoom[];
   people?: MentionPerson[];
   onAssignTask?: (person: MentionPerson, body: string) => Promise<void>;
+  files?: MentionFile[];
 }) {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [attachmentError, setAttachmentError] = useState("");
@@ -184,7 +190,7 @@ export function Composer({
   }), [draft]);
 
   const rooms = useMemo(() => mentions ?? [], [mentions]);
-  const mentionsOn = rooms.length > 0 || (!!onAssignTask && people.length > 0);
+  const mentionsOn = rooms.length > 0 || files.length > 0 || (!!onAssignTask && people.length > 0);
 
   // Restore the caret after a programmatic insert (React reset it on re-render).
   useEffect(() => {
@@ -195,12 +201,14 @@ export function Composer({
   }, [pendingCaret, draft]);
 
   // The list shown in the popover for the current stage/query.
-  const items = useMemo<{ id: string; label: string; sub?: string }[]>(() => {
+  const items = useMemo<{ id: string; label: string; sub?: string; file?: MentionFile }[]>(() => {
     if (!mention) return [];
     const q = mention.query.trim().toLowerCase();
     if (mention.stage === "room") {
       return [...(onAssignTask ? people.filter(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(q))
-        .map(person => ({ id: `person:${person.userId}`, label: `@${person.handle} · ${person.displayName}`, sub: "Assign task" })) : []), ...rooms
+        .map(person => ({ id: `person:${person.userId}`, label: `@${person.handle} · ${person.displayName}`, sub: "Assign task" })) : []),
+      ...matchFiles(files, mention.query, q ? 30 : 8).map(file => ({ id: `file:${file.path}`, label: file.path, sub: file.dir ? "Folder" : "File", file })),
+      ...rooms
         .filter((room) => room.name.toLowerCase().includes(q))
         .map((room) => ({ id: room.sessionId, label: room.name, sub: `Chat reference · ${room.chats.length}` }))];
     }
@@ -208,7 +216,7 @@ export function Composer({
     return (room?.chats ?? [])
       .filter((chat) => chat.title.toLowerCase().includes(q))
       .map((chat) => ({ id: chat.runId, label: chat.title }));
-  }, [mention, rooms, people, onAssignTask]);
+  }, [mention, rooms, people, onAssignTask, files]);
 
   // Show the popover whenever there's a live mention with something to show —
   // and in chat stage even with zero chats, so an empty room reads "No chats
@@ -233,6 +241,10 @@ export function Composer({
       // token that already carries a run id (a completed pick) is not a mention.
       if (room && !m.frag.match(RUN_ID_RE)) {
         setMention({ stage: "chat", at: m.at, roomId: room.sessionId, query: m.frag.slice(slash + 1) });
+      } else if (files.length && !m.frag.match(RUN_ID_RE)) {
+        // A path such as @app/lib/ — keep searching files.
+        setMention({ stage: "room", at: m.at, query: m.frag });
+        setHighlight(0);
       } else {
         setMention(null);
       }
@@ -269,6 +281,13 @@ export function Composer({
 
   function pick(id: string) {
     if (!mention) return;
+    if (id.startsWith("file:")) {
+      const file = files.find((item) => `file:${item.path}` === id);
+      if (!file) return;
+      applyInsert(`${fileToken(file)} `);
+      setMention(null);
+      return;
+    }
     if (id.startsWith("person:")) {
       const person = people.find(person => `person:${person.userId}` === id);
       if (!person || !onAssignTask) return;
@@ -347,10 +366,10 @@ export function Composer({
     }
     if (disabled) return;
     const text = draft.trim();
-    const files = attached.flatMap((file) => (file.sent ? [file.sent] : []));
-    if (!text && !files.length) return;
+    const sent = attached.flatMap((file) => (file.sent ? [file.sent] : []));
+    if (!text && !sent.length) return;
     if (attached.some((file) => file.error)) { setAttachmentError("Remove the files that failed to upload, or attach them again."); return; }
-    onSend(text, refsFromText(text), files);
+    onSend(text, refsFromText(text), sent, fileRefsFromText(text, files));
     setAttached([]);
     setAttachmentError("");
     setDraft("");
@@ -395,9 +414,9 @@ export function Composer({
   }
 
   const popover = popoverOpen && (
-    <div className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
+    <div className="absolute bottom-full left-0 z-20 mb-2 w-96 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
-        {mention?.stage === "room" ? (onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
+        {mention?.stage === "room" ? (files.length ? (onAssignTask ? "Files, people & chat references" : "Files & chat references") : onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
         <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
@@ -416,7 +435,8 @@ export function Composer({
                 index === highlight ? "bg-vs-hover text-vs-fg" : "text-vs-fg/90"
               }`}
             >
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {item.file && (item.file.dir ? <FolderIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" /> : <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />)}
+              <span className="min-w-0 flex-1 truncate" dir={item.file ? "rtl" : undefined} title={item.label}>{item.file ? <bdi>{item.label}</bdi> : item.label}</span>
               {item.sub && <span className="shrink-0 text-[11px] text-vs-muted">{item.sub}</span>}
             </button>
           </li>

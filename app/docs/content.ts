@@ -354,7 +354,7 @@ Use **Enter** to send and **Shift+Enter** for a newline. Starter prompts only fi
 
 Attachments are not pasted into your message. Like Claude Code, the agent gets them as files on your computer, in the chat's working folder under \`.multicode/attachments/\`, and opens them with its own tools, reading large files in parts. That folder is never committed. Pasting a long block of text turns it into an attachment too, so your message stays short. Everyone in the room can download the files sent with a message.
 
-Type **@** to select an available room/chat reference from the picker. Pick an actual result so the app can resolve its context; simply typing another person’s name is not the same as selecting a conversation reference. Where shown, **Import context from…** starts a new chat using another accessible conversation’s context.
+Type **@** and part of a name to tag a file or folder of the project, for example \`@src/app.ts\` or \`@docs/\`. The agent is told to read the tagged paths in its working folder; their contents are not pasted into your message. The same picker also offers room/chat references. Pick an actual result so the app can resolve its context; simply typing another person’s name is not the same as selecting a conversation reference. Where shown, **Import context from…** starts a new chat using another accessible conversation’s context.
 
 Context is limited by access and prompt budgets. The system cannot give your AI unrestricted access to every private room.` },
       { id: "fork", title: "Fork instead of taking control", body: `When watching a teammate’s chat, **fork a new chat** creates your own conversation with imported context. It leaves the original chat and driver intact.

@@ -360,6 +360,16 @@ try {
   // New file opened report.csv in the editor; close it so the chat is in view again.
   await click('button[aria-label="Close report.csv"]');
   await eventually(()=>evaluate(`!document.querySelector('button[aria-label="Close report.csv"]') && !!document.querySelector('.ai-composer textarea')`),"back to the chat");
+  // "@" tags a file of the project: type part of its name, pick it, and it is sent with the message.
+  await type('.ai-composer textarea',"Summarise @scor");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('.ai-composer button')].some(b=>b.textContent.includes("data/scores.csv")&&b.textContent.includes("File"))`),"file suggestions for @");
+  await writeFile(join(tmpdir(),'multiplayer-file-mention.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('.ai-composer button')].find(b=>b.textContent.includes("data/scores.csv")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('.ai-composer textarea').value==="Summarise @data/scores.csv "`),"the picked path is tagged");
+  await type('.ai-composer textarea',"Summarise @data/scores.csv and @dat");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('.ai-composer button')].some(b=>b.textContent.includes("data")&&b.textContent.includes("Folder"))`),"folders can be tagged too");
+  await evaluate(`[...document.querySelectorAll('.ai-composer button')].find(b=>b.textContent.includes("Folder")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('.ai-composer textarea').value==="Summarise @data/scores.csv and @data/ "`),"the folder is tagged");
   // A live run: waiting for the computer, then the agent's steps with readable
   // names, and the working status inside the composer card.
   await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
@@ -368,6 +378,7 @@ try {
       ...Array.from({length:60},(_,i)=>[{wait:120},{t:"out",d:"Paragraph "+i+": the agent keeps writing so the chat grows well past the screen.\\n\\n"}]).flat()];`);
   await evaluate(`document.querySelector('button[aria-label="Send message"]').click()`);
   await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Waiting for your computer to start"))`),"a soft waiting pill while the computer picks it up");
+  assert.deepEqual(await evaluate(`JSON.parse(window.__model.requests.filter(r=>r.path==="/api/ai/run").at(-1).body).fileRefs`),["data/scores.csv","data/"],"tagged paths go with the message");
   await writeFile(join(tmpdir(),'multiplayer-run-waiting.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await eventually(()=>evaluate(`document.body.textContent.includes("Google Drive · Read file content") && document.body.textContent.includes("Look up tools")`),"steps read as plain language");
   assert.ok(await evaluate(`!document.body.textContent.includes("Waiting for your computer") && !document.body.textContent.includes("No agent has started yet")`),"the waiting pill gives way once the agent starts");

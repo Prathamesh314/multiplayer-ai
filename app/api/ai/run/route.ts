@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
+import { cleanFileRefs, fileRefsPromptBlock } from "../../../lib/ai/file-mentions";
 import { getCheckpoint } from "../../../lib/runner/checkpoints";
 import { projectRepositoryForRoom } from "../../../lib/project/repositories";
 import { randomUUID } from "node:crypto";
@@ -91,6 +92,8 @@ export type AiRunRequest = {
    * message. They reach the agent as files in its worktree, not prompt text.
    */
   attachmentIds?: string[];
+  /** Repository paths tagged with "@" in the prompt; the agent reads them in its worktree. */
+  fileRefs?: string[];
 };
 
 /**
@@ -421,7 +424,7 @@ async function handlePOST(request: Request) {
   // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
   // keeps the full import regardless.
   const agentPrompt = assembleAgentPrompt({
-    prompt: prompt + attachmentPromptBlock(files),
+    prompt: prompt + attachmentPromptBlock(files) + fileRefsPromptBlock(cleanFileRefs(body.fileRefs)),
     handle: coDriven ? result.user.handle : null,
     referencedContext,
     conversationContext: await continuationContext(run.id),
