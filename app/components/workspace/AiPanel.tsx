@@ -1,4 +1,5 @@
 "use client";
+import type { MentionFile } from "../../lib/ai/file-mentions";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
@@ -93,6 +94,8 @@ type AiPanelProps = {
    */
   repoOptions: { id: string; label: string }[];
   hasFiles?: boolean;
+  /** The repository's files and folders, tagged in a message with "@". */
+  files?: MentionFile[];
   repoId: string | null;
   onRepoChange: (repoId: string | null) => void;
   /** Start without files or import a folder into the workspace. */
@@ -152,6 +155,7 @@ export function AiPanel({
   onNewRun,
   repoOptions,
   hasFiles = true,
+  files,
   repoId,
   onRepoChange,
   onImportRepo,
@@ -166,7 +170,7 @@ export function AiPanel({
    * agent would read an incomplete checkout and confidently edit the wrong
    * thing, which is worse than waiting.
    */
-  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[] } | null>(null);
+  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[]; fileRefs?: string[] } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
   // Whether this server runs chats on their own branches, and whether the next
@@ -460,7 +464,7 @@ export function AiPanel({
       // A failed import leaves the old repository selected, so running the
       // prompt would answer about the wrong code. Hand it back instead.
       if (importFailed) composer.current?.insertPrompt(held.prompt);
-      else askRef.current(held.prompt, held.contextRefs, held.attachments);
+      else askRef.current(held.prompt, held.contextRefs, held.attachments, held.fileRefs);
     }, 0);
     return () => clearTimeout(timer);
   }, [importingRepo, heldPrompt, importFailed]);
@@ -512,10 +516,10 @@ export function AiPanel({
     setInstallFor(null);
   }
 
-  function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = []) {
+  function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = [], fileRefs: string[] = []) {
     pinned.current = true; // sending follows the reply
     if (importingRepo) {
-      setHeldPrompt({ prompt, contextRefs, attachments });
+      setHeldPrompt({ prompt, contextRefs, attachments, fileRefs });
       return;
     }
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
@@ -583,6 +587,7 @@ export function AiPanel({
         repoId: repoForRun,
         isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
         attachmentIds: attachments.length ? attachments.map((file) => file.id) : undefined,
+        fileRefs: fileRefs.length ? fileRefs : undefined,
       },
       {
         onEvent: (event) => {
@@ -1032,10 +1037,11 @@ export function AiPanel({
               : !ready ? "Set up AI to send a message…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
+                : `Message ${active!.name}…${files?.length ? "  (@ to tag files)" : mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
           }
           onSend={ask}
           attachTo={sessionId}
+          files={files}
         />
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
