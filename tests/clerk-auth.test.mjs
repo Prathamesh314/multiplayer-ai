@@ -6,6 +6,22 @@ import {completeClerkAccount,verifiedClerkProfile,syncClerkProfile,deleteClerkAc
 import {createDesktopSignIn,approveDesktopSignIn,consumeDesktopSignIn} from '../app/lib/auth/clerk-desktop.ts';
 import {issueSignupInvitation} from '../app/lib/auth/admission.ts';
 const profile=(id,email,extra={})=>({id,primary_email_address_id:'primary',email_addresses:[{id:'primary',email_address:email,verification:{status:'verified'}}],first_name:'Test',last_name:'User',updated_at:100,...extra});
+test('an expired lockout re-enables the account on sign-in; a live lock or newer event does not',async()=>{
+ const f=await memoryFixture({postgres:process.env.CLERK_TEST_POSTGRES==='1'});
+ try{
+  const alice=await completeClerkAccount(profile('user_alice','alice@memory.test',{updated_at:100}));
+  assert.ok(await userForClerkSession('user_alice','desktop'));
+  // Too many wrong passwords on a phone: Clerk locks the user and says so by webhook.
+  await syncClerkProfile(profile('user_alice','alice@memory.test',{updated_at:500,locked:true}));
+  assert.equal(await userForClerkSession('user_alice','desktop'),null,'locked out everywhere while Clerk holds the lock');
+  await assert.rejects(completeClerkAccount(profile('user_alice','alice@memory.test',{updated_at:500,locked:true})),/unavailable/,'still locked');
+  await assert.rejects(completeClerkAccount(profile('user_alice','alice@memory.test',{updated_at:400})),/unavailable/,'an older profile cannot undo a newer lock');
+  // The lock expired; Clerk's updated_at did not change.
+  assert.equal((await completeClerkAccount(profile('user_alice','alice@memory.test',{updated_at:500}))).id,alice.id);
+  assert.ok(await userForClerkSession('user_alice','desktop'),'every device works again');
+  assert.ok(await userForClerkSession('user_alice','mobile'));
+ }finally{await f.close();}
+});
 test('a link to a Clerk user that no longer exists is relinked; a live or unknown one is not',async()=>{
  const f=await memoryFixture({postgres:process.env.CLERK_TEST_POSTGRES==='1'});
  try{

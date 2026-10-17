@@ -40,25 +40,27 @@ export async function userForClerkSession(clerkUserId: string, sessionId: string
   return row ? toUser(row) : null;
 }
 
-/** Whether a Clerk user still exists: false only when Clerk says it doesn't. */
-export type ClerkUserExists = (clerkUserId: string) => Promise<boolean | null>;
+/** Whether a Clerk user still holds this verified email: false only when Clerk
+ * says it doesn't (the user is gone, or its address changed); null if unknown. */
+export type ClerkEmailOwner = (clerkUserId: string, email: string) => Promise<boolean | null>;
 
 /** Provision once after Clerk sign-in. No provider calls while a DB lock is held.
  * Matching a verified address preserves the UUID of a pre-Clerk account, but can
  * never relink a deleted account or one bound to another *live* Clerk subject.
  *
- * A link to a Clerk user that no longer exists is stale: the account was
- * recreated, or the deployment moved to another Clerk instance (development
- * keys to live keys gives every person a new Clerk ID). The person signing in
- * has proved they own the verified email, so their account is relinked. */
-export async function completeClerkAccount(profile: UserJSON, invitationToken?: string, clerkUserExists?: ClerkUserExists): Promise<CurrentUser> {
+ * A link to a Clerk user that no longer holds the email is stale: the account
+ * was recreated, its address was changed, or the deployment moved to another
+ * Clerk instance (development keys to live keys gives every person a new Clerk
+ * ID). Clerk lets only one user hold a verified address, and the person signing
+ * in holds it now, so their account is relinked. */
+export async function completeClerkAccount(profile: UserJSON, invitationToken?: string, ownsEmail?: ClerkEmailOwner): Promise<CurrentUser> {
   const identity = verifiedClerkProfile(profile);
   // Ask Clerk before any lock: is the email's current link still a live user?
   let stale: string | null = null;
   const holder = await queryOne<{ clerk_user_id: string }>(
     `SELECT clerk_user_id FROM users WHERE email=$1 AND clerk_user_id IS NOT NULL AND clerk_user_id<>$2 AND deleted_at IS NULL`,
     [identity.email, identity.id]);
-  if (holder && clerkUserExists && (await clerkUserExists(holder.clerk_user_id).catch(() => null)) === false) stale = holder.clerk_user_id;
+  if (holder && ownsEmail && (await ownsEmail(holder.clerk_user_id, identity.email).catch(() => null)) === false) stale = holder.clerk_user_id;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await transaction(async tx => {
@@ -78,7 +80,13 @@ export async function completeClerkAccount(profile: UserJSON, invitationToken?: 
           throw new ClerkAccountError("This email is already associated with another workspace account. Sign in the way you did before (for example with the same Google account or email code), or contact your workspace administrator.");
         }
         if (row) {
-          if (row.clerk_disabled_at && Number(row.clerk_updated_at) >= identity.updatedAt) throw new ClerkAccountError("Your account is unavailable. Contact your workspace administrator.");
+          // A webhook disabled this account (Clerk banned or locked it, or its
+          // email stopped being verified). The profile here is fetched live from
+          // Clerk's backend and passed those same checks, so it re-enables the
+          // account unless a *newer* event disabled it. Equal timestamps matter:
+          // a password lockout expires without changing the user's updated_at,
+          // and must not keep someone out of every device.
+          if (row.clerk_disabled_at && Number(row.clerk_updated_at) > identity.updatedAt) throw new ClerkAccountError("Your account is unavailable. Contact your workspace administrator.");
           if (linked && Number(row.clerk_updated_at) > identity.updatedAt) return toUser(row);
           const result = await tx.query<UserRow>(`UPDATE users SET clerk_user_id=$2, email=$3, email_verified_at=COALESCE(email_verified_at,now()),
             display_name=$4, avatar_url=$5, clerk_disabled_at=NULL, clerk_updated_at=GREATEST(clerk_updated_at,$6) WHERE id=$1 RETURNING *`,
