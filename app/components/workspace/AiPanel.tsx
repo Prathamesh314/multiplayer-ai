@@ -272,6 +272,20 @@ export function AiPanel({
       setError(cause instanceof Error ? cause.message : "Could not change approvals.");
     });
   }
+  // In the composer for a new chat; in the chat's header once it exists, so it
+  // stays reachable while the agent is working (and asking).
+  const approvalsPicker = (
+    <SelectChip
+      icon={<ShieldIcon className={`h-3.5 w-3.5 ${approvalMode === "auto" ? "text-vs-warn" : "text-vs-muted"}`} />}
+      value={approvalMode}
+      onChange={changeApprovalMode}
+      options={[
+        { id: "ask", label: "Ask first", description: "Manual: the agent waits here for you to allow each command, web link or connector." },
+        { id: "auto", label: "Auto-approve", description: "Auto: the agent runs commands, opens links and uses connectors on your computer without asking." },
+      ]}
+      title="Approvals"
+    />
+  );
   // When the turn being streamed here started, for the working card's elapsed time.
   const liveTurnStart = [...turns].reverse().find((turn) => turn.role === "agent" && turn.streaming)?.startedAt ?? null;
 
@@ -819,16 +833,7 @@ export function AiPanel({
         )}
         <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="composer-control composer-toggle">ϟ Fast</button>
         <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="composer-control composer-toggle">Plan</button>
-        <SelectChip
-          icon={<ShieldIcon className={`h-3.5 w-3.5 ${approvalMode === "auto" ? "text-vs-warn" : "text-vs-muted"}`} />}
-          value={approvalMode}
-          onChange={changeApprovalMode}
-          options={[
-            { id: "ask", label: "Ask first", description: "Manual: the agent waits here for you to allow each command, web link or connector." },
-            { id: "auto", label: "Auto-approve", description: "Auto: the agent runs commands, opens links and uses connectors on your computer without asking." },
-          ]}
-          title="Approvals"
-        />
+        {!entered && approvalsPicker}
         {!entered && parallelChats && (
           <button type="button" aria-pressed={parallel} onClick={() => setParallel(value => !value)}
             title="Work on a branch of its own, so this chat can run alongside your others. Review and merge it into the room when it's ready."
@@ -917,6 +922,7 @@ export function AiPanel({
         {/* Briefing and synchronized history are reference material, not part of
             the conversation, so they open from here instead of sitting above it. */}
         {entered?.isolation === "isolated" && <button type="button" onClick={() => setBranchOpen(true)} title="Review this parallel chat's changes and merge them into the room" className="rounded px-1.5 py-1 text-[11px] text-vs-accent transition hover:bg-vs-hover">Changes</button>}
+        {entered && enteredIsMine && myId && approvalsPicker}
         {entered && <button type="button" onClick={() => setBriefingOpen(true)} className="rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">Briefing</button>}
         {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
         <button ref={setProvidersButton} type="button" onClick={() => setShowProviders(previous => !previous)} aria-haspopup="dialog" aria-expanded={showProviders} className={`rounded px-1.5 py-1 text-[11px] transition hover:bg-vs-hover ${showProviders ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>Providers</button>
