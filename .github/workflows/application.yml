@@ -98,6 +98,9 @@ jobs:
       - run: npm run test:attachments:http
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
+      - run: npm run test:agent-tools:http
+        env:
+          DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
       - run: npm run test:deployment
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test

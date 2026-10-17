@@ -160,6 +160,16 @@ Each computer executes work for its owning account. Teammates do not gain contro
 - **Deny** refuses; the agent is told and carries on without it.
 
 Only the person running the chat can answer, because it runs on their computer with their AI account; others in the room see that it is waiting. Time spent waiting doesn't count toward the task's time limit, and a request nobody answers within 15 minutes is refused. A connector only sees what your own account can: a private Google Sheet needs a connector signed in to an account that can open it, while a public link works with a plain web fetch. This works with Claude Code and Codex on the current desktop app.` },
+      { id: "ai-tools", title: "Add MCP servers and plugins", body: `Give the agents more tools without leaving the app or editing your own Claude Code or Codex settings.
+
+- **For a project:** open **Projects & connections** and find **AI tools**. A project manager adds an MCP server (a command such as \`npx -y @playwright/mcp@latest\`, or an HTTPS URL) or a Claude Code plugin (a Git repository or a .zip URL). Presets cover Playwright, Context7, GitHub and PostgreSQL.
+- **Just for you:** open the account menu and choose **Your AI tools**. These apply to every chat you run, in any project.
+
+A project tool runs on each member's own computer only after that member selects **Allow on my computer**. If a manager changes what it runs, everyone is asked again. Tools are added to each chat on its own and never written into your CLI settings, so your existing connectors keep working.
+
+Keys never go into a tool's definition. It refers to them by name, such as \`Bearer \${GITHUB_TOKEN}\`, and each member adds their own value under **Keys on this computer** in the desktop app, or with \`multicode-ai-runner secret set GITHUB_TOKEN\` for the standalone runner. Keys stay on that computer; the workspace only learns which names exist, to show what is missing. A tool whose key is missing is left out of the chat with a note.
+
+Using a tool still asks in the chat, as described above. MCP servers work with Claude Code and Codex; plugins work with Claude Code.` },
     ],
   },
   {

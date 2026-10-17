@@ -335,6 +335,34 @@ function setupHandler(channel, handler) {
   });
 }
 
+// Keys for AI tools (MCP servers and plugins configured in the workspace),
+// kept only in this computer's runner data folder. The workspace page can set
+// or remove a key and see which names exist; values never go back to it.
+const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
+function requireWorkspace(event) {
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || !sameOrigin(event.senderFrame.url, settings.url)) throw new Error("Not allowed.");
+}
+function runnerSecretsFile() {
+  const dataDir = readRunnerConfig()?.dataDir;
+  if (typeof dataDir !== "string" || !dataDir) throw new Error("Connect this computer first, then add keys.");
+  return path.join(dataDir, "secrets.json");
+}
+function readRunnerSecrets(file) {
+  try {
+    const secrets = JSON.parse(fs.readFileSync(file, "utf8")).secrets;
+    return secrets && typeof secrets === "object" && !Array.isArray(secrets) ? secrets : {};
+  } catch { return {}; }
+}
+function changeRunnerSecret(name, value) {
+  if (typeof name !== "string" || !SECRET_NAME.test(name)) throw new Error("Use capital letters, numbers and _ for the name, e.g. GITHUB_TOKEN.");
+  if (value !== null && (typeof value !== "string" || !value || Buffer.byteLength(value) > 16384 || value.includes("\0"))) throw new Error("The value is empty or too long.");
+  const file = runnerSecretsFile(), secrets = readRunnerSecrets(file);
+  if (value === null) delete secrets[name]; else secrets[name] = value;
+  writePrivateConfig(file, { version: 1, secrets });
+  runnerProcess?.postMessage({ type: "secrets-changed" });
+  return { ok: true, names: Object.keys(secrets).filter(key => SECRET_NAME.test(key)).sort() };
+}
+
 function registerIpc() {
   setupHandler("desktop:status", () => ({ url: settings.url, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion(), workspacesDir: workspacesDir(), workspacesLocked: !!runnerProcess || pairing }));
   setupHandler("desktop:open-workspaces", openWorkspacesFolder);
@@ -373,6 +401,19 @@ function registerIpc() {
   setupHandler("desktop:retry", connect);
   setupHandler("desktop:toggle-runner", toggleRunner);
   setupHandler("desktop:updates", checkUpdates);
+  ipcMain.handle("desktop:secret-names", event => {
+    requireWorkspace(event);
+    try { return { ok: true, names: Object.keys(readRunnerSecrets(runnerSecretsFile())).filter(key => SECRET_NAME.test(key)).sort() }; }
+    catch (error) { return { ok: false, error: error.message, names: [] }; }
+  });
+  ipcMain.handle("desktop:secret-set", (event, name, value) => {
+    requireWorkspace(event);
+    try { return changeRunnerSecret(name, value); } catch (error) { return { ok: false, error: error.message }; }
+  });
+  ipcMain.handle("desktop:secret-remove", (event, name) => {
+    requireWorkspace(event);
+    try { return changeRunnerSecret(name, null); } catch (error) { return { ok: false, error: error.message }; }
+  });
   ipcMain.handle("desktop:pair", async (event, code) => {
     if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || !sameOrigin(event.senderFrame.url, settings.url)) throw new Error("Not allowed.");
     if (pairing || runnerProcess || autoConnection.busy() || quitting) return { ok: false, error: "Pause the runner and wait for it to stop connecting before pairing again." };

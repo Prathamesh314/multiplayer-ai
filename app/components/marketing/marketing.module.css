@@ -84,10 +84,7 @@
 
 /* ---------- Brand ---------- */
 .brand { display: inline-flex; align-items: center; gap: 8px; font-size: .9375rem; font-weight: 600; letter-spacing: -.02em; }
-.brandMark { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; transform: skewY(-16deg); }
-.brandMark i { display: block; width: 4px; height: 12px; background: currentColor; border-radius: 1px; }
-.brandMark i:nth-child(2) { height: 19px; }
-.brandMark i:nth-child(3) { height: 15px; }
+.brandMark { width: 20px; height: 20px; flex: 0 0 auto; }
 .brandAi {
   align-self: center; font-family: var(--mono); font-size: .625rem; font-weight: 500; text-transform: uppercase;
   letter-spacing: .05em; border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
@@ -113,10 +110,7 @@
 .heroContent { position: relative; z-index: 10; max-width: 36rem; margin: 0 auto 0 max(16px, calc(50vw - 40rem)); padding: 80px 16px 0; color: #fff; }
 @media (min-width: 640px) { .heroContent { padding: 96px 32px 0; } }
 .heroBrand { display: inline-flex; margin-bottom: 32px; font-size: 1.25rem; }
-.heroBrand .brandMark { width: 30px; height: 30px; }
-.heroBrand .brandMark i { width: 5px; height: 16px; }
-.heroBrand .brandMark i:nth-child(2) { height: 25px; }
-.heroBrand .brandMark i:nth-child(3) { height: 20px; }
+.heroBrand .brandMark { width: 28px; height: 28px; }
 .hero h1 { margin-bottom: 20px; text-wrap: balance; }
 .hero h1 span { display: block; }
 .hero h1 span:last-child { color: #ffffffb3; }
