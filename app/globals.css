@@ -31,6 +31,22 @@
   --vs-warn: #e8a23a;
   --vs-warn-fg: #2a1a03;
 
+  /* Chat answers: copyable code stands apart from prose. Code sits on a raised
+     card (lighter than the chat surface, with a header), inline code on a warm
+     tint, and callouts on their own tinted grounds. */
+  --md-code-bg: #1e1b18;
+  --md-code-head: #26231f;
+  --md-code-border: #3a3631;
+  --md-inline-bg: rgb(215 187 169 / 0.13);
+  --md-inline-border: rgb(215 187 169 / 0.22);
+  --md-inline-fg: #efd6c6;
+  --md-quote-bg: rgb(255 255 255 / 0.035);
+  --md-note: #6ba7e0;
+  --md-tip: #2fbf6f;
+  --md-important: #c58fd6;
+  --md-warning: #e8a23a;
+  --md-caution: #f0554f;
+
   /* Syntax */
   --syn-plain: #e7e8ea;
   --syn-keyword: #6ba7e0;
@@ -369,3 +385,11 @@ body {
   .shimmer-text { animation: none; -webkit-text-fill-color: currentColor; background: none; }
   .pulse-dot { animation: none; }
 }
+
+/* Callouts in chat answers (> [!NOTE] … > [!CAUTION]): a tinted card per kind. */
+.md-callout { --md-tone: var(--md-note); border-color: color-mix(in srgb, var(--md-tone) 35%, transparent); background: color-mix(in srgb, var(--md-tone) 9%, transparent); }
+.md-callout-tip { --md-tone: var(--md-tip); }
+.md-callout-important { --md-tone: var(--md-important); }
+.md-callout-warning { --md-tone: var(--md-warning); }
+.md-callout-caution { --md-tone: var(--md-caution); }
+.md-callout-title { color: var(--md-tone); }

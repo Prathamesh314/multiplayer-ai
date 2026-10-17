@@ -30,6 +30,7 @@ import {
   ChevronIcon,
   CloseIcon,
   EyeIcon,
+  FilesIcon,
   GitBranchIcon,
   PlusIcon,
   SparkleIcon,
@@ -275,6 +276,7 @@ export function AiPanel({
   /** Load a run's stored conversation into the panel. */
   async function loadRun(target: AgentRun) {
     const generation = ++historyGeneration.current;
+    pinned.current = true; // a chat opens at its latest message
     setError(null);
     setHistoryFailed(false);
     liveTurnIdRef.current = null;
@@ -463,11 +465,31 @@ export function AiPanel({
     return () => clearTimeout(timer);
   }, [importingRepo, heldPrompt, importFailed]);
 
-  // Follow the conversation as it grows.
+  // Follow the conversation as it grows, but only while the reader is at the
+  // bottom. Snapping on every update (each streamed token) made a long chat
+  // impossible to scroll back through while an agent worked.
+  const pinned = useRef(true);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   useEffect(() => {
     const element = scroller.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (element && pinned.current) element.scrollTop = element.scrollHeight;
   }, [turns]);
+  function onConversationScroll() {
+    const element = scroller.current;
+    if (!element) return;
+    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    pinned.current = atBottom;
+    setAwayFromLatest(!atBottom);
+  }
+  function jumpToLatest() {
+    // Instant, not smooth: a smooth scroll reports positions short of the
+    // bottom while new output keeps moving it, and would unpin again.
+    const element = scroller.current;
+    if (!element) return;
+    pinned.current = true;
+    setAwayFromLatest(false);
+    element.scrollTop = element.scrollHeight;
+  }
 
   async function recheck() {
     setRefreshing(true);
@@ -491,6 +513,7 @@ export function AiPanel({
   }
 
   function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = []) {
+    pinned.current = true; // sending follows the reply
     if (importingRepo) {
       setHeldPrompt({ prompt, contextRefs, attachments });
       return;
@@ -938,7 +961,8 @@ export function AiPanel({
         </Note>
       )}
 
-      <div ref={scroller} className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={scroller} onScroll={onConversationScroll} data-scroller="conversation" className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
           <Conversation turns={turns} sessionId={sessionId} />
         ) : (
@@ -958,6 +982,16 @@ export function AiPanel({
           </p>
         )}
         {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
+      </div>
+      {awayFromLatest && hasConversation && (
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel/95 px-3 py-1.5 text-[12px] text-vs-fg shadow-lg backdrop-blur transition hover:bg-vs-active"
+        >
+          <span aria-hidden>↓</span> Latest
+        </button>
+      )}
       </div>
 
       {entered && (
@@ -1392,7 +1426,10 @@ function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
         {turn.streaming && !hasReply ? (
           hasTrace ? null : <p role="status" className="shimmer-text text-[15px] leading-6">Thinking</p>
         ) : (
-          <Markdown text={turn.text} />
+          <>
+            <Markdown text={turn.text} />
+            {!turn.streaming && hasReply && <ReplyActions text={turn.text} />}
+          </>
         )}
         {!!turn.errText?.trim() && (
           <details
@@ -1411,6 +1448,29 @@ function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
         )}
       </div>
     </article>
+  );
+}
+
+/** Under a finished reply: copy the whole answer as Markdown, as assistants do. */
+function ReplyActions({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <div className="mt-2 flex items-center gap-1 text-[12px] text-vs-muted">
+      <button
+        type="button"
+        onClick={() => void navigator.clipboard?.writeText(text.trim()).then(() => setCopied(true), () => {})}
+        aria-label={copied ? "Reply copied" : "Copy reply"}
+        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 transition hover:bg-vs-hover hover:text-vs-fg"
+      >
+        {copied ? <CheckIcon className="h-3.5 w-3.5 text-vs-success" /> : <FilesIcon className="h-3.5 w-3.5" />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
