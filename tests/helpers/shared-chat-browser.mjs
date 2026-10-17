@@ -23,6 +23,8 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>reject(Error('CDP timeout: '+method)),15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
     const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value;};
     await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
+    // Signed out the way a browser is after signing out, so a reload is not sent to Clerk's handshake.
+    const signOut=async()=>{await send('Network.deleteCookies',{name:'__session',url:base});await send('Network.setCookie',{name:'__client_uat',value:'0',url:base});};
     if(hostToken){
       await send('Network.setCookie',{name:'__client_uat',value:'1',url:base});
       await send('Network.setCookie',{name:'__clerk_db_jwt',value:'fixture',url:base});
@@ -35,7 +37,7 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
       await evaluate('document.querySelector("input[type=checkbox]").click()');await delay(100);
       await evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Save briefing").click()');
       await eventually(()=>evaluate('document.body.innerText.includes("Briefing saved.")'),'briefing persisted');
-      await send('Network.deleteCookies',{name:'__session',url:base});
+      await signOut();
     }
     // People added by email open the chat's own address; older invitations carry a token.
     await send('Page.navigate',{url:`${base}/shared/${runId}${token?`#invite=${token}`:''}`});
@@ -68,7 +70,7 @@ export async function sharedChatBrowser({base,runId,token,guestToken,hostToken,r
     if(shareByLink){
       // Anyone with the link: no account needed to read; commenting asks to sign in.
       const link=await shareByLink();
-      await send('Network.deleteCookies',{name:'__session',url:base});
+      await signOut();
       await send('Page.navigate',{url:`${base}/shared/${runId}#link=${link}`});
       await eventually(()=>evaluate('document.body.innerText.includes("Review this change")&&document.body.innerText.includes("anyone with the link")'),'link opens without signing in');
       assert.equal(await evaluate('!!document.querySelector("#shared-comment")'),false,'signed-out link viewers cannot comment');

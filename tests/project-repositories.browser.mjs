@@ -143,6 +143,7 @@ try {
   await click('button[aria-label="General access"]');
   await click('[role="option"][value="anyone"]');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Anyone on the internet with the link can view")'),"link sharing on");
+  await writeFile(join(tmpdir(),'multiplayer-share-dialog.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await button('Copy link');
   await eventually(()=>evaluate('window.__copied.length===1'),"link copied");
   assert.match(await evaluate('window.__copied[0]'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#link=l{43}$/);
