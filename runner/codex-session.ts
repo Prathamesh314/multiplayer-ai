@@ -8,7 +8,11 @@ type ApprovalParams = {
   command?: string | null; reason?: string | null; grantRoot?: string | null;
   networkApprovalContext?: { host: string; protocol: string } | null;
   permissions?: { network: unknown; fileSystem: unknown };
+  /** MCP tool calls arrive as elicitations (mcpServer/elicitation/request). */
+  serverName?: string; message?: string;
+  _meta?: { codex_approval_kind?: string; tool_description?: string; tool_params?: unknown } | null;
 };
+const MCP_ELICITATION = "mcpServer/elicitation/request";
 /** What the chat shows for a Codex approval request, and what "always" remembers. */
 export function describeCodexApproval(method: string, params: ApprovalParams): ToolRequest | null {
   const reason = params.reason ? ` (${params.reason})` : "";
@@ -19,6 +23,17 @@ export function describeCodexApproval(method: string, params: ApprovalParams): T
   }
   if (method === "item/fileChange/requestApproval")
     return { tool: "write", title: `Write files${params.grantRoot ? ` under ${params.grantRoot}` : " outside the workspace"}${reason}`.slice(0, 300), rule: null };
+  if (method === MCP_ELICITATION) {
+    // Only Codex's own "may this MCP tool run?" question; a server asking the
+    // person to fill in a form is refused.
+    if (params._meta?.codex_approval_kind !== "mcp_tool_call" || !params.serverName) return null;
+    const tool = /tool "([^"]{1,120})"/.exec(params.message ?? "")?.[1];
+    const words = (value: string) => value.replace(/[_-]+/g, " ");
+    return { tool: "mcp", title: `Use ${tool ? words(tool) : "a tool"} from ${words(params.serverName)}`.slice(0, 300),
+      detail: JSON.stringify(params._meta.tool_params ?? {}, null, 2).slice(0, 4000),
+      // Named like Claude Code's rule, so "always" for this chat reads the same for both.
+      rule: tool && /^[A-Za-z0-9_.-]+$/.test(`${params.serverName}${tool}`) ? `mcp__${params.serverName}__${tool}` : null };
+  }
   if (method === "item/permissions/requestApproval")
     return { tool: "permissions", title: `Extra access${params.permissions?.network ? ": network" : ""}${params.permissions?.fileSystem ? ": files outside the workspace" : ""}${reason}`.slice(0, 300),
       detail: JSON.stringify(params.permissions ?? {}, null, 2).slice(0, 4000), rule: null };
@@ -26,6 +41,8 @@ export function describeCodexApproval(method: string, params: ApprovalParams): T
 }
 /** The JSON-RPC result Codex expects for an approval decision. */
 export function codexApprovalResult(method: string, params: ApprovalParams, allow: boolean, always: boolean) {
+  // "always" means for this chat only: never "always" in Codex's own settings.
+  if (method === MCP_ELICITATION) return allow ? { action: "accept", content: {}, ...(always ? { _meta: { persist: "session" } } : {}) } : { action: "decline" };
   if (method === "item/permissions/requestApproval") {
     const granted = allow ? Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)) : {};
     return { permissions: granted, scope: always ? "session" : "turn" };
@@ -121,7 +138,8 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
     if (input.signal?.aborted) abort();
     await rpc("initialize", { clientInfo: { name: "multicode-ai", title: "Multicode AI", version: "0.1.0" } });
     write({ method: "initialized", params: {} });
-    const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: approvals, sandbox: "workspace-write", ephemeral: true });
+    const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: approvals, sandbox: "workspace-write", ephemeral: true,
+      ...(input.tools?.codexConfig ? { config: input.tools.codexConfig } : {}) });
     if (!thread.thread?.id) throw new Error("Agent did not create a thread.");
     const threadId = thread.thread.id;
     const start = async (text: string) => {

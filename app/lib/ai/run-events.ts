@@ -1,4 +1,5 @@
 import type { Checkpoint } from "../runner/checkpoint-types";
+import type { RunTool } from "./agent-tools-spec";
 /**
  * The live wire format of one agent run — the newline-delimited JSON the run
  * endpoint streams to the driver's browser.
@@ -81,6 +82,13 @@ export type AgentRunJob = {
    * is asked in the chat; older runners ignore this and refuse as before.
    */
   allowedTools?: string[];
+  /**
+   * MCP servers and plugins for this run (lib/ai/agent-tools.ts): the driver's
+   * own, plus the project's that they approved at this exact definition. The
+   * runner fills ${NAME} secrets from its own store and passes them per run,
+   * never into the member's CLI settings. Older runners ignore this.
+   */
+  tools?: RunTool[];
   /**
    * Files attached to this message. The runner downloads each one to `path`
    * (relative to the worktree, under `.multicode/attachments/`, excluded from

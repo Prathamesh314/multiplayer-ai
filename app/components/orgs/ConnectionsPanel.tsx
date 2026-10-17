@@ -1,4 +1,5 @@
 "use client";
+import { AgentToolsPanel } from "../ai/AgentToolsPanel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Org } from "../../lib/org/types";
 import type { Project } from "../../lib/project/types";
@@ -70,7 +71,7 @@ export function ConnectionsPanel({
         <p className="mt-2 max-w-2xl text-xs leading-5 text-vs-muted">
           Keep talking where your team already works. Connect selected Slack or
           Discord channels so AI can refer to your discussions and link back to
-          the source.
+          the source, and give the agents MCP servers and plugins.
         </p>
         <div className="mt-5 max-w-sm">
           <p className="text-sm font-medium text-vs-muted">Project</p>
@@ -89,13 +90,23 @@ export function ConnectionsPanel({
           </div>
         </div>
         {project ? (
-          <ProjectConnections
-            key={project.id}
-            orgSlug={org.slug}
-            project={project}
-            chooseDiscord={chooseDiscord}
-            onDiscordChosen={onDiscordChosen}
-          />
+          <>
+            <ProjectConnections
+              key={project.id}
+              orgSlug={org.slug}
+              project={project}
+              chooseDiscord={chooseDiscord}
+              onDiscordChosen={onDiscordChosen}
+            />
+            <div className="mt-8 border-t border-vs-border pt-6">
+              <AgentToolsPanel
+                key={`tools-${project.id}`}
+                scope="project"
+                base={`/api/orgs/${encodeURIComponent(org.slug)}/projects/${encodeURIComponent(project.slug)}/agent-tools`}
+                projectName={project.name}
+              />
+            </div>
+          </>
         ) : (
           <p className="mt-6 text-xs text-vs-muted">
             Create or join a project to connect its channels.

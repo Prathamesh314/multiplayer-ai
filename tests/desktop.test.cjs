@@ -71,7 +71,7 @@ function harness() {
     throw Object.assign(new Error("missing"), { code: "ENOENT" });
   }, mkdirSync() {}, writeFileSync: (file, value, options) => writes.set(file, { value, options }), renameSync: (from, to) => { writes.set(to, writes.get(from)); writes.delete(from); } };
   const requests = [];
-  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : name === "./connection" ? require("../desktop/connection") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
+  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : name === "./connection" ? require("../desktop/connection") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, Buffer, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
   const source = fs.readFileSync("desktop/main.js", "utf8");
   vm.runInContext(source + "\nglobalThis.api = { security, registerIpc, requireSetup, toggleRunner, setWindows: (workspace, setup) => { mainWindow = workspace; setupWindow = setup; }, setupUrl };", context);
   context.api.registerIpc();
@@ -118,6 +118,31 @@ test("privileged IPC checks window identity, main frame, and exact origin", asyn
   await assert.rejects(pair(sender, "RN-ABCD-1234"), /Not allowed/);
   assert.throws(() => instance.requireSetup(sender), /Not allowed/);
   instance.requireSetup({ sender: setup.webContents, senderFrame: setup.webContents.mainFrame });
+});
+
+test("the workspace can set and remove AI-tool keys on this computer, never read their values", () => {
+  const instance = harness();
+  const workspace = mockWindow("https://team.example/workspace");
+  const setup = mockWindow(instance.setupUrl);
+  instance.setWindows(workspace, setup);
+  const sender = { sender: workspace.webContents, senderFrame: workspace.webContents.mainFrame };
+  const set = instance.handlers.get("desktop:secret-set"), names = instance.handlers.get("desktop:secret-names"), remove = instance.handlers.get("desktop:secret-remove");
+  assert.throws(() => set({ sender: setup.webContents, senderFrame: setup.webContents.mainFrame }, "GITHUB_TOKEN", "x"), /Not allowed/);
+  assert.throws(() => names({ sender: workspace.webContents, senderFrame: { url: "https://team.example" } }), /Not allowed/);
+  assert.match(set(sender, "GITHUB_TOKEN", "x").error, /Connect this computer first/);
+  instance.writes.set(path.join("/profile", "runner.json"), { value: JSON.stringify({ server: "https://team.example", token: "t", dataDir: "/profile/runner-data/abc" }) });
+  const saved = set(sender, "GITHUB_TOKEN", "ghp_secret");
+  assert.equal(saved.ok, true);
+  assert.deepEqual([...saved.names], ["GITHUB_TOKEN"]);
+  const file = instance.writes.get(path.join("/profile/runner-data/abc", "secrets.json"));
+  assert.equal(file.options.mode, 0o600);
+  assert.deepEqual(JSON.parse(file.value), { version: 1, secrets: { GITHUB_TOKEN: "ghp_secret" } });
+  assert.equal(set(sender, "github token", "x").ok, false);
+  assert.equal(set(sender, "EMPTY", "").ok, false);
+  const listed = names(sender);
+  assert.deepEqual([...listed.names], ["GITHUB_TOKEN"]);
+  assert.doesNotMatch(JSON.stringify(listed), /ghp_secret/);
+  assert.deepEqual([...remove(sender, "GITHUB_TOKEN").names], []);
 });
 
 test("desktop staging uses an allowlist and release packaging requires signing", () => {

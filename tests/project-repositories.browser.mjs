@@ -132,12 +132,26 @@ try {
   await button('Share chat');
   await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),"guest invitation dialog");
   await type('dialog input[type=email]','guest@example.test');
-  await click('button[aria-label="Guest permission"]');
+  await click('button[aria-label="Role for new person"]');
   await click('[role="option"][value="commenter"]');
-  await button('Create invitation link');
-  await eventually(()=>evaluate('!!document.querySelector("#chat-invite-link")'),"guest invitation created");
-  assert.match(await evaluate('document.querySelector("#chat-invite-link").value'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#invite=/);
+  await button('Share');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("guest@example.test") && document.querySelector("dialog").innerText.includes("Hasn’t opened yet")'),"person added by email");
   assert.equal(await evaluate('window.__model.invitations[0].role'),'commenter');
+  assert.equal(await evaluate('window.__model.invitations[0].expiresAt'),null,'access lasts until removed');
+  // General access: anyone with the link, then copy it.
+  await evaluate('window.__copied=[];Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async text=>{window.__copied.push(text);}}})');
+  await click('button[aria-label="General access"]');
+  await click('[role="option"][value="anyone"]');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Anyone on the internet with the link can view")'),"link sharing on");
+  await writeFile(join(tmpdir(),'multiplayer-share-dialog.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await button('Copy link');
+  await eventually(()=>evaluate('window.__copied.length===1'),"link copied");
+  assert.match(await evaluate('window.__copied[0]'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#link=l{43}$/);
+  await click('button[aria-label="General access"]');
+  await click('[role="option"][value="restricted"]');
+  await eventually(()=>evaluate('window.__model.link===null && document.querySelector("dialog").innerText.includes("Only people with access can open with the link")'),"restricted again");
+  for(const width of [390,320]){await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:false});await delay(150);assert.ok(await evaluate('(()=>{const r=document.querySelector("dialog").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()'),`share dialog fits ${width}`);}
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});await delay(150);
   await evaluate('window.__model.invitations[0].acceptedAt=new Date().toISOString()');
   await button('Done');await button('Share chat');
   await button('Allow guest to help with code…');
@@ -152,9 +166,9 @@ try {
   await click('dialog input[type="checkbox"]');await button('Grant editing access');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Editing access granted.")'),'grant feedback');
   assert.equal(await evaluate('JSON.parse(window.__model.requests.filter(r=>r.method==="POST"&&r.path.endsWith("/access")).at(-1).body).scopeKey'),'confirmed-scope');
-  await button('Revoke chat invitation');
-  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Access removed")'),"guest access removed");
-  assert.equal(await evaluate('document.querySelector("#chat-invite-link")'),null);
+  await click('button[aria-label="Access for guest@example.test"]');
+  await click('[role="option"][value="remove"]');
+  await eventually(()=>evaluate('!document.querySelector("dialog").innerText.includes("guest@example.test")'),"guest access removed");
   await button('Done');
   await button('Feedback · 1 unread');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Please check delivery errors.")'),'guest feedback in the workspace');

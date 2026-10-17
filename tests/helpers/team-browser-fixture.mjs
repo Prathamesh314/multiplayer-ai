@@ -29,6 +29,9 @@ export function installFixtures() {
   window.__chatFixture = { failNext: false, sent: [], unknown: [], messages, streams: [], sendDelay: 0, memberWrites: [] };
   const integration = {id:'slack-connection',provider:'slack',name:'Northstar Slack',channels:[{id:'engineering',name:'engineering',url:'https://app.slack.com/client/T1/C1',verifiedAt:new Date().toISOString(),syncedAt:new Date().toISOString(),messageCount:15,error:null}]};
   let connected=true;
+  // AI tools: one a teammate added that Alex has not allowed yet.
+  const tools={project:[{id:'00000000-0000-4000-8000-000000000001',scope:'project',kind:'mcp',name:'context7',spec:{transport:'stdio',command:'npx',args:['-y','@upstash/context7-mcp@latest'],env:[]},enabled:true,approved:false,secrets:[],createdBy:'Priya',updatedAt:0}],personal:[]};
+  window.__chatFixture.toolWrites=[];
   class FixtureEventSource extends EventTarget {
     constructor(url) {
       super(); this.url = url;
@@ -72,6 +75,24 @@ export function installFixtures() {
       return json({ok:true});
     }
     if (path === "/api/tasks") return json({tasks:[],members:[],hasMore:false});
+    const toolScope = path === '/api/orgs/northstar/projects/checkout/agent-tools' || path.startsWith('/api/orgs/northstar/projects/checkout/agent-tools/') ? 'project' : path === '/api/me/agent-tools' || path.startsWith('/api/me/agent-tools/') ? 'personal' : null;
+    if (toolScope) {
+      const list=tools[toolScope], method=init.method ?? 'GET', [, toolId, approval]=path.split('/agent-tools')[1].split('/');
+      const body=init.body?JSON.parse(init.body):null;
+      if (body||method!=='GET') window.__chatFixture.toolWrites.push({scope:toolScope,method,toolId:toolId??null,approval:!!approval,body});
+      if (method==='GET' && !toolId) return json({tools:list,canManage:true,secretNames:[],computersReady:true});
+      if (method==='POST' && !toolId) {
+        if(list.some(tool=>tool.name===body.name))return json({error:`A tool named ${body.name} already exists here.`},400);
+        const text=JSON.stringify(body.spec), secrets=[...new Set([...text.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map(match=>match[1]))].sort();
+        list.push({id:`tool-${list.length+2}`,scope:toolScope,kind:body.kind,name:body.name,spec:body.spec,enabled:true,approved:true,secrets,createdBy:'Alex Chen',updatedAt:Date.now()});
+        return json({id:list.at(-1).id},201);
+      }
+      const tool=list.find(item=>item.id===toolId);
+      if(!tool)return json({error:'Tool not found.'},404);
+      if(approval){tool.approved=method==='POST';return json({approved:tool.approved});}
+      if(method==='PATCH'){Object.assign(tool,body);return json({updated:true});}
+      if(method==='DELETE'){list.splice(list.indexOf(tool),1);return json({deleted:true});}
+    }
     if (path.endsWith('/integrations')) return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:connected?[integration]:[]});
     if (path.endsWith('/integrations/slack')) {
       if(init.method==='DELETE'){connected=false;return json({ok:true});}
