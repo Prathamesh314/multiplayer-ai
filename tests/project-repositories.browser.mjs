@@ -343,6 +343,9 @@ try {
   await eventually(()=>evaluate(`!document.querySelector('input[aria-label="Destination folder"]') && document.body.textContent.includes("data/scores.csv")`),"dialog closes and the tree shows them");
   assert.ok(await evaluate(`!document.body.textContent.includes("Drop a folder, not a single file")`),"a drop on the explorer is not taken as a project-folder import");
   await writeFile(join(tmpdir(),'multiplayer-explorer-add.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  // New file opened report.csv in the editor; close it so the chat is in view again.
+  await click('button[aria-label="Close report.csv"]');
+  await eventually(()=>evaluate(`!document.querySelector('button[aria-label="Close report.csv"]') && !!document.querySelector('.ai-composer textarea')`),"back to the chat");
   // A live run: waiting for the computer, then the agent's steps with readable
   // names, and the working status inside the composer card.
   await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
