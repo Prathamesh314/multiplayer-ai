@@ -19,11 +19,15 @@ export function installFixtures() {
     if(path.startsWith('/api/shared-chats/')&&path.endsWith('/invitations')) {
       state.invitations??=[];
       if(init.method==='POST'){
-        const input=JSON.parse(init.body),invitation={id:crypto.randomUUID(),email:input.email,role:input.role,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+604800000).toISOString(),acceptedAt:null,revokedAt:null};
-        state.invitations.push(invitation);return json({invitation,token:'g'.repeat(43)});
+        // Shared like a document: by email, no token, no expiry.
+        const input=JSON.parse(init.body),invitation={id:crypto.randomUUID(),email:input.email,role:input.role,createdAt:new Date().toISOString(),expiresAt:null,acceptedAt:null,revokedAt:null,viaLink:false};
+        state.invitations=state.invitations.filter(item=>item.email!==input.email);state.invitations.unshift(invitation);return json({invitation,notified:false});
       }
       if(init.method==='DELETE'){state.invitations.find(item=>item.id===JSON.parse(init.body).id).revokedAt=new Date().toISOString();return json({ok:true});}
-      return json({invitations:state.invitations});
+      return json({invitations:state.invitations,link:state.link??null,canNotify:false});
+    }
+    if(path.startsWith('/api/shared-chats/')&&path.endsWith('/link')&&init.method==='PUT'){
+      const role=JSON.parse(init.body).role;state.link=role?{role,token:state.link?.token??'l'.repeat(43)}:null;return json({link:state.link});
     }
     state.feedback??=[{id:'guest-feedback',seq:1,body:'Please check delivery errors.',authorName:'Guest',createdAt:new Date().toISOString()}];
     if(path==='/api/collaboration/inbox'){

@@ -4,5 +4,5 @@ import { sharingBody, sharingResponse, sharingUser } from "../../../../lib/shari
 export const runtime = "nodejs";
 export const POST = withApiLimit("/api/shared-chats/[runId]/comments", async (request:Request,context:{params:Promise<{runId:string}>}) => sharingResponse(async () => {
   const user=await sharingUser(),{runId}=await context.params;
-  return addSharedComment(runId,user.id,await sharingBody(request));
+  return addSharedComment(runId,user.id,await sharingBody(request),request.headers.get("x-chat-link"));
 },201));

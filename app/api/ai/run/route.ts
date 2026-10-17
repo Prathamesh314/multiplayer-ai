@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
+import { cleanFileRefs, fileRefsPromptBlock } from "../../../lib/ai/file-mentions";
 import { getCheckpoint } from "../../../lib/runner/checkpoints";
 import { projectRepositoryForRoom } from "../../../lib/project/repositories";
 import { randomUUID } from "node:crypto";
@@ -36,6 +37,7 @@ import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
 import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 import { allowedTools, setRunPermissionMode } from "../../../lib/ai/permissions";
+import { pendingToolCount, toolsForRun } from "../../../lib/ai/agent-tools";
 import { AttachmentError, attachmentFiles, attachmentPromptBlock, bindAttachments, sendableAttachments } from "../../../lib/ai/attachments";
 import { access, canWrite, denied, forbidden } from "../../../lib/session/auth";
 
@@ -92,6 +94,8 @@ export type AiRunRequest = {
   attachmentIds?: string[];
   /** Manual ("ask") or Auto approval for this chat, from the composer; only its driver sends turns. */
   permissionMode?: "ask" | "auto";
+  /** Repository paths tagged with "@" in the prompt; the agent reads them in its worktree. */
+  fileRefs?: string[];
 };
 
 /**
@@ -422,7 +426,7 @@ async function handlePOST(request: Request) {
   // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
   // keeps the full import regardless.
   const agentPrompt = assembleAgentPrompt({
-    prompt: prompt + attachmentPromptBlock(files),
+    prompt: prompt + attachmentPromptBlock(files) + fileRefsPromptBlock(cleanFileRefs(body.fileRefs)),
     handle: coDriven ? result.user.handle : null,
     referencedContext,
     conversationContext: await continuationContext(run.id),
@@ -461,6 +465,9 @@ async function handlePOST(request: Request) {
   // cross the wire (see AgentRunJob).
   if (body.permissionMode === "ask" || body.permissionMode === "auto") await setRunPermissionMode(run.id, result.user.id, body.permissionMode);
   const restoreCheckpoint = run.restoreSnapshotId ? await getCheckpoint(run.restoreSnapshotId, run.id) : null;
+  const tools = await toolsForRun(result.session.projectId, result.user.id);
+  // Project tools this member has not allowed yet run nowhere; say so, once per message.
+  const waitingTools = result.session.projectId ? await pendingToolCount(result.session.projectId, result.user.id) : 0;
   const job: AgentRunJob = {
     ...(restoreCheckpoint ? { restoreCheckpoint } : {}),
     turnId,
@@ -476,6 +483,7 @@ async function handlePOST(request: Request) {
     agentId: agent.id,
     agentPrompt,
     allowedTools: await allowedTools(run.id),
+    ...(tools.length ? { tools } : {}),
     ...(files.length ? { attachments: files.map(({ id, path, size, sha256 }) => ({ id, path, size, sha256 })) } : {}),
     projectId: result.session.projectId,
     model: runOptions.model,
@@ -495,7 +503,7 @@ async function handlePOST(request: Request) {
   // The job goes to the member's own machine — their CPU, their AI login
   // (docs/local-execution.md) — and this response forwards their runner's
   // events off the per-run channel as an NDJSON stream.
-  return new Response(localStream(job, result.user.id), { headers });
+  return new Response(localStream(job, result.user.id, waitingTools), { headers });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Could not prepare this turn.";
     await failTurn(turnId, message);
@@ -506,7 +514,7 @@ async function handlePOST(request: Request) {
 const encoder = new TextEncoder();
 const frame = (event: AiRunEvent) => encoder.encode(`${JSON.stringify(event)}\n`);
 
-function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Array> {
+function localStream(job: AgentRunJob, userId: string, waitingTools = 0): ReadableStream<Uint8Array> {
   let closed = false;
   let unsubscribe: (() => Promise<void>) | null = null;
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -558,6 +566,7 @@ function localStream(job: AgentRunJob, userId: string): ReadableStream<Uint8Arra
       try {
         await enqueueLocalJob(job, userId);
         controller.enqueue(frame({ t: "notice", message: "Queued for your runner. No agent has started yet." }));
+        if (waitingTools) controller.enqueue(frame({ t: "notice", message: `${waitingTools === 1 ? "A project AI tool is" : `${waitingTools} project AI tools are`} waiting for you to allow ${waitingTools === 1 ? "it" : "them"} on your computer (Projects & connections → AI tools). This chat runs without ${waitingTools === 1 ? "it" : "them"}.` }));
       } catch (cause) {
         await fail(`Could not queue the run: ${cause instanceof Error ? cause.message : String(cause)}`);
         return;

@@ -141,12 +141,26 @@ try {
   await button('Share chat');
   await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),"guest invitation dialog");
   await type('dialog input[type=email]','guest@example.test');
-  await click('button[aria-label="Guest permission"]');
+  await click('button[aria-label="Role for new person"]');
   await click('[role="option"][value="commenter"]');
-  await button('Create invitation link');
-  await eventually(()=>evaluate('!!document.querySelector("#chat-invite-link")'),"guest invitation created");
-  assert.match(await evaluate('document.querySelector("#chat-invite-link").value'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#invite=/);
+  await button('Share');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("guest@example.test") && document.querySelector("dialog").innerText.includes("Hasn’t opened yet")'),"person added by email");
   assert.equal(await evaluate('window.__model.invitations[0].role'),'commenter');
+  assert.equal(await evaluate('window.__model.invitations[0].expiresAt'),null,'access lasts until removed');
+  // General access: anyone with the link, then copy it.
+  await evaluate('window.__copied=[];Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async text=>{window.__copied.push(text);}}})');
+  await click('button[aria-label="General access"]');
+  await click('[role="option"][value="anyone"]');
+  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Anyone on the internet with the link can view")'),"link sharing on");
+  await writeFile(join(tmpdir(),'multiplayer-share-dialog.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await button('Copy link');
+  await eventually(()=>evaluate('window.__copied.length===1'),"link copied");
+  assert.match(await evaluate('window.__copied[0]'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#link=l{43}$/);
+  await click('button[aria-label="General access"]');
+  await click('[role="option"][value="restricted"]');
+  await eventually(()=>evaluate('window.__model.link===null && document.querySelector("dialog").innerText.includes("Only people with access can open with the link")'),"restricted again");
+  for(const width of [390,320]){await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:false});await delay(150);assert.ok(await evaluate('(()=>{const r=document.querySelector("dialog").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()'),`share dialog fits ${width}`);}
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});await delay(150);
   await evaluate('window.__model.invitations[0].acceptedAt=new Date().toISOString()');
   await button('Done');await button('Share chat');
   await button('Allow guest to help with code…');
@@ -161,9 +175,9 @@ try {
   await click('dialog input[type="checkbox"]');await button('Grant editing access');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Editing access granted.")'),'grant feedback');
   assert.equal(await evaluate('JSON.parse(window.__model.requests.filter(r=>r.method==="POST"&&r.path.endsWith("/access")).at(-1).body).scopeKey'),'confirmed-scope');
-  await button('Revoke chat invitation');
-  await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Access removed")'),"guest access removed");
-  assert.equal(await evaluate('document.querySelector("#chat-invite-link")'),null);
+  await click('button[aria-label="Access for guest@example.test"]');
+  await click('[role="option"][value="remove"]');
+  await eventually(()=>evaluate('!document.querySelector("dialog").innerText.includes("guest@example.test")'),"guest access removed");
   await button('Done');
   await button('Feedback · 1 unread');
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Please check delivery errors.")'),'guest feedback in the workspace');
@@ -355,6 +369,16 @@ try {
   // New file opened report.csv in the editor; close it so the chat is in view again.
   await click('button[aria-label="Close report.csv"]');
   await eventually(()=>evaluate(`!document.querySelector('button[aria-label="Close report.csv"]') && !!document.querySelector('.ai-composer textarea')`),"back to the chat");
+  // "@" tags a file of the project: type part of its name, pick it, and it is sent with the message.
+  await type('.ai-composer textarea',"Summarise @scor");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('.ai-composer button')].some(b=>b.textContent.includes("data/scores.csv")&&b.textContent.includes("File"))`),"file suggestions for @");
+  await writeFile(join(tmpdir(),'multiplayer-file-mention.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('.ai-composer button')].find(b=>b.textContent.includes("data/scores.csv")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('.ai-composer textarea').value==="Summarise @data/scores.csv "`),"the picked path is tagged");
+  await type('.ai-composer textarea',"Summarise @data/scores.csv and @dat");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('.ai-composer button')].some(b=>b.textContent.includes("data")&&b.textContent.includes("Folder"))`),"folders can be tagged too");
+  await evaluate(`[...document.querySelectorAll('.ai-composer button')].find(b=>b.textContent.includes("Folder")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('.ai-composer textarea').value==="Summarise @data/scores.csv and @data/ "`),"the folder is tagged");
   // A live run: waiting for the computer, then the agent's steps with readable
   // names, and the working status inside the composer card.
   await evaluate(`window.__model.runs.push({id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",sessionId:"modelroomabc",repoId:window.__model.repos.at(-1)?.id??null,startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"codex",title:"Live run",status:"running",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:null,archivedAt:null});
@@ -363,6 +387,7 @@ try {
       ...Array.from({length:60},(_,i)=>[{wait:120},{t:"out",d:"Paragraph "+i+": the agent keeps writing so the chat grows well past the screen.\\n\\n"}]).flat()];`);
   await evaluate(`document.querySelector('button[aria-label="Send message"]').click()`);
   await eventually(()=>evaluate(`[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes("Waiting for your computer to start"))`),"a soft waiting pill while the computer picks it up");
+  assert.deepEqual(await evaluate(`JSON.parse(window.__model.requests.filter(r=>r.path==="/api/ai/run").at(-1).body).fileRefs`),["data/scores.csv","data/"],"tagged paths go with the message");
   assert.equal(await evaluate(`JSON.parse(window.__model.requests.filter(r=>r.path==="/api/ai/run").at(-1).body).permissionMode`),"ask","each message carries the approval mode");
   await writeFile(join(tmpdir(),'multiplayer-run-waiting.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await eventually(()=>evaluate(`document.body.textContent.includes("Google Drive · Read file content") && document.body.textContent.includes("Look up tools")`),"steps read as plain language");

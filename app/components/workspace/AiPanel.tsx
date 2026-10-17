@@ -1,6 +1,8 @@
 "use client";
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
+import type { MentionFile } from "../../lib/ai/file-mentions";
+import { preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
@@ -98,6 +100,8 @@ type AiPanelProps = {
    */
   repoOptions: { id: string; label: string }[];
   hasFiles?: boolean;
+  /** The repository's files and folders, tagged in a message with "@". */
+  files?: MentionFile[];
   repoId: string | null;
   onRepoChange: (repoId: string | null) => void;
   /** Start without files or import a folder into the workspace. */
@@ -158,6 +162,7 @@ export function AiPanel({
   onNewRun,
   repoOptions,
   hasFiles = true,
+  files,
   repoId,
   onRepoChange,
   onImportRepo,
@@ -172,7 +177,7 @@ export function AiPanel({
    * agent would read an incomplete checkout and confidently edit the wrong
    * thing, which is worse than waiting.
    */
-  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[] } | null>(null);
+  const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[]; fileRefs?: string[] } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
   // Whether this server runs chats on their own branches, and whether the next
@@ -189,6 +194,8 @@ export function AiPanel({
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
+  // Read by the agents refresh, which outlives renders.
+  const connectedRef = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [installFor, setInstallFor] = useState<string | null>(null);
   // Composer selectors. Reset together with the provider, since the options do.
@@ -463,14 +470,18 @@ export function AiPanel({
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
       setParallelChats(response.parallelChats);
-      // Pre-select a ready agent, so the common case is one click. Codex is the
-      // default when it is installed; otherwise the first installed one.
-      setConnected((previous) => {
-        if (previous) return previous;
-        const installed = response.agents.filter((a) => a.installed);
-        const codex = installed.find((a) => a.id === "codex");
-        return codex?.id ?? installed[0]?.id ?? null;
-      });
+      // Pre-select a ready agent, so the common case is one click: the one this
+      // member last used on this device, else Codex, else the first installed.
+      if (!connectedRef.current) {
+        const chosen = preferredAgent(response.agents);
+        if (chosen) {
+          const picks = savedPicks(response.agents.find((agent) => agent.id === chosen));
+          connectedRef.current = chosen;
+          setConnected(chosen);
+          setModel(picks.model);
+          setEffort(picks.effort);
+        }
+      }
     }).catch(() => {
       if (!cancelled && current === generation) {
         setServerCanRun(false);
@@ -502,7 +513,7 @@ export function AiPanel({
       // A failed import leaves the old repository selected, so running the
       // prompt would answer about the wrong code. Hand it back instead.
       if (importFailed) composer.current?.insertPrompt(held.prompt);
-      else askRef.current(held.prompt, held.contextRefs, held.attachments);
+      else askRef.current(held.prompt, held.contextRefs, held.attachments, held.fileRefs);
     }, 0);
     return () => clearTimeout(timer);
   }, [importingRepo, heldPrompt, importFailed]);
@@ -546,18 +557,23 @@ export function AiPanel({
     finally { setRefreshing(false); }
   }
 
-  // Switching provider clears the model/effort picks, whose options differ per agent.
+  // Switching provider restores that agent's own model/effort picks (or the
+  // defaults), since the options differ per agent.
   function selectProvider(id: string) {
+    const picks = savedPicks(agents?.find((agent) => agent.id === id));
+    connectedRef.current = id;
     setConnected(id);
-    setModel("");
-    setEffort("");
+    setModel(picks.model);
+    setEffort(picks.effort);
     setInstallFor(null);
   }
+  // Remembered on this device, so a reload keeps the member's choice.
+  useEffect(() => { if (connected) rememberChoice(connected, model, effort); }, [connected, model, effort]);
 
-  function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = []) {
+  function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = [], fileRefs: string[] = []) {
     pinned.current = true; // sending follows the reply
     if (importingRepo) {
-      setHeldPrompt({ prompt, contextRefs, attachments });
+      setHeldPrompt({ prompt, contextRefs, attachments, fileRefs });
       return;
     }
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
@@ -626,6 +642,7 @@ export function AiPanel({
         isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
         attachmentIds: attachments.length ? attachments.map((file) => file.id) : undefined,
         permissionMode: approvalMode,
+        fileRefs: fileRefs.length ? fileRefs : undefined,
       },
       {
         onEvent: (event) => {
@@ -1081,10 +1098,11 @@ export function AiPanel({
               : !ready ? "Set up AI to send a message…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…${mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
+                : `Message ${active!.name}…${files?.length ? "  (@ to tag files)" : mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
           }
           onSend={ask}
           attachTo={sessionId}
+          files={files}
         />
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
