@@ -150,6 +150,12 @@ Run it on the computer that should execute your tasks. The full package URL matt
 | Connected, no AI tool ready | Open **Set up AI** and finish provider installation/login |
 
 Saved chats and uploaded files remain readable with the correct permissions even when your computer is offline. Sending prompts needs a working execution option.` },
+      { id: "update-computer", title: "Update the app or runner", body: `When the chat says your computer runs an older version of the Multicode AI app, update it so the agent can ask you before running a command or opening a link.
+
+- **Desktop app:** quit it completely (Quit from its menu-bar or tray icon), download the latest version from the [download section](/#download), install it over the old one, and open it. It reconnects on its own.
+- **Runner in a terminal:** stop it with **Ctrl+C**, then start it again with the command the chat (or **Your computers**) shows. The command names the current runner package, so it always fetches the newest one and keeps your pairing and worktrees.
+
+The message disappears by itself once the updated app connects.` },
       { id: "remove-device", title: "Disconnect or revoke a computer", body: `Use **Your computers** to inspect or revoke a device. Revocation removes its permission to claim work; reconnect explicitly if you need that computer again. To pause temporarily, use **Pause after current task** in desktop settings or stop the standalone runner with **Ctrl+C**.
 
 Each computer executes work for its owning account. Teammates do not gain control of your machine simply by joining a project. Your AI tool can run commands with your local user permissions when executing your tasks.` },

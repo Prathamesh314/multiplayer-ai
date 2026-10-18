@@ -16,7 +16,7 @@ test(`downloaded runner via ${mode} pairs/starts from unrelated folders without 
   const packageBytes=await readFile(join(root,'public/downloads/multicode-ai-runner.tgz'));
   const requests=[];
   const server=createServer(async(req,res)=>{
-    if(req.url==='/downloads/multicode-ai-runner.tgz'){
+    if(req.url.split('?')[0]==='/downloads/multicode-ai-runner.tgz'){
       res.writeHead(200,{'content-type':'application/octet-stream'}).end(packageBytes);return;
     }
     let data='';for await(const chunk of req)data+=chunk;
@@ -56,7 +56,7 @@ test(`downloaded runner via ${mode} pairs/starts from unrelated folders without 
     // provides a .cmd shim; also verify its presence before invoking the entry.
     const command=mode === 'npx' || process.platform==='win32'?process.execPath:'multicode-ai-runner';
     const extra=mode === 'npx'
-      ? [join(dirname(npmCli),'npx-cli.js'),'--yes',`--package=${origin}/downloads/multicode-ai-runner.tgz`,'multicode-ai-runner']
+      ? [join(dirname(npmCli),'npx-cli.js'),'--yes',`--package=${origin}/downloads/multicode-ai-runner.tgz?v=fingerprint`,'multicode-ai-runner']
       : process.platform==='win32'?[join(installed,'runner.cjs')]:[];
     if(mode === 'global' && process.platform==='win32')assert.ok((await readdir(prefix)).includes('multicode-ai-runner.cmd'));
     if(mode === 'npx') await assert.rejects(run('multicode-ai-runner',['--version'],{cwd:first,env}),{code:'ENOENT'},'no global runner is available');

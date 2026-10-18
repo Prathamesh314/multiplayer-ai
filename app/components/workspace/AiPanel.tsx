@@ -1,4 +1,5 @@
 "use client";
+import { UpdateComputerHelp } from "../ai/UpdateComputerHelp";
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import type { MentionFile } from "../../lib/ai/file-mentions";
@@ -1068,7 +1069,7 @@ export function AiPanel({
         />
       )}
       {ready && !computerAsks && enteredIsMine && (
-        <Note tone="warn">Your computer runs an older version of the Multicode AI app, so the agent can’t ask you before running a command or opening a link: those are refused instead. Update the desktop app (or the runner) and restart it.</Note>
+        <UpdateComputerHelp />
       )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
       {running && !entered ? (
