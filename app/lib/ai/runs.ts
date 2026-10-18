@@ -336,13 +336,14 @@ export async function setRunArchived(runId: string, archived: boolean): Promise<
 }
 
 /** The run list for a room, newest first. */
-export async function listRuns(sessionId: string): Promise<AgentRun[]> {
+/** A room's chats; with a viewer, chats in other members' private repositories are left out. */
+export async function listRuns(sessionId: string, viewerId?: string): Promise<AgentRun[]> {
   const rows = await query<RunRow>(
     `SELECT ${RUN_COLUMNS}
        FROM agent_runs r JOIN users u ON u.id = r.started_by
-      WHERE r.session_id = $1
+      WHERE r.session_id = $1 AND ($2::uuid IS NULL OR NOT agent_run_hidden(r.id, $2))
       ORDER BY r.created_at DESC`,
-    [sessionId],
+    [sessionId, viewerId ?? null],
   );
   return rows.map(toRun);
 }
@@ -363,7 +364,7 @@ export type ForkableRun = {
  * the caller may see, not just the one they're in. Room access is resolved by
  * the caller (see visibleRoomIds); this just fetches runs for the given ids.
  */
-export async function listRunsForRooms(sessionIds: string[], limit = 50): Promise<ForkableRun[]> {
+export async function listRunsForRooms(sessionIds: string[], limit = 50, viewerId?: string): Promise<ForkableRun[]> {
   if (sessionIds.length === 0) return [];
   const rows = await query<{
     id: string;
@@ -380,10 +381,10 @@ export async function listRunsForRooms(sessionIds: string[], limit = 50): Promis
        FROM agent_runs r
        JOIN sessions s ON s.id = r.session_id
        JOIN users u ON u.id = r.started_by
-      WHERE r.session_id = ANY($1)
+      WHERE r.session_id = ANY($1) AND ($3::uuid IS NULL OR NOT agent_run_hidden(r.id, $3))
       ORDER BY r.created_at DESC
       LIMIT $2`,
-    [sessionIds, limit],
+    [sessionIds, limit, viewerId ?? null],
   );
   return rows.map((row) => ({
     id: row.id,
@@ -462,4 +463,10 @@ export async function leaveRun(runId: string, userId: string): Promise<void> {
       WHERE run_id = $1 AND user_id = $2 AND left_at IS NULL`,
     [runId, userId],
   );
+}
+
+/** Whether a chat sits in a repository that is private to someone else. */
+export async function runHiddenFrom(runId: string, userId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) return false;
+  return (await queryOne<{ hidden: boolean }>(`SELECT agent_run_hidden($1, $2) AS hidden`, [runId, userId]))?.hidden === true;
 }

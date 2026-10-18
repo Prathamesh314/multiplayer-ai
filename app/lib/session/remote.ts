@@ -181,6 +181,22 @@ export async function seedSession(
 // Room repos (additional codebases imported into a room)
 // ---------------------------------------------------------------------------
 
+/** Make a repository you added private to you, or visible to the room again. */
+export async function changeRoomRepoVisibility(sessionId: string, repoId: string, visibility: "room" | "private"): Promise<RoomRepo> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos/${encodeURIComponent(repoId)}`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not change who sees this repository."));
+  return ((await response.json()) as { repo: RoomRepo }).repo;
+}
+
+/** Delete a repository from the room, with its chats. */
+export async function deleteRoomRepo(sessionId: string, repoId: string): Promise<{ chats: number }> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos/${encodeURIComponent(repoId)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await readError(response, "Could not delete this repository."));
+  return (await response.json()) as { chats: number };
+}
+
 export async function fetchRoomRepos(sessionId: string): Promise<RoomRepo[]> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/repos`, {
     cache: "no-store",

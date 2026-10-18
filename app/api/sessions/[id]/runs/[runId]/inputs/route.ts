@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { limitedJson } from "../../../../../../lib/http/body";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -10,6 +11,7 @@ async function handle(request: Request, context: RouteContext<"/api/sessions/[id
   const { id, runId } = await context.params;
   const result = await access(id), refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   if (!isUuid(runId)) return Response.json({ error:"Invalid chat ID." },{status:400});
   const run = await getRun(runId);
   if (!run || run.sessionId!==id) return Response.json({error:"Chat not found."},{status:404});

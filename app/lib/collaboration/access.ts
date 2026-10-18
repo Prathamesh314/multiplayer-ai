@@ -15,7 +15,7 @@ export async function chatAccess(tx: Pick<PoolClient,"query">, runId: string, ac
   if(lock) await tx.query('SELECT id FROM agent_runs WHERE id=$1 FOR NO KEY UPDATE',[runId]);
   const {rows:[row]} = await tx.query<ChatAccess>(`SELECT r.id,r.session_id AS "sessionId",r.repo_id AS "repoId",r.base_sha AS "baseSha",
     r.message_seq::text AS seq,r.status,r.driver_user_id AS "driverId",r.isolation,r.head_sha AS "chatHead",s.owner_id AS "ownerId",s.org_id AS "orgId",s.project_id AS "projectId",
-    room_access_role(s.id,$2) AS "roomRole",shared_chat_role(r.id,$2) AS "guestRole"
+    CASE WHEN agent_run_hidden(r.id,$2) THEN NULL ELSE room_access_role(s.id,$2) END AS "roomRole",shared_chat_role(r.id,$2) AS "guestRole"
     FROM agent_runs r JOIN sessions s ON s.id=r.session_id
     WHERE r.id=$1 AND chat_guest_eligible(r.id,$2)`, [runId,actor]);
   if (!row || (!row.roomRole && !row.guestRole)) throw new SharingError("This conversation is not available. Ask the host for access.");

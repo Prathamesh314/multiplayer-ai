@@ -236,6 +236,18 @@ try {
   assert.equal(await evaluate(`document.querySelector('.room-sidebar').getBoundingClientRect().width`),widthBefore+24);
   assert.equal(await evaluate(`Array.from(document.querySelector('.room-main').querySelectorAll('button')).some(button=>/assign task/i.test(button.textContent))`),false,"no duplicate assignment action in conversation");
   assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--vs-editor').trim()`),"#141210","shared warm workspace palette");
+  // A repository you added: make it private (only you see it and its chats), show it again, or delete it.
+  const repoAction=async(label,text)=>{await click(`button[aria-label="Options for ${label}"]`);await eventually(()=>evaluate(`[...document.querySelectorAll('[role=menu] [role=menuitem]')].some(b=>b.textContent.includes(${JSON.stringify(text)}))`),text);await evaluate(`[...document.querySelectorAll('[role=menu] [role=menuitem]')].find(b=>b.textContent.includes(${JSON.stringify(text)})).click()`);};
+  await repoAction("backend","Make private");
+  await eventually(()=>evaluate(`window.__model.requests.some(r=>r.method==="PATCH"&&r.path.endsWith("/repos/backendabcde")&&JSON.parse(r.body).visibility==="private") && !!document.querySelector('[title="Private: only you see it"]')`),"repository made private, with a lock");
+  await writeFile(join(tmpdir(),'multiplayer-private-repo.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await repoAction("backend","Show to the room");
+  await eventually(()=>evaluate(`!document.querySelector('[title="Private: only you see it"]')`),"visible to the room again");
+  await repoAction("backend","Delete repository");
+  await eventually(()=>evaluate(`document.querySelector("dialog[open]")?.innerText.includes("Delete “backend”?")`),"delete asks first");
+  await writeFile(join(tmpdir(),'multiplayer-delete-repo.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Delete repository").click()`);
+  await eventually(()=>evaluate(`!document.querySelector("dialog[open]") && !document.querySelector('button[aria-label="New chat in backend"]') && window.__model.requests.some(r=>r.method==="DELETE"&&r.path.endsWith("/repos/backendabcde"))`),"repository deleted");
   await click('button[aria-label="New chat in frontend"]');
   await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="Choose model"]')`),"ready composer");
   assert.equal(await evaluate(`document.querySelectorAll('.ai-composer select').length`),0,"composer uses arrow-free custom controls");

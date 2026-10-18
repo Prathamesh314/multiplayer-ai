@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
 import { getRun, joinRun, leaveRun } from "../../../../../../lib/ai/runs";
 
@@ -18,6 +19,7 @@ async function handlePOST(
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
 
   const run = await getRun(runId);
   if (!run || run.sessionId !== id) {
@@ -49,6 +51,7 @@ async function handleDELETE(
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
 
   await leaveRun(runId, result.user.id);
   return Response.json({ left: true });

@@ -11,7 +11,7 @@
 
 import { canWrite } from "../session/auth";
 import { barePath, isSessionId } from "../session/paths";
-import { getRoomRepo } from "../session/roomRepos";
+import { getRoomRepo, repoHiddenFrom } from "../session/roomRepos";
 import { getSession } from "../session/store";
 
 export type GitAccess = { bare: string };
@@ -38,7 +38,7 @@ export async function resolveGitAccess(
 
   // An imported room repo: authorize against the room that holds it.
   const roomRepo = await getRoomRepo(repoRef);
-  if (!roomRepo) return null;
+  if (!roomRepo || repoHiddenFrom(roomRepo, userId)) return null;
   const room = await getSession(roomRepo.sessionId, userId);
   if (!room?.myRole) return null;
   if (write && !canWrite(room.myRole)) return null;

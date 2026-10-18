@@ -69,6 +69,14 @@ export function installFixtures() {
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
     if (path === "/api/sessions/modelroomabc") return json(room);
     if (path.endsWith("/project-repositories")) return json({repositories});
+    // One repository: its creator makes it private or visible, or it is deleted.
+    const oneRepo=path.match(/\/repos\/([a-z0-9]+)$/);
+    if (oneRepo && (init.method==="PATCH"||init.method==="DELETE")) {
+      const repo=state.repos.find(item=>item.id===oneRepo[1]);
+      if(!repo)return new Response(JSON.stringify({error:"Repository not found in this room."}),{status:404,headers:{"content-type":"application/json"}});
+      if(init.method==="PATCH"){repo.visibility=JSON.parse(init.body).visibility;return json({repo});}
+      state.repos=state.repos.filter(item=>item!==repo);state.runs=state.runs.filter(run=>run.repoId!==repo.id);return json({deleted:true,chats:0});
+    }
     if (path.endsWith("/repos")) {
       if (init.method === "POST") {
         const body=JSON.parse(init.body);

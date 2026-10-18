@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../../lib/ai/runs";
 import { limitedJson } from "../../../../../../../lib/http/body";
 import { access, canWrite, denied, forbidden } from "../../../../../../../lib/session/auth";
 import { PermissionError, decidePermission } from "../../../../../../../lib/ai/permissions";
@@ -13,6 +14,7 @@ async function handlePOST(request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   if (!canWrite(result.role)) return forbidden("You have read-only access to this chat.");
   const body = (await limitedJson(request, 1024).catch(() => null)) as { decision?: unknown } | null;
   try {

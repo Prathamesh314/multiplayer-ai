@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
 import { limitedJson } from "../../../../../../lib/http/body";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -15,6 +16,7 @@ async function handleGET(_request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   const run = await getRun(runId).catch(() => null);
   if (!run || run.sessionId !== id) return Response.json({ error: "No such run." }, { status: 404 });
   return Response.json({ requests: await listPermissions(runId) } satisfies PermissionsResponse, { headers: { "cache-control": "no-store" } });
@@ -26,6 +28,7 @@ async function handlePUT(request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   if (!canWrite(result.role)) return forbidden("You have read-only access to this chat.");
   const body = (await limitedJson(request, 1024).catch(() => null)) as { mode?: unknown } | null;
   try {

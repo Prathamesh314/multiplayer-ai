@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ErrorNote, GhostButton, Modal } from "../ui/Modal";
 import type { AgentRun } from "../../lib/ai/runs";
 import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
@@ -22,7 +23,7 @@ type RoomSidebarProps = {
    * import. With more than one, a person's chats are sub-grouped per repo so
    * different codebases and their conversations stay visually separate.
    */
-  repos: { id: string; label: string }[];
+  repos: RepoOption[];
   enteredRunId: string | null;
   onEnter: (run: AgentRun) => void;
   onNewRun: (repoId: string | null) => void;
@@ -32,10 +33,89 @@ type RoomSidebarProps = {
   onFork: (run: AgentRun) => void;
   /** Reload the runs after one is renamed. */
   onRenamed: () => void;
+  /** Make a repository you added private to you (true) or visible to the room (false). */
+  onRepoVisibility?: (repoId: string, makePrivate: boolean) => Promise<void>;
+  /** Delete a repository from the room, with its chats. */
+  onDeleteRepo?: (repoId: string) => Promise<void>;
 };
+type RepoOption = { id: string; label: string; private?: boolean; canChangeVisibility?: boolean; canDelete?: boolean };
+
+function LockIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}><rect x="3.25" y="7" width="9.5" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" /><path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" /></svg>;
+}
+
+/** The "…" menu of one repository: who sees it, and deleting it. */
+function RepoMenu({ repo, chats, onVisibility, onDelete }: {
+  repo: RepoOption; chats: number;
+  onVisibility?: (repoId: string, makePrivate: boolean) => Promise<void>;
+  onDelete?: (repoId: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", key); };
+  }, [open]);
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true); setError(null);
+    try { await work(); setConfirming(false); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  };
+  const item = "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-vs-fg transition hover:bg-vs-hover";
+  return (
+    <div ref={root} className="relative">
+      <button type="button" aria-label={`Options for ${repo.label}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent">
+        <span aria-hidden className="text-base leading-none">⋯</span>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-30 mt-1 w-60 rounded-xl border border-vs-border bg-vs-panel p-1 shadow-[0_14px_40px_rgb(0_0_0_/_0.45)]">
+          {repo.canChangeVisibility && onVisibility && (
+            <button type="button" role="menuitem" disabled={busy} className={item}
+              onClick={() => { setOpen(false); void run(() => onVisibility(repo.id, !repo.private)); }}>
+              <LockIcon className="h-3.5 w-3.5 text-vs-muted" />
+              <span className="min-w-0 flex-1">
+                <span className="block">{repo.private ? "Show to the room" : "Make private"}</span>
+                <span className="block text-[11px] text-vs-muted">{repo.private ? "Everyone in the room sees it and its chats" : "Only you see it, its files and its chats"}</span>
+              </span>
+            </button>
+          )}
+          {repo.canDelete && onDelete && (
+            <button type="button" role="menuitem" className={`${item} hover:text-vs-danger`} onClick={() => { setOpen(false); setError(null); setConfirming(true); }}>
+              <span aria-hidden className="w-3.5 text-center">✕</span>Delete repository…
+            </button>
+          )}
+        </div>
+      )}
+      {error && !confirming && <p role="alert" className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-vs-danger/30 bg-vs-panel p-2 text-[11px] leading-4 text-vs-danger">{error}</p>}
+      {confirming && onDelete && (
+        <Modal title={`Delete “${repo.label}”?`} description="Removes it from this room for everyone. This can’t be undone." onClose={() => !busy && setConfirming(false)}
+          footer={<><GhostButton disabled={busy} onClick={() => setConfirming(false)}>Cancel</GhostButton>
+            <button type="button" disabled={busy} onClick={() => void run(() => onDelete(repo.id))}
+              className="inline-flex min-h-8 items-center justify-center rounded-lg bg-vs-danger px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
+              {busy ? "Deleting…" : "Delete repository"}
+            </button></>}>
+          <p className="text-sm leading-6 text-vs-muted">
+            {chats ? `Its ${chats} chat${chats === 1 ? "" : "s"} will be deleted too. ` : "It has no chats. "}
+            Its files in this room go as well. A repository shared from the project stays in the project.
+          </p>
+          {error && <ErrorNote>{error}</ErrorNote>}
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 /** Repository-first navigation, backed by the room's live runs. */
-export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repos, enteredRunId, onEnter, onNewRun, onFork, onRenamed, onAddRepository, importing, canAdd = true }: RoomSidebarProps) {
+export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repos, enteredRunId, onEnter, onNewRun, onFork, onRenamed, onAddRepository, importing, canAdd = true, onRepoVisibility, onDeleteRepo }: RoomSidebarProps) {
   const myId = myUserId ?? members.find(member => member.isSelf)?.userId ?? null;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -207,7 +287,7 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
     );
   };
 
-  const groups = [...repos, ...Array.from(new Set(runs.map(run => run.repoId ?? "")))
+  const groups: RepoOption[] = [...repos, ...Array.from(new Set(runs.map(run => run.repoId ?? "")))
     .filter(id => !repos.some(repo => repo.id === id)).map(id => ({ id, label: "Unavailable repository" }))];
   return (
     <aside aria-label="Repositories and chats" className="flex h-full min-h-0 min-w-0 flex-col bg-vs-panel">
@@ -226,8 +306,13 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
             <div className="flex min-h-7 items-center gap-1 rounded-lg hover:bg-vs-hover">
               <button type="button" aria-expanded={open} onClick={() => setCollapsed(value => toggle(value, repo.id))} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12.5px] font-medium leading-[20px] text-vs-muted hover:text-vs-fg">
                 <ChevronIcon className={`h-3 w-3 shrink-0 ${open ? "rotate-90" : ""}`} />
-                <span className="min-w-0 flex-1 truncate">{repo.label}</span><span className="text-[11px] font-normal tabular-nums">{active.length}</span>
+                <span className="min-w-0 flex-1 truncate">{repo.label}</span>
+                {repo.private && <span title="Private: only you see it" className="flex shrink-0 items-center"><LockIcon className="h-3 w-3 text-vs-muted" /><span className="sr-only">Private</span></span>}
+                <span className="text-[11px] font-normal tabular-nums">{active.length}</span>
               </button>
+              {(repo.canChangeVisibility || repo.canDelete) && (
+                <RepoMenu repo={repo} chats={runs.filter(run => (run.repoId ?? "") === repo.id).length} onVisibility={onRepoVisibility} onDelete={onDeleteRepo} />
+              )}
               <button type="button" aria-label={`New chat in ${repo.label}`} title={`New chat in ${repo.label}`} disabled={!canAdd || importing || !repos.some(item => item.id === repo.id)} onClick={() => onNewRun(repo.id || null)} className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg focus-visible:outline-2 focus-visible:outline-vs-accent disabled:opacity-40"><PlusIcon className="h-4 w-4" /></button>
             </div>
             {open && <div className="ml-2 mt-1">

@@ -35,6 +35,8 @@ export async function recallMemories(input: { roomIds: string[]; userId: string;
       WHERE m.room_id=ANY($1::text[]) AND room_access_role(m.room_id,$2) IS NOT NULL
         AND m.org_id IS NOT DISTINCT FROM s.org_id AND m.project_id IS NOT DISTINCT FROM s.project_id
         AND memory_source_live(m)
+        AND NOT room_repo_hidden(m.repo_ref,$2)
+        AND NOT EXISTS (SELECT 1 FROM agent_turns ht WHERE ht.id=m.source_turn_id AND agent_run_hidden(ht.run_id,$2))
         AND (m.parent_id IS NULL OR EXISTS (SELECT 1 FROM memory_records p
           WHERE p.id=m.parent_id AND p.status='approved' AND memory_source_live(p)))
     ), matches AS (

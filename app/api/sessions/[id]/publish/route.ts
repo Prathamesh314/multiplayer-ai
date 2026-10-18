@@ -22,7 +22,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
   if (!projectId) return Response.json({ error: "This room has no project to share with." }, { status: 400 });
   const role = await projectRoleOf(projectId, result.user.id);
   if (!role || role === "viewer") return forbidden("Publishing needs edit access to the project.");
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   let outcome;
   try {

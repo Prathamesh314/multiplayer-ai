@@ -29,7 +29,7 @@ async function handlePOST(request: Request, context: Context) {
   if (Number(request.headers.get("content-length") ?? 0) > MAX_ADD_REQUEST_BYTES) {
     return Response.json({ error: "Upload at most 9 MB at a time." }, { status: 413 });
   }
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const form = await request.formData().catch(() => null);
   let paths: unknown = null;

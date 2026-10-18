@@ -274,6 +274,10 @@ Open the room’s **Room privacy & members** settings from the project sidebar t
     slug: "repositories", category: "Your workspace", title: "Import & share repositories",
     description: "Bring in a folder, start without files, or use a repository already shared with your project.",
     sections: [
+      { id: "private-delete", title: "Make a repository private, or delete it", body: `Open the **⋯** menu beside a repository in the room's sidebar.
+
+- **Make private** (for a repository you added): only you see it, its files, its chats and their live output. Everyone else in the room, including the room's owner, sees nothing of it, and their agents can't recall it. **Show to the room** makes it visible again. A repository can only become private while nobody else has chats in it.
+- **Delete repository…** (for one you added, or as the room's owner while it is visible to the room): removes it from the room together with its chats, after you confirm. A repository shared from the project stays in the project. A chat that is working or being handed over must finish first.` },
       { id: "import", title: "Import a folder", body: `1. Open your room and select the folder-plus **Add repository** control.
 2. Choose **Import folder** and select the folder on your computer.
 3. Allow the upload to finish. The repository appears in the sidebar and its files become available in **All files**.

@@ -19,7 +19,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
   if (refusal || !result) return refusal!;
   if (!canWrite(result.role)) return forbidden("Syncing needs edit access to this room.");
   if (!result.session.projectId || !await projectRoleOf(result.session.projectId, result.user.id)) return forbidden("Syncing needs project membership.");
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const repositoryId = await projectRepositoryForRoom(id, repo.repoId);
   if (!repositoryId) return Response.json({ error: "Share this repository with the project before syncing." }, { status: 400 });
