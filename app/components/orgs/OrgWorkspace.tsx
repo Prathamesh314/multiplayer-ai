@@ -1,4 +1,5 @@
 "use client";
+import { OrgSwitcher } from "./OrgSwitcher";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { useRouter } from "next/navigation";
@@ -58,17 +59,11 @@ import { DevicesDialog } from "../ai/DevicesDialog";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { useComputerConnection, type ComputerConnection } from "../ai/useComputerConnection";
 import { TaskPanel } from "../tasks/TaskPanel";
-import { ComposerPicker } from "../workspace/ComposerPicker";
 import chatStyles from "../chat/chat.module.css";
 
 // Minimal settings gear icon
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  );
+function GridIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.4" /><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="9" width="4.5" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.4" /></svg>;
 }
 
 type Dialog =
@@ -138,25 +133,43 @@ export function OrgWorkspace() {
     setActiveSlug(slug);
   }
 
+  const manage = activeOrg && canManageOrg(activeOrg.myRole) ? activeOrg : null;
+  // A switch picked in the switcher rebuilds the view; its new switcher takes focus back.
+  const refocusSwitcher = useRef(false);
+  const takeSwitcherFocus = useCallback(() => { const take = refocusSwitcher.current; refocusSwitcher.current = false; return take; }, []);
+  const switcher = (
+    <OrgSwitcher
+      orgs={orgs}
+      activeSlug={activeSlug}
+      onSelect={(slug, fromMenu) => { refocusSwitcher.current = !!fromMenu && slug !== activeSlug; setActiveSlug(slug); }}
+      takeFocus={takeSwitcherFocus}
+      onCreate={() => setDialog({ kind: "createOrg" })}
+      onJoin={() => setDialog({ kind: "joinOrg" })}
+      onSettings={manage ? () => setDialog({ kind: "orgSettings", org: manage }) : undefined}
+      onAdmin={manage ? () => setDialog({ kind: "orgAdmin", org: manage }) : undefined}
+      onInvite={manage ? () => setDialog({ kind: "invite", org: manage }) : undefined}
+    />
+  );
+  const userMenu = (
+    <UserMenu
+      me={me}
+      onOpenProviders={() => setDialog({ kind: "connectAi" })}
+      onOpenDevices={() => setDialog({ kind: "devices" })}
+      onOpenTools={() => setDialog({ kind: "agentTools" })}
+      onSignOut={async () => {
+        try { await logout(); openSignIn(); }
+        catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
+      }}
+    />
+  );
+  const noOrgNav = () => (
+    <p className="px-4 py-4 text-xs leading-5 text-vs-muted">{orgs === null ? "Loading organizations…" : "Create an organization or join your team to see its projects here."}</p>
+  );
+
   return (
     <div className={`${chatStyles.workspace} flex h-dvh overflow-hidden bg-vs-editor text-vs-fg`}>
-      <OrgRail
-        orgs={orgs}
-        me={me}
-        activeSlug={activeSlug}
-        onSelect={setActiveSlug}
-        onCreate={() => setDialog({ kind: "createOrg" })}
-        onJoin={() => setDialog({ kind: "joinOrg" })}
-        onOpenProviders={() => setDialog({ kind: "connectAi" })}
-        onOpenDevices={() => setDialog({ kind: "devices" })}
-        onOpenTools={() => setDialog({ kind: "agentTools" })}
-        onSignOut={async () => {
-          try { await logout(); openSignIn(); }
-          catch { notify({ tone: "error", title: "Couldn’t sign out", description: "Please check your connection and try again." }); }
-        }}
-      />
-
       {loadError ? (
+        <WorkspaceShell title="Workspace" switcher={switcher} userMenu={userMenu} nav={noOrgNav}>
         <main className="grid min-w-0 flex-1 place-items-center p-6">
           <div className="max-w-md space-y-4">
             <h1 className="font-display text-2xl font-semibold">Could not load your workspace</h1>
@@ -164,8 +177,11 @@ export function OrgWorkspace() {
             <GhostButton onClick={() => { setLoadError(null); setLoadVersion((current) => current + 1); }}>Try again</GhostButton>
           </div>
         </main>
+        </WorkspaceShell>
       ) : activeOrg ? (
         <OrgPanel
+          switcher={switcher}
+          userMenu={userMenu}
           computerConnection={computerConnection}
           onConnectAi={() => setDialog({ kind: "connectAi" })}
           onConnectComputer={() => setDialog({ kind: "devices" })}
@@ -176,8 +192,6 @@ export function OrgWorkspace() {
           invitations={invitations.filter((i) => i.orgSlug === activeOrg.slug)}
           onAcceptInvite={onAcceptInvite}
           onInvite={() => setDialog({ kind: "invite", org: activeOrg })}
-          onOpenAdmin={() => setDialog({ kind: "orgAdmin", org: activeOrg })}
-          onOpenSettings={() => setDialog({ kind: "orgSettings", org: activeOrg })}
           onNewProject={() => setDialog({ kind: "createProject", org: activeOrg })}
           onManageMembers={(project) =>
             setDialog({ kind: "projectMembers", org: activeOrg, project })
@@ -188,6 +202,7 @@ export function OrgWorkspace() {
           onOpenRoom={(id) => router.push(`/s/${id}`)}
         />
       ) : (
+        <WorkspaceShell title={orgs === null ? "Workspace" : "Get started"} switcher={switcher} userMenu={userMenu} nav={noOrgNav}>
         <div className="vs-scroll min-w-0 flex-1 overflow-y-auto p-5">
           {me && <ComputerConnectionNotice connection={computerConnection} onConnect={() => setDialog({ kind: "devices" })} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
           {me && <TaskPanel key={me.id} userId={me.id} />}
@@ -198,6 +213,7 @@ export function OrgWorkspace() {
             onJoin={() => setDialog({ kind: "joinOrg" })}
           />
         </div>
+        </WorkspaceShell>
       )}
 
       {dialog?.kind === "createOrg" && (
@@ -284,27 +300,19 @@ export function OrgWorkspace() {
 }
 
 // ---------------------------------------------------------------------------
-// Far-left rail
+// The sidebar: organisation switcher on top, navigation, signed-in person below
 // ---------------------------------------------------------------------------
 
-function OrgRail({
-  orgs,
+const menuItem = "flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-left text-[13px] text-vs-fg transition hover:bg-vs-hover";
+
+function UserMenu({
   me,
-  activeSlug,
-  onSelect,
-  onCreate,
-  onJoin,
   onOpenProviders,
   onOpenDevices,
   onOpenTools,
   onSignOut,
 }: {
-  orgs: Org[] | null;
   me: CurrentUser | null;
-  activeSlug: string | null;
-  onSelect: (slug: string) => void;
-  onCreate: () => void;
-  onJoin: () => void;
   onOpenProviders: () => void;
   onOpenDevices: () => void;
   onOpenTools: () => void;
@@ -319,7 +327,8 @@ function OrgRail({
       if (!profileRef.current?.contains(event.target as Node)) setMenuOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
+      // Handled here, so the phone drawer around it stays open.
+      if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); }
     }
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -329,163 +338,102 @@ function OrgRail({
     };
   }, [menuOpen]);
 
+  const run = (action: () => void) => () => { setMenuOpen(false); action(); };
   return (
-    <nav
-      aria-label="Organisations"
-      className={`${chatStyles.workspaceRail} flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-vs-border bg-vs-chrome py-3`}
-    >
-      <div className={chatStyles.organizationHeading}>
-        <ComposerPicker label="Your organizations" triggerLabel="Organizations" value={activeSlug ?? ""}
-          options={(orgs ?? []).map(org => ({ id: org.slug, label: org.name, description: org.slug === activeSlug ? "Current organization" : undefined }))}
-          onChange={onSelect} icon={<SearchIcon className="h-4 w-4 shrink-0" />} searchable searchLabel="Search organizations"
-          placement="auto" disabled={orgs === null} className={chatStyles.organizationSearch}
-          emptyLabel="You haven’t joined any organizations yet." noResultsLabel="No organizations found. Try another name."
-          footer={<p className="px-2 py-1 text-xs text-vs-muted">Organizations you belong to. Choose one to open its projects.</p>} />
-        <span className={chatStyles.organizationCompactLabel}>Orgs</span>
+    <div ref={profileRef} className="relative" aria-label="Your account">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          title={me ? me.displayName : "Profile"}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-1.5 text-left transition hover:bg-vs-hover aria-expanded:bg-vs-hover"
+        >
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-vs-active text-[11px] font-semibold uppercase text-vs-accent" aria-hidden="true">{me ? initials(me.displayName) : "?"}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold leading-5 text-vs-fg">{me?.displayName ?? "Signed out"}</span>
+            {me && <span className="block truncate text-[11px] leading-4 text-vs-muted">@{me.handle}</span>}
+          </span>
+        </button>
+        <button type="button" className={chatStyles.iconButton} aria-label="AI providers" title="AI providers" onClick={onOpenProviders}><SparkleIcon /></button>
+        <button type="button" className={chatStyles.iconButton} aria-label="Your computers" title="Your computers" onClick={onOpenDevices}><TerminalIcon /></button>
       </div>
 
-      <div className="vs-scroll flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto px-2">
-        {orgs === null && <p role="status" className="hidden px-2 py-3 text-xs text-vs-muted lg:block">Loading organizations…</p>}
-        {orgs?.length === 0 && <p className="hidden px-2 py-3 text-xs leading-5 text-vs-muted lg:block">No organizations yet. Create one or join your team.</p>}
-        {(orgs ?? []).map((org) => {
-          const active = org.slug === activeSlug;
-          return (
-            <button
-              key={org.slug}
-              type="button"
-              onClick={() => onSelect(org.slug)}
-              title={org.name}
-              aria-label={`${org.name} organization`}
-              aria-current={active ? "page" : undefined}
-              className={chatStyles.organizationRow}
-            >
-              <span className={chatStyles.organizationAvatar} aria-hidden="true">
-                {org.image ? (
-                  <img src={org.image} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  initials(org.name)
-                )}
-              </span>
-              <span className={chatStyles.organizationName}>{org.name}</span>
-            </button>
-          );
-        })}
-
-        <div className="mt-2 space-y-1 border-t border-vs-border pt-2">
-          <button
-            type="button"
-            onClick={onCreate}
-            title="Create an organisation"
-            aria-label="Create organization"
-            className={chatStyles.organizationAction}
-          >
-            <PlusIcon className="h-5 w-5" />
-            <span className={chatStyles.organizationName}>New organization</span>
-          </button>
-          <button
-            type="button"
-            onClick={onJoin}
-            title="Join an organisation"
-            aria-label="Join organization"
-            className={chatStyles.organizationAction}
-          >
-            <UserPlusIcon className="h-5 w-5" />
-            <span className={chatStyles.organizationName}>Join organization</span>
-          </button>
-        </div>
-      </div>
-
-      <div ref={profileRef} className="relative w-full">
-        <div className={chatStyles.profileBar}>
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            title={me ? me.displayName : "Profile"}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            className={chatStyles.profileTrigger}
-          >
-            <span className={chatStyles.profileAvatar} aria-hidden="true">{me ? initials(me.displayName) : "?"}</span>
-            <span className={chatStyles.profileName}>
-              <span className={chatStyles.profileDisplayName}>{me?.displayName ?? "Signed out"}</span>
-              {me && <span className={chatStyles.profileHandle}>@{me.handle}</span>}
-            </span>
-          </button>
-          <button type="button" className={chatStyles.iconButton} aria-label="AI providers" title="AI providers" onClick={onOpenProviders}><SparkleIcon /></button>
-          <button type="button" className={chatStyles.iconButton} aria-label="Your computers" title="Your computers" onClick={onOpenDevices}><TerminalIcon /></button>
-        </div>
-
-        {menuOpen && (
-          <div
-            role="menu"
-            className="absolute bottom-0 left-full z-50 ml-2 w-60 max-w-[calc(100vw-72px)] overflow-hidden rounded-lg border border-vs-border bg-vs-panel shadow-lg"
-          >
-            {me?.email && (
-              <div className="px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wider text-vs-muted">Email</p>
-                <p className="truncate text-[13px] text-vs-fg">{me.email}</p>
-              </div>
-            )}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenProviders();
-              }}
-              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
-            >
-              <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" />
-              AI providers
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenDevices();
-              }}
-              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
-            >
-              <TerminalIcon className="h-3.5 w-3.5 text-vs-muted" />
-              Your computers
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenTools();
-              }}
-              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
-            >
-              <LinkIcon className="h-3.5 w-3.5 text-vs-muted" />
-              Your AI tools
-            </button>
-            <a
-              href="/account"
-              role="menuitem"
-              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover"
-            >
-              <ShieldIcon className="h-3.5 w-3.5 text-vs-muted" />
-              Account settings
-            </a>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onSignOut();
-              }}
-              className="flex w-full items-center gap-2 whitespace-nowrap border-t border-vs-border px-3 py-2.5 text-left text-[14px] text-vs-fg transition hover:bg-vs-hover hover:text-vs-danger"
-            >
-              <CloseIcon className="h-3.5 w-3.5" />
-              Sign out
-            </button>
+      {menuOpen && (
+        <div role="menu" className="absolute bottom-full left-0 z-50 mb-1.5 w-full min-w-[240px] overflow-hidden rounded-xl border border-vs-border bg-vs-panel p-1.5 shadow-[0_18px_48px_rgb(0_0_0_/_0.45)]">
+          {me?.email && (
+            <div className="px-2.5 pb-2 pt-1">
+              <p className="truncate text-[13px] font-medium text-vs-fg">{me.displayName}</p>
+              <p className="truncate text-[12px] text-vs-muted">{me.email}</p>
+            </div>
+          )}
+          <div className="border-t border-vs-border pt-1">
+            <button type="button" role="menuitem" onClick={run(onOpenProviders)} className={menuItem}><SparkleIcon className="h-4 w-4 text-vs-accent" />AI providers</button>
+            <button type="button" role="menuitem" onClick={run(onOpenDevices)} className={menuItem}><TerminalIcon className="h-4 w-4 text-vs-muted" />Your computers</button>
+            <button type="button" role="menuitem" onClick={run(onOpenTools)} className={menuItem}><LinkIcon className="h-4 w-4 text-vs-muted" />Your AI tools</button>
+            <a href="/account" role="menuitem" className={menuItem}><ShieldIcon className="h-4 w-4 text-vs-muted" />Account settings</a>
           </div>
-        )}
+          <div className="mt-1 border-t border-vs-border pt-1">
+            <button type="button" role="menuitem" onClick={run(onSignOut)} className={`${menuItem} hover:text-vs-danger`}><CloseIcon className="h-4 w-4" />Sign out</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}><path d="M2.75 4.25h10.5M2.75 8h10.5M2.75 11.75h10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+}
+
+/**
+ * One sidebar for the workspace: the organisation switcher, navigation, and
+ * the signed-in person. On phones it is a drawer opened from a slim top bar.
+ */
+function WorkspaceShell({
+  title,
+  switcher,
+  userMenu,
+  nav,
+  children,
+}: {
+  title: string;
+  switcher: React.ReactNode;
+  userMenu: React.ReactNode;
+  nav: (closeNavigation: () => void) => React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useEffect(() => {
+    if (!open) return;
+    // On window, after menus inside the drawer have had their own Escape.
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-vs-border bg-vs-chrome px-2 lg:hidden">
+        <button type="button" aria-label="Open navigation" aria-expanded={open} aria-controls="workspace-navigation" onClick={() => setOpen(true)}
+          className="grid h-9 w-9 place-items-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">
+          <MenuIcon className="h-5 w-5" />
+        </button>
+        <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
       </div>
-    </nav>
+      {open && <button type="button" aria-label="Close navigation" tabIndex={-1} onClick={close} className="fixed inset-0 z-30 bg-black/55 backdrop-blur-[1px] lg:hidden" />}
+      <aside
+        id="workspace-navigation"
+        aria-label="Workspace navigation"
+        className={`${chatStyles.workspaceNavigation} ${open ? "fixed inset-y-0 left-0 z-40 flex w-[min(300px,88vw)] shadow-[20px_0_60px_rgb(0_0_0_/_0.5)]" : "hidden"} flex-col border-r border-vs-border lg:static lg:z-auto lg:flex lg:w-[280px] lg:shadow-none`}
+      >
+        <div className="shrink-0 border-b border-vs-border p-2">{switcher}</div>
+        <div className="vs-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">{nav(close)}</div>
+        <div className="shrink-0 border-t border-vs-border p-2">{userMenu}</div>
+      </aside>
+      {children}
+    </div>
   );
 }
 
@@ -494,6 +442,8 @@ function OrgRail({
 // ---------------------------------------------------------------------------
 
 function OrgPanel({
+  switcher,
+  userMenu,
   computerConnection,
   onConnectAi,
   onConnectComputer,
@@ -503,13 +453,13 @@ function OrgPanel({
   invitations,
   onAcceptInvite,
   onInvite,
-  onOpenAdmin,
-  onOpenSettings,
   onNewProject,
   onManageMembers,
   onRoomSettings,
   onOpenRoom,
 }: {
+  switcher: React.ReactNode;
+  userMenu: React.ReactNode;
   computerConnection: ComputerConnection;
   onConnectAi: () => void;
   onConnectComputer: () => void;
@@ -519,8 +469,6 @@ function OrgPanel({
   invitations: PendingInvitation[];
   onAcceptInvite: (id: string) => void;
   onInvite: () => void;
-  onOpenAdmin: () => void;
-  onOpenSettings: () => void;
   onNewProject: () => void;
   onManageMembers: (project: Project) => void;
   onRoomSettings: (project: Project, room: Session) => void;
@@ -530,7 +478,6 @@ function OrgPanel({
   const [projectError, setProjectError] = useState<string | null>(null);
   const [projectVersion, setProjectVersion] = useState(0);
   const [roomSearch, setRoomSearch] = useState("");
-  const [showNavigation, setShowNavigation] = useState(false);
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [connectionProject, setConnectionProject] = useState<string | null>(null);
@@ -562,148 +509,94 @@ function OrgPanel({
     };
   }, [org.slug, projectVersion, refreshVersion]);
 
-  return (
-    <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
-      <div className="flex shrink-0 items-center justify-between border-b border-vs-border px-3 py-2 lg:hidden">
-        <span className="truncate text-xs font-semibold">{org.name}</span>
-        <button type="button" aria-expanded={showNavigation} aria-controls="workspace-navigation" onClick={() => setShowNavigation((current) => !current)} className="shrink-0 rounded-lg border border-vs-border px-2.5 py-1 text-xs">{showNavigation ? "Close navigation" : "Projects & connections"}</button>
-      </div>
-      <aside id="workspace-navigation" className={`${chatStyles.workspaceNavigation} ${showNavigation ? "flex" : "hidden"} max-h-[50dvh] w-full shrink-0 flex-col border-b border-vs-border bg-vs-panel lg:flex lg:max-h-none lg:w-[296px] lg:border-b-0 lg:border-r`}>
-        <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-vs-border px-3">
-          <div className="flex min-w-0 items-center gap-2">
-            {org.image && (
-              <img src={org.image} alt={org.name} className="h-5 w-5 rounded object-cover" />
-            )}
-            <span className="min-w-0 truncate text-[13px] font-semibold">{org.name}</span>
-          </div>
-          {canManageOrg(org.myRole) && (
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                title="Organisation settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-              >
-                <SettingsIcon className="h-[18px] w-[18px]" />
-              </button>
-              <button
-                type="button"
-                onClick={onOpenAdmin}
-                title="Organisation admin"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-              >
-                <ShieldIcon className="h-[18px] w-[18px]" />
-              </button>
-              <button
-                type="button"
-                onClick={onInvite}
-                title="Invite people"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-              >
-                <UserPlusIcon className="h-[18px] w-[18px]" />
-              </button>
-            </div>
-          )}
-        </header>
-
-        <UsageBadge orgSlug={org.slug} />
-        <button type="button" onClick={() => { setConnectionsOpen(false); setShowNavigation(false); }} aria-current={!connectionsOpen ? "page" : undefined} className={`mx-3 mt-3 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${!connectionsOpen ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover"}`}>
-          <GitBranchIcon className="h-3.5 w-3.5" /> Project overview
+  const navItem = (current: boolean) => `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition ${current ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:bg-vs-hover hover:text-vs-fg"}`;
+  const nav = (closeNavigation: () => void) => (
+    <>
+      <nav aria-label="Workspace sections" className="space-y-0.5 px-2 pt-2">
+        <button type="button" onClick={() => { setConnectionsOpen(false); closeNavigation(); }} aria-current={!connectionsOpen ? "page" : undefined} className={navItem(!connectionsOpen)}>
+          <GridIcon className="h-4 w-4 shrink-0" /> Project overview
         </button>
-        <button type="button" onClick={()=>{setConnectionsOpen(true);setShowNavigation(false);}} aria-current={connectionsOpen?'page':undefined} className={`mx-3 mt-1 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${connectionsOpen?'bg-vs-active text-vs-fg':'text-vs-muted hover:bg-vs-hover'}`}><UsersIcon className="h-3.5 w-3.5"/> Connections <span className="ml-auto text-[11px] text-vs-muted">Slack · Discord</span></button>
-        <Link href="/shared" className="mx-3 mt-1 rounded-lg px-2.5 py-2 text-sm text-vs-muted hover:bg-vs-hover">Shared with me</Link>
+        <button type="button" onClick={() => { setConnectionsOpen(true); closeNavigation(); }} aria-current={connectionsOpen ? "page" : undefined} className={navItem(connectionsOpen)}>
+          <LinkIcon className="h-4 w-4 shrink-0" /> Connections <span className="ml-auto text-[11px] font-normal text-vs-muted">Slack · Discord · AI</span>
+        </button>
+        <Link href="/shared" className={navItem(false)}>
+          <UsersIcon className="h-4 w-4 shrink-0" /> Shared with me
+        </Link>
+      </nav>
+      <UsageBadge orgSlug={org.slug} />
 
-        {invitations.length > 0 && (
-          <div className="border-b border-vs-border p-2">
-            {invitations.map((invite) => (
-              <div
-                key={invite.id}
-                className="rounded-lg border border-vs-accent/40 bg-vs-accent/10 p-2 text-xs"
-              >
-                <p className="leading-4">
-                  {invite.invitedByName} invited you as {invite.role}.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onAcceptInvite(invite.id)}
-                  className="mt-1.5 rounded bg-vs-accent px-2 py-1 text-[11px] font-medium text-vs-accent-fg"
-                >
-                  Accept
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="vs-scroll min-h-0 flex-1 overflow-y-auto pb-3">
-          <div className="flex items-center justify-between px-4 pb-1 pt-3">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">
-              Projects
-            </h2>
-            {canManageOrg(org.myRole) && (
-              <button
-                type="button"
-                onClick={onNewProject}
-                title="New project"
-                aria-label="New project"
-                className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="px-4 pb-2 pt-1">
-            <div className="flex items-center gap-2 rounded-lg border border-vs-border bg-vs-editor px-2.5 focus-within:border-vs-accent">
-              <SearchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-              <input
-                type="search"
-                aria-label="Search rooms"
-                placeholder="Search rooms…"
-                value={roomSearch}
-                onChange={(event) => setRoomSearch(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Escape") setRoomSearch(""); }}
-                className="min-w-0 flex-1 bg-transparent py-1.5 text-xs text-vs-fg outline-none placeholder:text-vs-muted [&::-webkit-search-cancel-button]:hidden"
-              />
-              {roomSearch && <button type="button" aria-label="Clear room search" onClick={() => setRoomSearch("")} className="rounded p-0.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+      {invitations.length > 0 && (
+        <div className="space-y-2 px-3 pt-2">
+          {invitations.map((invite) => (
+            <div key={invite.id} className="rounded-xl border border-vs-accent/40 bg-vs-accent/10 p-2.5 text-xs">
+              <p className="leading-4">{invite.invitedByName} invited you as {invite.role}.</p>
+              <button type="button" onClick={() => onAcceptInvite(invite.id)} className="mt-1.5 rounded-md bg-vs-accent px-2 py-1 text-[11px] font-medium text-vs-accent-fg">Accept</button>
             </div>
-          </div>
-
-          <div className="px-2">
-            {projectError ? (
-              <p role="alert" className="px-2 py-2 text-xs text-vs-danger">Could not load projects. Retry from the project overview.</p>
-            ) : projects === null ? (
-              <p className="flex items-center gap-2 px-2 py-2 text-xs text-vs-muted">
-                <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
-              </p>
-            ) : projects.length === 0 ? (
-              <p className="px-2 py-2 text-xs leading-4 text-vs-muted">
-                No projects yet.{" "}
-                {canManageOrg(org.myRole)
-                  ? "Create a project, then add your code in a room."
-                  : "Ask an admin to add you to one."}
-              </p>
-            ) : (
-              <ul className="space-y-0.5">
-                {projects.map((project) => (
-                  <ProjectRow
-                    key={project.id}
-                    org={org}
-                    project={project}
-                    currentUserId={me?.id ?? null}
-                    roomSearch={roomSearch}
-                    onManageMembers={() => onManageMembers(project)}
-                    onRoomSettings={(room) => onRoomSettings(project, room)}
-                    onOpenRoom={onOpenRoom}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-
+          ))}
         </div>
-      </aside>
+      )}
 
+      <div className="pb-3">
+        <div className="flex items-center justify-between px-4 pb-1 pt-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-vs-muted">Projects</h2>
+          {canManageOrg(org.myRole) && (
+            <button type="button" onClick={onNewProject} title="New project" aria-label="New project" className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">
+              <PlusIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="px-3 pb-2 pt-1">
+          <div className="flex items-center gap-2 rounded-lg border border-vs-border bg-vs-editor px-2.5 focus-within:border-vs-accent">
+            <SearchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
+            <input
+              type="search"
+              aria-label="Search rooms"
+              placeholder="Search rooms…"
+              value={roomSearch}
+              onChange={(event) => setRoomSearch(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Escape") setRoomSearch(""); }}
+              className="min-w-0 flex-1 bg-transparent py-1.5 text-xs text-vs-fg outline-none placeholder:text-vs-muted [&::-webkit-search-cancel-button]:hidden"
+            />
+            {roomSearch && <button type="button" aria-label="Clear room search" onClick={() => setRoomSearch("")} className="rounded p-0.5 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3.5 w-3.5" /></button>}
+          </div>
+        </div>
+
+        <div className="px-2">
+          {projectError ? (
+            <p role="alert" className="px-2 py-2 text-xs text-vs-danger">Could not load projects. Retry from the project overview.</p>
+          ) : projects === null ? (
+            <p className="flex items-center gap-2 px-2 py-2 text-xs text-vs-muted">
+              <SpinnerIcon className="h-3.5 w-3.5" /> Loading…
+            </p>
+          ) : projects.length === 0 ? (
+            <p className="px-2 py-2 text-xs leading-4 text-vs-muted">
+              No projects yet.{" "}
+              {canManageOrg(org.myRole) ? "Create a project, then add your code in a room." : "Ask an admin to add you to one."}
+            </p>
+          ) : (
+            <ul className="space-y-0.5">
+              {projects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  org={org}
+                  project={project}
+                  currentUserId={me?.id ?? null}
+                  roomSearch={roomSearch}
+                  onManageMembers={() => onManageMembers(project)}
+                  onRoomSettings={(room) => onRoomSettings(project, room)}
+                  onOpenRoom={onOpenRoom}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <WorkspaceShell title={org.name} switcher={switcher} userMenu={userMenu} nav={nav}>
       {connectionsOpen ? (
         <ConnectionsPanel org={org} projects={projects??[]} selectedId={connectionProject} onSelect={setConnectionProject} chooseDiscord={chooseDiscord} onDiscordChosen={()=>setChooseDiscord(false)}/>
       ) : (
@@ -723,7 +616,7 @@ function OrgPanel({
           onOpenRoom={onOpenRoom}
         />
       )}
-    </div>
+    </WorkspaceShell>
   );
 }
 

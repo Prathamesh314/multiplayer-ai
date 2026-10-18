@@ -254,7 +254,7 @@ guides.push(
 | AI chat | A conversation targeting one selected room repository or conversation space |
 
 A project can have no repositories or several repositories. A chat targets one selected repository; selecting another repository does not make the chat operate across all repositories.`, screenshot: "workspace" },
-      { id: "navigate", title: "Find and open your work", body: `Choose an organisation in the left rail. The **Projects** view shows its projects, and **Search projects** filters the cards. Expand a project in the sidebar to see accessible rooms. **Search rooms** helps find a room by name.
+      { id: "navigate", title: "Find and open your work", body: `Choose an organisation with the switcher at the top of the sidebar (or press Ctrl+1–9, ⌘1–9 on a Mac). The **Projects** view shows its projects, and **Search projects** filters the cards. Expand a project in the sidebar to see accessible rooms. **Search rooms** helps find a room by name.
 
 Choose **Open my room** on a project card to enter your working space. Viewers see **View a room**. Rooms initially use their owner’s name and can be renamed in **Room privacy & members**.
 
@@ -689,7 +689,7 @@ If the app reports that updates are not configured, use the latest available off
     sections: [
       { id: "identity", title: "Manage the team’s identity", body: `Use **Organisation settings** beside the organisation name to change its display information, including the available name/image fields. These controls require management permission.
 
-The organisation rail lets you switch between teams, create an organisation, or view invitations to join another. Keep similarly named teams distinct so members select the intended project and integration scope.` },
+The organisation switcher at the top of the sidebar lets you search and switch between teams, open the current organisation's settings, members and invitations (if you manage it), and create or join another. On a phone, open the sidebar with the menu button. Keep similarly named teams distinct so members select the intended project and integration scope.` },
       { id: "roles", title: "Manage membership and project access", body: `Open **Organisation admin** to inspect members and the management controls allowed by your role. Admins can manage ordinary membership; ownership and self-management restrictions remain enforced. Suspending an account’s organisation membership is different from deleting its identity.
 
 Use each project’s **Members** dialog to add existing organisation members as viewer, editor, or manager. Use room settings for private-room access. See [members and permissions](/docs/members) before granting wider access.`, screenshot: "project-members" },

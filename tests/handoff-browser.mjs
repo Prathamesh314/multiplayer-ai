@@ -819,8 +819,10 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       ...["/api/orgs/ux-workshop/projects", "/api/orgs/ux-workshop/usage", "/api/chat/conversations?org=ux-workshop", "/api/invitations", "/api/runner/devices"].map(path => request(tokens[0], path)),
     ]);
     await sender.navigate(`${server}/workspace`);
-    await eventually(() => sender.evaluate('!!document.querySelector(\'button[title="UX workshop"]\')'), "organization navigation");
-    await sender.evaluate('document.querySelector(\'button[title="UX workshop"]\').click()');
+    await eventually(() => sender.evaluate('!!document.querySelector(\'button[aria-label="Switch organization"]:not([disabled])\')'), "organization switcher");
+    await sender.evaluate('document.querySelector(\'button[aria-label="Switch organization"]\').click()');
+    await eventually(() => sender.evaluate('!!document.querySelector(\'[role=menuitemradio][title="UX workshop"]\')'), "organization navigation");
+    await sender.evaluate('document.querySelector(\'[role=menuitemradio][title="UX workshop"]\').click()');
     await eventually(() => sender.evaluate('document.querySelector("main h1")?.textContent === "UX workshop"'), "guided project overview");
     assert.equal(await sender.evaluate('document.querySelector("dialog") === null'), true, "First visit does not interrupt onboarding with provider setup");
     await sender.click("New project");
