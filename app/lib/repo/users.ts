@@ -187,3 +187,32 @@ export async function usersByIds(ids: string[]): Promise<CurrentUser[]> {
   );
   return rows.map(toUser);
 }
+
+/** Names that would read as the app, a role, or everyone, not as one person. */
+const RESERVED_HANDLES = new Set(["admin", "administrator", "ai", "agent", "all", "channel", "claude", "codex", "everyone", "gemini", "here",
+  "me", "moderator", "multicode", "owner", "root", "security", "staff", "support", "system", "team", "you"]);
+
+export class HandleError extends Error {
+  constructor(message: string, public status = 400) { super(message); }
+}
+
+/**
+ * A member chooses their @username: lowercase letters, numbers, - and _,
+ * 2–39 characters, starting with a letter or number, unique ignoring case.
+ */
+export async function changeHandle(userId: string, input: unknown): Promise<CurrentUser> {
+  const handle = typeof input === "string" ? input.trim().replace(/^@/, "").toLowerCase() : "";
+  if (!/^[a-z0-9][a-z0-9_-]{1,38}$/.test(handle)) {
+    throw new HandleError("Use 2–39 lowercase letters, numbers, - or _, starting with a letter or number.");
+  }
+  if (RESERVED_HANDLES.has(handle)) throw new HandleError("That username is reserved. Choose another.");
+  try {
+    const row = await queryOne<{ id: string; handle: string; email: string; display_name: string; avatar_url: string | null }>(
+      `UPDATE users SET handle = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id, handle, email, display_name, avatar_url`, [userId, handle]);
+    if (!row) throw new HandleError("Sign in to continue.", 401);
+    return { id: row.id, handle: row.handle, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url };
+  } catch (cause) {
+    if ((cause as { code?: string })?.code === "23505") throw new HandleError("That username is taken. Choose another.", 409);
+    throw cause;
+  }
+}
