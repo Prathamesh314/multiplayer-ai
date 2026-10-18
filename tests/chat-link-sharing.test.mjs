@@ -74,3 +74,52 @@ test('anyone with the link reads without an account, and the link ends with its 
     await denied(readSharedChat(run.id,null,0,undefined,link.token),'restricted again');
   } finally { await f.close(); }
 });
+
+test('an Editor becomes an editor of the room on first open, under the host’s authority', async () => {
+  const { grantInvitedEditor } = await import('../app/lib/collaboration/promotion.ts');
+  const { pendingEditorInvitation } = await import('../app/lib/sharing/store.ts');
+  const f=await memoryFixture();
+  try {
+    await f.db.query('UPDATE users SET email_verified_at=now()');
+    const guest=(await f.first(`INSERT INTO users(handle,email,display_name,connect_code,email_verified_at)
+      VALUES('guest','guest@example.test','Guest','PK-GGGG-GGGG',now()) RETURNING id`)).id;
+    const run=await createRun({sessionId:f.room,startedBy:f.alice,agentId:'codex',baseSha:'a'.repeat(40),title:'Pair on it'});
+    await appendMessage({runId:run.id,role:'user',authorUserId:f.alice,body:'Continue from here'});
+    await assert.rejects(createChatInvitation(run.id,f.alice,{email:'guest@example.test',role:'editor'}),e=>e.status===400,'not through one-time invitation links');
+    await assert.rejects(setChatLink(run.id,f.alice,'editor'),e=>e.status===400,'never for anyone with the link');
+    await createChatInvitation(run.id,f.alice,{email:'guest@example.test',role:'editor'},'email');
+    const opened=await readSharedChat(run.id,guest);
+    assert.equal(opened.role,'editor');
+    assert.equal(opened.workspacePath,undefined,'no room access before the grant');
+    await addSharedComment(run.id,guest,{id:randomUUID(),body:'On it'});
+    const invitation=await pendingEditorInvitation(run.id,guest);
+    assert.ok(invitation);
+    assert.deepEqual(await grantInvitedEditor(run.id,invitation),{granted:true},'Alice owns the organisation, so her Editor choice is enough');
+    assert.equal((await getSession(f.room,guest)).myRole,'editor');
+    assert.equal((await f.first('SELECT status FROM org_members WHERE org_id=$1 AND user_id=$2',[f.org,guest])).status,'active');
+    assert.equal((await f.first('SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2',[f.project,guest])).role,'editor');
+    assert.ok((await readSharedChat(run.id,guest)).workspacePath,'can open the workspace now');
+    assert.equal(await pendingEditorInvitation(run.id,guest),null,'granted once');
+    assert.equal((await listChatInvitations(run.id,f.alice))[0].workspaceAccess,true);
+  } finally { await f.close(); }
+});
+
+test('without the authority to grant it, an Editor can read and comment until an admin approves', async () => {
+  const { grantInvitedEditor } = await import('../app/lib/collaboration/promotion.ts');
+  const { pendingEditorInvitation } = await import('../app/lib/sharing/store.ts');
+  const f=await memoryFixture();
+  try {
+    await f.db.query('UPDATE users SET email_verified_at=now()');
+    const guest=(await f.first(`INSERT INTO users(handle,email,display_name,connect_code,email_verified_at)
+      VALUES('guest','guest@example.test','Guest','PK-GGGG-GGGG',now()) RETURNING id`)).id;
+    await f.db.query(`UPDATE project_members SET role='editor' WHERE user_id=$1`,[f.bob]);
+    const run=await createRun({sessionId:f.other,startedBy:f.bob,agentId:'codex',baseSha:'a'.repeat(40)});
+    await createChatInvitation(run.id,f.bob,{email:'guest@example.test',role:'editor'},'email');
+    assert.equal((await readSharedChat(run.id,guest)).role,'editor');
+    const outcome=await grantInvitedEditor(run.id,await pendingEditorInvitation(run.id,guest));
+    assert.equal(outcome.granted,false);
+    assert.match(outcome.reason,/organization owner or admin/);
+    assert.equal((await getSession(f.other,guest)).myRole,null,'no room access was added');
+    await addSharedComment(run.id,guest,{id:randomUUID(),body:'Still here to help'});
+  } finally { await f.close(); }
+});

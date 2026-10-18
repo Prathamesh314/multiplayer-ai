@@ -512,11 +512,14 @@ Removing one type of invitation is not the same as removing every permission a p
       { id: "create-link", title: "Share with people by email", body: `Sharing works like sharing a document. The chat host opens **Share chat** in an existing AI conversation.
 
 1. Type an email address under **Add people by email**.
-2. Choose **Viewer** or **Commenter**.
+2. Choose **Viewer**, **Commenter** or **Editor**.
 3. Optionally leave **Notify by email** on and add a message (shown when your workspace can send email).
 4. Select **Share**.
 
 The person opens the chat's address, for example from **Copy link**, and signs in with that exact email, or creates and verifies an account for it. They don't need a special invitation link, and they don't have to join your organisation.`, screenshot: "share-chat" },
+      { id: "editor", title: "Let someone continue the chat (Editor)", body: `Share by email as **Editor** when someone should carry the work on, not just read it. When they first open the chat, they become an editor of its room, and join its organisation and project if needed, just as with **Allow guest to help with code…**. Then they can open it in the workspace and fork it, or you hand it over with **Handoff**. Their AI work runs on their own computer, with their own AI account; nobody runs anything on yours.
+
+Making an outsider an editor needs an organisation owner or admin. If you can't grant it, they can read and comment, and **Share chat** shows that it needs an admin's approval. **Anyone with the link** can never be an Editor. Removing someone's chat access doesn't remove their room access; manage that in member settings.` },
       { id: "general-access", title: "Anyone with the link", body: `Under **General access**, choose:
 
 - **Restricted**: only the people listed under **People with access** (and people in the room) can open the chat.

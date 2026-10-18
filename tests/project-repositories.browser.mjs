@@ -147,6 +147,13 @@ try {
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("guest@example.test") && document.querySelector("dialog").innerText.includes("Hasn’t opened yet")'),"person added by email");
   assert.equal(await evaluate('window.__model.invitations[0].role'),'commenter');
   assert.equal(await evaluate('window.__model.invitations[0].expiresAt'),null,'access lasts until removed');
+  // Editor is for named people: they continue on their own computer.
+  await type('dialog input[type=email]','editor@example.test');
+  await click('button[aria-label="Role for new person"]');
+  await click('[role="option"][value="editor"]');
+  assert.ok(await evaluate('document.querySelector("dialog").innerText.includes("they become an editor of this room")'),"the editor scope is explained before sharing");
+  await button('Share');
+  await eventually(()=>evaluate('window.__model.invitations.some(i=>i.email==="editor@example.test"&&i.role==="editor")'),"shared as Editor");
   // General access: anyone with the link, then copy it.
   await evaluate('window.__copied=[];Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async text=>{window.__copied.push(text);}}})');
   await click('button[aria-label="General access"]');
@@ -156,6 +163,9 @@ try {
   await button('Copy link');
   await eventually(()=>evaluate('window.__copied.length===1'),"link copied");
   assert.match(await evaluate('window.__copied[0]'),/\/shared\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#link=l{43}$/);
+  await click('button[aria-label="Link role"]');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".composer-picker [role=option]")].map(o=>o.getAttribute("value"))'),["viewer","commenter"],"anyone with the link can never edit");
+  await click('button[aria-label="Link role"]');
   await click('button[aria-label="General access"]');
   await click('[role="option"][value="restricted"]');
   await eventually(()=>evaluate('window.__model.link===null && document.querySelector("dialog").innerText.includes("Only people with access can open with the link")'),"restricted again");

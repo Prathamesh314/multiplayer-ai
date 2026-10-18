@@ -11,10 +11,10 @@ export function shareEmailConfigured(env = process.env) {
   return !!env.RESEND_API_KEY?.trim() && !!env.EMAIL_FROM?.trim() && !/[\r\n]/.test(env.EMAIL_FROM);
 }
 
-export async function sendShareEmail(input: { to: string; hostName: string; title: string; url: string; role: "viewer" | "commenter"; message?: string }) {
+export async function sendShareEmail(input: { to: string; hostName: string; title: string; url: string; role: "viewer" | "commenter" | "editor"; message?: string }) {
   if (!shareEmailConfigured()) return false;
   const host = oneLine(input.hostName, 80), title = oneLine(input.title, 120), note = input.message ? input.message.trim().slice(0, 1000) : "";
-  const can = input.role === "commenter" ? "view and comment on" : "view";
+  const can = input.role === "editor" ? "view, comment on and continue" : input.role === "commenter" ? "view and comment on" : "view";
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10000),
