@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { CurrentUser } from "../../lib/auth/types";
 import { canManageOrg, type Org } from "../../lib/org/types";
-import { listRooms } from "../../lib/project/client";
+import { addProjectMember, listRooms } from "../../lib/project/client";
 import type { Project } from "../../lib/project/types";
 import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
@@ -125,11 +125,14 @@ function ProjectCard({ project, org, me, onManageMembers, onConnections, onOpenR
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Org owners and admins can see a project they were never added to; joining gives them a room in it.
+  const joining = !project.isMember && project.myRole === "manager";
   async function openRoom() {
     if (opening || !me) return;
     setOpening(true);
     setError(null);
     try {
+      if (joining) await addProjectMember(org.slug, project.slug, me.id, "manager");
       const rooms = await listRooms(org.slug, project.slug);
       const room = project.myRole === "viewer" ? rooms[0] : rooms.find((candidate) => candidate.ownerId === me.id);
       if (!room) throw new Error(project.myRole === "viewer" ? "No rooms are available to view yet. Ask a project manager for access." : "Your room isn't ready yet. Try again, or ask a project manager for help.");
@@ -152,7 +155,7 @@ function ProjectCard({ project, org, me, onManageMembers, onConnections, onOpenR
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2.5 pt-4">
         <button type="button" onClick={onManageMembers} className="flex items-center gap-1.5 rounded-md py-1.5 text-xs text-vs-muted hover:text-vs-fg"><UsersIcon className="h-3.5 w-3.5" /> Members</button>
         <button type="button" onClick={onConnections} className="rounded-md py-1.5 text-xs text-vs-muted hover:text-vs-fg">Connections</button>
-        <PrimaryButton disabled={opening || !me} onClick={() => void openRoom()}>{opening ? <SpinnerIcon className="h-3.5 w-3.5" /> : <ChevronIcon className="h-3.5 w-3.5" />}{opening ? "Opening…" : project.myRole === "viewer" ? "View a room" : "Open my room"}</PrimaryButton>
+        <PrimaryButton disabled={opening || !me} onClick={() => void openRoom()}>{opening ? <SpinnerIcon className="h-3.5 w-3.5" /> : <ChevronIcon className="h-3.5 w-3.5" />}{opening ? (joining ? "Joining…" : "Opening…") : joining ? "Join this project" : project.myRole === "viewer" ? "View a room" : "Open my room"}</PrimaryButton>
       </div>
     </article>
   );

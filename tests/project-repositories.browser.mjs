@@ -431,17 +431,19 @@ try {
   await eventually(()=>evaluate(`[...document.querySelectorAll("button")].some(b=>b.textContent.trim()==="↓ Latest")`),"a way back to the latest message");
   await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="↓ Latest").click()`);
   await eventually(()=>evaluate(`(()=>{const el=${scroller};return el.scrollHeight-el.scrollTop-el.clientHeight<100;})()`),"jumps back to the latest message");
-  // A computer whose app cannot ask before tools: how to update, either way it runs.
+  // A computer whose app cannot ask before tools: nothing in the chat, the steps in Your computers.
   await evaluate('window.__model.devices[0].supportsPermissions=false;window.__model.emitDevices()');
-  await eventually(()=>evaluate(`!!document.querySelector('section[aria-label="Update your computer’s app"]')`),"update help appears");
-  await evaluate(`[...document.querySelectorAll('section[aria-label="Update your computer’s app"] [role=tab]')].find(t=>t.textContent==="Runner in a terminal").click()`);
-  assert.match(await evaluate(`document.querySelector('section[aria-label="Update your computer’s app"] code').textContent`),/^npx --yes --package="http:\/\/127\.0\.0\.1:\d+\/downloads\/multicode-ai-runner\.tgz\?v=[0-9a-f]{12}" multicode-ai-runner start$/,"the command fetches the current runner");
-  assert.ok(await evaluate(`!!document.querySelector('button[aria-label="Copy the runner command"]')`));
-  await evaluate(`[...document.querySelectorAll('section[aria-label="Update your computer’s app"] [role=tab]')].find(t=>t.textContent==="Desktop app").click()`);
-  assert.equal(await evaluate(`document.querySelector('section[aria-label="Update your computer’s app"] a').getAttribute("href")`),"/#download");
+  await delay(400);
+  assert.equal(await evaluate(`!!document.querySelector('section[aria-label="Update your computer’s app"]')`),false,"no warning in the chat");
+  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Manage computers").click()`);
+  await eventually(()=>evaluate(`!!document.querySelector('dialog[open] section[aria-label="Update your computer’s app"]') && document.querySelector("dialog[open]").innerText.includes("Update needed")`),"update steps in Your computers");
+  await evaluate(`[...document.querySelectorAll('dialog[open] [role=tab]')].find(t=>t.textContent==="Runner in a terminal").click()`);
+  assert.match(await evaluate(`document.querySelector('dialog[open] section[aria-label="Update your computer’s app"] code').textContent`),/^npx --yes --package="http:\/\/127\.0\.0\.1:\d+\/downloads\/multicode-ai-runner\.tgz\?v=[0-9a-f]{12}" multicode-ai-runner start$/,"the command fetches the current runner");
   await writeFile(join(tmpdir(),'multiplayer-update-help.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await evaluate('window.__model.devices[0].supportsPermissions=true;window.__model.emitDevices()');
-  await eventually(()=>evaluate(`!document.querySelector('section[aria-label="Update your computer’s app"]')`),"the help goes away once the updated app connects");
+  await eventually(()=>evaluate(`!document.querySelector('dialog[open] section[aria-label="Update your computer’s app"]')`),"the steps go away once the updated app connects");
+  await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
+  await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

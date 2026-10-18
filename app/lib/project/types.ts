@@ -32,6 +32,8 @@ export type Project = {
   name: string;
   /** The requesting account's effective role, for gating. */
   myRole: ProjectRole;
+  /** Added to the project. Org owners and admins can manage it without being added, but have no room in it until they join. */
+  isMember?: boolean;
   createdAt: number;
   archivedAt: number | null;
 };
