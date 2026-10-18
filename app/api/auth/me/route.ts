@@ -1,7 +1,8 @@
 import { withApiLimit } from "../../../lib/http/api-limit";
 import { currentUser, revokeToken } from "../../../lib/auth/tokens";
 import type { MeResponse } from "../../../lib/auth/types";
-import { connectCodeOf, rotateConnectCode } from "../../../lib/repo/users";
+import { changeHandle, connectCodeOf, HandleError, rotateConnectCode } from "../../../lib/repo/users";
+import { limitedJson } from "../../../lib/http/body";
 import { assertAuthOrigin } from "../../../lib/auth/clerk-http";
 
 export const runtime = "nodejs";
@@ -35,6 +36,22 @@ async function handleDELETE(request: Request) {
   return Response.json({ user: null, connectCode: null } satisfies MeResponse);
 }
 
+/** Change your @username: `{ handle }`. */
+async function handlePATCH(request: Request) {
+  assertAuthOrigin(request);
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
+  const body = (await limitedJson(request, 1024).catch(() => null)) as { handle?: unknown } | null;
+  try {
+    const updated = await changeHandle(user.id, body?.handle);
+    return Response.json({ user: updated, connectCode: await connectCodeOf(user.id) } satisfies MeResponse);
+  } catch (error) {
+    if (error instanceof HandleError) return Response.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
+}
+
 export const GET = withApiLimit("/api/auth/me", handleGET);
+export const PATCH = withApiLimit("/api/auth/me", handlePATCH);
 export const POST = withApiLimit("/api/auth/me", handlePOST);
 export const DELETE = withApiLimit("/api/auth/me", handleDELETE);
