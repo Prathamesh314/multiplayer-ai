@@ -39,6 +39,12 @@ function GearIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The organisation's view (and this switcher with it) is rebuilt after a
+ * switch, so the new switcher takes focus back when the old one had it.
+ */
+let refocusAfterSwitch = false;
+
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSettings, onAdmin, onInvite }: {
@@ -84,11 +90,17 @@ export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSe
     if (refocus) trigger.current?.focus();
   }
   function choose(index: number) {
-    if (index < matches.length) { onSelect(matches[index].slug); close(); return; }
+    if (index < matches.length) { close(); refocusAfterSwitch = matches[index].slug !== activeSlug; onSelect(matches[index].slug); return; }
     const action = [...ownActions, ...otherActions][index - matches.length];
     // Focus returns to the switcher first, so a dialog the action opens hands it back there.
     if (action) { close(); action.run(); }
   }
+
+  useEffect(() => {
+    if (!refocusAfterSwitch) return;
+    refocusAfterSwitch = false;
+    trigger.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
