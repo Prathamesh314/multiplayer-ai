@@ -39,18 +39,18 @@ function GearIcon({ className }: { className?: string }) {
   );
 }
 
-/**
- * The organisation's view (and this switcher with it) is rebuilt after a
- * switch, so the new switcher takes focus back when the old one had it.
- */
-let refocusAfterSwitch = false;
-
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSettings, onAdmin, onInvite }: {
+export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSettings, onAdmin, onInvite, takeFocus }: {
   orgs: Org[] | null;
   activeSlug: string | null;
-  onSelect: (slug: string) => void;
+  /** `fromMenu`: picked in this menu, so the rebuilt switcher should take focus back (see takeFocus). */
+  onSelect: (slug: string, fromMenu?: boolean) => void;
+  /**
+   * The organisation's view, and this switcher with it, is rebuilt after a
+   * switch; true once when the previous switcher had focus.
+   */
+  takeFocus?: () => boolean;
   onCreate: () => void;
   onJoin: () => void;
   /** The current organisation's own actions; omitted for members who cannot manage it. */
@@ -90,17 +90,15 @@ export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSe
     if (refocus) trigger.current?.focus();
   }
   function choose(index: number) {
-    if (index < matches.length) { close(); refocusAfterSwitch = matches[index].slug !== activeSlug; onSelect(matches[index].slug); return; }
+    if (index < matches.length) { close(); onSelect(matches[index].slug, true); return; }
     const action = [...ownActions, ...otherActions][index - matches.length];
     // Focus returns to the switcher first, so a dialog the action opens hands it back there.
     if (action) { close(); action.run(); }
   }
 
   useEffect(() => {
-    if (!refocusAfterSwitch) return;
-    refocusAfterSwitch = false;
-    trigger.current?.focus();
-  }, []);
+    if (takeFocus?.()) trigger.current?.focus();
+  }, [takeFocus]);
 
   useEffect(() => {
     if (!open) return;

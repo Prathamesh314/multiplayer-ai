@@ -134,11 +134,15 @@ export function OrgWorkspace() {
   }
 
   const manage = activeOrg && canManageOrg(activeOrg.myRole) ? activeOrg : null;
+  // A switch picked in the switcher rebuilds the view; its new switcher takes focus back.
+  const refocusSwitcher = useRef(false);
+  const takeSwitcherFocus = useCallback(() => { const take = refocusSwitcher.current; refocusSwitcher.current = false; return take; }, []);
   const switcher = (
     <OrgSwitcher
       orgs={orgs}
       activeSlug={activeSlug}
-      onSelect={setActiveSlug}
+      onSelect={(slug, fromMenu) => { refocusSwitcher.current = !!fromMenu && slug !== activeSlug; setActiveSlug(slug); }}
+      takeFocus={takeSwitcherFocus}
       onCreate={() => setDialog({ kind: "createOrg" })}
       onJoin={() => setDialog({ kind: "joinOrg" })}
       onSettings={manage ? () => setDialog({ kind: "orgSettings", org: manage }) : undefined}
