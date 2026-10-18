@@ -374,7 +374,7 @@ Attachments are not pasted into your message. Like Claude Code, the agent gets t
 Type **@** and part of a name to tag a file or folder of the project, for example \`@src/app.ts\` or \`@docs/\`. The agent is told to read the tagged paths in its working folder; their contents are not pasted into your message. The same picker also offers room/chat references. Pick an actual result so the app can resolve its context; simply typing another person’s name is not the same as selecting a conversation reference. Where shown, **Import context from…** starts a new chat using another accessible conversation’s context.
 
 Context is limited by access and prompt budgets. The system cannot give your AI unrestricted access to every private room.` },
-      { id: "fork", title: "Fork instead of taking control", body: `When watching a teammate’s chat, **fork a new chat** creates your own conversation with imported context. It leaves the original chat and driver intact.
+      { id: "fork", title: "Fork instead of taking control", body: `When watching a teammate’s chat, **fork a new chat** creates your own conversation with imported context, in your own room of the project (with the chat's project repository brought into it if you don't have it yet). It leaves the original chat and driver intact.
 
 A fork is not automatically a new repository branch: chats in the same room repository share that room’s worktree. For independent code work, use your own room checkout of a shared repository. Use [Handoff](/docs/handoff) when you want to continue the original conversation itself.` },
       { id: "organise", title: "Rename, archive, or reference a chat", body: `Hover a chat row to reveal its available actions. **Rename** changes its title. **Archive this chat** moves an eligible chat out of the active list; expand **Archived** and use **Restore this chat** to bring it back. Management actions depend on who drives the chat and its current state.
@@ -478,6 +478,7 @@ guides.push(
     slug: "members", category: "Work together", title: "Invite members & manage access",
     description: "Bring people into your organisation, add them to a project, and choose the right scope.",
     sections: [
+      { id: "project-access", title: "Who is in a project", body: `People are in a project only when a project manager adds them under **Members**; adding someone to one project never adds them to others. Organisation **owners** and **admins** can still see and manage every project, but they don't appear as its members and get no room in it until they select **Join this project** on its card.` },
       { id: "choose-scope", title: "Choose the invitation that fits", body: `| Intended access | Use |
 | --- | --- |
 | Read or comment on one AI conversation | **Share chat** — a guest does not need to join the organisation |

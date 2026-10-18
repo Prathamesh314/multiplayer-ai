@@ -1,5 +1,4 @@
 "use client";
-import { UpdateComputerHelp } from "../ai/UpdateComputerHelp";
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import type { MentionFile } from "../../lib/ai/file-mentions";
@@ -59,8 +58,6 @@ import type { ComputerStatus } from "../ai/useComputerConnection";
 
 type AiPanelProps = {
   computerStatus: ComputerStatus;
-  /** False when the connected computer's runner is too old to ask before tools; the CLI refuses them then. */
-  computerAsks?: boolean;
   onSetUpAi: () => void;
   actionsHost?: HTMLDivElement | null;
   onShowConversation?: () => void;
@@ -145,7 +142,6 @@ type Turn = {
 
 export function AiPanel({
   computerStatus,
-  computerAsks = true,
   onSetUpAi,
   actionsHost,
   onShowConversation,
@@ -1067,9 +1063,6 @@ export function AiPanel({
           driverName={entered.driverName ?? null}
           agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId}
         />
-      )}
-      {ready && !computerAsks && enteredIsMine && (
-        <UpdateComputerHelp />
       )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
       {running && !entered ? (

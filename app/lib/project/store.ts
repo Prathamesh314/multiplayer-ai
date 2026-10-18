@@ -23,6 +23,7 @@ type ProjectRow = {
   created_at: Date;
   archived_at: Date | null;
   my_role: ProjectRole;
+  is_member?: boolean;
 };
 
 const toProject = (row: ProjectRow): Project => ({
@@ -31,6 +32,7 @@ const toProject = (row: ProjectRow): Project => ({
   slug: row.slug,
   name: row.name,
   myRole: row.my_role,
+  isMember: row.is_member ?? true,
   createdAt: row.created_at.getTime(),
   archivedAt: row.archived_at ? row.archived_at.getTime() : null,
 });
@@ -123,7 +125,8 @@ const EFFECTIVE_ROLE = `
 export async function listProjectsForUser(orgId: string, userId: string): Promise<Project[]> {
   const rows = await query<ProjectRow>(
     `SELECT p.id, p.org_id, p.slug, p.name, p.created_at, p.archived_at,
-            ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} AS my_role
+            ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} AS my_role,
+            EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.user_id = $2 AND m.removed_at IS NULL) AS is_member
        FROM projects p
       WHERE p.org_id = $1
         AND ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} IS NOT NULL
@@ -141,7 +144,8 @@ export async function getProjectForUser(
 ): Promise<Project | null> {
   const row = await queryOne<ProjectRow>(
     `SELECT p.id, p.org_id, p.slug, p.name, p.created_at, p.archived_at,
-            ${EFFECTIVE_ROLE.replace(/\$USER/g, "$3")} AS my_role
+            ${EFFECTIVE_ROLE.replace(/\$USER/g, "$3")} AS my_role,
+            EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.user_id = $3 AND m.removed_at IS NULL) AS is_member
        FROM projects p
       WHERE p.org_id = $1 AND p.slug = $2
         AND ${EFFECTIVE_ROLE.replace(/\$USER/g, "$3")} IS NOT NULL`,
@@ -151,6 +155,16 @@ export async function getProjectForUser(
 }
 
 /** The caller's effective project role, or null if they have none. */
+/**
+ * Someone's role as an added member of the project, or null. Organisation
+ * owners and admins can see and manage every project without being added,
+ * but only added members get a room of their own in it.
+ */
+export async function memberRoleOf(projectId: string, userId: string): Promise<ProjectRole | null> {
+  return (await queryOne<{ role: ProjectRole }>(
+    `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2 AND removed_at IS NULL`, [projectId, userId]))?.role ?? null;
+}
+
 export async function projectRoleOf(projectId: string, userId: string): Promise<ProjectRole | null> {
   const row = await queryOne<{ role: ProjectRole | null }>(
     `SELECT ${EFFECTIVE_ROLE.replace(/\$USER/g, "$2")} AS role

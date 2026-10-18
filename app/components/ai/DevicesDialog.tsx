@@ -12,6 +12,7 @@
  * runs *its owner* started. Nobody else's prompts reach your hardware.
  */
 
+import { UpdateComputerHelp } from "./UpdateComputerHelp";
 import { runnerCommand } from "../../lib/runner/package";
 import { useEffect, useState } from "react";
 import { mintPairingCode, revokeDevice } from "../../lib/runner/client";
@@ -156,6 +157,9 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
           No computer connected yet. This page updates automatically when your computer comes online.
         </p>
       ) : (
+        <>
+        {/* Older apps can't ask in the chat before a command or link, so the agent is refused instead. */}
+        {devices.some((device) => device.online && !device.supportsPermissions) && <UpdateComputerHelp />}
         <ul className="space-y-2">
           {devices.map((device) => (
             <li
@@ -170,7 +174,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
                 <p className="truncate text-[14px] text-vs-fg">{device.name}</p>
                 <p className="text-[12px] text-vs-muted">
                   {device.online
-                    ? device.version === "2" ? "Connected" : "Update needed"
+                    ? device.version !== "2" || !device.supportsPermissions ? "Update needed" : "Connected"
                     : device.lastSeenAt
                       ? `Offline · last connected ${relativeTime(device.lastSeenAt)}`
                       : "Never connected"}
@@ -184,6 +188,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
             </li>
           ))}
         </ul>
+        </>
       )}
 
       {pairing ? (

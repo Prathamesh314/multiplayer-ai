@@ -212,7 +212,17 @@ export function Workspace({
       setRoomRepos(repos);
       let remembered: string | null = null;
       try { remembered = sessionStorage.getItem(`room-repository:${session.id}`); } catch {}
-      const linkedRun = new URLSearchParams(window.location.search).get("run");
+      const params = new URLSearchParams(window.location.search);
+      const linkedRun = params.get("run");
+      // Arrived to fork a chat from another room of the project (startFork there).
+      const forkFrom = params.get("fork");
+      if (forkFrom && isUUID(forkFrom)) {
+        remembered = params.get("repo") || null;
+        setForkFromRunId(forkFrom);
+        setShowChat(true);
+        setMobilePane("chat");
+        window.history.replaceState(null, "", window.location.pathname);
+      }
       if (linkedRun) {
         try {
           if (!isUUID(linkedRun)) throw new Error("Invalid chat link.");
@@ -320,7 +330,22 @@ export function Workspace({
     refreshRuns();
   }
   // Fork a chat: a fresh chat that imports the source run's context on send.
-  const startFork = (run: AgentRun) => {
+  const startFork = async (run: AgentRun) => {
+    // Someone else's room: the fork starts in your own room of the project.
+    if (session.projectId && session.ownerId !== myUserId) {
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/runs/${encodeURIComponent(run.id)}/fork-target`, { method: "POST" });
+        const target = await response.json().catch(() => null) as { sessionId?: string; repoId?: string | null; error?: string } | null;
+        if (!response.ok || !target?.sessionId) throw new Error(target?.error ?? "Could not open your room to fork this chat.");
+        if (target.sessionId !== session.id) {
+          router.push(`/s/${encodeURIComponent(target.sessionId)}?fork=${encodeURIComponent(run.id)}${target.repoId ? `&repo=${encodeURIComponent(target.repoId)}` : ""}`);
+          return;
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Could not open your room to fork this chat.");
+        return;
+      }
+    }
     void selectRepository(run.repoId).then(selected => {
       if (!selected) return;
       setEnteredRun(null);
@@ -1100,7 +1125,6 @@ export function Workspace({
                   node: (
                       <AiPanel
                         computerStatus={computerConnection.status}
-                        computerAsks={computerConnection.computer?.supportsPermissions !== false}
                         onSetUpAi={() => setHelpDialog("providers")}
                         actionsHost={actionsHost}
                         onShowConversation={() => setShowChat(true)}

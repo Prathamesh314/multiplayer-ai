@@ -53,7 +53,7 @@
     "test:tasks": "node --import tsx tests/tasks.test.mjs",
     "test:handoff": "node --import tsx tests/handoff.test.mjs && node --import tsx --test tests/handoff-inbox.test.mjs",
     "test:permissions": "node --import tsx --test tests/permissions.test.mjs",
-    "test:room-repos": "node --import tsx --test tests/room-repos.test.mjs",
+    "test:room-repos": "node --import tsx --test tests/room-repos.test.mjs tests/project-rooms.test.mjs",
     "test:attachments": "node --import tsx --test tests/attachments.test.mjs",
     "test:agent-tools": "node --import tsx --test tests/agent-tools.test.mjs",
     "test:agent-tools:http": "node --import tsx tests/agent-tools-http.mjs",
