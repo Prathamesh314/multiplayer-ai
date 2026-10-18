@@ -1,31 +1,5 @@
 /* A Discord-inspired shell, scoped to the team workspace. */
 .workspace { background: var(--vs-editor); color: var(--vs-fg); }
-.workspaceRail { width: 192px; gap: 8px; padding-top: 10px; }
-.organizationHeading { width: 100%; padding: 0 8px 8px; border-bottom: 1px solid var(--vs-border); }
-.organizationSearch { width: 100%; justify-content: flex-start; min-height: 36px; gap: 8px; font-size: 13px; font-weight: 600; }
-.organizationSearch > svg { color: var(--vs-muted); }
-.organizationCompactLabel { display: none; }
-.organizationRow, .organizationAction { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; flex-shrink: 0; padding: 6px 8px; border-radius: 10px; text-align: left; color: var(--vs-muted); transition: background .15s, color .15s; }
-.organizationRow:hover, .organizationAction:hover { background: var(--vs-hover); color: var(--vs-fg); }
-.organizationRow[aria-current="page"] { background: var(--vs-active); color: var(--vs-fg); }
-.organizationRow:focus-visible, .organizationAction:focus-visible { outline: 2px solid var(--vs-accent); outline-offset: -2px; }
-.organizationAvatar { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; overflow: hidden; border: 1px solid var(--vs-border); border-radius: 9px; background: var(--vs-panel); font-size: 11px; font-weight: 600; }
-.organizationRow[aria-current="page"] .organizationAvatar { background: var(--vs-accent); border-color: transparent; color: var(--vs-accent-fg); }
-.organizationName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
-.organizationAction { min-height: 36px; gap: 10px; }
-.organizationAction > svg { width: 18px; height: 18px; flex-shrink: 0; margin: 0 6px; }
-.workspaceNavigation { background: var(--vs-chrome); }
-.workspaceNavigation :global([aria-current="page"]) { background: var(--vs-active); color: var(--vs-accent); }
-.workspaceNavigation > header { height: 40px; border-color: var(--vs-border); }
-.workspaceNavigation > header span { font-size: 13px; }
-.profileBar { border: 1px solid var(--vs-border); display: flex; align-items: center; gap: 4px; margin: 6px; padding: 6px; background: var(--vs-panel); border-radius: 8px; }
-.profileTrigger { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; padding: 2px; border-radius: 6px; text-align: left; transition: background .15s; }
-.profileTrigger:hover, .profileTrigger[aria-expanded="true"] { background: var(--vs-hover); }
-.profileTrigger:focus-visible { outline: 2px solid var(--vs-accent); outline-offset: -2px; }
-.profileAvatar { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--vs-active); color: var(--vs-accent); font-size: 11px; font-weight: 600; text-transform: uppercase; }
-.profileName { min-width: 0; flex: 1; }
-.profileDisplayName { display: block; line-height: 1.5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 600; color: var(--vs-fg); }
-.profileHandle { display: block; line-height: 1.5; color: var(--vs-muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .channelGroup { padding-top: 22px; }
 .groupHeading { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 6px; color: var(--vs-muted); }
 .groupHeading > button:first-child { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; min-height: 28px; }
@@ -43,6 +17,8 @@
 .conversationHeader h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 650; letter-spacing: -.25px; }
 .topic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid var(--vs-border); margin-left: 7px; padding-left: 18px; color: var(--vs-muted); font-size: 12px; }
 .headerActions { display: flex; align-items: center; gap: 12px; margin-left: auto; flex-shrink: 0; }
+.workspaceNavigation { background: var(--vs-chrome); }
+.workspaceNavigation :global([aria-current="page"]) { background: var(--vs-active); color: var(--vs-accent); }
 .iconButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; color: var(--vs-muted); cursor: pointer; transition: color .15s, background .15s; }
 .iconButton > svg { width: 16px; height: 16px; }
 .iconButton:hover, .iconButton[aria-expanded="true"] { background: var(--vs-hover); color: var(--vs-fg); }
@@ -115,29 +91,7 @@
   .memberList { width: 195px; }
   .topic { display: none; }
 }
-@media (max-width: 1023px) {
-  .workspaceRail { width: 64px; }
-  .organizationHeading { padding: 0 8px 8px; }
-  .organizationSearch { justify-content: center; padding: 8px; }
-  .organizationSearch > span, .organizationName { display: none; }
-  .organizationCompactLabel { display: block; margin-top: 2px; text-align: center; font-size: 10px; color: var(--vs-muted); }
-  .organizationRow, .organizationAction { justify-content: center; padding: 5px; }
-  .organizationAction > svg { margin: 0; }
-  /* Icon-only rail: the avatar alone opens the menu, which already lists AI
-     providers and Your computers, so the shortcut buttons lose nothing. */
-  .profileBar { margin: 6px 4px; padding: 4px; justify-content: center; }
-  .profileName { display: none; }
-  .profileBar .iconButton { display: none; }
-  .profileTrigger { flex: 0 0 auto; justify-content: center; gap: 0; }
-  .workspaceNavigation { position: absolute; z-index: 30; top: 62px; left: 72px; width: min(320px, calc(100vw - 72px)); max-height: calc(100dvh - 72px); border: 1px solid var(--vs-border); border-radius: 0 0 10px 0; box-shadow: 15px 20px 50px #0008; }
-  .workspaceNavigation > header { min-height: 56px; }
-  .workspaceNavigation > div:last-of-type { flex-shrink: 0; }
-}
 @media (max-width: 700px) {
-  .workspaceRail { width: 56px; padding-top: 14px; }
-  /* The rail's own icon buttons; the account menu opening beside it keeps its full width. */
-  .workspaceRail button:not([role="menuitem"]) { max-width: 38px; max-height: 38px; }
-  .workspaceNavigation { left: 56px; width: min(290px, calc(100vw - 56px)); }
   .conversationHeader { height: 56px; padding: 0 15px; gap: 8px; }
   .conversationHeader h2 { font-size: 14px; }
   .channelSymbol { font-size: 24px; }
