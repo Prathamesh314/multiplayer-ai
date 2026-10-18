@@ -160,3 +160,65 @@ export async function continuationContext(runId: string): Promise<string> {
     ...handoffs.reverse().map(offer => `Handoff checkpoint: ${offer.checkpoint_sha ?? "last confirmed repository state"}\nHandoff note: ${offer.note || "No note provided."}`),
   ].join("\n\n");
 }
+
+export type InboxHandoff = {
+  id: string;
+  runId: string;
+  sessionId: string;
+  title: string | null;
+  roomName: string;
+  projectName: string | null;
+  orgSlug: string | null;
+  /** The person on the other side: who offered it (received) or to whom (sent; null = any editor). */
+  person: string | null;
+  note: string;
+  expiresAt: string;
+  createdAt: string;
+  /** The chat's control version, which accepting, declining or cancelling must quote. */
+  version: number;
+  /** Offered to you by name (not to any editor of the room): only these can be declined. */
+  direct: boolean;
+  /** The chat is working right now; it can be accepted once that finishes. */
+  busy: boolean;
+};
+
+/**
+ * Handoffs waiting on a member, across every room they can edit: ones offered
+ * to them (or to any editor of the room) and ones they offered and are still
+ * waiting for. Expired, superseded and hidden chats are left out.
+ */
+export async function listMyHandoffs(userId: string): Promise<{ received: InboxHandoff[]; sent: InboxHandoff[] }> {
+  const columns = `h.id, h.run_id AS "runId", r.session_id AS "sessionId", r.title, s.name AS "roomName", p.name AS "projectName",
+    o.slug AS "orgSlug", h.note, h.expires_at::text AS "expiresAt", h.created_at::text AS "createdAt",
+    r.control_version AS version, h.to_user_id IS NOT NULL AS direct, r.status IN ('running', 'queued') AS busy`;
+  const from = `FROM run_handoffs h JOIN agent_runs r ON r.id = h.run_id JOIN sessions s ON s.id = r.session_id
+    LEFT JOIN projects p ON p.id = s.project_id LEFT JOIN orgs o ON o.id = s.org_id`;
+  const live = `h.status = 'pending' AND h.expires_at > now() AND h.control_version = r.control_version
+    AND h.from_user_id = r.driver_user_id AND s.deleted_at IS NULL AND NOT agent_run_hidden(r.id, $1)`;
+  const [received, sent] = await Promise.all([
+    query<InboxHandoff>(`SELECT ${columns}, sender.display_name AS person ${from} JOIN users sender ON sender.id = h.from_user_id
+      WHERE ${live} AND h.from_user_id <> $1 AND (h.to_user_id = $1 OR h.to_user_id IS NULL)
+        AND room_access_role(r.session_id, $1) IN ('owner', 'editor')
+      ORDER BY h.created_at DESC LIMIT 50`, [userId]),
+    query<InboxHandoff>(`SELECT ${columns}, recipient.display_name AS person ${from} LEFT JOIN users recipient ON recipient.id = h.to_user_id
+      WHERE ${live} AND h.from_user_id = $1 AND room_access_role(r.session_id, $1) IN ('owner', 'editor')
+      ORDER BY h.created_at DESC LIMIT 50`, [userId]),
+  ]);
+  return { received, sent };
+}
+
+/** Who should hear that a chat's handoff changed: its sender, and everyone it was (or could be) offered to. */
+export async function handoffAudience(runId: string, sessionId: string): Promise<string[]> {
+  const rows = await query<{ user_id: string }>(
+    `WITH recent AS (SELECT from_user_id, to_user_id FROM run_handoffs WHERE run_id = $1 AND created_at > now() - interval '2 hours')
+     SELECT from_user_id AS user_id FROM recent
+     UNION SELECT to_user_id FROM recent WHERE to_user_id IS NOT NULL
+     UNION SELECT m.user_id FROM (
+         SELECT user_id FROM session_members WHERE session_id = $2 AND removed_at IS NULL
+         UNION SELECT pm.user_id FROM project_members pm JOIN sessions s ON s.project_id = pm.project_id WHERE s.id = $2
+         UNION SELECT om.user_id FROM org_members om JOIN sessions s ON s.org_id = om.org_id WHERE s.id = $2
+       ) m
+       WHERE EXISTS (SELECT 1 FROM recent WHERE to_user_id IS NULL) AND room_access_role($2, m.user_id) IN ('owner', 'editor')`,
+    [runId, sessionId]);
+  return rows.map((row) => row.user_id);
+}

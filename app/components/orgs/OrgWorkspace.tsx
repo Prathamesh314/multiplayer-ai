@@ -1,4 +1,5 @@
 "use client";
+import { useHandoffInbox } from "../collaboration/HandoffInbox";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { openUserStream } from "../../lib/events/shared-client";
 
@@ -481,6 +482,8 @@ function OrgPanel({
   const [loadedSlug, setLoadedSlug] = useState(org.slug);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [connectionProject, setConnectionProject] = useState<string | null>(null);
+  const handoffs = useHandoffInbox();
+  const waitingHandoffs = handoffs.data?.received.length ?? 0;
   // Back from signing in with Discord: open its server list once.
   const [chooseDiscord, setChooseDiscord] = useState(false);
 
@@ -515,6 +518,7 @@ function OrgPanel({
       <nav aria-label="Workspace sections" className="space-y-0.5 px-2 pt-2">
         <button type="button" onClick={() => { setConnectionsOpen(false); closeNavigation(); }} aria-current={!connectionsOpen ? "page" : undefined} className={navItem(!connectionsOpen)}>
           <GridIcon className="h-4 w-4 shrink-0" /> Project overview
+          {waitingHandoffs > 0 && <span title={`${waitingHandoffs} handoff${waitingHandoffs === 1 ? "" : "s"} waiting for you`} className="ml-auto rounded-full bg-vs-accent px-1.5 text-[11px] font-semibold leading-[18px] text-vs-accent-fg">{waitingHandoffs}<span className="sr-only"> handoffs waiting</span></span>}
         </button>
         <button type="button" onClick={() => { setConnectionsOpen(true); closeNavigation(); }} aria-current={connectionsOpen ? "page" : undefined} className={navItem(connectionsOpen)}>
           <LinkIcon className="h-4 w-4 shrink-0" /> Connections <span className="ml-auto text-[11px] font-normal text-vs-muted">Slack · Discord · AI</span>
@@ -613,6 +617,7 @@ function OrgPanel({
           onInvite={onInvite}
           onManageMembers={onManageMembers}
           onConnections={project=>{setConnectionProject(project.id);setConnectionsOpen(true);}}
+          handoffs={handoffs}
           onOpenRoom={onOpenRoom}
         />
       )}

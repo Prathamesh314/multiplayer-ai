@@ -93,6 +93,17 @@ export function installFixtures() {
       if(method==='PATCH'){Object.assign(tool,body);return json({updated:true});}
       if(method==='DELETE'){list.splice(list.indexOf(tool),1);return json({deleted:true});}
     }
+    // Handoffs on the dashboard: one waiting for Alex, one Alex sent.
+    if (path === '/api/handoffs') {
+      window.__chatFixture.handoffs??={received:[{id:'h-received',runId:'run-polish',sessionId:'priya-room',title:'Checkout polish',roomName:'Checkout · Priya',projectName:'Northstar Checkout',orgSlug:'northstar',person:'Priya Shah',note:'Copy is done; please wire the analytics.',expiresAt:new Date(Date.now()+42*60000).toISOString(),createdAt:new Date().toISOString(),version:3,direct:true,busy:false}],
+        sent:[{id:'h-sent',runId:'run-cart',sessionId:'alex-room',title:'Cart totals',roomName:'Checkout · Alex',projectName:'Northstar Checkout',orgSlug:'northstar',person:null,note:'',expiresAt:new Date(Date.now()+20*60000).toISOString(),createdAt:new Date().toISOString(),version:1,direct:false,busy:false}]};
+      return json(window.__chatFixture.handoffs);
+    }
+    if (/^\/api\/sessions\/[^/]+\/runs\/[^/]+\/handoff$/.test(path) && init.method==='POST') {
+      const body=JSON.parse(init.body);(window.__chatFixture.handoffActions??=[]).push(body);
+      const inbox=window.__chatFixture.handoffs;inbox.received=inbox.received.filter(item=>item.id!==body.handoffId);inbox.sent=inbox.sent.filter(item=>item.id!==body.handoffId);
+      return json({ok:true});
+    }
     if (path.endsWith('/integrations')) return json({canManage:true,providers:[{id:'slack',configured:true},{id:'discord',configured:false}],connections:connected?[integration]:[]});
     if (path.endsWith('/integrations/slack')) {
       if(init.method==='DELETE'){connected=false;return json({ok:true});}

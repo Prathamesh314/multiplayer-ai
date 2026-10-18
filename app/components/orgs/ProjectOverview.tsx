@@ -9,6 +9,7 @@ import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIc
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { CollaborationInbox } from "../collaboration/CollaborationControls";
+import { HandoffInbox, type useHandoffInbox } from "../collaboration/HandoffInbox";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import type { ComputerConnection } from "../ai/useComputerConnection";
 
@@ -26,9 +27,11 @@ type Props = {
   onManageMembers: (project: Project) => void;
   onConnections: (project: Project) => void;
   onOpenRoom: (id: string) => void;
+  /** Handoffs waiting for you and sent by you (one live source with the sidebar's count). */
+  handoffs: ReturnType<typeof useHandoffInbox>;
 };
 
-export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer }: Props) {
+export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer, handoffs }: Props) {
   const [search, setSearch] = useState("");
   const visible = projects?.filter((project) =>
     project.name.toLowerCase().includes(search.trim().toLowerCase()),
@@ -55,7 +58,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
 
         <ComputerConnectionNotice connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
 
-        {me && <><CollaborationInbox /><TaskPanel key={me.id} userId={me.id} /></>}
+        {me && <><HandoffInbox inbox={handoffs} /><CollaborationInbox /><TaskPanel key={me.id} userId={me.id} /></>}
 
         <section className="mt-8" aria-labelledby="projects-heading" aria-busy={projects === null && !error}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

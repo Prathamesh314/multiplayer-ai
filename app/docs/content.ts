@@ -578,7 +578,7 @@ Handoff transfers control of the conversation. It does not migrate a running pro
 5. Select **Offer handoff**.
 
 An offer expires after **one hour**. You can cancel a pending offer. A specifically invited recipient can decline it.`, screenshot: "handoff" },
-      { id: "accept", title: "Accept and continue", body: `The recipient opens the chat and selects **Accept control**. Acceptance stays disabled while the current turn is running. Once accepted, the UI shows the new driver.
+      { id: "accept", title: "Accept and continue", body: `The recipient sees the offer at the top of their dashboard under **Handoffs**, with a count beside **Project overview** in the sidebar: who handed over which chat, in which project and room, their note and when it expires. **Accept & open** takes control and opens the chat, **Decline** turns down an offer made to you by name, and **View chat** opens it first. Offers you sent wait under **Sent by you**, where you can **Cancel** them. In the chat itself, the recipient can also select **Accept control**. Acceptance stays disabled while the current turn is running. Once accepted, the UI shows the new driver.
 
 Accepting does not run a task or spend AI usage. Read the briefing, inspect the transcript and saved changes, and check uploaded checkpoints before sending the next prompt from your own computer.
 
