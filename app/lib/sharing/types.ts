@@ -1,10 +1,15 @@
-export type ChatShareRole = "viewer" | "commenter";
+/** Editor: can also continue the chat on their own computer, as an editor of its room. */
+export type ChatShareRole = "viewer" | "commenter" | "editor";
+/** What "Anyone with the link" can allow: never editing. */
+export type ChatLinkRole = "viewer" | "commenter";
 export type ChatInvitation = {
   id: string; email: string; role: ChatShareRole; createdAt: string;
   /** Null for people added by email: access lasts until the host removes it. */
   expiresAt: string | null; acceptedAt: string | null; revokedAt: string | null;
   /** An earlier one-time invitation link rather than access by email. */
   viaLink?: boolean;
+  /** An Editor who has been given editing access to the room. */
+  workspaceAccess?: boolean;
 };
 export type SharedMessage = {
   id: string; seq: number; role: "user" | "agent"; body: string;
@@ -20,4 +25,6 @@ export type SharedChat = {
   signedIn?: boolean;
   /** Access came only from the chat's link, not from being added by email. */
   viaLink?: boolean;
+  /** An Editor whose editing access is not in place yet, and why. */
+  editorPending?: string;
 };

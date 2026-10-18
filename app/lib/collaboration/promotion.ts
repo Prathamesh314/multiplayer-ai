@@ -65,7 +65,35 @@ export async function previewGuestAccess(runId: string, actor: string, invitatio
 export async function grantGuestAccess(runId: string, actor: string, input: unknown) {
   const value = input as {invitationId?:unknown;confirm?:unknown;scopeKey?:unknown}|null;
   if(!isUuid(value?.invitationId)||value.confirm!==true) throw new SharingError("Review the access scope and explicitly confirm before granting editing access.",400);
+  return transaction(tx=>applyGrant(tx,runId,actor,value.invitationId as string,value.scopeKey));
+}
+
+/**
+ * Someone shared as Editor opened the chat: the host's choice of Editor was
+ * the confirmation, so the same grant runs under the host's authority. When
+ * the host cannot grant it (an outsider needs an organisation admin), nothing
+ * changes and the reason is returned; the person can still read and comment.
+ */
+export async function grantInvitedEditor(runId: string, invitationId: string): Promise<{ granted: boolean; reason?: string }> {
   return transaction(async tx=>{
+    const {rows:[invite]} = await tx.query<{created_by:string;role:string}>(`SELECT created_by,role FROM chat_invitations WHERE id=$1 AND run_id=$2 AND revoked_at IS NULL`,[invitationId,runId]);
+    if(!invite || invite.role!=='editor') return {granted:false,reason:"Not an editor invitation."};
+    let current: AccessPreview;
+    try { current = await preview(tx,runId,invite.created_by,invitationId); }
+    catch (error) { return {granted:false,reason:error instanceof Error?error.message:String(error)}; }
+    if(current.alreadyEditor) {
+      await tx.query(`INSERT INTO chat_access_grants(invitation_id,granted_by,granted_to,scope) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,[invitationId,invite.created_by,current.userId,JSON.stringify(current.scope)]);
+      return {granted:true};
+    }
+    if(!current.canGrant) return {granted:false,reason:current.reason??undefined};
+    await applyGrant(tx,runId,invite.created_by,invitationId,current.scopeKey);
+    return {granted:true};
+  });
+}
+
+async function applyGrant(tx: PoolClient, runId: string, actor: string, invitationId: string, scopeKey: unknown) {
+  {
+    const value = {invitationId, scopeKey};
     const initial = await preview(tx,runId,actor,value.invitationId as string);
     if(!initial.canGrant || !initial.userId) throw new SharingError(initial.reason??"This guest is not eligible.");
     const chat = await grantContext(tx,runId,actor,initial.invitationId);
@@ -93,7 +121,7 @@ export async function grantGuestAccess(runId: string, actor: string, input: unkn
     requireEditor(await chatAccess(tx,runId,current.userId!));
     await tx.query("UPDATE chat_access_requests SET status='approved',resolved_by=$2,resolved_at=now() WHERE invitation_id=$1 AND status='pending'",[current.invitationId,actor]);
     return {granted:true,sessionId:chat.sessionId,userId:current.userId};
-  });
+  }
 }
 
 export async function requestGuestAccess(runId:string,actor:string,input:unknown) {

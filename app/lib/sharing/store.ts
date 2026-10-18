@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { query, queryOne, transaction } from "../db/client";
 import { isUuid } from "../ai/turns";
-import type { ChatInvitation, ChatShareRole, SharedChat, SharedComment, SharedMessage } from "./types";
+import type { ChatInvitation, ChatLinkRole, ChatShareRole, SharedChat, SharedComment, SharedMessage } from "./types";
 
 export class SharingError extends Error {
   constructor(message: string, public status = 403) { super(message); }
@@ -10,10 +10,11 @@ export class SharingError extends Error {
 const unavailable = () => new SharingError("This chat isn’t available to your account. Ask the host for a new invitation.");
 const digest = (token: string) => createHash("sha256").update(token).digest();
 const invitationColumns = `id,email,role,created_at::text AS "createdAt",expires_at::text AS "expiresAt",
-  accepted_at::text AS "acceptedAt",revoked_at::text AS "revokedAt",token_hash IS NOT NULL AS "viaLink"`;
+  accepted_at::text AS "acceptedAt",revoked_at::text AS "revokedAt",token_hash IS NOT NULL AS "viaLink",
+  EXISTS (SELECT 1 FROM chat_access_grants g WHERE g.invitation_id=chat_invitations.id) AS "workspaceAccess"`;
 /** The strongest of a person's own access and what a chat link grants. */
 const BEST_ROLE = `(SELECT x FROM unnest(ARRAY[shared_chat_role($1,$2),chat_link_role($1,$3)]) x WHERE x IS NOT NULL
-  ORDER BY array_position(ARRAY['manager','commenter','viewer'],x) LIMIT 1)`;
+  ORDER BY array_position(ARRAY['manager','editor','commenter','viewer'],x) LIMIT 1)`;
 const linkToken = (link: unknown) => (typeof link === "string" && /^[\w-]{43}$/.test(link) ? link : null);
 
 /** All sharing writes lock the run first, then invitation/comment rows. No
@@ -37,7 +38,8 @@ export async function createChatInvitation(runId: string, actor: string, input: 
   const value = input as { email?: unknown; role?: unknown } | null;
   const email = typeof value?.email === "string" ? value.email.trim().toLowerCase() : "";
   if (!email || email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SharingError("Enter the email address of the person you want to invite.",400);
-  if (!["viewer","commenter"].includes(String(value?.role))) throw new SharingError("Choose Can view or Can comment.",400);
+  if (!["viewer","commenter","editor"].includes(String(value?.role))) throw new SharingError("Choose Viewer, Commenter or Editor.",400);
+  if (value!.role === "editor" && mode !== "email") throw new SharingError("Share by email to make someone an Editor.",400);
   const role = value!.role as ChatShareRole;
   const token = mode === "link" ? randomBytes(32).toString("base64url") : null;
   const invitation = await transaction(async tx => {
@@ -139,7 +141,7 @@ export async function addSharedComment(runId: string, actor: string, input: unkn
     // A link that lets anyone comment still needs a signed-in, eligible person.
     const {rows:[access]} = await tx.query(`SELECT ${BEST_ROLE} AS role,
       room_access_role(r.session_id,$2) AS room_role,chat_guest_eligible(r.id,$2) AS eligible FROM agent_runs r WHERE r.id=$1`,[runId,actor,linkToken(link)]);
-    if (!access?.eligible || (!["manager","commenter"].includes(access.role) && !["owner","editor"].includes(access.room_role))) throw new SharingError("You have view-only access or this invitation has ended.");
+    if (!access?.eligible || (!["manager","editor","commenter"].includes(access.role) && !["owner","editor"].includes(access.room_role))) throw new SharingError("You have view-only access or this invitation has ended.");
     await tx.query("INSERT INTO shared_chat_comments(id,run_id,user_id,body) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING",[id,runId,actor,body]);
     const {rows:[comment]} = await tx.query<SharedComment>(`SELECT c.id,c.body,u.display_name AS "authorName",c.created_at::text AS "createdAt"
       FROM shared_chat_comments c JOIN users u ON u.id=c.user_id WHERE c.id=$1 AND c.run_id=$2 AND c.user_id=$3 AND c.body=$4`,[id,runId,actor,body]);
@@ -155,13 +157,13 @@ export async function listSharedChats(actor: string) {
       AND shared_chat_role(r.id,$1) IS NOT NULL ORDER BY title LIMIT 100`,[actor]);
 }
 
-export type ChatLink = { role: ChatShareRole; token: string } | null;
+export type ChatLink = { role: ChatLinkRole; token: string } | null;
 
 /** "Anyone with the link": the chat's link and what it allows, or null when only added people can open it. */
 export async function getChatLink(runId: string, actor: string): Promise<ChatLink> {
   if (!isUuid(runId)) throw unavailable();
   if (!(await queryOne<{allowed:boolean}>("SELECT chat_share_manager($1,$2) AS allowed",[runId,actor]))?.allowed) throw unavailable();
-  return (await queryOne<{role:ChatShareRole;token:string}>("SELECT role,token FROM chat_links WHERE run_id=$1",[runId])) ?? null;
+  return (await queryOne<{role:ChatLinkRole;token:string}>("SELECT role,token FROM chat_links WHERE run_id=$1",[runId])) ?? null;
 }
 
 /** Turn link sharing on (keeping an existing link), change what it allows, or turn it off (null). */
@@ -171,7 +173,7 @@ export async function setChatLink(runId: string, actor: string, role: unknown): 
     await lockChat(tx,runId);
     await requireManager(tx,runId,actor);
     if (role === null) { await tx.query("DELETE FROM chat_links WHERE run_id=$1",[runId]); return null; }
-    const {rows:[row]} = await tx.query<{role:ChatShareRole;token:string}>(`INSERT INTO chat_links(run_id,token,role,created_by) VALUES($1,$2,$3,$4)
+    const {rows:[row]} = await tx.query<{role:ChatLinkRole;token:string}>(`INSERT INTO chat_links(run_id,token,role,created_by) VALUES($1,$2,$3,$4)
       ON CONFLICT(run_id) DO UPDATE SET role=EXCLUDED.role RETURNING role,token`,[runId,randomBytes(32).toString("base64url"),role,actor]);
     return row;
   });
@@ -180,4 +182,13 @@ export async function setChatLink(runId: string, actor: string, role: unknown): 
 /** Shares this person started in the last hour, to keep notification email from becoming a spam relay. */
 export async function recentShares(actor: string) {
   return (await queryOne<{n:number}>("SELECT count(*)::int AS n FROM chat_invitations WHERE created_by=$1 AND created_at>now()-interval '1 hour'",[actor]))?.n ?? 0;
+}
+
+/** An Editor's invitation that has been opened but not yet turned into editing access. */
+export async function pendingEditorInvitation(runId: string, actor: string): Promise<string | null> {
+  if (!isUuid(runId)) return null;
+  return (await queryOne<{ id: string }>(`SELECT i.id FROM chat_invitations i
+    WHERE i.run_id=$1 AND i.accepted_by=$2 AND i.role='editor' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at>now())
+      AND NOT EXISTS (SELECT 1 FROM chat_access_grants g WHERE g.invitation_id=i.id)
+    ORDER BY i.created_at DESC LIMIT 1`, [runId, actor]))?.id ?? null;
 }

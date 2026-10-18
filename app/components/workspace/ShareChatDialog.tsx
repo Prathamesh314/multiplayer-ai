@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { AgentRun } from "../../lib/ai/runs";
-import type { ChatInvitation, ChatShareRole } from "../../lib/sharing/types";
+import type { ChatInvitation, ChatLinkRole, ChatShareRole } from "../../lib/sharing/types";
 import { sharedChatApi, sharedChatPath, sharingRequest } from "../../lib/sharing/client";
 import { ErrorNote, GhostButton, inputClass, Modal, PrimaryButton } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
@@ -17,10 +17,15 @@ import { LinkIcon, ShieldIcon } from "../icons";
  * shared, never the room's files, tools or settings.
  */
 
-type ChatLink = { role: ChatShareRole; token: string } | null;
+type ChatLink = { role: ChatLinkRole; token: string } | null;
 const roleOptions = [
   { id: "viewer", label: "Viewer", description: "Read this conversation and its comments." },
   { id: "commenter", label: "Commenter", description: "Read and discuss. Comments do not run AI or change files." },
+];
+// Editing is for named people only, never for anyone with the link.
+const personRoles = [
+  ...roleOptions,
+  { id: "editor", label: "Editor", description: "Also continue the chat on their own computer: they become an editor of this room (joining the organisation and project if needed), then fork it or take it over with a handoff." },
 ];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const initial = (value: string) => (value.trim()[0] ?? "?").toUpperCase();
@@ -115,13 +120,13 @@ export function ShareChatDialog({ run, onClose }: { run: AgentRun; onClose: () =
         <div className="flex flex-wrap items-stretch gap-2">
           <input aria-label="Add people by email" type="email" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} disabled={!canManage}
             className={`${inputClass} mt-0 min-w-0 flex-1 basis-56`} placeholder="Add people by email" autoComplete="email" />
-          {typed && <div className="w-36 shrink-0"><ComposerPicker label="Role for new person" value={role} onChange={(value) => setRole(value as ChatShareRole)} variant="field" options={roleOptions} disabled={busy} /></div>}
+          {typed && <div className="w-36 shrink-0"><ComposerPicker label="Role for new person" value={role} onChange={(value) => setRole(value as ChatShareRole)} variant="field" options={personRoles} disabled={busy} /></div>}
         </div>
         {typed && <div className="space-y-3 rounded-xl border border-vs-border bg-vs-editor/40 p-3">
           {canNotify && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sendNotice} onChange={(e) => setSendNotice(e.target.checked)} />Notify by email</label>}
           {canNotify && sendNotice && <textarea aria-label="Message" value={message} onChange={(e) => setMessage(e.target.value)} maxLength={1000} rows={2} className={`${inputClass} mt-0 resize-y`} placeholder="Message (optional)" />}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs leading-5 text-vs-muted">They open it signed in with this email.{canNotify ? "" : " Copy the link to send it."}</p>
+            <p className="text-xs leading-5 text-vs-muted">They open it signed in with this email.{role === "editor" ? " When they do, they become an editor of this room, and of its organisation and project if needed. Their AI work runs on their own computer." : ""}{canNotify ? "" : " Copy the link to send it."}</p>
             <PrimaryButton type="submit" disabled={busy || !EMAIL.test(typed)}>{busy ? "Sharing…" : "Share"}</PrimaryButton>
           </div>
         </div>}
@@ -143,15 +148,17 @@ export function ShareChatDialog({ run, onClose }: { run: AgentRun; onClose: () =
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{person.email}</p>
                   <p className="text-xs text-vs-muted">
-                    {person.viaLink ? `${person.acceptedAt ? "Joined" : "Invitation link sent"}${person.expiresAt ? ` · ends ${new Date(person.expiresAt).toLocaleDateString()}` : ""}` : person.acceptedAt ? "Opened" : "Hasn’t opened yet"}
+                    {person.viaLink ? `${person.acceptedAt ? "Joined" : "Invitation link sent"}${person.expiresAt ? ` · ends ${new Date(person.expiresAt).toLocaleDateString()}` : ""}`
+                      : person.role === "editor" ? (person.workspaceAccess ? "Opened · can edit in the workspace" : person.acceptedAt ? "Opened · editing needs an admin’s approval" : "Hasn’t opened yet")
+                      : person.acceptedAt ? "Opened" : "Hasn’t opened yet"}
                   </p>
                 </div>
                 <div className="w-32 shrink-0">
                   <ComposerPicker label={`Access for ${person.email}`} value={person.role} onChange={(value) => void changeRole(person, value)} variant="field" disabled={busy}
-                    options={[...roleOptions, { id: "remove", label: "Remove access", description: "They can no longer open this chat." }]} />
+                    options={[...personRoles, { id: "remove", label: "Remove access", description: "They can no longer open this chat. Editing access to the room stays until removed in member settings." }]} />
                 </div>
               </div>
-              {person.acceptedAt && <div className="mt-2 pl-11"><GuestAccess runId={run.id} invitationId={person.id} /></div>}
+              {person.acceptedAt && !person.workspaceAccess && <div className="mt-2 pl-11"><GuestAccess runId={run.id} invitationId={person.id} /></div>}
             </li>
           ))}
         </ul>

@@ -11,7 +11,7 @@ export async function readFeedback(runId: string, actor: string, before?: number
       ORDER BY c.seq DESC LIMIT 51`,[runId,before??null]);
     const {rows:[read]} = await tx.query('SELECT last_seq::float8 FROM chat_feedback_reads WHERE run_id=$1 AND user_id=$2',[runId,actor]);
     await chatAccess(tx,runId,actor);
-    return {comments:comments.slice(0,50).reverse(),hasMore:comments.length>50,lastRead:read?.last_seq??0,canComment:canEditChat(chat)||['manager','commenter'].includes(chat.guestRole??'')};
+    return {comments:comments.slice(0,50).reverse(),hasMore:comments.length>50,lastRead:read?.last_seq??0,canComment:canEditChat(chat)||['manager','editor','commenter'].includes(chat.guestRole??'')};
   });
 }
 
