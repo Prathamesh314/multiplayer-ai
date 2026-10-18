@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../lib/ai/runs";
 import { reconcileCompletions } from "../../../../../lib/ai/finalize";
 import { events } from "../../../../../lib/events";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
@@ -21,6 +22,7 @@ async function handleGET(
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
 
   const run = await getRun(runId);
   // A run id from another room must not be readable through this room's grant.
@@ -51,6 +53,7 @@ async function handlePATCH(
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
 
   const run = await getRun(runId);
   if (!run || run.sessionId !== id) {

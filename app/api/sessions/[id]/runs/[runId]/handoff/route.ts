@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { notifyUsage } from "../../../../../../lib/events/notifications";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
@@ -16,6 +17,7 @@ async function handleGET(_request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   const run = isUuid(runId) ? await getRun(runId) : null;
   if (!run || run.sessionId !== id) return Response.json({ error: "Chat not found." }, { status: 404 });
   await reconcileCompletions(runId);
@@ -27,6 +29,7 @@ async function handlePOST(request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   const body = await request.json().catch(() => null);
   if (!isUuid(runId) || !body || !Number.isSafeInteger(body.version) || body.version < 0 ||
       !["offer", "accept", "decline", "cancel", "recover"].includes(body.action)) {

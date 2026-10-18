@@ -13,7 +13,7 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const root = await listCommittedTree(repo.ref, repo.rootName, repo.headSha);
   return Response.json({ rootName: repo.rootName, root, headSha: repo.headSha,

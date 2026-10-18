@@ -1,4 +1,5 @@
 import { withApiLimit } from "../../../../../../lib/http/api-limit";
+import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { access, canWrite, denied, forbidden } from "../../../../../../lib/session/auth";
 import { isUuid, ControlError } from "../../../../../../lib/ai/turns";
 import { safeRelativePath } from "../../../../../../lib/session/paths";
@@ -26,6 +27,7 @@ async function gate(context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
+  if (await runHiddenFrom(runId, result.user.id)) return Response.json({ error: "Chat not found." }, { status: 404 });
   if (!isUuid(runId)) return Response.json({ error: "Chat not found." }, { status: 404 });
   return { result, runId, sessionId: result.session.id };
 }

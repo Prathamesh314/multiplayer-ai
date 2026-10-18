@@ -118,13 +118,13 @@ export async function terminalContext(userId: string, params: URLSearchParams): 
   const runId = params.get("runId");
   if (runId) {
     const run = await queryOne<{ repo_id: string | null; isolation: string }>(
-      `SELECT repo_id, isolation FROM agent_runs WHERE id = $1 AND session_id = $2`, [runId, sessionId]);
+      `SELECT repo_id, isolation FROM agent_runs WHERE id = $1 AND session_id = $2 AND NOT agent_run_hidden(id, $3)`, [runId, sessionId, userId]);
     if (!run) return { error: "Chat not found.", status: 404 };
     return { repoRef: run.repo_id ?? sessionId, runId, isolated: run.isolation === "isolated" };
   }
   const repoId = params.get("repoId");
   if (repoId) {
-    const repo = await queryOne(`SELECT id FROM room_repos WHERE id = $1 AND session_id = $2`, [repoId, sessionId]);
+    const repo = await queryOne(`SELECT id FROM room_repos WHERE id = $1 AND session_id = $2 AND NOT room_repo_hidden(id, $3)`, [repoId, sessionId, userId]);
     if (!repo) return { error: "Repository not found in this room.", status: 404 };
   }
   return { repoRef: repoId || sessionId, runId: null, isolated: false };
