@@ -12,6 +12,7 @@
  * runs *its owner* started. Nobody else's prompts reach your hardware.
  */
 
+import { runnerCommand } from "../../lib/runner/package";
 import { useEffect, useState } from "react";
 import { mintPairingCode, revokeDevice } from "../../lib/runner/client";
 import type { RunnerDevice } from "../../lib/runner/client";
@@ -95,10 +96,9 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   // npm supplies the downloaded executable's PATH. A global install can fail
   // on permissions or leave its bin directory outside the user's shell PATH.
-  const runnerCommand = `npx --yes --package="${origin}/downloads/multicode-ai-runner.tgz" multicode-ai-runner`;
-  const startCommand = `${runnerCommand} start`;
+  const startCommand = runnerCommand(origin, "start");
   const pairCommand = pairing
-    ? `${runnerCommand} pair --server "${origin}" --code ${pairing.code}`
+    ? runnerCommand(origin, `pair --server "${origin}" --code ${pairing.code}`)
     : "";
 
   function commandRow(id: "pair" | "start", label: string, command: string) {

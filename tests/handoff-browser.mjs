@@ -850,7 +850,10 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multicode-ai-runner.tgz`));
     assert.ok(instructions.includes('multicode-ai-runner start'));
-    assert.ok(instructions.includes(`npx --yes --package="${server}/downloads/multicode-ai-runner.tgz" multicode-ai-runner pair`));
+    // The address carries the package's fingerprint, so npx fetches each new runner instead of a cached old one.
+    const packageUrl = instructions.match(/npx --yes --package="([^"]+)" multicode-ai-runner pair/)?.[1];
+    assert.match(packageUrl ?? "", new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/downloads/multicode-ai-runner\\.tgz\\?v=[0-9a-f]{12}$`));
+    assert.equal((await fetch(packageUrl)).status, 200, "the fingerprinted address serves the package");
     assert.ok(!instructions.includes('npm install --global'));
     assert.equal(await sender.evaluate('!!document.querySelector(\'button[aria-label="Copy start command"]\')'), true);
     assert.ok(!instructions.includes('npm run runner'));
