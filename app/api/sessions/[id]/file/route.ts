@@ -17,7 +17,7 @@ async function handleGET(request: Request, context: Context) {
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const url = new URL(request.url);
   const path = safeRelativePath(url.searchParams.get("path"));
@@ -43,7 +43,7 @@ async function handlePUT(request: Request, context: Context) {
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
   if (!canWrite(result.role)) return forbidden("Edit access is required.");
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const body = await request.json().catch(() => null);
   const path = safeRelativePath(body?.path);

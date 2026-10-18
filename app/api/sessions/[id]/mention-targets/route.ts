@@ -36,6 +36,7 @@ async function handleGET(
   const runs = await listRunsForRooms(
     rooms.map((room) => room.id),
     500,
+    result.user.id,
   );
 
   const chatsByRoom = new Map<string, MentionChatDTO[]>();

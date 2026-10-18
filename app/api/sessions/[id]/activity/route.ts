@@ -36,7 +36,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/sessions
     return Response.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   const path = safeRelativePath(body?.path);
   if (!path) return Response.json({ error: "That file path is not valid." }, { status: 400 });

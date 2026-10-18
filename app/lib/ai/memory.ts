@@ -8,7 +8,7 @@ export type { ForkableRun };
 /** Candidate source chats for "import context from…": every run in a room this caller can see. */
 export async function listForkableRuns(projectId: string, userId: string): Promise<ForkableRun[]> {
   const roomIds = await visibleRoomIds(projectId, userId);
-  return listRunsForRooms([...roomIds]);
+  return listRunsForRooms([...roomIds], 50, userId);
 }
 
 /**

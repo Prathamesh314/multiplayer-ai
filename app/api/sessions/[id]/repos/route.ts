@@ -22,7 +22,7 @@ async function handleGET(_request: Request, context: RouteContext<"/api/sessions
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
 
-  return Response.json({ repos: await listRoomRepos(id) } satisfies RoomReposResponse);
+  return Response.json({ repos: await listRoomRepos(id, result.user.id) } satisfies RoomReposResponse);
 }
 
 /**

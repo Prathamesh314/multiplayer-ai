@@ -28,6 +28,7 @@ export type SessionStreamOptions = {
   /** A chat message from anyone, including this account's other tabs. */
   onMessage?: (event: MessageCreatedEvent) => void;
   onMembersChanged?: () => void;
+  onReposChanged?: () => void;
   /** This account's role in the room changed — refresh permissions live. */
   onRoleChanged?: (event: RoleChangedEvent) => void;
   /** A new agent run opened in the room. */
@@ -70,6 +71,7 @@ export function openSessionStream(
         case "file.editing": if (!event.originId || event.originId !== tab) options.onFileEditing?.(event); break;
         case "message.created": options.onMessage?.(event); break;
         case "members.changed": options.onMembersChanged?.(); break;
+        case "repos.changed": options.onReposChanged?.(); break;
         case "role.changed": options.onRoleChanged?.(event); break;
         case "run.control": options.onRunControl?.(); break;
         case "run.started": options.onRunStarted?.(event); break;

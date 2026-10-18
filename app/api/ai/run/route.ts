@@ -223,7 +223,7 @@ async function handlePOST(request: Request) {
   // anything is created, and an import still mid-upload takes no runs.
   let repoId: string | null = run ? run.repoId : null;
   if (!run && typeof body.repoId === "string" && body.repoId) repoId = body.repoId;
-  const repository = await resolveRepository(result.session, repoId);
+  const repository = await resolveRepository(result.session, repoId, result.user.id);
   if (repository instanceof Response) return repository;
   // An isolated chat continues from its own branch; a new one forks the room head.
   const headSha = run?.isolation === "isolated" && run.headSha ? run.headSha : repository.headSha;

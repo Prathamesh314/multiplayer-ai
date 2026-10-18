@@ -68,8 +68,8 @@ export async function resolveReferences(
     `SELECT r.id, s.name AS session_name, r.title
        FROM agent_runs r
        JOIN sessions s ON s.id = r.session_id
-      WHERE r.id = ANY($1) AND r.session_id = ANY($2)`,
-    [runIds, [...rooms]],
+      WHERE r.id = ANY($1) AND r.session_id = ANY($2) AND NOT agent_run_hidden(r.id, $3)`,
+    [runIds, [...rooms], userId],
   );
 
   const byId = new Map(

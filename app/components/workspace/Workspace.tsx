@@ -23,6 +23,8 @@ import {
   addRepoFiles,
   createSaver,
   fetchRoomRepos,
+  changeRoomRepoVisibility,
+  deleteRoomRepo,
   importRoomRepo,
   scanSession,
   seedSession,
@@ -284,9 +286,39 @@ export function Workspace({
       ...(repo ? [{ id: "", label: defaultLabel }] : []),
       ...roomRepos
         .filter((imported) => imported.seededAt)
-        .map((imported) => ({ id: imported.id, label: imported.rootName })),
+        .map((imported) => ({
+          id: imported.id, label: imported.rootName, private: imported.visibility === "private",
+          // Who sees it is its creator's choice; deleting is theirs, or the room owner's while it is visible.
+          canChangeVisibility: !readOnly && imported.createdBy === myUserId,
+          canDelete: !readOnly && (imported.createdBy === myUserId || (session.myRole === "owner" && imported.visibility !== "private")),
+        })),
     ];
-  }, [session.name, repo, roomRepos]);
+  }, [session.name, session.myRole, repo, roomRepos, readOnly, myUserId]);
+  // Another member added, removed, hid or showed a repository: reload, and leave one that is gone.
+  const [reposVersion, setReposVersion] = useState(0);
+  useEffect(() => {
+    if (!reposVersion) return;
+    void fetchRoomRepos(session.id).then((list) => {
+      setRoomRepos(list);
+      if (selectedRepoRef.current && !list.some((item) => item.id === selectedRepoRef.current)) {
+        setEnteredRun(null);
+        void selectRepository(null);
+      }
+    }).catch(() => {});
+    refreshRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reposVersion]);
+  async function changeRepoVisibility(id: string, makePrivate: boolean) {
+    await changeRoomRepoVisibility(session.id, id, makePrivate ? "private" : "room");
+    setRoomRepos(await fetchRoomRepos(session.id));
+  }
+  async function removeRepository(id: string) {
+    if (selectedRepoRef.current === id && !await selectRepository(null)) throw new Error("Save or resolve your edits before deleting this repository.");
+    if (enteredRun?.repoId === id) setEnteredRun(null);
+    await deleteRoomRepo(session.id, id);
+    setRoomRepos(await fetchRoomRepos(session.id));
+    refreshRuns();
+  }
   // Fork a chat: a fresh chat that imports the source run's context on send.
   const startFork = (run: AgentRun) => {
     void selectRepository(run.repoId).then(selected => {
@@ -822,6 +854,7 @@ export function Workspace({
       onFileEditing: event => { if ((event.repoId ?? null) === selectedRepoRef.current) onPersonEditing(event); },
       onMessage: (event) => setIncoming((previous) => [...previous, event.message]),
       onMembersChanged: refreshPeople,
+      onReposChanged: () => setReposVersion((value) => value + 1),
       onRoleChanged: (event) => {
         // Only the named user reacts, and they re-read their own role through the
         // authorised route rather than trusting anything pushed over the wire.
@@ -1018,6 +1051,8 @@ export function Workspace({
                 canAdd={!readOnly}
                 onFork={startFork}
                 onRenamed={refreshRuns}
+                onRepoVisibility={changeRepoVisibility}
+                onDeleteRepo={removeRepository}
               />
             </div>
             {showTeam && <div className="hidden lg:flex"><Resizer width={teamChatWidth} onResize={setTeamChatWidth} min={220} max={320} /></div>}

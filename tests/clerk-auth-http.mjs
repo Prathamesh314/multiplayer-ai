@@ -24,6 +24,14 @@ try{
  assert.equal((await api('/api/orgs',null,undefined,{cookie:`ma_auth=${legacy}`})).status,401,'legacy cookie cannot authenticate');
  const alice=await clerk.link(f.db,f.alice,{origin:base,sessionId:'sess_alice'});
  const me=await api('/api/auth/me',alice);assert.equal(me.status,200,await me.clone().text());assert.equal((await me.json()).user.id,f.alice);
+ // A member renames their @username; another site cannot, and a taken one is refused.
+ const rename=(token,handle,headers={})=>api('/api/auth/me',token,{handle},headers,'PATCH');
+ const renamed=await rename(alice,'@Alice_Dev');assert.equal(renamed.status,200,await renamed.clone().text());assert.equal((await renamed.json()).user.handle,'alice_dev');
+ assert.equal((await rename(alice,'bob')).status,409,'usernames are unique');
+ assert.equal((await rename(alice,'no spaces')).status,400);
+ assert.equal((await rename(null,'nobody')).status,401);
+ assert.equal((await rename(alice,'stolen',{origin:'https://evil.example'})).status,403,'other sites cannot rename you');
+ assert.equal((await(await api('/api/auth/me',alice)).json()).user.handle,'alice_dev');
  assert.equal((await api('/api/orgs',alice)).status,200);
  assert.equal((await api('/api/orgs',null,undefined,{cookie:clerkCookie(alice)})).status,200,'browser cookies authenticate through the same Clerk verifier');
  assert.equal((await api('/api/orgs',null,undefined,{'x-clerk-auth-status':'signed-in','x-clerk-auth-token':alice})).status,401,'forged middleware headers cannot authenticate');

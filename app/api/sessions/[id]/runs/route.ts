@@ -13,7 +13,7 @@ async function handleGET(_request: Request, context: RouteContext<"/api/sessions
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
 
-  const runs = await listRuns(id);
+  const runs = await listRuns(id, result.user.id);
   return Response.json({ runs } satisfies RunsResponse, {
     headers: { "cache-control": "no-store" },
   });

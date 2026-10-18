@@ -11,7 +11,7 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
   const result = await access(id);
   const refusal = denied(result);
   if (refusal || !result) return refusal!;
-  const repo = await repositoryContext(result.session, request);
+  const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
   if (!repo.baseSha) return Response.json({ error: "This older import has no recorded baseline. Its files are available, but Changes cannot be calculated." }, { status: 409 });
   return Response.json({ changes: await committedChanges(repo.ref, repo.baseSha, repo.headSha) }, { headers: { "cache-control": "no-store" } });

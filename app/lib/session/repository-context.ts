@@ -1,5 +1,5 @@
 import type { Session } from "./types";
-import { getRoomRepo } from "./roomRepos";
+import { getRoomRepo, repoHiddenFrom } from "./roomRepos";
 import { isSessionId } from "./paths";
 
 export type RepositoryContext = {
@@ -11,15 +11,15 @@ export type RepositoryContext = {
   sessionBranch: string;
 };
 
-export async function repositoryContext(session: Session, request: Request): Promise<RepositoryContext | Response> {
-  return resolveRepository(session, new URL(request.url).searchParams.get("repoId"));
+export async function repositoryContext(session: Session, request: Request, viewerId: string): Promise<RepositoryContext | Response> {
+  return resolveRepository(session, new URL(request.url).searchParams.get("repoId"), viewerId);
 }
 
 /** Shared by file routes and AI runs, including rooms without a legacy primary repo. */
-export async function resolveRepository(session: Session, repoId: string | null): Promise<RepositoryContext | Response> {
+export async function resolveRepository(session: Session, repoId: string | null, viewerId: string): Promise<RepositoryContext | Response> {
   if (repoId) {
     const repo = isSessionId(repoId) ? await getRoomRepo(repoId) : null;
-    if (!repo || repo.sessionId !== session.id) return Response.json({ error: "Repository not found in this room." }, { status: 404 });
+    if (!repo || repo.sessionId !== session.id || repoHiddenFrom(repo, viewerId)) return Response.json({ error: "Repository not found in this room." }, { status: 404 });
     if (!repo.seededAt || !repo.headSha) return Response.json({ error: "This repository is still importing. Retry the upload to finish." }, { status: 409 });
     return { ref: repo.id, repoId: repo.id, rootName: repo.rootName, headSha: repo.headSha, baseSha: repo.baseSha, sessionBranch: `session/${repo.id}` };
   }
