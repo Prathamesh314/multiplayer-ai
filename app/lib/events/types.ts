@@ -177,7 +177,7 @@ export type TerminalStreamEvent =
   | { type: "terminal.notice"; id: string; message: string; at: number };
 
 export type SessionEvent =
-  | { type: "devices.changed" | "tasks.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
+  | { type: "devices.changed" | "tasks.changed" | "handoffs.changed" | "runner.work" | "usage.changed" | "resync"; at: number }
   | { type: "run.inputs" | "run.activity" | "run.permission"; runId: string; at: number }
   | { type: "run.control"; runId: string; at: number }
   /** A repository was added, removed, or made private or visible: reload the list. */

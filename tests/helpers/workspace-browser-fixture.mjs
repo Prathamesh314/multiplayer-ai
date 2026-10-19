@@ -30,6 +30,7 @@ export function installFixtures() {
       const role=JSON.parse(init.body).role;state.link=role?{role,token:state.link?.token??'l'.repeat(43)}:null;return json({link:state.link});
     }
     state.feedback??=[{id:'guest-feedback',seq:1,body:'Please check delivery errors.',authorName:'Guest',createdAt:new Date().toISOString()}];
+    if(path==='/api/handoffs')return json({received:[],sent:[]});
     if(path==='/api/collaboration/inbox'){
       const unread=state.feedback.filter(c=>c.authorName!=='Alice'&&c.seq>(state.feedbackRead??0)).length;
       return json({items:unread?[{runId:u.searchParams.get('runId'),sessionId:room.id,title:'Conversation',unread,reviews:0}]:[],hasMore:false});

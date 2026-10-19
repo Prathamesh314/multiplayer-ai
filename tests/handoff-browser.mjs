@@ -357,6 +357,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(()=>assigner.evaluate(`!!document.querySelector(${JSON.stringify(composerSelector)})`),"task composer for non-driver");
     await setComposer('@');
     await eventually(()=>assigner.evaluate('document.body.textContent.includes("People & chat references")'),"people mention picker");
+    // The list sits in the top layer, entirely on screen: the dialog's scrolling body no longer clips it.
+    const picker = await assigner.evaluate('(()=>{const p=[...document.querySelectorAll("[popover]")].find(e=>e.matches(":popover-open"));if(!p)return null;const r=p.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:innerHeight,rows:p.querySelectorAll("li").length};})()');
+    assert.ok(picker && picker.top >= 0 && picker.bottom <= picker.height && picker.rows >= 1, `the mention list is fully visible: ${JSON.stringify(picker)}`);
     assert.equal(await assigner.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+assignerHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     // An abandoned person selection must not attach itself to a later message.
     await assigner.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task')).click()`);

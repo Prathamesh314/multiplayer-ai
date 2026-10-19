@@ -3,7 +3,7 @@ import { runHiddenFrom } from "../../../../../../lib/ai/runs";
 import { notifyUsage } from "../../../../../../lib/events/notifications";
 import { access, denied } from "../../../../../../lib/session/auth";
 import { getRun } from "../../../../../../lib/ai/runs";
-import { changeHandoff, handoffState, type HandoffAction } from "../../../../../../lib/ai/handoff";
+import { changeHandoff, handoffAudience, handoffState, type HandoffAction } from "../../../../../../lib/ai/handoff";
 import { ControlError, isUuid } from "../../../../../../lib/ai/turns";
 import { events } from "../../../../../../lib/events";
 import { reconcileCompletions } from "../../../../../../lib/ai/finalize";
@@ -46,6 +46,11 @@ async function handlePOST(request: Request, context: Context) {
     await changeHandoff(runId, id, result.user.id, body as HandoffAction);
     if (body.action === "recover") void notifyUsage(id);
     await events().then(bus => bus.publish(id, { type: "run.control", runId, at: Date.now() })).catch(() => {});
+    // Everyone involved hears it on their dashboard, wherever they are.
+    void handoffAudience(runId, id).then(async (people) => {
+      const bus = await events();
+      await Promise.all(people.map((userId) => bus.publish(`user:${userId}`, { type: "handoffs.changed", at: Date.now() })));
+    }).catch(() => {});
     return GET(request, context);
   } catch (cause) {
     if (cause instanceof ControlError) return Response.json({ error: cause.message }, { status: cause.status });

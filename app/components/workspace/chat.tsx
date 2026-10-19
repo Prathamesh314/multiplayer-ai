@@ -2,7 +2,7 @@
 
 import { assignmentDraft } from "../../lib/tasks/composer";
 
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Ref } from "react";
 import type { Member } from "../../lib/members";
 import { STATUS_COLOR } from "../../lib/members";
 import { FileIcon, FolderIcon, PlusIcon, SendIcon } from "../icons";
@@ -224,6 +224,38 @@ export function Composer({
   const popoverOpen =
     mentionsOn && mention != null && (items.length > 0 || mention.stage === "chat");
 
+  // The list lives in the browser's top layer, so a dialog's scrolling body
+  // (Assign Tasks) or a narrow panel cannot clip it. It opens above the box,
+  // or below when there is more room there.
+  const popRef = useRef<HTMLDivElement>(null);
+  const [popStyle, setPopStyle] = useState<CSSProperties>({ visibility: "hidden" });
+  useLayoutEffect(() => {
+    if (!popoverOpen) return;
+    const popup = popRef.current;
+    try { popup?.showPopover?.(); } catch { /* already open */ }
+    function place() {
+      const anchor = taRef.current?.parentElement?.getBoundingClientRect() ?? taRef.current?.getBoundingClientRect();
+      if (!anchor || !popup) return;
+      const width = Math.min(384, anchor.width, window.innerWidth - 24);
+      const above = anchor.top - 12, below = window.innerHeight - anchor.bottom - 12;
+      const openAbove = above >= Math.min(popup.scrollHeight, 260) || above >= below;
+      setPopStyle({
+        position: "fixed", inset: "auto", margin: 0, width,
+        left: Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12)),
+        ...(openAbove ? { bottom: window.innerHeight - anchor.top + 8 } : { top: anchor.bottom + 8 }),
+        maxHeight: Math.max(120, Math.min(320, openAbove ? above : below)),
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      if (popup?.hidePopover && popup.matches(":popover-open")) popup.hidePopover();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [popoverOpen, items.length]);
+
   /** Recompute the mention state from the textarea's current text + caret. */
   function syncMention(text: string, caret: number) {
     const m = activeMention(text, caret);
@@ -414,14 +446,14 @@ export function Composer({
   }
 
   const popover = popoverOpen && (
-    <div className="absolute bottom-full left-0 z-20 mb-2 w-96 max-w-full overflow-hidden rounded-xl border border-vs-border bg-vs-panel shadow-xl">
+    <div ref={popRef} popover="manual" style={popStyle} className="flex flex-col overflow-hidden rounded-xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-xl">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
         {mention?.stage === "room" ? (files.length ? (onAssignTask ? "Files, people & chat references" : "Files & chat references") : onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
         <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
       ) : (
-      <ul className="vs-scroll max-h-56 overflow-y-auto py-1">
+      <ul className="vs-scroll min-h-0 flex-1 overflow-y-auto py-1">
         {items.map((item, index) => (
           <li key={item.id}>
             <button
