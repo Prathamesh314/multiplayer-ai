@@ -397,17 +397,22 @@ try {
   await writeFile(join(tmpdir(),'multiplayer-files-tree.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   const explorerTab=name=>evaluate(`[...document.querySelectorAll('aside[aria-label="Repository explorer"] [role=tab]')].find(b=>b.textContent.startsWith(${JSON.stringify(name)})).click()`);
   await explorerTab("Changes");
-  await eventually(()=>evaluate(`(()=>{const t=document.querySelector('aside[aria-label="Repository explorer"]').innerText;return t.includes("4 changes")&&t.includes("Agent editing · Fix login")&&t.includes("+7")&&t.includes("−1")&&t.toLowerCase().includes("bin");})()`),"live changes summary").catch(async e=>{console.error(await evaluate(`document.querySelector('aside[aria-label="Repository explorer"]').innerText`));throw e;});
+  await eventually(()=>evaluate(`(()=>{const t=document.querySelector('aside[aria-label="Repository explorer"]').innerText;return t.includes("4 files changed")&&t.includes("Agent editing")&&t.includes("+7")&&t.includes("−1")&&t.toLowerCase().includes("bin");})()`),"live changes summary").catch(async e=>{console.error(await evaluate(`document.querySelector('aside[aria-label="Repository explorer"]').innerText`));throw e;});
   await click('button[aria-label="Show as tree"]');
   await eventually(()=>evaluate(`[...document.querySelectorAll('ul[aria-label="Changed files"] button[aria-expanded]')].some(b=>b.textContent.startsWith("data"))`),"changes grouped by folder");
   await click('button[aria-label="Show as list"]');
+  await click('button[aria-label="Filter changed files"]');
+  await type('input[placeholder="Filter changed files…"]',"scores");
+  await eventually(()=>evaluate(`document.querySelectorAll('ul[aria-label="Changed files"] li').length===1`),"filter narrows the changed files");
+  await click('button[aria-label="Close filter"]');
+  await writeFile(join(tmpdir(),'multiplayer-changes-tab.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await click('button[title="Modified: src/app.ts"]');
   await eventually(()=>evaluate(`!!document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"] .text-syn-keyword')`),"the diff opens in the editor, highlighted");
   assert.ok(await evaluate(`document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"]').textContent.includes("export function login()")`));
   await writeFile(join(tmpdir(),'multiplayer-changes-editor.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await evaluate(`[...document.querySelectorAll('.room-file-document [role=group] button')].find(b=>b.textContent==="Code").click()`);
   await eventually(()=>evaluate(`!document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"]') && !!document.querySelector(".room-file-document textarea")`),"Code shows the file itself");
-  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.startsWith("Review all changes")).click()`);
+  await click('button[aria-label="Review all changes"]');
   const review='dialog[aria-label="Review changes"]';
   await eventually(()=>evaluate(`!!document.querySelector('${review}')?.open && !!document.querySelector('${review} [aria-label="Changes to README.md"]')`),"every diff on the review page");
   await writeFile(join(tmpdir(),'multiplayer-changes-review.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
@@ -416,7 +421,7 @@ try {
   await click('button[aria-label="Close review"]');
   await eventually(()=>evaluate(`!document.querySelector('${review}')`),"review closes");
   await click('button[aria-label="Close app.ts"]');
-  await explorerTab("Files");
+  await explorerTab("All files");
   // New file opened report.csv in the editor; close it so the chat is in view again.
   await click('button[aria-label="Close report.csv"]');
   await eventually(()=>evaluate(`!document.querySelector('button[aria-label="Close report.csv"]') && !!document.querySelector('.ai-composer textarea')`),"back to the chat");
