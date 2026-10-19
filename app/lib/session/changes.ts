@@ -32,7 +32,10 @@ export async function roomChanges(sessionId: string, repo: Repository, viewerId:
   const head = live?.snapshot_sha ?? repo.headSha;
   const [statuses, counts] = await Promise.all([committedChanges(repo.ref, repo.baseSha, head), diffFilesBare(repo.ref, repo.baseSha, head)]);
   const lines = new Map(counts.map((file) => [file.path, file]));
-  const changes: ChangedFile[] = statuses.map((file) => ({ ...file, added: lines.get(file.path)?.added ?? 0, removed: lines.get(file.path)?.removed ?? 0 }));
+  const changes: ChangedFile[] = statuses.map((file) => {
+    const counted = lines.get(file.path);
+    return { ...file, added: counted?.added ?? 0, removed: counted?.removed ?? 0, ...(counted?.binary ? { binary: true } : {}) };
+  });
   return {
     changes,
     head,

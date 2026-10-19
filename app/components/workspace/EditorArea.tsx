@@ -1,9 +1,15 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import { humanBytes } from "../../lib/format";
 import { languageOf } from "../../lib/language";
-import { CloseIcon, FileIcon, SpinnerIcon } from "../icons";
+import { fetchChangeDiff } from "../../lib/session/remote";
+import type { ChangedFile } from "../../lib/session/types";
+import { CloseIcon, SpinnerIcon } from "../icons";
+import { ChangeCounts, LivePill, STATUS_META } from "./ChangesList";
+import { DiffView } from "./DiffView";
+import { FileTypeIcon } from "./FileTypeIcon";
+import type { RoomChanges } from "./useRoomChanges";
 import { EditingBadge } from "./People";
 import type { FilePresence } from "./usePeople";
 import type { Caret } from "./CodeEditor";
@@ -39,6 +45,12 @@ type EditorAreaProps = {
   pinned?: { label: string; icon: React.ReactNode; node: React.ReactNode };
   pinnedActive: boolean;
   onSelectPinned: () => void;
+  /** The repository's changes: changed files get a Code / Changes switch and a diff view. */
+  changes?: RoomChanges;
+  diffSource?: { sessionId: string; repoId: string | null };
+  /** Whether a tab shows its diff rather than its code. */
+  showsDiff?: (path: string) => boolean;
+  onShowDiff?: (path: string, diff: boolean) => void;
 };
 
 export function EditorArea({
@@ -57,11 +69,18 @@ export function EditorArea({
   pinned,
   pinnedActive,
   onSelectPinned,
+  changes,
+  diffSource,
+  showsDiff = () => false,
+  onShowDiff,
 }: EditorAreaProps) {
   const tabId = useId();
   const active = activePath ? buffers.get(activePath) : undefined;
   const showPinned = !!pinned && pinnedActive;
   const showFile = !!activePath;
+  const activeChange = activePath ? changes?.byPath.get(activePath) : undefined;
+  // A deleted file has nothing to edit; one that is no longer changed has nothing to compare.
+  const diffMode = !!activeChange && !!diffSource && (activeChange.status === "D" || showsDiff(activePath!));
 
   // Without a pinned tab and with no files open, the whole area is the empty state.
   if (!pinned && tabs.length === 0) {
@@ -127,8 +146,9 @@ export function EditorArea({
                 tabIndex={isActive ? 0 : -1}
                 className="flex items-center gap-1.5 py-1"
               >
-                <FileIcon className="h-3 w-3" />
-                <span className="max-w-52 truncate">{baseName(path)}</span>
+                <FileTypeIcon name={path} className="h-3.5 w-3.5" />
+                <span className={`max-w-52 truncate ${changes?.byPath.get(path) ? STATUS_META[changes.byPath.get(path)!.status].name : ""}`}>{baseName(path)}</span>
+                {showsDiff(path) && changes?.byPath.get(path) && <span className="text-[10.5px] text-vs-muted">Changes</span>}
                 {dirty && <span className="text-xs text-vs-fg">●</span>}
                 <EditingBadge people={editing.get(path) ?? []} />
               </button>
@@ -152,13 +172,27 @@ export function EditorArea({
         )}
 
         {showFile && activePath && (
-          <div className="vs-scroll flex shrink-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
-            {activePath.split("/").map((segment, index, all) => (
-              <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
-                {segment}
-                {index < all.length - 1 && <span className="px-1.5 opacity-60">›</span>}
-              </span>
-            ))}
+          <div className="flex shrink-0 items-center gap-3 border-b border-vs-border px-4 py-1 text-[12px] text-vs-muted">
+            <div className="vs-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+              {activePath.split("/").map((segment, index, all) => (
+                <span key={index} className={index === all.length - 1 ? "text-vs-fg" : ""}>
+                  {segment}
+                  {index < all.length - 1 && <span className="px-1.5 opacity-60">›</span>}
+                </span>
+              ))}
+            </div>
+            {activeChange && diffSource && onShowDiff && (
+              <div role="group" aria-label="Show" className="flex shrink-0 rounded-md border border-vs-border p-0.5">
+                {activeChange.status !== "D" && (
+                  <button type="button" aria-pressed={!diffMode} onClick={() => onShowDiff(activePath, false)}
+                    className={`rounded px-2 py-0.5 text-[11px] font-medium ${!diffMode ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:text-vs-fg"}`}>Code</button>
+                )}
+                <button type="button" aria-pressed={diffMode} onClick={() => onShowDiff(activePath, true)}
+                  className={`flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium ${diffMode ? "bg-vs-active text-vs-fg" : "text-vs-muted hover:text-vs-fg"}`}>
+                  Changes <ChangeCounts added={activeChange.added} removed={activeChange.removed} binary={activeChange.binary} compact />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -172,7 +206,9 @@ export function EditorArea({
           </p>
         )}
 
-        {showFile &&
+        {showFile && diffMode && activeChange && diffSource && changes ? (
+          <ChangeDiff key={activePath} source={diffSource} change={activeChange} changes={changes} />
+        ) : showFile &&
           (!active || active.loading ? (
           <div className="flex flex-1 items-center justify-center gap-2 text-base text-vs-muted">
             <SpinnerIcon className="h-4 w-4" />
@@ -219,6 +255,51 @@ export function EditorArea({
             />
           </>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** One changed file's diff in the editor area, the way Conductor shows it beside the chat. */
+function ChangeDiff({ source, change, changes }: { source: { sessionId: string; repoId: string | null }; change: ChangedFile; changes: RoomChanges }) {
+  const head = changes.data?.head ?? "";
+  const [diff, setDiff] = useState<{ head: string; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const stale = diff?.head !== head;
+
+  useEffect(() => {
+    if (!stale || change.binary) return;
+    const controller = new AbortController();
+    fetchChangeDiff(source.sessionId, source.repoId, change.path, controller.signal)
+      .then((text) => { setDiff({ head, text }); setError(null); })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load this file's changes."); });
+    return () => controller.abort();
+  }, [stale, head, source.sessionId, source.repoId, change.path, change.binary]);
+
+  const meta = STATUS_META[change.status];
+  const viewed = changes.isViewed(change);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-vs-border bg-vs-chrome/60 px-4 py-1.5">
+        <span className={`rounded px-1.5 py-px text-[11px] font-medium ${meta.className} ${meta.badge}`}>{meta.label}</span>
+        <ChangeCounts added={change.added} removed={change.removed} binary={change.binary} bar />
+        {changes.data?.live && <LivePill live={changes.data.live} />}
+        <span className="text-[11px] text-vs-muted">since the repository was imported</span>
+        <label className="ml-auto flex cursor-pointer items-center gap-1.5 rounded-md border border-vs-border px-2 py-0.5 text-[11px] text-vs-muted hover:text-vs-fg">
+          <input type="checkbox" checked={viewed} onChange={() => changes.toggleViewed(change)} className="h-3 w-3 accent-vs-accent" />
+          Viewed
+        </label>
+      </div>
+      <div className="vs-scroll min-h-0 flex-1 overflow-auto">
+        {change.binary ? (
+          <Notice title="Binary file" detail={`${meta.label}. Git can’t show line changes for this kind of file.`} />
+        ) : error ? (
+          <p role="alert" className="px-4 py-3 text-sm text-vs-danger">{error}</p>
+        ) : diff ? (
+          <DiffView diff={diff.text} label={`Changes to ${change.path}`} path={change.path} bounded={false} />
+        ) : (
+          <p className="flex items-center gap-2 px-4 py-3 text-sm text-vs-muted"><SpinnerIcon className="h-3.5 w-3.5" /> Loading changes…</p>
+        )}
       </div>
     </div>
   );

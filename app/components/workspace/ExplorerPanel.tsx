@@ -1,19 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { treeToText } from "../../lib/ascii";
 import { humanBytes, humanCount, relativeTime } from "../../lib/format";
 import { shortRemote } from "../../lib/git";
 import { IGNORED_DIRS } from "../../lib/scan";
-import { openSessionStream } from "../../lib/events/client";
-import { fetchChanges } from "../../lib/session/remote";
-import type { ChangedFile, ChangesResponse } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
 import { AlertIcon, ChevronIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
 import { useAddFiles, type AddFilesFn } from "./AddFiles";
 import { ChangesList } from "./ChangesList";
-import { ChangesReview, viewedKey } from "./ChangesReview";
+import { ChangesReview } from "./ChangesReview";
+import type { RoomChanges } from "./useRoomChanges";
 
 type ExplorerPanelProps = {
   actionsRef?: (node: HTMLDivElement | null) => void;
@@ -36,6 +34,10 @@ type ExplorerPanelProps = {
   repoId?: string | null;
   /** When set (editors), New file / New folder / Upload files and drag-and-drop. */
   onAddFiles?: AddFilesFn;
+  /** This repository's changes since import (with `sessionId`). */
+  changes?: RoomChanges;
+  /** Show a changed file's diff in the editor; without it, the review page opens. */
+  onOpenDiff?: (path: string) => void;
 };
 
 export function ExplorerPanel({
@@ -56,17 +58,16 @@ export function ExplorerPanel({
   sessionId,
   repoId = null,
   onAddFiles,
+  changes: room,
+  onOpenDiff,
 }: ExplorerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
   const [view, setView] = useState<"files" | "changes">("files");
-  const [changes, setChanges] = useState<ChangesResponse | null>(null);
-  const [viewed, setViewed] = useState<Set<string>>(() => new Set());
   // null: closed; "" opens at the first file.
   const [reviewing, setReviewing] = useState<string | null>(null);
-  const [changesError, setChangesError] = useState<string | null>(null);
-  const [loadingChanges, setLoadingChanges] = useState(false);
-  const changesRequest = useRef(0);
+  const changes = room?.data ?? null;
+  const changeCount = changes?.changes.length ?? 0;
   const adding = useAddFiles({
     root: result.root,
     activePath,
@@ -89,83 +90,38 @@ export function ExplorerPanel({
     });
   }
 
-  const loadChanges = useCallback(async () => {
-    if (!sessionId) return;
-    const request = ++changesRequest.current;
-    setLoadingChanges(true);
-    try {
-      setChangesError(null);
-      const next = await fetchChanges(sessionId, repoId);
-      if (request === changesRequest.current) setChanges(next);
-    } catch (cause) {
-      if (request === changesRequest.current) {
-        setChanges(null);
-        setChangesError(cause instanceof Error ? cause.message : "Could not load changes.");
-      }
-    } finally {
-      if (request === changesRequest.current) setLoadingChanges(false);
-    }
-  }, [sessionId, repoId]);
-
-  useEffect(() => {
-    void Promise.resolve().then(loadChanges);
-  }, [result.git.commit, loadChanges]);
-
-  // Follow the work as it happens: an agent's checkpoints, finished turns and
-  // teammates' saves all change what this tab shows. Bursts coalesce.
-  useEffect(() => {
-    if (!sessionId) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const changed = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => { if (!document.hidden) void loadChanges(); }, 600);
-    };
-    const stream = openSessionStream(sessionId, {
-      onRunActivity: changed,
-      onRunFinished: changed,
-      onRunBranch: changed,
-      onFileSaved: changed,
-      onStatus: (connected) => { if (connected) changed(); },
-    });
-    document.addEventListener("visibilitychange", changed);
-    return () => { clearTimeout(timer); stream.close(); document.removeEventListener("visibilitychange", changed); };
-  }, [sessionId, loadChanges]);
-
-  function toggleViewed(file: ChangedFile) {
-    setViewed((previous) => {
-      const next = new Set(previous);
-      const key = viewedKey(file);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
   return (
     <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       {sessionId && (
-        <div className="flex shrink-0 items-center gap-1 border-b border-vs-border px-2 py-1.5 flex-wrap">
-          <TabButton active={view === "files"} onClick={() => setView("files")}>
-            All files
-          </TabButton>
-          <TabButton active={view === "changes"} onClick={() => setView("changes")}>
-            Changes
-            {changes?.live ? (
-              <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" />
-            ) : null}
-            {changes && changes.changes.length > 0 && (
-              <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[10px] text-vs-accent">
-                {changes.changes.length}
-              </span>
-            )}
-          </TabButton>
-          {onRefresh && <button type="button" onClick={view === "changes" ? () => void loadChanges() : onRefresh} disabled={scanning || loadingChanges} aria-label="Refresh files" title="Refresh files" className="rounded px-1 text-vs-muted hover:bg-vs-hover">↻</button>}
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-vs-border px-2 py-1.5">
+          <div role="tablist" aria-label="Explorer view" className="relative flex rounded-lg border border-vs-border bg-vs-chrome p-0.5">
+            <TabButton active={view === "files"} onClick={() => setView("files")}>
+              Files
+            </TabButton>
+            <TabButton active={view === "changes"} onClick={() => setView("changes")}>
+              Changes
+              {changes?.live ? (
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" />
+              ) : null}
+              {changeCount > 0 && (
+                <span className={`min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums ${view === "changes" ? "bg-vs-accent text-vs-accent-fg" : "bg-vs-accent/15 text-vs-accent"}`}>
+                  {changeCount}
+                </span>
+              )}
+            </TabButton>
+          </div>
+          {onRefresh && (
+            <button type="button" onClick={view === "changes" ? () => void room?.reload() : onRefresh} disabled={scanning || !!room?.loading} aria-label="Refresh files" title="Refresh"
+              className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50">
+              <RefreshGlyph spinning={scanning || !!room?.loading} />
+            </button>
+          )}
           <div ref={actionsRef} className="file-actions ml-auto flex items-center gap-1" />
         </div>
       )}
 
       {error && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{error}</p>}
-      {changesError && view === "changes" && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{changesError}</p>}
+      {room?.error && view === "changes" && <p role="alert" className="px-3 py-2 text-xs text-vs-danger">{room.error}</p>}
       {view === "files" ? (
         <>
           <div className="shrink-0 px-2 py-1.5">
@@ -214,27 +170,29 @@ export function ExplorerPanel({
               onToggle={toggle}
               onOpenFile={onOpenFile}
               editing={editing}
+              changes={room?.byPath}
             />
           </div>
         </>
-      ) : changesError ? <div className="min-h-0 flex-1" /> : (
+      ) : room?.error ? <div className="min-h-0 flex-1" /> : (
         <ChangesList
           data={changes}
-          loading={loadingChanges}
+          loading={!!room?.loading}
           activePath={activePath}
-          viewed={(file) => viewed.has(viewedKey(file))}
-          onReview={(path) => setReviewing(path ?? "")}
+          viewed={(file) => !!room?.isViewed(file)}
+          onOpenDiff={(path) => (onOpenDiff ? onOpenDiff(path) : setReviewing(path))}
+          onReview={() => setReviewing("")}
           onOpenFile={onOpenFile}
         />
       )}
-      {sessionId && changes && reviewing !== null && (
+      {sessionId && room && changes && reviewing !== null && (
         <ChangesReview
           sessionId={sessionId}
           repoId={repoId}
           data={changes}
           focusPath={reviewing || null}
-          viewed={viewed}
-          onToggleViewed={toggleViewed}
+          viewed={room.viewed}
+          onToggleViewed={room.toggleViewed}
           onOpenFile={onOpenFile}
           onClose={() => setReviewing(null)}
         />
@@ -263,14 +221,23 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
       onClick={onClick}
-      aria-pressed={active}
-      className={`flex items-center rounded px-1.5 py-0.5 text-xs transition ${
-        active ? "bg-vs-hover font-medium text-vs-fg" : "text-vs-muted hover:text-vs-fg"
+      aria-selected={active}
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+        active ? "bg-vs-editor text-vs-fg shadow-sm ring-1 ring-vs-border" : "text-vs-muted hover:text-vs-fg"
       }`}
     >
       {children}
     </button>
+  );
+}
+
+function RefreshGlyph({ spinning }: { spinning: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className={`h-3.5 w-3.5 ${spinning ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+    </svg>
   );
 }
 

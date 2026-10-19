@@ -14,9 +14,9 @@ import type { ChangedFile, ChangesResponse } from "../../lib/session/types";
 import { CheckIcon, ChevronIcon, CloseIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { DiffView } from "./DiffView";
 import { ChangeCounts, LivePill, STATUS_META, splitPath } from "./ChangesList";
+import { FileTypeIcon } from "./FileTypeIcon";
 
-/** A file's viewed mark lasts until its diff changes again. */
-export const viewedKey = (file: ChangedFile) => `${file.path}\0${file.status}\0${file.added ?? 0}\0${file.removed ?? 0}`;
+import { viewedKey } from "./useRoomChanges";
 
 type Props = {
   sessionId: string;
@@ -116,12 +116,13 @@ export function ChangesReview({ sessionId, repoId, data, focusPath, viewed, onTo
                       title={file.path}
                       className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] ${file.path === current ? "bg-vs-active" : "hover:bg-vs-hover"} ${seen ? "opacity-60" : ""}`}
                     >
-                      <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${STATUS_META[file.status].className}`}>{file.status}</span>
+                      <FileTypeIcon name={file.path} />
                       <span className="min-w-0 flex-1 truncate">
-                        <span className={file.status === "D" ? "line-through" : "font-medium"}>{name}</span>
-                        {dir && <span className="ml-1 text-vs-muted">{dir}</span>}
+                        <span className={`font-medium ${STATUS_META[file.status].name}`}>{name}</span>
+                        {dir && <span className="ml-1.5 text-[11px] text-vs-muted">{dir}</span>}
                       </span>
-                      {seen ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-vs-success" /> : <ChangeCounts added={file.added} removed={file.removed} compact />}
+                      {seen ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-vs-success" /> : <ChangeCounts added={file.added} removed={file.removed} binary={file.binary} compact />}
+                      <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-bold ${STATUS_META[file.status].className}`}>{file.status}</span>
                     </button>
                   </li>
                 );
@@ -186,13 +187,13 @@ function FileDiff({ sessionId, repoId, head, file, current, viewed, scroller, on
 
   const stale = diff?.head !== head;
   useEffect(() => {
-    if (!visible || !open || !stale) return;
+    if (!visible || !open || !stale || file.binary) return;
     const controller = new AbortController();
     fetchChangeDiff(sessionId, repoId, file.path, controller.signal)
       .then((text) => { setDiff({ head, text }); setError(null); })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load this file's changes."); });
     return () => controller.abort();
-  }, [visible, open, stale, sessionId, repoId, file.path, head]);
+  }, [visible, open, stale, sessionId, repoId, file.path, file.binary, head]);
 
   return (
     <section ref={node} data-diff-path={file.path} aria-label={file.path} onClick={onFocus} className={`scroll-mt-3 overflow-hidden rounded-lg border bg-vs-panel ${current ? "border-vs-accent/60" : "border-vs-border"}`}>
@@ -200,12 +201,13 @@ function FileDiff({ sessionId, repoId, head, file, current, viewed, scroller, on
         <button type="button" onClick={() => setToggled({ viewed, open: !open })} aria-expanded={open} aria-label={open ? `Collapse ${file.path}` : `Expand ${file.path}`} className="rounded p-0.5 text-vs-muted hover:bg-vs-hover">
           <ChevronIcon className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         </button>
-        <span className={`rounded px-1 font-mono text-[10px] font-semibold ${STATUS_META[file.status].className} ${STATUS_META[file.status].badge}`} title={STATUS_META[file.status].label}>{file.status}</span>
+        <FileTypeIcon name={file.path} />
         <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={file.path}>
           {dir && <span className="text-vs-muted">{dir}/</span>}
           <span className={`font-semibold ${file.status === "D" ? "line-through" : ""}`}>{name}</span>
         </span>
-        <ChangeCounts added={file.added} removed={file.removed} bar />
+        <span className={`rounded px-1.5 py-px text-[10.5px] font-medium ${STATUS_META[file.status].className} ${STATUS_META[file.status].badge}`}>{STATUS_META[file.status].label}</span>
+        <ChangeCounts added={file.added} removed={file.removed} binary={file.binary} bar />
         {file.status !== "D" && <button type="button" onClick={onOpen} className="rounded-md px-2 py-0.5 text-xs text-vs-muted hover:bg-vs-hover hover:text-vs-fg">Open</button>}
         <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-vs-border px-2 py-0.5 text-xs text-vs-muted hover:text-vs-fg">
           <input type="checkbox" checked={viewed} onChange={onToggleViewed} className="h-3 w-3 accent-vs-accent" />
@@ -213,7 +215,8 @@ function FileDiff({ sessionId, repoId, head, file, current, viewed, scroller, on
         </label>
       </header>
       {open && (
-        error ? <p role="alert" className="px-3 py-3 text-xs text-vs-danger">{error}</p>
+        file.binary ? <p className="px-3 py-3 text-xs text-vs-muted">Binary file. Git can’t show line changes for this kind of file; open it to see it.</p>
+          : error ? <p role="alert" className="px-3 py-3 text-xs text-vs-danger">{error}</p>
           : diff ? <DiffView diff={diff.text} label={`Changes to ${file.path}`} path={file.path} bounded={false} />
             : <p className="flex items-center gap-2 px-3 py-3 text-xs text-vs-muted"><SpinnerIcon className="h-3.5 w-3.5" /> Loading diff…</p>
       )}
