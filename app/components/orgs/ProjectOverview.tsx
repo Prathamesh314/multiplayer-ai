@@ -129,7 +129,7 @@ function ProjectCard({ project, org, me, onManageMembers, onConnections, onOpenR
   const [error, setError] = useState<string | null>(null);
 
   // Org owners and admins can see a project they were never added to; joining gives them a room in it.
-  const joining = !project.isMember && project.myRole === "manager";
+  const joining = project.isMember === false && project.myRole === "manager";
   async function openRoom() {
     if (opening || !me) return;
     setOpening(true);
