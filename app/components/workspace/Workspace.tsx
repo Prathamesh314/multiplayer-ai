@@ -49,6 +49,7 @@ import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
+import { useRoomChanges } from "./useRoomChanges";
 import { TerminalPanel } from "./TerminalPanel";
 import { AddRepositoryDialog } from "./AddRepositoryDialog";
 import { TopBar } from "./TopBar";
@@ -192,6 +193,15 @@ export function Workspace({
   const [chatRepoId, setChatRepoId] = useState<string | null>(null);
   const activeRepository = chatRepoId ? roomRepos.find(item => item.id === chatRepoId) : repo;
   const hasRepo = !!activeRepository && activeRepository.seededAt !== null;
+  const roomChanges = useRoomChanges(hasRepo ? session.id : undefined, chatRepoId, result?.git.commit);
+  // Tabs showing their diff instead of their code, per repository ("repo\0path").
+  const [diffTabs, setDiffTabs] = useState<Set<string>>(() => new Set());
+  const diffKey = (path: string) => `${chatRepoId ?? ""}\0${path}`;
+  const showDiff = (path: string, diff: boolean) => setDiffTabs(previous => {
+    const next = new Set(previous);
+    if (diff) next.add(diffKey(path)); else next.delete(diffKey(path));
+    return next;
+  });
   const selectedProjectRepositoryId = activeRepository?.projectRepositoryId ?? null;
   const selectedRepoRef = useRef<string | null>(null);
   const loadGeneration = useRef(0);
@@ -768,6 +778,18 @@ export function Workspace({
     );
   }
 
+  /** From the Changes tab: the file's diff in the editor area, beside the chat. */
+  function openDiff(path: string) {
+    showDiff(path, true);
+    void openFile(path);
+  }
+
+  /** From the file tree: the file's code, even if its tab was showing changes. */
+  function openCode(path: string) {
+    showDiff(path, false);
+    void openFile(path);
+  }
+
   async function closeTab(path: string) {
     const generation = loadGeneration.current;
     // Closing a tab discards its buffer, so anything still queued has to land
@@ -1153,6 +1175,10 @@ export function Workspace({
                 }}
                 pinnedActive={showChat}
                 onSelectPinned={() => setShowChat(true)}
+                changes={roomChanges}
+                diffSource={hasRepo ? { sessionId: session.id, repoId: chatRepoId } : undefined}
+                showsDiff={path => diffTabs.has(diffKey(path))}
+                onShowDiff={showDiff}
                 emptyState={
                   <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-vs-muted">
                     <div className="max-w-xs space-y-3">
@@ -1188,7 +1214,9 @@ export function Workspace({
                     includeIgnored={includeIgnored}
                     canRescan={!hasRepo}
                     onToggleIgnored={toggleIgnored}
-                    onOpenFile={openFile}
+                    onOpenFile={openCode}
+                    onOpenDiff={openDiff}
+                    changes={roomChanges}
                     editing={people.editing}
                     sessionId={hasRepo ? session.id : undefined}
                     repoId={chatRepoId}

@@ -2,8 +2,11 @@
 
 import { useMemo } from "react";
 import { humanBytes } from "../../lib/format";
+import type { ChangedFile } from "../../lib/session/types";
 import type { TreeNode } from "../../lib/types";
-import { ChevronIcon, FileIcon, FolderIcon } from "../icons";
+import { ChevronIcon, FolderIcon } from "../icons";
+import { STATUS_META } from "./ChangesList";
+import { FileTypeIcon } from "./FileTypeIcon";
 import { EditingBadge } from "./People";
 import type { FilePresence } from "./usePeople";
 
@@ -16,6 +19,8 @@ type ExplorerTreeProps = {
   onOpenFile: (path: string) => void;
   /** Repo path → who is typing in it right now. */
   editing: Map<string, FilePresence[]>;
+  /** Repo path → its change since import, shown the way VS Code decorates Git status. */
+  changes?: Map<string, ChangedFile>;
 };
 
 export function ExplorerTree({
@@ -26,6 +31,7 @@ export function ExplorerTree({
   onToggle,
   onOpenFile,
   editing,
+  changes,
 }: ExplorerTreeProps) {
   const trimmed = query.trim().toLowerCase();
   const visible = useMemo(
@@ -34,6 +40,15 @@ export function ExplorerTree({
   );
 
   const rows = flatten(visible, expanded, trimmed.length > 0);
+  // Folders holding a changed file get a dot, so a collapsed tree still shows where work happened.
+  const changedDirs = useMemo(() => {
+    const dirs = new Set<string>();
+    for (const path of changes?.keys() ?? []) {
+      const parts = path.split("/");
+      for (let index = 1; index < parts.length; index++) dirs.add(parts.slice(0, index).join("/"));
+    }
+    return dirs;
+  }, [changes]);
 
   return (
     <div className="py-1 text-[14px] leading-[24px]">
@@ -45,6 +60,8 @@ export function ExplorerTree({
           open={row.open}
           active={row.node.path === activePath}
           editing={editing.get(row.node.path) ?? []}
+          change={row.node.type === "dir" ? undefined : changes?.get(row.node.path)}
+          holdsChanges={row.node.type === "dir" && changedDirs.has(row.node.path)}
           onActivate={() =>
             row.node.type === "dir" ? onToggle(row.node.path) : onOpenFile(row.node.path)
           }
@@ -63,11 +80,14 @@ type RowProps = {
   open: boolean;
   active: boolean;
   editing: FilePresence[];
+  change?: ChangedFile;
+  holdsChanges: boolean;
   onActivate: () => void;
 };
 
-function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
+function Row({ node, depth, open, active, editing, change, holdsChanges, onActivate }: RowProps) {
   const isDir = node.type === "dir";
+  const meta = change ? STATUS_META[change.status] : null;
 
   return (
     <button
@@ -79,11 +99,16 @@ function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
       aria-current={active ? "true" : undefined}
       disabled={!!node.skipped}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      className={`group flex min-h-8 w-full items-center gap-1.5 pr-2 text-left ${
+      className={`group relative flex h-7 w-full items-center gap-1.5 pr-2 text-left text-[13px] ${
         active ? "bg-vs-active text-vs-fg" : "hover:bg-vs-hover"
       } ${node.skipped ? "opacity-55" : ""}`}
     >
-      <span className="flex h-4 w-4 items-center justify-center">
+      {active && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-vs-accent" />}
+      {/* Indent guides, one per level, like an editor's tree. */}
+      {Array.from({ length: depth }, (_, level) => (
+        <span key={level} aria-hidden className="absolute inset-y-0 w-px bg-vs-border/70" style={{ left: `${level * 12 + 15}px` }} />
+      ))}
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
         {isDir && !node.skipped && (
           <ChevronIcon
             className={`h-3.5 w-3.5 text-vs-muted transition-transform ${open ? "rotate-90" : ""}`}
@@ -91,22 +116,24 @@ function Row({ node, depth, open, active, editing, onActivate }: RowProps) {
         )}
       </span>
       {isDir ? (
-        <FolderIcon open={open} className="h-4 w-4 text-sky-500 dark:text-sky-400" />
+        <FolderIcon open={open} className="h-4 w-4 shrink-0 text-sky-500 dark:text-sky-400" />
       ) : (
-        <FileIcon className={`h-4 w-4 ${extensionColor(node.name)}`} />
+        <FileTypeIcon name={node.name} />
       )}
-      <span className="truncate">{node.name}</span>
+      <span className={`truncate ${meta ? meta.name : holdsChanges ? "text-vs-warn/90" : ""}`}>{node.name}</span>
       {node.skipped && (
         <span className="ml-auto shrink-0 text-[11px] uppercase tracking-wide text-vs-muted">
           not scanned
         </span>
       )}
+      {isDir && holdsChanges && !open && <span aria-label="Contains changes" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-vs-warn/80" />}
       {!isDir && editing.length > 0 ? (
         <EditingBadge people={editing} compact />
       ) : (
         !isDir && (
-          <span className="ml-auto shrink-0 pl-2 text-[11px] tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">
-            {humanBytes(node.size ?? 0)}
+          <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+            <span className="text-[11px] tabular-nums text-vs-muted opacity-0 transition-opacity group-hover:opacity-100">{humanBytes(node.size ?? 0)}</span>
+            {meta && change && <span className={`w-3 text-center font-mono text-[11px] font-bold ${meta.className}`} title={meta.label}>{change.status}</span>}
           </span>
         )
       )}
@@ -172,40 +199,4 @@ function filterTree(node: TreeNode, query: string): TreeNode | null {
 
   if (children.length > 0) return { ...node, children };
   return node.name.toLowerCase().includes(query) ? { ...node, children: [] } : null;
-}
-
-const EXTENSION_COLORS: Record<string, string> = {
-  ts: "text-blue-500 dark:text-blue-400",
-  tsx: "text-blue-500 dark:text-blue-400",
-  mts: "text-blue-500 dark:text-blue-400",
-  js: "text-amber-500 dark:text-amber-400",
-  jsx: "text-amber-500 dark:text-amber-400",
-  mjs: "text-amber-500 dark:text-amber-400",
-  cjs: "text-amber-500 dark:text-amber-400",
-  json: "text-amber-600 dark:text-amber-300",
-  css: "text-violet-500 dark:text-violet-400",
-  scss: "text-violet-500 dark:text-violet-400",
-  html: "text-orange-500 dark:text-orange-400",
-  md: "text-slate-500 dark:text-slate-300",
-  mdx: "text-slate-500 dark:text-slate-300",
-  py: "text-emerald-500 dark:text-emerald-400",
-  go: "text-cyan-500 dark:text-cyan-400",
-  rs: "text-orange-600 dark:text-orange-300",
-  java: "text-red-500 dark:text-red-400",
-  rb: "text-rose-500 dark:text-rose-400",
-  sh: "text-lime-600 dark:text-lime-400",
-  yml: "text-teal-500 dark:text-teal-400",
-  yaml: "text-teal-500 dark:text-teal-400",
-  svg: "text-fuchsia-500 dark:text-fuchsia-400",
-  png: "text-fuchsia-500 dark:text-fuchsia-400",
-  jpg: "text-fuchsia-500 dark:text-fuchsia-400",
-  jpeg: "text-fuchsia-500 dark:text-fuchsia-400",
-  gif: "text-fuchsia-500 dark:text-fuchsia-400",
-  ico: "text-fuchsia-500 dark:text-fuchsia-400",
-};
-
-function extensionColor(name: string): string {
-  const dotAt = name.lastIndexOf(".");
-  const ext = dotAt > 0 ? name.slice(dotAt + 1).toLowerCase() : "";
-  return EXTENSION_COLORS[ext] ?? "text-vs-muted";
 }

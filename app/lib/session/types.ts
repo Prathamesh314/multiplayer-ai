@@ -186,6 +186,8 @@ export type ChangedFile = {
   /** Lines added and removed; 0/0 for binary files. */
   added?: number;
   removed?: number;
+  /** Git can't count lines in it (a spreadsheet, image, archive…). */
+  binary?: boolean;
 };
 
 export type ChangesResponse = {

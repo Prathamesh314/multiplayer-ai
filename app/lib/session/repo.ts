@@ -538,7 +538,7 @@ async function stored_diffStatBare(
 }
 
 /** One file's line delta between two commits. */
-export type FileChange = { path: string; added: number; removed: number };
+export type FileChange = { path: string; added: number; removed: number; binary?: boolean };
 
 /**
  * Per-file line deltas straight from the bare repo — what the chat shows as
@@ -560,6 +560,7 @@ async function stored_diffFilesBare(id: string, base: string, head: string): Pro
       path,
       added: a && a !== "-" ? Number(a) || 0 : 0,
       removed: r && r !== "-" ? Number(r) || 0 : 0,
+      ...(a === "-" ? { binary: true } : {}),
     });
   }
   return files;

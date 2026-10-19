@@ -388,23 +388,35 @@ try {
   await eventually(()=>evaluate(`!document.querySelector('input[aria-label="Destination folder"]') && document.body.textContent.includes("data/scores.csv")`),"dialog closes and the tree shows them");
   assert.ok(await evaluate(`!document.body.textContent.includes("Drop a folder, not a single file")`),"a drop on the explorer is not taken as a project-folder import");
   await writeFile(join(tmpdir(),'multiplayer-explorer-add.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
-  // Changes follow the agent live: line counts per file, then every diff on one review page.
-  await evaluate(`(()=>{const m=window.__model;m.changes={head:"e".repeat(40),changes:[{path:"src/app.ts",status:"M",added:3,removed:1},{path:"README.md",status:"A",added:2,removed:0}],totals:{files:2,added:5,removed:1},live:{runId:"liverun",title:"Fix login",capturedAt:Date.now()}};
-    m.diffs={"src/app.ts":"diff --git a/src/app.ts b/src/app.ts\\n--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,2 +1,4 @@\\n const a = 1;\\n-old();\\n+export function login() {\\n+  return true;\\n+}\\n","README.md":"@@ -0,0 +1,2 @@\\n+# Hello\\n+World\\n"};
+  // Changes follow the agent live: line counts per file, the tree marks changed files, a
+  // file's diff opens beside the chat, and "Review all changes" stacks every diff.
+  await evaluate(`(()=>{const m=window.__model;m.changes={head:"e".repeat(40),changes:[{path:"src/app.ts",status:"M",added:3,removed:1},{path:"README.md",status:"A",added:2,removed:0},{path:"data/scores.csv",status:"A",added:2,removed:0},{path:"data/chart.xlsx",status:"A",added:0,removed:0,binary:true}],totals:{files:4,added:7,removed:1},live:{runId:"liverun",title:"Fix login",capturedAt:Date.now()}};
+    m.diffs={"src/app.ts":"diff --git a/src/app.ts b/src/app.ts\\n--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,2 +1,4 @@\\n const a = 1;\\n-old();\\n+export function login() {\\n+  return true;\\n+}\\n","README.md":"@@ -0,0 +1,2 @@\\n+# Hello\\n+World\\n","data/scores.csv":"@@ -0,0 +1,2 @@\\n+name,score\\n+alice,3\\n"};
     m.emit("run.activity",{runId:"liverun",at:Date.now()});})()`);
-  await evaluate(`[...document.querySelectorAll('aside[aria-label="Repository explorer"] button[aria-pressed]')].find(b=>b.textContent.startsWith("Changes")).click()`);
-  await eventually(()=>evaluate(`(()=>{const t=document.querySelector('aside[aria-label="Repository explorer"]').innerText;return t.includes("2 files changed")&&t.includes("Agent editing · Fix login")&&t.includes("+5")&&t.includes("−1");})()`),"live changes summary");
+  await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="File: data/scores.csv"] [title="Added"]')`),"the file tree marks an added file");
+  await writeFile(join(tmpdir(),'multiplayer-files-tree.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  const explorerTab=name=>evaluate(`[...document.querySelectorAll('aside[aria-label="Repository explorer"] [role=tab]')].find(b=>b.textContent.startsWith(${JSON.stringify(name)})).click()`);
+  await explorerTab("Changes");
+  await eventually(()=>evaluate(`(()=>{const t=document.querySelector('aside[aria-label="Repository explorer"]').innerText;return t.includes("4 changes")&&t.includes("Agent editing · Fix login")&&t.includes("+7")&&t.includes("−1")&&t.toLowerCase().includes("bin");})()`),"live changes summary").catch(async e=>{console.error(await evaluate(`document.querySelector('aside[aria-label="Repository explorer"]').innerText`));throw e;});
+  await click('button[aria-label="Show as tree"]');
+  await eventually(()=>evaluate(`[...document.querySelectorAll('ul[aria-label="Changed files"] button[aria-expanded]')].some(b=>b.textContent.startsWith("data"))`),"changes grouped by folder");
+  await click('button[aria-label="Show as list"]');
   await click('button[title="Modified: src/app.ts"]');
+  await eventually(()=>evaluate(`!!document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"] .text-syn-keyword')`),"the diff opens in the editor, highlighted");
+  assert.ok(await evaluate(`document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"]').textContent.includes("export function login()")`));
+  await writeFile(join(tmpdir(),'multiplayer-changes-editor.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('.room-file-document [role=group] button')].find(b=>b.textContent==="Code").click()`);
+  await eventually(()=>evaluate(`!document.querySelector('.room-file-document [aria-label="Changes to src/app.ts"]') && !!document.querySelector(".room-file-document textarea")`),"Code shows the file itself");
+  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.startsWith("Review all changes")).click()`);
   const review='dialog[aria-label="Review changes"]';
-  await eventually(()=>evaluate(`!!document.querySelector('${review}')?.open && !!document.querySelector('[aria-label="Changes to src/app.ts"] .text-syn-keyword')`),"highlighted diff in the review");
-  assert.ok(await evaluate(`document.querySelector('[aria-label="Changes to src/app.ts"]').textContent.includes("export function login()")`));
-  await eventually(()=>evaluate(`!!document.querySelector('[aria-label="Changes to README.md"]')`),"every changed file loads");
+  await eventually(()=>evaluate(`!!document.querySelector('${review}')?.open && !!document.querySelector('${review} [aria-label="Changes to README.md"]')`),"every diff on the review page");
   await writeFile(join(tmpdir(),'multiplayer-changes-review.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await evaluate(`document.querySelector('${review}').dispatchEvent(new KeyboardEvent("keydown",{key:"v",bubbles:true}))`);
-  await eventually(()=>evaluate(`document.querySelector('${review}').innerText.includes("1 of 2 viewed") && !document.querySelector('[aria-label="Changes to src/app.ts"]')`),"v marks the file viewed and folds it");
+  await eventually(()=>evaluate(`document.querySelector('${review}').innerText.includes("1 of 4 viewed")`),"v marks the current file viewed");
   await click('button[aria-label="Close review"]');
   await eventually(()=>evaluate(`!document.querySelector('${review}')`),"review closes");
-  await evaluate(`[...document.querySelectorAll('aside[aria-label="Repository explorer"] button[aria-pressed]')].find(b=>b.textContent.startsWith("All files")).click()`);
+  await click('button[aria-label="Close app.ts"]');
+  await explorerTab("Files");
   // New file opened report.csv in the editor; close it so the chat is in view again.
   await click('button[aria-label="Close report.csv"]');
   await eventually(()=>evaluate(`!document.querySelector('button[aria-label="Close report.csv"]') && !!document.querySelector('.ai-composer textarea')`),"back to the chat");
