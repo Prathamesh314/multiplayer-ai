@@ -2,8 +2,8 @@ import { collectStats } from "../scan";
 import { currentTabId } from "../tab-id";
 import type { GitInfo, ScanResult, TreeNode } from "../types";
 import type {
-  ChangedFile,
   ChangesResponse,
+  ChangeDiffResponse,
   FileResponse,
   SaveFileResponse,
   SeedResponse,
@@ -287,13 +287,23 @@ function toBase64(bytes: Uint8Array): string {
  * closure over its source, which is what makes this a drop-in.
  */
 /** Files changed since the session was seeded, for the explorer's Changes tab. */
-export async function fetchChanges(sessionId: string, repoId: string | null = null): Promise<ChangedFile[]> {
+export async function fetchChanges(sessionId: string, repoId: string | null = null): Promise<ChangesResponse> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes?repoId=${encodeURIComponent(repoId ?? "")}`, {
     cache: "no-store",
   });
   if (!response.ok) throw new Error(await readError(response, "Could not load changes."));
   const body = (await response.json()) as ChangesResponse;
-  return body.changes ?? [];
+  return { ...body, changes: body.changes ?? [] };
+}
+
+/** One changed file's unified diff, against the same commits as `fetchChanges`. */
+export async function fetchChangeDiff(sessionId: string, repoId: string | null, path: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/changes?repoId=${encodeURIComponent(repoId ?? "")}&path=${encodeURIComponent(path)}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not load this file's changes."));
+  return ((await response.json()) as ChangeDiffResponse).diff ?? "";
 }
 
 /** Each file is at most the editor's read limit; each request stays under the proxy's buffer. */

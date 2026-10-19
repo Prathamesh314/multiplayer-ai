@@ -183,9 +183,23 @@ export type ChangedFile = {
   path: string;
   /** "A" added, "M" modified, "D" deleted, "R" renamed, "C" copied. */
   status: "A" | "M" | "D" | "R" | "C";
+  /** Lines added and removed; 0/0 for binary files. */
+  added?: number;
+  removed?: number;
 };
 
-export type ChangesResponse = { changes: ChangedFile[] };
+export type ChangesResponse = {
+  changes: ChangedFile[];
+  /** The commit compared against the baseline; a new value means diffs are stale. */
+  head?: string;
+  totals?: { files: number; added: number; removed: number };
+  /**
+   * Set while an agent is working on this repository: the changes include
+   * its latest snapshot of the worktree, not only what is committed.
+   */
+  live?: { runId: string; title: string | null; capturedAt: number } | null;
+};
+export type ChangeDiffResponse = { diff: string };
 
 export type SaveFileRequest = {
   path: string;

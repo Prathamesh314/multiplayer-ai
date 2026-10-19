@@ -5,13 +5,15 @@ import { treeToText } from "../../lib/ascii";
 import { humanBytes, humanCount, relativeTime } from "../../lib/format";
 import { shortRemote } from "../../lib/git";
 import { IGNORED_DIRS } from "../../lib/scan";
+import { openSessionStream } from "../../lib/events/client";
 import { fetchChanges } from "../../lib/session/remote";
-import type { ChangedFile } from "../../lib/session/types";
+import type { ChangedFile, ChangesResponse } from "../../lib/session/types";
 import type { ScanResult } from "../../lib/types";
-import { AlertIcon, ChevronIcon, FileIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
-import { baseName } from "./EditorArea";
+import { AlertIcon, ChevronIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
 import { useAddFiles, type AddFilesFn } from "./AddFiles";
+import { ChangesList } from "./ChangesList";
+import { ChangesReview, viewedKey } from "./ChangesReview";
 
 type ExplorerPanelProps = {
   actionsRef?: (node: HTMLDivElement | null) => void;
@@ -58,7 +60,10 @@ export function ExplorerPanel({
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => defaultExpanded(result.root));
   const [view, setView] = useState<"files" | "changes">("files");
-  const [changes, setChanges] = useState<ChangedFile[] | null>(null);
+  const [changes, setChanges] = useState<ChangesResponse | null>(null);
+  const [viewed, setViewed] = useState<Set<string>>(() => new Set());
+  // null: closed; "" opens at the first file.
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [changesError, setChangesError] = useState<string | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
   const changesRequest = useRef(0);
@@ -103,9 +108,38 @@ export function ExplorerPanel({
   }, [sessionId, repoId]);
 
   useEffect(() => {
-    if (view !== "changes") return;
     void Promise.resolve().then(loadChanges);
-  }, [view, result.git.commit, loadChanges]);
+  }, [result.git.commit, loadChanges]);
+
+  // Follow the work as it happens: an agent's checkpoints, finished turns and
+  // teammates' saves all change what this tab shows. Bursts coalesce.
+  useEffect(() => {
+    if (!sessionId) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (!document.hidden) void loadChanges(); }, 600);
+    };
+    const stream = openSessionStream(sessionId, {
+      onRunActivity: changed,
+      onRunFinished: changed,
+      onRunBranch: changed,
+      onFileSaved: changed,
+      onStatus: (connected) => { if (connected) changed(); },
+    });
+    document.addEventListener("visibilitychange", changed);
+    return () => { clearTimeout(timer); stream.close(); document.removeEventListener("visibilitychange", changed); };
+  }, [sessionId, loadChanges]);
+
+  function toggleViewed(file: ChangedFile) {
+    setViewed((previous) => {
+      const next = new Set(previous);
+      const key = viewedKey(file);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
@@ -116,9 +150,12 @@ export function ExplorerPanel({
           </TabButton>
           <TabButton active={view === "changes"} onClick={() => setView("changes")}>
             Changes
-            {changes && changes.length > 0 && (
+            {changes?.live ? (
+              <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" />
+            ) : null}
+            {changes && changes.changes.length > 0 && (
               <span className="ml-1 rounded-full bg-vs-accent/15 px-1.5 text-[10px] text-vs-accent">
-                {changes.length}
+                {changes.changes.length}
               </span>
             )}
           </TabButton>
@@ -182,10 +219,24 @@ export function ExplorerPanel({
         </>
       ) : changesError ? <div className="min-h-0 flex-1" /> : (
         <ChangesList
-          changes={changes}
+          data={changes}
           loading={loadingChanges}
           activePath={activePath}
+          viewed={(file) => viewed.has(viewedKey(file))}
+          onReview={(path) => setReviewing(path ?? "")}
           onOpenFile={onOpenFile}
+        />
+      )}
+      {sessionId && changes && reviewing !== null && (
+        <ChangesReview
+          sessionId={sessionId}
+          repoId={repoId}
+          data={changes}
+          focusPath={reviewing || null}
+          viewed={viewed}
+          onToggleViewed={toggleViewed}
+          onOpenFile={onOpenFile}
+          onClose={() => setReviewing(null)}
         />
       )}
 
@@ -220,75 +271,6 @@ function TabButton({
     >
       {children}
     </button>
-  );
-}
-
-const STATUS_META: Record<ChangedFile["status"], { label: string; className: string }> = {
-  A: { label: "A", className: "text-vs-success" },
-  M: { label: "M", className: "text-vs-warn" },
-  D: { label: "D", className: "text-vs-danger" },
-  R: { label: "R", className: "text-vs-accent" },
-  C: { label: "C", className: "text-vs-accent" },
-};
-
-function ChangesList({
-  changes,
-  loading,
-  activePath,
-  onOpenFile,
-}: {
-  changes: ChangedFile[] | null;
-  loading: boolean;
-  activePath: string | null;
-  onOpenFile: (path: string) => void;
-}) {
-  if (loading && changes === null) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-vs-muted">
-        <SpinnerIcon className="h-3.5 w-3.5" />
-        Reading changes…
-      </div>
-    );
-  }
-
-  if (!changes || changes.length === 0) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-vs-muted">
-        No changes since the session started.
-      </div>
-    );
-  }
-
-  return (
-    <div className="vs-scroll min-h-0 flex-1 overflow-auto py-1">
-      <p className="border-b border-vs-border px-3 pb-2 text-xs text-vs-muted">{changes.length} files changed</p>
-      {changes.map((change) => {
-        const meta = STATUS_META[change.status];
-        const deleted = change.status === "D";
-        const dir = change.path.slice(0, change.path.length - baseName(change.path).length);
-        return (
-          <button
-            key={change.path}
-            type="button"
-            disabled={deleted}
-            onClick={() => onOpenFile(change.path)}
-            title={change.path}
-            className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] transition ${
-              change.path === activePath ? "bg-vs-active" : "hover:bg-vs-hover"
-            } ${deleted ? "cursor-default opacity-60" : ""}`}
-          >
-            <span className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${meta.className}`}>
-              {meta.label}
-            </span>
-            <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-            <span className={`min-w-0 flex-1 truncate ${deleted ? "line-through" : "text-vs-fg"}`}>
-              <span>{baseName(change.path)}</span>
-              {dir && <span className="text-vs-muted"> · {dir.replace(/\/$/, "")}</span>}
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

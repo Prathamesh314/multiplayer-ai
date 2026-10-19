@@ -532,7 +532,8 @@ async function stored_diffStatBare(
   base: string,
   head: string,
 ): Promise<{ added: number; removed: number }> {
-  const stdout = await git(barePath(id), ["diff", "--numstat", base, head]).catch(() => "");
+  // No rename detection: a rename is reported as "{old => new}", which is not a path.
+  const stdout = await git(barePath(id), ["diff", "--numstat", "--no-renames", base, head]).catch(() => "");
   return countNumstat(stdout);
 }
 
@@ -547,7 +548,8 @@ export type FileChange = { path: string; added: number; removed: number };
  * that only touched an image still names the file.
  */
 async function stored_diffFilesBare(id: string, base: string, head: string): Promise<FileChange[]> {
-  const stdout = await git(barePath(id), ["diff", "--numstat", base, head]).catch(() => "");
+  // No rename detection: a rename is reported as "{old => new}", which is not a path.
+  const stdout = await git(barePath(id), ["diff", "--numstat", "--no-renames", base, head]).catch(() => "");
   const files: FileChange[] = [];
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;

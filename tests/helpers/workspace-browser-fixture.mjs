@@ -107,7 +107,7 @@ export function installFixtures() {
       repo.added=[...(repo.added??[]),...paths.filter(p=>!existing.has(p))];
       return json({headSha:"d".repeat(40),added:paths.filter(p=>!existing.has(p)),replaced:clashing});
     }
-    if(path.endsWith("/changes")) return json({changes:[]});
+    if(path.endsWith("/changes")) return u.searchParams.has("path") ? json({diff:state.diffs?.[u.searchParams.get("path")] ?? ""}) : json(state.changes ?? {changes:[]});
     if(path.endsWith("/file")) {
       if(init.method === "PUT") {
         if(state.failSave) return new Response(JSON.stringify({error:"Save unavailable"}),{status:503,headers:{"content-type":"application/json"}});
