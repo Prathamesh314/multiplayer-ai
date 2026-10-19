@@ -1,6 +1,7 @@
 import { enqueueChatInput, cancelChatInput, consumeChatInput, listChatInputs } from "../app/lib/ai/input-queue.ts";
 import { persistActivity, activityPage } from "../app/lib/runner/activity.ts";
 import { saveCheckpoint, listCheckpoints, getCheckpoint } from "../app/lib/runner/checkpoints.ts";
+import { liveSnapshot, roomChanges, roomChangeDiff } from "../app/lib/session/changes.ts";
 import { archiveStoredRepo, withStoredRepo } from "../app/lib/storage/git-cache.ts";
 import { ActivityOutbox } from "../runner/activity-outbox.ts";
 import { objectText } from "../app/lib/git/objects.ts";
@@ -497,7 +498,19 @@ try {
     await saveCheckpoint(job,device,captured); assert.equal((await listCheckpoints(target.id)).length,1);
     await assert.rejects(saveCheckpoint({...job,turnId:randomUUID()},device,captured));
     assert.equal(await getCheckpoint(captured.id,randomUUID()),null);
+    // The room's Changes tab follows the running agent's worktree, with line counts.
+    const repo = { ref: roomId, baseSha: base, headSha: base };
+    assert.deepEqual((await roomChanges(roomId,repo,alice)).changes,[]);
+    await sql(`UPDATE agent_turns SET status='running' WHERE id=$1`,[job.turnId]);
+    const live = await roomChanges(roomId,repo,alice);
+    assert.deepEqual(live.changes,[{path:"unfinished.txt",status:"A",added:1,removed:0}]);
+    assert.deepEqual(live.totals,{files:1,added:1,removed:0});
+    assert.equal(live.live?.runId,target.id); assert.equal(live.head,captured.snapshotSha);
+    assert.match(await roomChangeDiff(roomId,repo,alice,"unfinished.txt"),/^\+available offline$/m);
+    // A checkpoint from an older room head would hide later commits, so it is not used.
+    assert.equal(await liveSnapshot(roomId,{...repo,headSha:"f".repeat(40)},alice),null);
     await failTurn(job.turnId,"Laptop switched off");
+    assert.equal((await roomChanges(roomId,repo,alice)).live,null);
   });
   await test("cold Git archives restore every ref and pinned repositories cannot be evicted", async () => {
     process.env.STORAGE_COLD_GIT="1";
