@@ -14,5 +14,5 @@
   "061_permission_modes.sql": "01353d6bb90712b1b80f6d3fe486ce9126d4d10d894ac11868de19c771b84efa",
   "062_room_repo_visibility.sql": "839e4115fc45f0b3c8f918665fdb9fa1f85e067a9439378e6b00c64285e057b2",
   "063_chat_share_editor.sql": "67e20bc5ab3e6881b647d6c34631dad12351814a8969fca49a2421f3effd8c89",
-  "064_hide_unearned_member_rooms.sql": "c5b07de968ce20459a19d220e6360e643ff907905589f7363d69bbd43e14fb2f"
+  "064_hide_unearned_member_rooms.sql": "638ba7a71df3743f992f0cea08e68fdbccd166014155a957df2bf702d0f1b3c2"
 }
