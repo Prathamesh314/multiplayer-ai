@@ -38,6 +38,7 @@ export function policyFor(route: string, method: string): PolicyName {
   if (route === '/api/integrations/slack/events' || route === '/api/webhooks/clerk') return 'webhook';
   if (route === '/api/auth/complete' || route.startsWith('/api/auth/desktop')) return 'auth';
   if (route.startsWith("/api/auth/email/") || route.startsWith("/api/auth/google/") || ["/api/auth/login", "/api/auth/continue", "/api/auth/register"].includes(route)) return "auth";
+  if (route === "/api/admin/login" || route === "/api/admin/password") return "auth";
   if (["/api/runner/pair", "/api/runner/pairing"].includes(route)) return "pair";
   if (route.startsWith("/api/git/")) return "git";
   if (["GET", "HEAD"].includes(method) && (route.endsWith("/events") || route === "/api/terminal/pty" || route === "/api/terminal")) return "stream";

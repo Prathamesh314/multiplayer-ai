@@ -37,7 +37,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      # Node 24 on these x64 runners intermittently aborts while freeing
+      # WebAssembly code ("jit_page_->allocations_.erase(addr) == 1" in
+      # ThreadIsolation::UnregisterWasmAllocation), killing whichever PGlite
+      # suite is running. That bookkeeping only runs when V8 protects JIT
+      # memory with protection keys (PKU), which these CPUs have and Macs do
+      # not. V8 flags are refused in NODE_OPTIONS, so this step's `node` is a
+      # wrapper that turns PKU off. Only here: Next's build hands node flags
+      # to its workers through NODE_OPTIONS, which would refuse it.
+      - name: npm test
+        run: |
+          shim="$RUNNER_TEMP/node-shim"
+          mkdir -p "$shim"
+          printf '#!/bin/sh\nexec "%s" --no-memory-protection-keys "$@"\n' "$(command -v node)" > "$shim/node"
+          chmod +x "$shim/node"
+          PATH="$shim:$PATH" npm test
       - run: npm run test:team-context
       - run: npm run test:team-context
         env:
