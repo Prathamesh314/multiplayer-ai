@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { treeToText } from "../../lib/ascii";
 import { humanBytes, humanCount, relativeTime } from "../../lib/format";
 import { shortRemote } from "../../lib/git";
@@ -9,7 +9,7 @@ import type { ScanResult } from "../../lib/types";
 import { AlertIcon, ChevronIcon, GitBranchIcon, SearchIcon, SpinnerIcon } from "../icons";
 import { defaultExpanded, ExplorerTree } from "./ExplorerTree";
 import { useAddFiles, type AddFilesFn } from "./AddFiles";
-import { ChangesList } from "./ChangesList";
+import { ChangesList, ListGlyph, StackGlyph, TreeGlyph, type ChangesLayout } from "./ChangesList";
 import { ChangesReview } from "./ChangesReview";
 import type { RoomChanges } from "./useRoomChanges";
 
@@ -67,6 +67,16 @@ export function ExplorerPanel({
   // null: closed; "" opens at the first file.
   const [reviewing, setReviewing] = useState<string | null>(null);
   const changes = room?.data ?? null;
+  const [layout, setLayout] = useState<ChangesLayout>("list");
+  const [filter, setFilter] = useState<string | null>(null);
+  useEffect(() => {
+    try { if (localStorage.getItem(LAYOUT_KEY) === "tree") void Promise.resolve().then(() => setLayout("tree")); } catch { /* storage unavailable */ }
+  }, []);
+  function toggleLayout() {
+    const next = layout === "list" ? "tree" : "list";
+    setLayout(next);
+    try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* storage unavailable */ }
+  }
   const changeCount = changes?.changes.length ?? 0;
   const adding = useAddFiles({
     root: result.root,
@@ -93,27 +103,21 @@ export function ExplorerPanel({
   return (
     <aside aria-label="Repository explorer" aria-busy={scanning} className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
       {sessionId && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-vs-border px-2 py-1.5">
-          <div role="tablist" aria-label="Explorer view" className="relative flex rounded-lg border border-vs-border bg-vs-chrome p-0.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-vs-border px-2 py-1.5">
+          <div role="tablist" aria-label="Explorer view" className="flex items-center gap-0.5">
             <TabButton active={view === "files"} onClick={() => setView("files")}>
-              Files
+              All files
             </TabButton>
             <TabButton active={view === "changes"} onClick={() => setView("changes")}>
               Changes
-              {changes?.live ? (
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" />
-              ) : null}
-              {changeCount > 0 && (
-                <span className={`min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums ${view === "changes" ? "bg-vs-accent text-vs-accent-fg" : "bg-vs-accent/15 text-vs-accent"}`}>
-                  {changeCount}
-                </span>
-              )}
+              {changeCount > 0 && <span className="tabular-nums text-vs-muted">{changeCount}</span>}
+              {changes?.live ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" /> : null}
             </TabButton>
           </div>
-          {onRefresh && (
-            <button type="button" onClick={view === "changes" ? () => void room?.reload() : onRefresh} disabled={scanning || !!room?.loading} aria-label="Refresh files" title="Refresh"
+          {onRefresh && view === "files" && (
+            <button type="button" onClick={onRefresh} disabled={scanning} aria-label="Refresh files" title="Refresh"
               className="rounded-md p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-50">
-              <RefreshGlyph spinning={scanning || !!room?.loading} />
+              <RefreshGlyph spinning={scanning} />
             </button>
           )}
           <div ref={actionsRef} className="file-actions ml-auto flex items-center gap-1" />
@@ -179,9 +183,20 @@ export function ExplorerPanel({
           data={changes}
           loading={!!room?.loading}
           activePath={activePath}
+          toolbar={
+            <div className="flex items-center gap-0.5">
+              <IconButton label="Review all changes" disabled={changeCount === 0} onClick={() => setReviewing("")}><StackGlyph /></IconButton>
+              <IconButton label="Filter changed files" pressed={filter !== null} onClick={() => setFilter(filter === null ? "" : null)}>
+                <svg viewBox="0 0 16 16" aria-hidden className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3.25 3.25" /></svg>
+              </IconButton>
+              <IconButton label={layout === "list" ? "Show as tree" : "Show as list"} onClick={toggleLayout}>{layout === "list" ? <TreeGlyph /> : <ListGlyph />}</IconButton>
+            </div>
+          }
+          layout={layout}
+          filter={filter}
+          onFilter={setFilter}
           viewed={(file) => !!room?.isViewed(file)}
           onOpenDiff={(path) => (onOpenDiff ? onOpenDiff(path) : setReviewing(path))}
-          onReview={() => setReviewing("")}
           onOpenFile={onOpenFile}
         />
       )}
@@ -224,14 +239,25 @@ function TabButton({
       role="tab"
       onClick={onClick}
       aria-selected={active}
-      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
-        active ? "bg-vs-editor text-vs-fg shadow-sm ring-1 ring-vs-border" : "text-vs-muted hover:text-vs-fg"
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] transition ${
+        active ? "bg-vs-hover text-vs-fg" : "text-vs-muted hover:text-vs-fg"
       }`}
     >
       {children}
     </button>
   );
 }
+
+function IconButton({ label, onClick, pressed, disabled, children }: { label: string; onClick: () => void; pressed?: boolean; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} aria-pressed={pressed}
+      className={`rounded-md p-1.5 transition hover:bg-vs-hover hover:text-vs-fg disabled:opacity-40 ${pressed ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>
+      {children}
+    </button>
+  );
+}
+
+const LAYOUT_KEY = "multicode:changes-layout";
 
 function RefreshGlyph({ spinning }: { spinning: boolean }) {
   return (
