@@ -112,9 +112,12 @@ export async function exchangePairingCode(input: {
   if (!claimed) return null;
 
   const token = `rnr_${randomBytes(32).toString("base64url")}`;
+  // Not seen yet: the computer shows as waiting, and takes no messages, until
+  // its runner's first heartbeat reports which AI tools it has. Marking it
+  // online here let a message through before then, which then failed.
   const row = await queryOne<DeviceRow>(
     `INSERT INTO runner_devices (user_id, name, token_hash, platform, version, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, now())
+     VALUES ($1, $2, $3, $4, $5, NULL)
      RETURNING ${COLUMNS}`,
     [claimed.user_id, input.name, digest(token), input.platform ?? null, input.version ?? null],
   );
@@ -136,7 +139,9 @@ export async function deviceFromToken(token: string | null): Promise<RunnerDevic
       UPDATE runner_devices d SET last_seen_at=now() FROM valid v
       WHERE d.id=v.id AND d.revoked_at IS NULL
         -- Leave headroom between the runner's 15s heartbeat and 30s online TTL.
-        AND (d.last_seen_at IS NULL OR d.last_seen_at<now()-interval '10 seconds')
+        -- A device that has never sent a heartbeat stays unseen: only the
+        -- heartbeat, which reports its tools, brings it online.
+        AND d.last_seen_at IS NOT NULL AND d.last_seen_at<now()-interval '10 seconds'
       RETURNING d.id, d.last_seen_at
     ) SELECT v.id, v.user_id, v.name, v.platform, v.version,
       COALESCE(t.last_seen_at,v.last_seen_at) AS last_seen_at, v.created_at, v.revoked_at

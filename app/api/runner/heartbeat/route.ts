@@ -23,15 +23,21 @@ async function handlePOST(request: Request) {
   }
   if (Number(request.headers.get("content-length") ?? 0) > 2 * 1024 * 1024) return Response.json({ error: "Inventory too large." }, { status: 413 });
   const body = await request.json().catch(() => null);
-  if (body?.version !== "2" || !Array.isArray(body.agentIds)) return Response.json({ error: "Update your runner to protocol 2 and restart it." }, { status: 426 });
+  if (body?.version !== "2" || !Array.isArray(body.agentIds)) {
+    // Seen, but too old to take work: shown as "Update needed", not as waiting.
+    const version = typeof body?.version === "string" ? body.version.slice(0, 20) : null;
+    const seen = await query(`UPDATE runner_devices SET last_seen_at = now(), version = $2 WHERE id = $1 AND (last_seen_at IS NULL OR version IS DISTINCT FROM $2) RETURNING id`, [device.id, version]);
+    if (seen.length) await (await events()).publish(`user:${device.userId}`, { type: "devices.changed", at: Date.now() }).catch(() => {});
+    return Response.json({ error: "Update your runner to protocol 2 and restart it." }, { status: 426 });
+  }
   const agentIds = body.agentIds.filter((id: unknown): id is string => typeof id === "string" && !!agentById(id));
   const catalog = sanitizeCatalog(body.modelCatalog);
   // Names of the AI-tool keys this computer holds, never their values.
   const secretNames = Array.isArray(body.secretNames)
     ? [...new Set(body.secretNames.filter((name: unknown): name is string => typeof name === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(name)))].sort().slice(0, 200)
     : [];
-  const changed = await query(`UPDATE runner_devices SET version = $2, agent_ids = $3, model_catalog = $4, supports_inputs=$5, supports_isolated_chats=$6, supports_terminal=$7, supports_attachments=$8, supports_agent_tools=$9, secret_names=$10, supports_permissions=$11 WHERE id = $1
-    AND (version IS DISTINCT FROM $2 OR agent_ids IS DISTINCT FROM $3 OR model_catalog IS DISTINCT FROM $4::jsonb OR supports_inputs IS DISTINCT FROM $5 OR supports_isolated_chats IS DISTINCT FROM $6 OR supports_terminal IS DISTINCT FROM $7 OR supports_attachments IS DISTINCT FROM $8 OR supports_agent_tools IS DISTINCT FROM $9 OR secret_names IS DISTINCT FROM $10 OR supports_permissions IS DISTINCT FROM $11) RETURNING id`, [device.id, "2", agentIds, JSON.stringify(catalog),body.supportsInputs===true,body.supportsIsolatedChats===true,body.supportsTerminal===true,body.supportsAttachments===true,body.supportsAgentTools===true,secretNames,body.supportsPermissions===true]);
+  const changed = await query(`UPDATE runner_devices SET version = $2, agent_ids = $3, model_catalog = $4, supports_inputs=$5, supports_isolated_chats=$6, supports_terminal=$7, supports_attachments=$8, supports_agent_tools=$9, secret_names=$10, supports_permissions=$11, last_seen_at = now() WHERE id = $1
+    AND (last_seen_at IS NULL OR version IS DISTINCT FROM $2 OR agent_ids IS DISTINCT FROM $3 OR model_catalog IS DISTINCT FROM $4::jsonb OR supports_inputs IS DISTINCT FROM $5 OR supports_isolated_chats IS DISTINCT FROM $6 OR supports_terminal IS DISTINCT FROM $7 OR supports_attachments IS DISTINCT FROM $8 OR supports_agent_tools IS DISTINCT FROM $9 OR secret_names IS DISTINCT FROM $10 OR supports_permissions IS DISTINCT FROM $11) RETURNING id`, [device.id, "2", agentIds, JSON.stringify(catalog),body.supportsInputs===true,body.supportsIsolatedChats===true,body.supportsTerminal===true,body.supportsAttachments===true,body.supportsAgentTools===true,secretNames,body.supportsPermissions===true]);
   if(changed.length)await (await events()).publish(`user:${device.userId}`,{type:'devices.changed',at:Date.now()}).catch(()=>{});
   return Response.json(
     { ok: true, deviceId: device.id, serverTime: Date.now() } satisfies HeartbeatResponse,
