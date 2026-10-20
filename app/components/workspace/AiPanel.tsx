@@ -872,7 +872,13 @@ export function AiPanel({
   const enteredRepoLabel = entered?.repoId
     ? (repoOptions.find((option) => option.id === entered.repoId)?.label ?? "removed repo")
     : null;
-  async function assignChatTask(person: MentionPerson, body: string) {
+  /**
+   * Saves a task for a teammate. From a new chat, saving creates the task's
+   * source chat; the Assign Tasks dialog opens it, while the chat box stays
+   * where it is so its confirmation stays visible and the next message can
+   * follow straight away.
+   */
+  async function assignChatTask(person: MentionPerson, body: string, openChat = true) {
     if (!canRun) throw new Error("You need edit access to assign a task.");
     if (!myId) throw new Error("Your account is still loading. Try again in a moment.");
     if (isSelfAssignment(myId, person.userId)) throw new Error(SELF_ASSIGNMENT_ERROR);
@@ -884,7 +890,7 @@ export function AiPanel({
     taskRequest.current = null;
     setTaskRevision(value => value + 1);
     onRunsChanged();
-    if (!entered) {
+    if (!entered && openChat) {
       // Saving a human task creates its source chat, without starting the AI.
       // A failed follow-up read must not turn a saved task into a failed send.
       void fetchRun(sessionId, result.runId).then(({ run }) => onEntered?.(run)).catch(() => {});
@@ -950,8 +956,8 @@ export function AiPanel({
         {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
         <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Ask AI to draft a code review; this does not request teammate approval" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Ask AI to review</button>
       </>, actionsHost)}
-      {assignOpen && <Modal title="Assign Tasks" description="Type @ and choose a teammate, then describe the task." onClose={() => setAssignOpen(false)}>
-        <Composer key={entered?.id ?? "new"} placeholder="@teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
+      {assignOpen && <Modal title="Assign Tasks" description="Type # and choose a teammate, then describe the task. You can also do this straight from the chat box." onClose={() => setAssignOpen(false)}>
+        <Composer key={entered?.id ?? "new"} placeholder="#teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
         {taskPeople.length === 0 && <p className="text-sm text-vs-muted">No teammates are available to assign. Invite a teammate to this room first.</p>}
       </Modal>}
       {branchOpen && entered?.isolation === "isolated" && <Modal title="Parallel chat changes" width="max-w-3xl"
@@ -1086,13 +1092,17 @@ export function AiPanel({
           narrow
           footer={composerFooter}
           mentions={mentionRooms}
+          // "#" tags a teammate: the message becomes a task in their inbox
+          // instead of going to the AI.
+          people={canRun ? taskPeople : []}
+          onAssignTask={canRun ? (person, body) => assignChatTask(person, body, false) : undefined}
           placeholder={
             !canRun ? "You have read-only access to this chat"
               : computerUnavailable ? "Connect your computer to send a message…"
               : !ready ? "Set up AI to send a message…"
               : entered && !enteredIsMine
                 ? `Fork ${entered.startedByName}'s session with ${active!.name}…`
-                : `Message ${active!.name}…${files?.length ? "  (@ to tag files)" : mentionRooms.length > 0 ? "  (@ chat references)" : ""}`
+                : `Message ${active!.name}…  ${[files?.length ? "@ to tag files" : mentionRooms.length > 0 ? "@ for chat references" : "", canRun && taskPeople.length ? "# to assign a teammate" : ""].filter(Boolean).join(" · ")}`.trimEnd()
           }
           onSend={ask}
           attachTo={sessionId}

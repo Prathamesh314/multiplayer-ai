@@ -17,6 +17,9 @@ try {
     assert.equal(assignmentDraft('@bobby Review the changes.','bob'),null);
     assert.equal(assignmentDraft('@bob/chat-id is a chat reference.','bob'),null);
     assert.equal(assignmentDraft('Review the changes.','bob'),null);
+    assert.deepEqual(assignmentDraft('#bob Review the changes.','bob'),{body:'Review the changes.'},'# tags a teammate');
+    assert.deepEqual(assignmentDraft('Please #Bob check @app/lib/x.ts','bob'),{body:'Please check @app/lib/x.ts'},'files tagged with @ stay in the task');
+    assert.equal(assignmentDraft('#bobby Review.','bob'),null);
   });
   const run = await createRun({sessionId:f.room,startedBy:f.alice,agentId:"codex",baseSha:"a".repeat(40),title:"Review retry logic"});
   const input = {id:randomUUID(),sessionId:f.room,runId:run.id,assigneeId:f.bob,body:"Please review the retry logic."};

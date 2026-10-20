@@ -356,7 +356,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     })()`);
     await eventually(()=>assigner.evaluate(`!!document.querySelector(${JSON.stringify(composerSelector)})`),"task composer for non-driver");
     await setComposer('@');
-    await eventually(()=>assigner.evaluate('document.body.textContent.includes("People & chat references")'),"people mention picker");
+    await eventually(()=>assigner.evaluate('[...document.querySelectorAll("[popover]")].some(p=>p.matches(":popover-open") && p.textContent.startsWith("People") && p.textContent.includes("Assign task"))'),"people mention picker");
     // The list sits in the top layer, entirely on screen: the dialog's scrolling body no longer clips it.
     const picker = await assigner.evaluate('(()=>{const p=[...document.querySelectorAll("[popover]")].find(e=>e.matches(":popover-open"));if(!p)return null;const r=p.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:innerHeight,rows:p.querySelectorAll("li").length};})()');
     assert.ok(picker && picker.top >= 0 && picker.bottom <= picker.height && picker.rows >= 1, `the mention list is fully visible: ${JSON.stringify(picker)}`);
@@ -418,7 +418,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     await fresh.evaluate('window.__releaseTaskRoster()');
     await eventually(()=>fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+bobHandle+' ·')}) && button.textContent.includes('Assign task'))`),"people arrive after typing without another keystroke");
-    assert.ok(await fresh.evaluate('document.body.textContent.includes("People & chat references")'));
+    assert.ok(await fresh.evaluate('[...document.querySelectorAll("[popover]")].some(p=>p.matches(":popover-open") && p.textContent.startsWith("People"))'));
     assert.equal(await fresh.evaluate(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes(${JSON.stringify('@'+aliceHandle+' ·')}) && button.textContent.includes('Assign task'))`),false);
     const preview=await fresh.command("Page.captureScreenshot",{format:"png"});
     await writeFile(join(tmpdir(), "new-chat-task-picker.png"),Buffer.from(preview.data,"base64"));

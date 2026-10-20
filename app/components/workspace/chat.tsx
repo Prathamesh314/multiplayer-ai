@@ -100,14 +100,20 @@ function refsFromText(text: string): string[] {
   return [...new Set((text.match(RUN_ID_RE) ?? []).map((id) => id.toLowerCase()))];
 }
 
-/** The active `@…` fragment ending at the caret, or null. `@` must start a word. */
-function activeMention(text: string, caret: number): { at: number; frag: string } | null {
+/**
+ * The active tag ending at the caret, or null: `@…` for files and chat
+ * references (it may contain spaces, as room names do), or `#…` for a
+ * teammate (one word). Either must start a word.
+ */
+function activeMention(text: string, caret: number): { at: number; frag: string; trigger: "@" | "#" } | null {
+  let spaced = false;
   for (let i = caret - 1; i >= 0; i--) {
     const ch = text[i];
     if (ch === "\n") return null;
-    if (ch === "@") {
+    if (/\s/.test(ch)) spaced = true;
+    if (ch === "@" || (ch === "#" && !spaced)) {
       const prev = i === 0 ? " " : text[i - 1];
-      return /\s/.test(prev) ? { at: i, frag: text.slice(i + 1, caret) } : null;
+      return /\s/.test(prev) ? { at: i, frag: text.slice(i + 1, caret), trigger: ch } : null;
     }
   }
   return null;
@@ -115,7 +121,8 @@ function activeMention(text: string, caret: number): { at: number; frag: string 
 
 type MentionState =
   | { stage: "room"; at: number; query: string }
-  | { stage: "chat"; at: number; roomId: string; query: string };
+  | { stage: "chat"; at: number; roomId: string; query: string }
+  | { stage: "people"; at: number; query: string };
 
 const NO_FILES: MentionFile[] = [];
 
@@ -190,7 +197,9 @@ export function Composer({
   }), [draft]);
 
   const rooms = useMemo(() => mentions ?? [], [mentions]);
-  const mentionsOn = rooms.length > 0 || files.length > 0 || (!!onAssignTask && people.length > 0);
+  const peopleOn = !!onAssignTask && people.length > 0;
+  const peopleOnAt = peopleOn && rooms.length === 0 && files.length === 0;
+  const mentionsOn = rooms.length > 0 || files.length > 0 || peopleOn;
 
   // Restore the caret after a programmatic insert (React reset it on re-render).
   useEffect(() => {
@@ -201,12 +210,17 @@ export function Composer({
   }, [pendingCaret, draft]);
 
   // The list shown in the popover for the current stage/query.
-  const items = useMemo<{ id: string; label: string; sub?: string; file?: MentionFile }[]>(() => {
+  const items = useMemo<{ id: string; label: string; sub?: string; file?: MentionFile; person?: MentionPerson }[]>(() => {
     if (!mention) return [];
     const q = mention.query.trim().toLowerCase();
+    const matchingPeople = (prefix: string) => (onAssignTask ? people : [])
+      .filter(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(q))
+      .map(person => ({ id: `person:${person.userId}`, label: `${prefix}${person.handle} · ${person.displayName}`, sub: "Assign task", person }));
+    if (mention.stage === "people") return matchingPeople("#");
     if (mention.stage === "room") {
-      return [...(onAssignTask ? people.filter(person => `${person.handle} ${person.displayName}`.toLowerCase().includes(q))
-        .map(person => ({ id: `person:${person.userId}`, label: `@${person.handle} · ${person.displayName}`, sub: "Assign task" })) : []),
+      // "#" tags people. Where there is nothing else to tag (the Assign Tasks
+      // dialog), "@" still finds them too.
+      return [...(peopleOnAt ? matchingPeople("@") : []),
       ...matchFiles(files, mention.query, q ? 30 : 8).map(file => ({ id: `file:${file.path}`, label: file.path, sub: file.dir ? "Folder" : "File", file })),
       ...rooms
         .filter((room) => room.name.toLowerCase().includes(q))
@@ -216,13 +230,13 @@ export function Composer({
     return (room?.chats ?? [])
       .filter((chat) => chat.title.toLowerCase().includes(q))
       .map((chat) => ({ id: chat.runId, label: chat.title }));
-  }, [mention, rooms, people, onAssignTask, files]);
+  }, [mention, rooms, people, onAssignTask, files, peopleOnAt]);
 
   // Show the popover whenever there's a live mention with something to show —
   // and in chat stage even with zero chats, so an empty room reads "No chats
   // yet" rather than the popover vanishing.
   const popoverOpen =
-    mentionsOn && mention != null && (items.length > 0 || mention.stage === "chat");
+    mentionsOn && mention != null && (items.length > 0 || mention.stage === "chat" || (mention.stage === "people" && mention.query.length > 0));
 
   // The list lives in the browser's top layer, so a dialog's scrolling body
   // (Assign Tasks) or a narrow panel cannot clip it. It opens above the box,
@@ -260,6 +274,12 @@ export function Composer({
   function syncMention(text: string, caret: number) {
     const m = activeMention(text, caret);
     if (!m) return setMention(null);
+    if (m.trigger === "#") {
+      if (!peopleOn) return setMention(null);
+      setMention({ stage: "people", at: m.at, query: m.frag });
+      setHighlight(0);
+      return;
+    }
     const slash = m.frag.indexOf("/");
     if (slash >= 0) {
       const roomName = m.frag.slice(0, slash).trim();
@@ -323,7 +343,7 @@ export function Composer({
     if (id.startsWith("person:")) {
       const person = people.find(person => `person:${person.userId}` === id);
       if (!person || !onAssignTask) return;
-      applyInsert(`@${person.handle} `);
+      applyInsert(`${mention.stage === "people" ? "#" : "@"}${person.handle} `);
       setSelectedPerson(person); setMention(null); setTaskMessage(""); setTaskError("");
       return;
     }
@@ -335,6 +355,7 @@ export function Composer({
       setHighlight(0);
       return;
     }
+    if (mention.stage !== "chat") return;
     const room = rooms.find((r) => r.sessionId === mention.roomId);
     if (!room) return;
     // The run id in the token is what the server resolves; the room name is just
@@ -448,10 +469,10 @@ export function Composer({
   const popover = popoverOpen && (
     <div ref={popRef} popover="manual" style={popStyle} className="flex flex-col overflow-hidden rounded-xl border border-vs-border bg-vs-panel p-0 text-vs-fg shadow-xl">
       <div className="border-b border-vs-border px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-vs-muted">
-        {mention?.stage === "room" ? (files.length ? (onAssignTask ? "Files, people & chat references" : "Files & chat references") : onAssignTask ? "People & chat references" : "Reference a room") : "Pick a chat"}
+        {mention?.stage === "people" ? "Assign a task to" : mention?.stage === "room" ? (files.length ? "Files & chat references" : peopleOnAt ? "People" : "Reference a room") : "Pick a chat"}
       </div>
       {items.length === 0 ? (
-        <p className="px-2.5 py-2 text-[12px] text-vs-muted">No chats yet in this room.</p>
+        <p className="px-2.5 py-2 text-[12px] text-vs-muted">{mention?.stage === "people" ? "Nobody here matches. Teammates in this room appear here." : "No chats yet in this room."}</p>
       ) : (
       <ul className="vs-scroll min-h-0 flex-1 overflow-y-auto py-1">
         {items.map((item, index) => (
@@ -468,6 +489,7 @@ export function Composer({
               }`}
             >
               {item.file && (item.file.dir ? <FolderIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" /> : <FileIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />)}
+              {item.person && <PersonBadge name={item.person.displayName || item.person.handle} />}
               <span className="min-w-0 flex-1 truncate" dir={item.file ? "rtl" : undefined} title={item.label}>{item.file ? <bdi>{item.label}</bdi> : item.label}</span>
               {item.sub && <span className="shrink-0 text-[11px] text-vs-muted">{item.sub}</span>}
             </button>
@@ -514,7 +536,7 @@ export function Composer({
   return (
     <div className="ai-composer shrink-0">
       <div className={`relative ${narrow ? "mx-auto w-full max-w-4xl" : ""}`}>
-        {assignee && <div className="mb-2 flex items-center gap-2 text-xs text-vs-muted"><span>Task for <strong className="text-vs-fg">@{assignee.handle}</strong> · appears in their task inbox</span><button type="button" disabled={assigning} className="ml-auto underline" onClick={() => setSelectedPerson(null)}>Cancel assignment</button></div>}
+        {assignee && <div className="mb-2 flex items-center gap-2 rounded-lg border border-vs-accent/30 bg-vs-accent/10 px-2.5 py-1.5 text-xs text-vs-muted"><PersonBadge name={assignee.displayName || assignee.handle} /><span>Task for <strong className="text-vs-fg">{assignee.displayName}</strong> (#{assignee.handle}) · Enter assigns it and it appears in their task inbox{footer ? "; the AI is not messaged" : ""}</span><button type="button" disabled={assigning} className="ml-auto underline" onClick={() => setSelectedPerson(null)}>Cancel assignment</button></div>}
         {taskMessage && <p role="status" className="mb-2 text-xs text-vs-success">{taskMessage}</p>}
         {taskError && <p role="alert" className="mb-2 text-xs text-vs-danger">{taskError}</p>}
         {attachmentError && <p role="alert" className="mb-2 text-xs text-vs-danger">{attachmentError}</p>}
@@ -558,6 +580,14 @@ export function Composer({
       </div>
     </div>
   );
+}
+
+/** Initials on a colour picked from the name, for people in the "#" picker. */
+function PersonBadge({ name }: { name: string }) {
+  const initials = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white" style={{ background: `hsl(${Math.abs(hash) % 360} 45% 45%)` }}>{initials}</span>;
 }
 
 export function clockNow(): string {

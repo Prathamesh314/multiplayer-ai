@@ -593,7 +593,7 @@ Open [Activity & checkpoints](/docs/history) and distinguish saved work from unc
     slug: "tasks", category: "Work together", title: "Assign & track tasks",
     description: "Ask a teammate to do work from a chat without starting AI or transferring control.",
     sections: [
-      { id: "assign", title: "Assign a task from a conversation", body: `Open an existing AI chat and select **Assign Tasks** in the file-manager action area. Type **@**, choose an eligible teammate from the picker, describe the work, and submit the assignment.
+      { id: "assign", title: "Assign a task from a conversation", body: `In the chat's message box, type **#** and choose a teammate, then describe the work: the box switches to **Assign task**, and Enter saves it to their task inbox instead of messaging the AI. **@** still tags files and chats, so a task can point at **@app/lib/x.ts**. You can also select **Assign Tasks** in the file-manager action area and do the same there.
 
 For example: “Please check keyboard navigation and report any remaining issues in this conversation.” Keep the request specific enough that the assignee knows what result to return.
 
