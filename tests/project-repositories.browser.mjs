@@ -260,6 +260,24 @@ try {
   await eventually(()=>evaluate(`!document.querySelector("dialog[open]") && !document.querySelector('button[aria-label="New chat in backend"]') && window.__model.requests.some(r=>r.method==="DELETE"&&r.path.endsWith("/repos/backendabcde"))`),"repository deleted");
   await click('button[aria-label="New chat in frontend"]');
   await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="Choose model"]')`),"ready composer");
+  // "#" tags a teammate in the chat box: the message becomes their task, not an AI prompt. "@" stays for files.
+  await evaluate(`window.__model.taskMembers=[{userId:"b0b00000-0000-4000-8000-000000000000",handle:"bob",displayName:"Bob Builder"}];window.__model.emit("members.changed")`);
+  const chatBox='.ai-composer textarea';
+  await type(chatBox,"#bo");
+  await eventually(()=>evaluate(`[...document.querySelectorAll('[popover] button')].some(b=>b.textContent.includes("#bob · Bob Builder"))`),"teammates offered for #");
+  await writeFile(join(tmpdir(),'multiplayer-people-tag.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('[popover] button')].find(b=>b.textContent.includes("#bob ·")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('${chatBox}').value==="#bob "`),"the teammate is tagged");
+  await type(chatBox,"#bob Write the release notes");
+  await eventually(()=>evaluate(`!!document.querySelector('button[aria-label="Assign task"]') && document.querySelector('.ai-composer').innerText.includes("Task for Bob Builder")`),"the chat box turns into a task for Bob");
+  await click('button[aria-label="Assign task"]');
+  await eventually(()=>evaluate(`window.__model.taskPosts?.length===1 && document.querySelector('.ai-composer [role=status]')?.textContent.includes("Task assigned to Bob Builder")`),"task assigned from the chat box");
+  assert.deepEqual(await evaluate(`(({assigneeId,body})=>({assigneeId,body}))(window.__model.taskPosts[0])`),{assigneeId:"b0b00000-0000-4000-8000-000000000000",body:"Write the release notes"});
+  assert.equal(await evaluate(`document.querySelector('${chatBox}').value`),"");
+  await type(chatBox,"@bo");
+  await delay(150);
+  assert.equal(await evaluate(`[...document.querySelectorAll('[popover] button')].some(b=>b.textContent.includes("Bob Builder"))`),false,"@ is for files, not people, in the chat box");
+  await type(chatBox,"");
   assert.equal(await evaluate(`document.querySelectorAll('.ai-composer select').length`),0,"composer uses arrow-free custom controls");
   await click('button[aria-label="Choose model"]');
   await eventually(()=>evaluate(`!!document.querySelector('.composer-picker [role="option"]')`),"model popover");
