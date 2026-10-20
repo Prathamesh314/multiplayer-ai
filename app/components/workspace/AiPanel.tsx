@@ -2,7 +2,7 @@
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import type { MentionFile } from "../../lib/ai/file-mentions";
-import { preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
+import { agentForChat, preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
@@ -193,6 +193,10 @@ export function AiPanel({
   const [connected, setConnected] = useState<string | null>(null);
   // Read by the agents refresh, which outlives renders.
   const connectedRef = useRef<string | null>(null);
+  // The chat whose agent the composer last followed ("" for a new chat), and
+  // whether the current agent came from that rather than the member's pick.
+  const followedChat = useRef<string | null>(null);
+  const followingChat = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [installFor, setInstallFor] = useState<string | null>(null);
   // Composer selectors. Reset together with the provider, since the options do.
@@ -557,6 +561,7 @@ export function AiPanel({
   // Switching provider restores that agent's own model/effort picks (or the
   // defaults), since the options differ per agent.
   function selectProvider(id: string) {
+    followingChat.current = false;
     const picks = savedPicks(agents?.find((agent) => agent.id === id));
     connectedRef.current = id;
     setConnected(id);
@@ -565,7 +570,29 @@ export function AiPanel({
     setInstallFor(null);
   }
   // Remembered on this device, so a reload keeps the member's choice.
-  useEffect(() => { if (connected) rememberChoice(connected, model, effort); }, [connected, model, effort]);
+  // An agent followed from an opened chat keeps its model and effort, but is not
+  // made the default for new chats; picking a provider yourself is.
+  useEffect(() => { if (connected) rememberChoice(connected, model, effort, !followingChat.current); }, [connected, model, effort]);
+
+  // Opening a chat starts its composer on the agent that ran it (when that tool
+  // is set up here), so a follow-up doesn't quietly switch provider; a new chat
+  // starts on the member's usual one. Switching stays possible from the picker.
+  useEffect(() => {
+    if (!agents) return;
+    const key = entered?.id ?? "";
+    if (followedChat.current === key) return;
+    followedChat.current = key;
+    const target = agentForChat(agents, entered?.agentId);
+    if (!target) return;
+    const picks = savedPicks(agents.find((agent) => agent.id === target));
+    void Promise.resolve().then(() => {
+      followingChat.current = !!entered && target === entered.agentId;
+      connectedRef.current = target;
+      setConnected(target);
+      setModel(picks.model);
+      setEffort(picks.effort);
+    });
+  }, [agents, entered]);
 
   function ask(prompt: string, contextRefs?: string[], attachments: MessageAttachment[] = [], fileRefs: string[] = []) {
     pinned.current = true; // sending follows the reply
@@ -765,6 +792,7 @@ export function AiPanel({
   }
 
   const active = agents?.find((agent) => agent.id === connected) ?? null;
+  const agentName = (id: string) => agents?.find((agent) => agent.id === id)?.name ?? agentById(id)?.name ?? id;
   // Tools are signed in on the member's own computer; its runner reports them.
   const computerUnavailable = computerStatus !== "connected";
   const ready = !!active?.installed && serverCanRun && canRun && !computerUnavailable;
@@ -1084,6 +1112,21 @@ export function AiPanel({
         // The queue below shows the working card and takes follow-ups.
         null
       ) : (
+        <>
+        {entered && enteredIsMine && connected && entered.agentId !== connected && (
+          // Same side padding as the composer, so the two line up.
+          <div className="px-3 pt-2 md:px-5">
+          <p role="note" className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-vs-warn/30 bg-vs-warn/5 px-3 py-1.5 text-xs text-vs-muted">
+            <span>
+              This chat ran with <strong className="text-vs-fg">{agentName(entered.agentId)}</strong>. Your next message continues it with <strong className="text-vs-fg">{agentName(connected)}</strong>
+              {agents?.some((agent) => agent.installed && agent.id === entered.agentId) ? "." : `, because ${agentName(entered.agentId)} isn’t set up on this computer.`}
+            </span>
+            {agents?.some((agent) => agent.installed && agent.id === entered.agentId) && (
+              <button type="button" onClick={() => selectProvider(entered.agentId)} className="font-medium text-vs-accent underline underline-offset-2">Use {agentName(entered.agentId)}</button>
+            )}
+          </p>
+          </div>
+        )}
         <Composer
           inputRef={composer}
           key={`${entered?.id ?? "new"}:${repoId ?? "default"}`}
@@ -1108,6 +1151,7 @@ export function AiPanel({
           attachTo={sessionId}
           files={files}
         />
+        </>
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
         agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId} startedAt={entered.startedAt} workingSince={liveTurnStart}

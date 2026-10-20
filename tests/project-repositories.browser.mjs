@@ -278,6 +278,27 @@ try {
   await delay(150);
   assert.equal(await evaluate(`[...document.querySelectorAll('[popover] button')].some(b=>b.textContent.includes("Bob Builder"))`),false,"@ is for files, not people, in the chat box");
   await type(chatBox,"");
+  // A finished chat Claude ran opens with Claude selected, so a follow-up doesn't quietly switch to
+  // this device's usual agent; switching is still possible and says so; new chats keep the usual agent.
+  await evaluate(`(()=>{const m=window.__model;m.extraAgents=[{id:"claude",name:"Claude Code",vendor:"Anthropic",installed:true,execution:"runner",models:{choices:[{id:"",label:"Automatic"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}];
+    m.runs.push({id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",sessionId:"modelroomabc",repoId:"frontendabcd",startedBy:"alice",startedByName:"Alice",driverUserId:"alice",driverName:"Alice",controlVersion:0,agentId:"claude",title:"Claude finished chat",status:"completed",baseSha:"a".repeat(40),createdAt:Date.now(),startedAt:Date.now(),endedAt:Date.now(),archivedAt:null});
+    m.emit("run.started");m.emitDevices();})()`);
+  await eventually(()=>evaluate(`!!document.querySelector('button[title^="Claude finished chat ·"]')`),"Claude's chat in the sidebar");
+  await click('button[title^="Claude finished chat ·"]');
+  await eventually(()=>evaluate(`document.querySelector('button[aria-label="Provider"]')?.title==="Provider: Claude Code"`),"the opened chat's agent is selected");
+  assert.equal(await evaluate(`!!document.querySelector('[role=note]')`),false,"no warning while continuing with the same agent");
+  assert.notEqual(await evaluate(`JSON.parse(localStorage.getItem("multicode.composer.v1")||"{}").agent`),"claude","opening a chat doesn't change the default for new chats");
+  await click('button[aria-label="Provider"]');
+  await eventually(()=>evaluate(`[...document.querySelectorAll('.composer-picker [role="option"]')].some(o=>o.textContent.includes("Codex"))`),"provider options");
+  await evaluate(`[...document.querySelectorAll('.composer-picker [role="option"]')].find(o=>o.textContent.includes("Codex")).click()`);
+  await eventually(()=>evaluate(`document.querySelector('[role=note]')?.textContent.includes("This chat ran with Claude Code. Your next message continues it with Codex")`),"switching agent is called out");
+  await writeFile(join(tmpdir(),'multiplayer-agent-switch-note.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('[role=note] button')].find(b=>b.textContent==="Use Claude Code").click()`);
+  await eventually(()=>evaluate(`document.querySelector('button[aria-label="Provider"]')?.title==="Provider: Claude Code" && !document.querySelector('[role=note]')`),"back to the chat's agent");
+  // Back to a new chat in frontend, with the usual agent, for the rest of the checks.
+  await evaluate(`(()=>{const m=window.__model;m.runs=m.runs.filter(r=>r.id!=="cccccccc-cccc-4ccc-8ccc-cccccccccccc");m.extraAgents=[];m.emit("run.started");m.emitDevices();})()`);
+  await click('button[aria-label="New chat in frontend"]');
+  await eventually(()=>evaluate(`document.querySelector('button[aria-label="Provider"]')?.title==="Provider: Codex" && !!document.querySelector('button[aria-label="Choose model"]')`),"a new chat uses the usual agent");
   assert.equal(await evaluate(`document.querySelectorAll('.ai-composer select').length`),0,"composer uses arrow-free custom controls");
   await click('button[aria-label="Choose model"]');
   await eventually(()=>evaluate(`!!document.querySelector('.composer-picker [role="option"]')`),"model popover");
