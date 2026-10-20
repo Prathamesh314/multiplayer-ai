@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 const store = new Map();
 globalThis.window = { localStorage: { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) } };
-const { preferredAgent, rememberChoice, savedPicks } = await import("../app/lib/ai/composer-choice.ts");
+const { agentForChat, preferredAgent, rememberChoice, savedPicks } = await import("../app/lib/ai/composer-choice.ts");
 
 const agents = [
   { id: "codex", installed: true, models: { choices: [{ id: "", label: "Auto" }] } },
@@ -33,4 +33,16 @@ test("a choice that is no longer available falls back safely", () => {
   globalThis.window.localStorage.getItem = () => { throw new Error("blocked"); };
   assert.equal(preferredAgent(agents), "codex", "blocked storage is ignored");
   assert.doesNotThrow(() => rememberChoice("claude", "", ""));
+});
+
+test("an opened chat starts with the agent that ran it, without changing the default for new chats", () => {
+  store.clear();
+  globalThis.window.localStorage.getItem = (key) => store.get(key) ?? null;
+  rememberChoice("codex", "", "");
+  assert.equal(agentForChat(agents, "claude"), "claude", "a Claude chat continues with Claude");
+  assert.equal(agentForChat(agents, "gemini"), "codex", "not set up here: the usual agent");
+  assert.equal(agentForChat(agents, null), "codex", "a new chat uses the usual agent");
+  rememberChoice("claude", "opus", "high", false);
+  assert.equal(preferredAgent(agents), "codex", "following a chat keeps the default");
+  assert.deepEqual(savedPicks(agents[1]), { model: "opus", effort: "high" }, "but its model and effort are kept");
 });

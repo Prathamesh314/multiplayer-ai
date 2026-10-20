@@ -163,7 +163,7 @@ export function installFixtures() {
     if(path === "/api/ai/agents") {
       if(state.agentsFailure)return new Response("Temporarily unavailable",{status:503});
       const ready=state.devices.some(device=>device.online&&device.version==="2")&&state.aiReady;
-      return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}}],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it.",parallelChats:!!state.parallelChats});
+      return json({agents:[{id:"codex",name:"Codex",vendor:"OpenAI",installed:ready,execution:"runner",install:{command:"npm install -g @openai/codex"},models:{choices:[{id:"",label:"Automatic"},{id:"fixture/model-a",label:"Model Alpha"},{id:"fixture/model-b",label:"Model Beta"}],source:"Browser fixture",checkedAt:1,refreshedAt:1,stale:false}},...(state.extraAgents??[]).map(agent=>({...agent,installed:ready&&agent.installed}))],canRun:ready,reason:ready?null:"Connect your computer, then install and sign in to an AI tool on it.",parallelChats:!!state.parallelChats});
     }
     // Runs are not executed in the fixture: the request is recorded, then refused.
     if(path === "/api/ai/run") {
