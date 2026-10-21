@@ -517,6 +517,28 @@ try {
   await eventually(()=>evaluate(`!document.querySelector('dialog[open] section[aria-label="Update your computer’s app"]')`),"the steps go away once the updated app connects");
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
   await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes");
+  // Pairing from a terminal is two commands. After the first, the computer is paired but not
+  // connected: a checklist with step 2 to do, nothing green. Green only once it connects.
+  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Manage computers").click()`);
+  await eventually(()=>evaluate(`!!document.querySelector("dialog[open] details summary")`),"terminal pairing option");
+  await evaluate(`[...document.querySelectorAll("dialog[open] details summary")].find(s=>s.textContent.includes("terminal")).click()`);
+  await eventually(()=>evaluate(`[...document.querySelectorAll("dialog[open] button")].some(b=>b.textContent.trim()==="Connect a new computer with commands"&&!b.disabled)`),"pair with commands");
+  await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Connect a new computer with commands").click()`);
+  await eventually(()=>evaluate(`document.querySelector("dialog[open]").innerText.includes("1. Pair this computer once")`),"both commands shown");
+  await evaluate(`(()=>{const m=window.__model;m.devices.push({id:"computer-2",userId:"alice",name:"Studio Mac",platform:"darwin",version:"2",lastSeenAt:null,createdAt:Date.now(),revokedAt:null,online:false,supportsPermissions:true});m.emitDevices();})()`);
+  await eventually(()=>evaluate(`!!document.querySelector('dialog[open] ol[aria-label="Connection steps"]')`),"after pairing, a checklist");
+  const steps=await evaluate(`document.querySelector('dialog[open] ol[aria-label="Connection steps"]').innerText`);
+  assert.match(steps,/Paired[\s\S]*Studio Mac is linked to your account\. It isn’t connected yet\.[\s\S]*Start your computer connection[\s\S]*Waiting for your computer to connect…/);
+  assert.equal(await evaluate(`document.querySelector("dialog[open]").innerText.includes("Computer connected")`),false,"pairing alone is not shown as connected");
+  assert.equal(await evaluate(`!!document.querySelector('dialog[open] [class*="bg-vs-success/10"]')`),false,"nothing turns green after the first command");
+  assert.ok(await evaluate(`!!document.querySelector('dialog[open] button[aria-label="Copy start command"]')`),"the start command is right there");
+  assert.ok(await evaluate(`document.querySelector("dialog[open]").innerText.includes("Paired · not connected yet")`));
+  await writeFile(join(tmpdir(),'multiplayer-pairing-steps.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`(()=>{const d=window.__model.devices.find(d=>d.id==="computer-2");d.online=true;d.lastSeenAt=Date.now();window.__model.emitDevices();})()`);
+  await eventually(()=>evaluate(`document.querySelector("dialog[open]").innerText.includes("Computer connected. You can now set up AI") && !document.querySelector('dialog[open] ol[aria-label="Connection steps"]')`),"green once the computer connects");
+  await evaluate(`(()=>{const m=window.__model;m.devices=m.devices.filter(d=>d.id!=="computer-2");m.emitDevices();})()`);
+  await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
+  await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes after pairing");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

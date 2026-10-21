@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { mintPairingCode, revokeDevice } from "../../lib/runner/client";
 import type { RunnerDevice } from "../../lib/runner/client";
 import { relativeTime } from "../../lib/format";
-import { SpinnerIcon } from "../icons";
+import { CheckIcon, SpinnerIcon } from "../icons";
 import { GhostButton, Modal, PrimaryButton } from "../ui/Modal";
 import { desktopBridge } from "../../lib/desktop";
 import { useComputerConnection } from "./useComputerConnection";
@@ -177,7 +177,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
                     ? device.version !== "2" || !device.supportsPermissions ? "Update needed" : "Connected"
                     : device.lastSeenAt
                       ? `Offline · last connected ${relativeTime(device.lastSeenAt)}`
-                      : "Never connected"}
+                      : "Paired · not connected yet"}
                   {device.platform ? ` · ${device.platform}` : ""}
                   {device.version ? ` · v${device.version}` : ""}
                 </p>
@@ -193,13 +193,48 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
 
       {pairing ? (
         paired ? (
-          <div className="space-y-3 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2 text-[13px]">
-            <p role="status" className="text-vs-success">{paired.online && paired.version === "2" ? "Computer connected. You can now set up AI and continue your chats." : "Computer paired. Waiting for its connection to start…"}</p>
-            {!desktop && <>
-              {commandRow("start", "Start your computer connection", startCommand)}
-              <p className="text-sm text-vs-muted">Keep this terminal open while you work. Use the same start command whenever you reconnect; you only need to pair once.</p>
-            </>}
-          </div>
+          // Pairing (step 1) only links the computer to this account; it is
+          // connected once its runner is started (step 2) and checks in. Only
+          // that is green, so the first command never looks like the last.
+          paired.online && paired.version === "2" ? (
+            <div role="status" className="flex items-start gap-2.5 rounded-lg border border-vs-success/40 bg-vs-success/10 px-3 py-2.5 text-[13px]">
+              <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-success" />
+              <p className="text-vs-success">Computer connected. You can now set up AI and continue your chats.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-lg border border-vs-border bg-vs-editor p-3 text-[13px]">
+              <ol aria-label="Connection steps" className="space-y-3">
+                <li className="flex gap-2.5">
+                  <StepMark state="done" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-vs-fg">Paired</p>
+                    <p className="text-[12px] text-vs-muted">{paired.name} is linked to your account. It isn’t connected yet.</p>
+                  </div>
+                </li>
+                <li className="flex gap-2.5">
+                  <StepMark state={paired.online ? "warn" : "current"} number={2} />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <p className="font-medium text-vs-fg">{desktop ? "Starting the connection" : "Start your computer connection"}</p>
+                    {paired.online ? (
+                      <p className="text-[12px] text-vs-warn">That computer runs an older version. Update it, then start it again.</p>
+                    ) : desktop ? (
+                      <p className="text-[12px] text-vs-muted">The desktop app starts it for you. Keep the app open.</p>
+                    ) : (
+                      <>
+                        {commandRow("start", "Run this on the same computer, in a terminal:", startCommand)}
+                        <p className="text-[12px] text-vs-muted">Keep the terminal open while you work. Use the same command whenever you reconnect; you only pair once.</p>
+                      </>
+                    )}
+                    {!paired.online && (
+                      <p role="status" className="flex items-center gap-2 text-[12px] text-vs-muted">
+                        <SpinnerIcon className="h-3.5 w-3.5" /> Waiting for your computer to connect…
+                      </p>
+                    )}
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )
         ) : expired ? (
           <div role="status" className="space-y-3 rounded-lg border border-vs-warn/40 p-4 text-sm">
             <p>This connection code has expired. Get a new code and try again.</p>
@@ -244,5 +279,17 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
         </details>
       )}
     </Modal>
+  );
+}
+
+/** A step's marker: a check once done, its number while it is the one to do. */
+function StepMark({ state, number }: { state: "done" | "current" | "warn"; number?: number }) {
+  if (state === "done") {
+    return <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-vs-success/15 text-vs-success"><CheckIcon className="h-3 w-3" /></span>;
+  }
+  return (
+    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${state === "warn" ? "border-vs-warn text-vs-warn" : "border-vs-accent text-vs-accent"}`}>
+      {number}
+    </span>
   );
 }
