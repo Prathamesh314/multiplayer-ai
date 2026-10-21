@@ -24,7 +24,10 @@ try {
   assert.equal(await userFromSessionToken('unknown'),null);
   await f.db.query('UPDATE users SET deleted_at=NULL WHERE id=$1',[f.alice]);
   await f.db.query("INSERT INTO runner_devices(user_id,name,token_hash) VALUES ($1,'test',$2)",[f.alice,hash]);
-  const device=await deviceFromToken(token); assert.equal(device.userId,f.alice); assert.ok(device.online);
+  // Never sent a heartbeat: authenticated, but not online (only a heartbeat brings it online).
+  const unseen=await deviceFromToken(token); assert.equal(unseen.userId,f.alice); assert.equal(unseen.online,false); assert.equal(unseen.lastSeenAt,null);
+  await f.db.query("UPDATE runner_devices SET last_seen_at=now() WHERE token_hash=$1",[hash]);
+  const device=await deviceFromToken(token); assert.ok(device.online);
   assert.equal((await deviceFromToken(token)).lastSeenAt,device.lastSeenAt);
   await f.db.query("UPDATE runner_devices SET last_seen_at=now()-interval '12 seconds' WHERE id=$1",[device.id]);
   assert.ok(Date.now()-(await deviceFromToken(token)).lastSeenAt<5000);
