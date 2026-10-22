@@ -270,7 +270,9 @@ Inside a room, expand **Repositories & chats** groups and select a conversation.
 - **Top right:** **All files** and **Changes**, with task assignment, handoff, and AI review actions.
 - **Bottom right:** the terminal panel, when opened. Interactive shell availability depends on the environment.
 
-Drag the panel dividers to resize the workspace. Each area scrolls independently. On smaller windows, some controls wrap or panels collapse; use their visible controls to reopen them. **Room guide** offers a short walkthrough.`, screenshot: "conversation" },
+Drag the panel dividers to resize the workspace. Each area scrolls independently. On smaller windows, some controls wrap or panels collapse; use their visible controls to reopen them. **Room guide** offers a short walkthrough.
+
+**See who is here.** Like collaborators in a shared document, the faces at the top right of a chat are the teammates who have that chat open right now. They appear and leave as people open or switch chats; hover a face for the name, or select the faces for the full list. On the project overview, **Online now** shows everyone in your organisation who has Multicode AI open.`, screenshot: "conversation" },
       { id: "visibility", title: "Public and private rooms", body: `A **public** project room is visible to members of that project; it is not publicly accessible on the internet. A **private** room requires explicit room access.
 
 Open the room’s **Room privacy & members** settings from the project sidebar to review its name, visibility, and members. Only authorised users can change these settings. Review the scope before sharing a repository from a private room: sharing it makes that saved code available to the project.` },

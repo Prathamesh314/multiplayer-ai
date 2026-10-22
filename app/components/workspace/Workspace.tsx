@@ -532,10 +532,29 @@ export function Workspace({
 
   // One heartbeat per open tab, for as long as this session is open. The tab
   // being open is what "online" means, so it starts and stops with the mount.
+  // It also says which chat is open, so everyone on the same chat sees each
+  // other (like collaborators at the top of a shared document).
+  const heartbeat = useRef<ReturnType<typeof startHeartbeat> | null>(null);
+  const [chatViewers, setChatViewers] = useState<{ runId: string | null; ids: string[] }>({ runId: null, ids: [] });
+  const enteredRunId = enteredRun?.id ?? null;
+  const enteredRunRef = useRef(enteredRunId);
+  useEffect(() => { enteredRunRef.current = enteredRunId; }, [enteredRunId]);
   useEffect(() => {
-    const beat = startHeartbeat({ sessionId: session.id, orgId: session.orgId, onOnline: people.onOnline });
-    return () => beat.stop();
+    const beat = startHeartbeat({
+      sessionId: session.id, orgId: session.orgId, runId: enteredRunRef.current, onOnline: people.onOnline,
+      onViewers: ids => setChatViewers({ runId: enteredRunRef.current, ids }),
+    });
+    heartbeat.current = beat;
+    // Someone opened, switched or closed a chat here: look again now, not at the next beat.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stream = openSessionStream(session.id, { onPresenceChanged: () => { clearTimeout(timer); timer = setTimeout(() => beat.beatNow(), 250); } });
+    return () => { clearTimeout(timer); stream.close(); beat.stop(); heartbeat.current = null; };
   }, [session.id, session.orgId, people.onOnline]);
+  useEffect(() => { heartbeat.current?.setRun(enteredRunId); }, [enteredRunId]);
+  // People with this chat open, newest roster first; only for the chat in view.
+  const viewers = chatViewers.runId === enteredRunId && enteredRunId
+    ? people.members.filter(member => chatViewers.ids.includes(member.userId))
+    : [];
 
   // Ctrl+Shift+Z toggles the terminal; Ctrl+` also works, as in VS Code.
   useEffect(() => {
@@ -1153,6 +1172,7 @@ export function Workspace({
                         sessionId={session.id}
                         canRun={!readOnly}
                         members={people.members}
+                        viewers={viewers}
                         myUserId={myUserId}
                         entered={enteredRun}
                         isOwner={session.myRole === "owner"}

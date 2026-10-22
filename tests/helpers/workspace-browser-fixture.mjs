@@ -119,7 +119,7 @@ export function installFixtures() {
     }
     if(path.endsWith("/activity")) return json({ok:true});
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});
-    if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true}]});
+    if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true},...(state.extraMembers??[])]});
     if(path.endsWith("/runs"))return json({runs:state.runs});
     const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch|permissions)(?:\/([^/]+))?)?$/);
     if(runPath) {
@@ -171,7 +171,8 @@ export function installFixtures() {
       if(state.runEvents){const events=state.runEvents,encoder=new TextEncoder();return new Response(new ReadableStream({async start(controller){for(const event of events){if(event.wait){await new Promise(resolve=>setTimeout(resolve,event.wait));continue;}controller.enqueue(encoder.encode(JSON.stringify(event)+"\n"));}}}),{headers:{"content-type":"application/x-ndjson"}});}
       return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
     }
-    if(path === "/api/presence")return json({intervalMs:20000,online:["alice"]});
+    if(path === "/api/presence"){if(init.body)state.presenceRun=JSON.parse(init.body).runId??null;return json({intervalMs:20000,online:["alice"],viewers:state.presenceRun?(state.viewers??["alice"]):[]});}
+    if(path === "/api/orgs/team/online")return json({people:state.orgOnline??[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true}]});
     if(path === "/api/runner/devices") {
       if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});
       return json({devices:state.devices,requiresComputer:true});
