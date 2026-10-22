@@ -153,6 +153,8 @@ export function Composer({
   onAssignTask,
   /** Files and folders of the current repository, tagged by typing "@". */
   files = NO_FILES,
+  /** A short heads-up shown as the top row of the box, e.g. what to set up before sending. */
+  notice,
 }: {
   inputRef?: Ref<ComposerHandle>;
   placeholder: string;
@@ -166,6 +168,7 @@ export function Composer({
   people?: MentionPerson[];
   onAssignTask?: (person: MentionPerson, body: string) => Promise<void>;
   files?: MentionFile[];
+  notice?: React.ReactNode;
 }) {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [attachmentError, setAttachmentError] = useState("");
@@ -553,6 +556,7 @@ export function Composer({
             onDragLeave={attachTo ? () => setDragging(false) : undefined}
             onDrop={attachTo ? (event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); setDragging(false); attachFiles(Array.from(event.dataTransfer.files)); } : undefined}
           >
+            {notice && <div className="-mx-4 -mt-3 mb-3 rounded-t-2xl border-b border-vs-border bg-vs-editor/60 px-4 py-2.5">{notice}</div>}
             {attached.length > 0 && (
               <ul aria-label="Attached files" className="mb-2 flex flex-wrap gap-1.5">
                 {attached.map((file) => (
@@ -572,9 +576,12 @@ export function Composer({
             </div>
           </div>
         ) : (
-          <div className="flex items-end gap-3 rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
-            {textarea}
-            {sendButton}
+          <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
+            {notice && <div className="-mx-4 -mt-3 mb-3 rounded-t-2xl border-b border-vs-border bg-vs-editor/60 px-4 py-2.5">{notice}</div>}
+            <div className="flex items-end gap-3">
+              {textarea}
+              {sendButton}
+            </div>
           </div>
         )}
       </div>
