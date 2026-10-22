@@ -59,10 +59,21 @@ export function chunkSource(path: string, text: string): SourceChunk[] {
   const ranges: Array<{ start: number; end: number; name: string }> = [];
   const ext = path.split(".").at(-1)!.toLowerCase();
   const language = languages[ext === "mts" || ext === "cts" ? "ts" : ext];
+  // tree-sitter reads the source through a 32 KiB buffer by default and throws
+  // "Invalid argument" for anything longer, so size it to the file. Should a
+  // grammar still fail, the file is indexed in line chunks instead: one file
+  // must never fail (and endlessly retry) the whole repository's index.
+  let tree: Parser.Tree | null = null;
   if (language) {
-    const parser = new Parser();
-    parser.setLanguage(language);
-    const tree = parser.parse(text);
+    try {
+      const parser = new Parser();
+      parser.setLanguage(language);
+      tree = parser.parse(text, undefined, { bufferSize: Buffer.byteLength(text, "utf8") + 1 });
+    } catch {
+      tree = null;
+    }
+  }
+  if (tree) {
     const pending: Array<{ node: Parser.SyntaxNode; parentName: string }> = [{ node: tree.rootNode, parentName: "" }];
     while (pending.length) {
       const { node, parentName } = pending.pop()!;

@@ -8,6 +8,7 @@ import { citext } from "@electric-sql/pglite/contrib/citext";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { migrate } from "../db/migrate.mjs";
 import { chunkSource, CHUNK_CHARS } from "../app/lib/knowledge/repo-chunks.ts";
+import Parser from "tree-sitter";
 import { ensureRepoContext, indexNextRepoJob, indexedRepoSha, embedPendingRepoChunks, recallRepoContext, forgetRepoIndex } from "../app/lib/knowledge/repo-context.ts";
 import { embedRepoTexts, repoEmbeddingConfig } from "../app/lib/knowledge/repo-embeddings.ts";
 import { repoSnapshotPaths, repoSnapshotText } from "../app/lib/session/repo.ts";
@@ -92,6 +93,33 @@ try {
     const long = chunkSource("a.md", "z".repeat(9000));
     assert.equal(long.map((c) => c.content).join(""), "z".repeat(9000));
     assert.ok(long.every((c) => c.content.length <= CHUNK_CHARS));
+  });
+  await test("files over 32 KiB keep their symbols, and a parser failure still indexes the file", async () => {
+    // tree-sitter's default 32 KiB read buffer made parse() throw "Invalid argument" at 32,768
+    // characters, failing (and endlessly retrying) the whole repository's index.
+    const source = (size, line = (i) => `def handler_${i}(request):\n    return request.get("item_${i}")\n\n`) => {
+      let text = ""; for (let i = 0; text.length < size; i++) text += line(i);
+      return text.slice(0, size);
+    };
+    // Nothing is lost: every line of the file is in some chunk.
+    const covered = (chunks, text) => {
+      const indexed = new Set(chunks.flatMap((c) => c.content.split("\n")));
+      return text.split("\n").every((line) => !line.trim() || indexed.has(line));
+    };
+    for (const size of [32767, 32768, 92_000]) {
+      const text = source(size), chunks = chunkSource("api/simulation.py", text);
+      assert.ok(chunks.some((c) => c.symbol === "handler_100"), `symbols at ${size} characters`);
+      assert.ok(covered(chunks, text));
+    }
+    const wide = source(50_000, (i) => `def 処理_${i}(値):\n    return "こんにちは 🐟 ${i}"\n\n`);
+    assert.ok(chunkSource("api/日本語.py", wide).some((c) => c.symbol === "処理_500"), "multi-byte source is measured in bytes");
+    const parse = Parser.prototype.parse;
+    Parser.prototype.parse = () => { throw new Error("Invalid argument"); };
+    try {
+      const text = source(40_000), chunks = chunkSource("api/broken.py", text);
+      assert.ok(chunks.length > 0 && chunks.every((c) => c.symbol === ""), "falls back to line chunks");
+      assert.ok(covered(chunks, text));
+    } finally { Parser.prototype.parse = parse; }
   });
   await test("immutable snapshot reads preserve unusual paths and do not follow HEAD", async () => {
     assert.ok((await repoSnapshotPaths(ref, sha1)).includes("odd\nname.ts"));
