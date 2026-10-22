@@ -96,7 +96,7 @@ export function InstallCommands({ site, available, downloads }: { site: string; 
         <p className={styles.pickerHint}>Installers are coming soon. Meanwhile, use Multicode AI in your browser.</p>
       )}
       {downloads.some((item) => item.href) && (
-        <details className={styles.installDirect}>
+        <details className={styles.installDirect} aria-label="Regular downloads">
           <summary>Prefer a regular download?</summary>
           <p>{downloads.filter((item) => item.href).map((item, index) => (
             <span key={item.label}>{index > 0 && " · "}<a href={item.href!}>{item.label}</a></span>

@@ -43,7 +43,7 @@ try {
     await evaluate(`[...document.querySelectorAll('#download [role=tab]')].find(t=>t.textContent.startsWith(${JSON.stringify(label)})).click()`);
     return evaluate(`document.querySelector('#download [role=tabpanel] code')?.textContent??''`);
   };
-  const links=await evaluate(`[...document.querySelectorAll('#download details a')].map(a=>({url:a.href,label:a.textContent}))`);
+  const links=await evaluate(`[...document.querySelectorAll('#download details[aria-label="Regular downloads"] a')].map(a=>({url:a.href,label:a.textContent}))`);
   assert.equal(await evaluate(`!!document.querySelector('#download a[href*="example.com"]')`),false);
   if(!available){
     assert.equal(links.length,0);
