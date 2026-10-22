@@ -16,8 +16,8 @@ the mobile navigation and FAQs, including without JavaScript.
 
 The homepage reads configured HTTPS installer URLs from the server-side build
 variables `DESKTOP_DOWNLOAD_MAC_URL` (Apple Silicon),
-`DESKTOP_DOWNLOAD_MAC_INTEL_URL`, `DESKTOP_DOWNLOAD_WINDOWS_URL`, and
-`DESKTOP_DOWNLOAD_LINUX_URL`. Missing or invalid values show **Coming soon**;
+`DESKTOP_DOWNLOAD_MAC_INTEL_URL`, `DESKTOP_DOWNLOAD_WINDOWS_URL`,
+`DESKTOP_DOWNLOAD_LINUX_URL` (AppImage) and `DESKTOP_DOWNLOAD_LINUX_DEB_URL` (Ubuntu/Debian). Missing or invalid values show **Coming soon**;
 there are no placeholder download links. `DESKTOP_DOWNLOAD_CHECKSUMS_URL` links
 to the published checksum file when available. Rebuild after changing them.
 
