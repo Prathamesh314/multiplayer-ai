@@ -34,6 +34,33 @@ function externalUrl(value) {
   }
 }
 
+/**
+ * Where a link goes in the desktop app, which is the workspace and nothing else:
+ * - "app": workspace pages, opened in the app window;
+ * - "home": the marketing homepage (with any #section), never shown in the app:
+ *   in the window it means "go to the workspace", from a new-tab link (such as
+ *   "Download the latest app") it opens in the browser;
+ * - "browser": this site's documentation, read in the browser;
+ * - "external": other http(s)/mailto links, opened in the browser after asking;
+ * - "blocked": anything else.
+ */
+function linkTarget(value, origin) {
+  if (sameOrigin(value, origin)) {
+    const { pathname } = new URL(value);
+    if (pathname === "/" || pathname === "") return "home";
+    if (pathname === "/docs" || pathname.startsWith("/docs/")) return "browser";
+    return "app";
+  }
+  return externalUrl(value) ? "external" : "blocked";
+}
+
+/** Downloads the workspace starts itself (exports, files); never other origins. */
+function downloadAllowed(value, origin) {
+  if (sameOrigin(value, origin)) return true;
+  // blob: URLs carry their creator's origin, e.g. blob:https://multicode.in/uuid (an export).
+  return Boolean(origin) && typeof value === "string" && value.startsWith("blob:" + origin + "/");
+}
+
 async function waitForServer(value, { timeoutMs = 60000, intervalMs = 500, signal } = {}) {
   const url = new URL(value);
   const transport = url.protocol === "https:" ? https : url.protocol === "http:" ? http : null;
@@ -69,4 +96,4 @@ function runnerEnvironment(env, configPath) {
   return result;
 }
 
-module.exports = { workspaceUrl, sameOrigin, externalUrl, waitForServer, runnerEnvironment };
+module.exports = { workspaceUrl, sameOrigin, externalUrl, linkTarget, downloadAllowed, waitForServer, runnerEnvironment };

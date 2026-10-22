@@ -103,6 +103,47 @@ test("main process denies popup protocols, off-origin navigation, webviews and p
   assert.equal(blocked, true);
 });
 
+test("the app is the workspace: homepage goes to the workspace, docs and other sites open in the browser", async () => {
+  const { linkTarget, downloadAllowed } = require("../desktop/policy");
+  const origin = "https://team.example";
+  assert.deepEqual([origin, origin + "/", origin + "/#download"].map(url => linkTarget(url, origin)), ["home", "home", "home"]);
+  assert.deepEqual([origin + "/workspace", origin + "/s/room", origin + "/docsx"].map(url => linkTarget(url, origin)), ["app", "app", "app"]);
+  assert.deepEqual([origin + "/docs", origin + "/docs/download-install"].map(url => linkTarget(url, origin)), ["browser", "browser"]);
+  assert.equal(linkTarget("https://github.com", origin), "external");
+  assert.equal(linkTarget("file:///etc/passwd", origin), "blocked");
+  assert.deepEqual([origin + "/api/file", "blob:" + origin + "/1"].map(url => downloadAllowed(url, origin)), [true, true]);
+  assert.deepEqual(["https://evil.test/a.csv", "blob:https://evil.test/1", "blob:" + origin + ".evil.test/1", "data:text/csv,a"].map(url => downloadAllowed(url, origin)), [false, false, false, false]);
+
+  const instance = harness();
+  const opened = [], loaded = [];
+  instance.electron.shell.openExternal = async url => { opened.push(url); };
+  const window = mockWindow(origin + "/workspace");
+  window.loadURL = async url => { loaded.push(url); };
+  instance.security(window);
+  const navigate = url => { let stopped = false; window.webContents.emit("will-navigate", { url, preventDefault() { stopped = true; } }, url); return stopped; };
+  assert.equal(navigate(origin + "/s/room"), false, "workspace pages open in the app");
+  assert.equal(navigate(origin + "/"), true);
+  assert.deepEqual(loaded, [origin + "/workspace"], "the homepage is replaced by the workspace");
+  window.webContents.emit("did-navigate-in-page", {}, origin + "/", true);
+  assert.equal(loaded.length, 2, "also after a client-side link to the homepage");
+  assert.equal(navigate(origin + "/docs/download-install"), true);
+  assert.equal(navigate("https://github.com/x"), true, "a page cannot navigate the app to another site");
+  assert.equal(window.webContents.openWindow({ url: origin + "/#download" }).action, "deny");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(opened, [origin + "/docs/download-install", origin + "/#download"], "docs and the download page open in the browser");
+  window.webContents.openWindow({ url: origin + "/s/other" });
+  assert.equal(loaded.at(-1), origin + "/s/other", "a new-tab workspace link opens in the app window");
+
+  const check = window.webContents.session.checkPermission;
+  assert.equal(check(null, "clipboard-sanitized-write", origin), true, "Copy buttons work");
+  assert.equal(check(null, "clipboard-sanitized-write", "https://evil.test"), false);
+  assert.equal(check(null, "media", origin), false);
+  window.webContents.session.requestPermission(null, "geolocation", allowed => assert.equal(allowed, false), { requestingUrl: origin + "/workspace" });
+  const download = url => { let stopped = false; window.webContents.session.emit("will-download", { preventDefault() { stopped = true; } }, { getURL: () => url }); return stopped; };
+  assert.equal(download("blob:" + origin + "/export"), false, "exports save through the Save dialog");
+  assert.equal(download("https://evil.test/payload.exe"), true);
+});
+
 test("privileged IPC checks window identity, main frame, and exact origin", async () => {
   const instance = harness();
   const workspace = mockWindow("https://team.example/rooms/one");

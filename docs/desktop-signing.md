@@ -76,5 +76,10 @@ publisher until its reputation builds; it then names the publisher instead of
 
 Download the workflow's artifacts and publish them as before (upload to
 `/var/lib/multiplayer/downloads/<version>/` and point the `DESKTOP_DOWNLOAD_*` links in
-`.env.production` at them). Set `DESKTOP_DOWNLOAD_CHANNEL=release` once the installers
+`.env.production` at them, including `DESKTOP_DOWNLOAD_LINUX_DEB_URL` for the `.deb`, which
+Ubuntu 24.04+ needs).
+
+Linux packages need a maintainer contact: set `DESKTOP_MAINTAINER` (e.g.
+`Multicode AI <support@yourdomain>`) for the build; it defaults to
+`Multicode AI <support@multicode.in>`. Set `DESKTOP_DOWNLOAD_CHANNEL=release` once the installers
 are signed, so the download page stops describing the first-launch prompts.

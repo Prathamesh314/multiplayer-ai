@@ -32,5 +32,8 @@ module.exports = {
   },
   win: { target: ["nsis"], icon: "icon.png", verifyUpdateCodeSignature: true, ...winSigning(process.env) },
   nsis: { oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false },
-  linux: { target: ["AppImage"], executableName: "multicode-ai", icon: "icon.png", category: "Development" },
+  // A .deb as well as the AppImage: Ubuntu 24.04+ only lets Electron's sandbox run
+  // with an AppArmor profile, which the .deb installs and an AppImage cannot.
+  linux: { target: ["AppImage", "deb"], executableName: "multicode-ai", icon: "icon.png", category: "Development",
+    maintainer: process.env.DESKTOP_MAINTAINER || "Multicode AI <support@multicode.in>", vendor: "Multicode AI", synopsis: "Your team's AI coding workspace" },
 };

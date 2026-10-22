@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import styles from "./marketing.module.css";
 
-export type DownloadKey = "mac-arm64" | "mac-x64" | "win-x64" | "linux-x64";
+export type DownloadKey = "mac-arm64" | "mac-x64" | "win-x64" | "linux-deb" | "linux-x64";
 export type DownloadOption = { key: DownloadKey; os: "macOS" | "Windows" | "Linux"; label: string; href: string | null };
 
 async function detect(): Promise<DownloadKey | null> {
@@ -33,7 +33,7 @@ async function detect(): Promise<DownloadKey | null> {
     } catch { /* no WebGL */ }
     return "mac-arm64";
   }
-  if (/linux|x11|cros/.test(platform)) return "linux-x64";
+  if (/linux|x11|cros/.test(platform)) return "linux-deb";
   return null;
 }
 
@@ -43,7 +43,9 @@ export function DownloadPicker({ options, preview, address }: { options: Downloa
   const [started, setStarted] = useState(false);
   useEffect(() => { void detect().then(setDetected); }, []);
 
-  const current = options.find((option) => option.key === (chosen ?? detected)) ?? null;
+  // On Linux the .deb is recommended (it runs on Ubuntu 24.04+), the AppImage otherwise.
+  const wanted = chosen ?? (detected === "linux-deb" && !options.find((option) => option.key === "linux-deb")?.href ? "linux-x64" : detected);
+  const current = options.find((option) => option.key === wanted) ?? null;
   const others = options.filter((option) => option.key !== current?.key && option.href);
   if (!options.some((option) => option.href)) return null;
 
@@ -89,6 +91,11 @@ function steps(option: DownloadOption, preview: boolean, address: string): { tit
   if (option.os === "Windows") return [
     { title: "Run the installer", body: preview ? <>If <em>“Windows protected your PC”</em> appears, click <strong>More info → Run anyway</strong>. You only do this once.</> : undefined },
     { title: "Open Multicode AI from the Start menu" },
+    signIn,
+  ];
+  if (option.key === "linux-deb") return [
+    { title: "Install the package", body: <>Open it with your software installer, or run <code>sudo apt install ./Multicode-AI-*.deb</code>.</> },
+    { title: "Open Multicode AI from your applications" },
     signIn,
   ];
   return [

@@ -9,6 +9,7 @@ import { ProductPreview } from "./components/marketing/ProductPreview";
 import { MobileNavigation } from "./components/marketing/MobileNavigation";
 import styles from "./components/marketing/marketing.module.css";
 import { desktopDownloadUrl } from "./lib/desktop-downloads";
+import { DesktopHomeRedirect } from "./components/marketing/DesktopHomeRedirect";
 import { DownloadPicker, type DownloadOption } from "./components/marketing/DownloadPicker";
 import { screenshots } from "./docs/screenshots";
 
@@ -81,7 +82,8 @@ export default function Home() {
     { name: "Windows", detail: "Windows 10 or later · 64-bit", icon: "⊞", downloads: [
       { label: "Windows x64 · .exe", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_WINDOWS_URL) },
     ] },
-    { name: "Linux", detail: "64-bit Linux · AppImage", icon: ">_", downloads: [
+    { name: "Linux", detail: "64-bit · Ubuntu/Debian package or AppImage", icon: ">_", downloads: [
+      { label: "Ubuntu / Debian · .deb", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_LINUX_DEB_URL) },
       { label: "Linux x64 · AppImage", href: desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_LINUX_URL) },
     ] },
   ];
@@ -92,12 +94,14 @@ export default function Home() {
     { key: "mac-arm64", os: "macOS", label: "Apple Silicon", href: platforms[0].downloads[0].href },
     { key: "mac-x64", os: "macOS", label: "Intel", href: platforms[0].downloads[1].href },
     { key: "win-x64", os: "Windows", label: "64-bit", href: platforms[1].downloads[0].href },
-    { key: "linux-x64", os: "Linux", label: "AppImage", href: platforms[2].downloads[0].href },
+    { key: "linux-deb", os: "Linux", label: "Ubuntu / Debian", href: platforms[2].downloads[0].href },
+    { key: "linux-x64", os: "Linux", label: "AppImage", href: platforms[2].downloads[1].href },
   ];
   const address = (process.env.AUTH_PUBLIC_URL || "https://multicode.in").replace(/\/$/, "");
 
   return (
     <div className={styles.site}>
+      <DesktopHomeRedirect />
       <a href="#main-content" className={styles.skipLink}>Skip to content</a>
       <header className={styles.header}>
         <div className={styles.navInner}>

@@ -37,6 +37,12 @@ jobs:
           - os: ubuntu-22.04
             platform: linux
             arch: x64
+          # Ubuntu 24.04 restricts Electron's sandbox to apps with an AppArmor
+          # profile: install the .deb (which brings one) and test that app.
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+            installed: deb
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -67,8 +73,14 @@ jobs:
         if: runner.os != 'Linux'
         run: node tests/desktop-smoke.mjs --packaged
       - name: Packaged smoke test (virtual display)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.installed
         run: xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
+      - name: Install the .deb and smoke-test the installed app
+        if: matrix.installed == 'deb'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ./desktop-dist/*.deb
+          DESKTOP_SMOKE_EXECUTABLE="/opt/Multicode AI/multicode-ai" xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
       # Manual runs (the installers you publish) are rebuilt with this website's
       # address built in, and signed when the credentials
       # are configured as repository secrets: macOS with a Developer ID certificate
@@ -77,7 +89,7 @@ jobs:
       # SmartScreen names the publisher. Pull requests build unsigned previews.
       # Unset secrets arrive empty and are ignored (desktop/release-preflight.mjs).
       - name: Build the installers to publish
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !matrix.installed
         shell: bash
         run: |
           if [ -n "$APPLE_API_KEY_P8" ]; then
@@ -117,6 +129,8 @@ jobs:
             xcrun stapler validate "$app"
           fi
       - uses: actions/upload-artifact@v7
+        # The 24.04 job only proves the installed .deb runs; ubuntu-22.04 uploads Linux.
+        if: '!matrix.installed'
         with:
           name: desktop-preview-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
@@ -126,5 +140,6 @@ jobs:
             desktop-dist/*.zip
             desktop-dist/*.exe
             desktop-dist/*.AppImage
+            desktop-dist/*.deb
             desktop-dist/*.blockmap
             desktop-dist/SHA256SUMS-*.txt

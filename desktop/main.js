@@ -1,11 +1,11 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, dialog, utilityProcess } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, dialog, utilityProcess, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 const { spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
-const { workspaceUrl, sameOrigin, externalUrl, waitForServer, runnerEnvironment } = require("./policy");
+const { workspaceUrl, sameOrigin, externalUrl, linkTarget, downloadAllowed, waitForServer, runnerEnvironment } = require("./policy");
 const { createAutoConnection } = require("./connection");
 
 app.setName("Multicode AI");
@@ -129,21 +129,45 @@ function report(value) {
 
 function security(window, local = false) {
   const contents = window.webContents;
-  const allowed = url => local ? url === setupUrl : sameOrigin(url, settings.url);
-  contents.setWindowOpenHandler(({ url }) => {
-    if (!local && externalUrl(url)) void openExternal(url);
-    return { action: "deny" };
-  });
-  for (const eventName of ["will-navigate", "will-redirect", "will-frame-navigate"]) {
-    contents.on(eventName, (event, url) => {
-      const destination = typeof url === "string" ? url : event.url;
-      if (!allowed(destination)) event.preventDefault();
+  if (local) {
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    for (const eventName of ["will-navigate", "will-redirect", "will-frame-navigate"]) {
+      contents.on(eventName, (event, url) => {
+        if ((typeof url === "string" ? url : event.url) !== setupUrl) event.preventDefault();
+      });
+    }
+  } else {
+    // The app is the workspace: its pages open here, the homepage is never shown
+    // (the workspace is), and docs and other sites open in the browser.
+    const route = (url, { newWindow = false, redirect = false } = {}) => {
+      const target = linkTarget(url, settings.url);
+      if (target === "app") return newWindow ? void window.loadURL(url) : true;
+      if (target === "home" && !newWindow) return void window.loadURL(new URL("/workspace", settings.url).href);
+      if (redirect) return false;
+      if (target === "home" || target === "browser") void shell.openExternal(url).catch(() => report("Could not open the link."));
+      // Other sites only from a new-tab link, and only after asking; a page
+      // navigating itself away is simply stopped, so it cannot raise dialogs.
+      else if (target === "external" && newWindow) void openExternal(url);
+      return false;
+    };
+    contents.setWindowOpenHandler(({ url }) => { route(url, { newWindow: true }); return { action: "deny" }; });
+    contents.on("will-navigate", (event, url) => { if (route(typeof url === "string" ? url : event.url) !== true) event.preventDefault(); });
+    contents.on("will-redirect", (event, url) => { if (linkTarget(typeof url === "string" ? url : event.url, settings.url) !== "app") event.preventDefault(); });
+    contents.on("will-frame-navigate", (event) => { if (!event.isMainFrame && linkTarget(event.url, settings.url) !== "app") event.preventDefault(); });
+    // Client-side navigation (a link to "/" inside the app) changes the URL without loading.
+    contents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+      if (isMainFrame && linkTarget(url, settings.url) === "home") void window.loadURL(new URL("/workspace", settings.url).href);
     });
   }
   contents.on("will-attach-webview", event => event.preventDefault());
-  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  contents.session.setPermissionCheckHandler(() => false);
-  contents.session.on("will-download", event => event.preventDefault());
+  // Copy buttons need clipboard writes; nothing else (camera, location…) is ever granted.
+  const allowed = (permission, origin) => !local && permission === "clipboard-sanitized-write" && sameOrigin(origin, settings.url);
+  contents.session.setPermissionRequestHandler((_contents, permission, callback, details) => callback(allowed(permission, details?.requestingUrl ? new URL(details.requestingUrl).origin : "")));
+  contents.session.setPermissionCheckHandler((_contents, permission, origin) => allowed(permission, origin));
+  // Exports and files from the workspace save through the usual Save dialog.
+  contents.session.on("will-download", (event, item) => {
+    if (local || !downloadAllowed(item.getURL(), settings.url)) event.preventDefault();
+  });
 }
 
 async function openExternal(url) {
@@ -176,15 +200,41 @@ function showSetup() {
   setupWindow.on("closed", () => { setupWindow = null; });
 }
 
+/** The workspace window opens where it was last closed, if that place is still on a screen. */
+const windowStatePath = path.join(app.getPath("userData"), "window.json");
+function savedWindowBounds() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(windowStatePath, "utf8"));
+    const bounds = { x: saved.x, y: saved.y, width: saved.width, height: saved.height };
+    if (!Object.values(bounds).every(Number.isInteger) || bounds.width < 700 || bounds.height < 500) return null;
+    const area = screen.getDisplayMatching(bounds).workArea;
+    const visible = bounds.x < area.x + area.width - 100 && bounds.x + bounds.width > area.x + 100 && bounds.y >= area.y - 10 && bounds.y < area.y + area.height - 100;
+    return visible ? { ...bounds, maximized: saved.maximized === true } : null;
+  } catch {
+    return null;
+  }
+}
+function saveWindowBounds(window) {
+  try {
+    if (window.isDestroyed() || window.isMinimized()) return;
+    fs.writeFileSync(windowStatePath, JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }));
+  } catch { /* not remembered */ }
+}
+
 function createWorkspace() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  const bounds = savedWindowBounds();
   mainWindow = new BrowserWindow({
-    width: 1440, height: 940, minWidth: 700, minHeight: 500,
+    width: bounds?.width ?? 1440, height: bounds?.height ?? 940, ...(bounds ? { x: bounds.x, y: bounds.y } : {}), minWidth: 700, minHeight: 500,
     show: false, title: "Multicode AI", backgroundColor: "#151515",
     icon: path.join(__dirname, "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false },
   });
   security(mainWindow);
+  if (bounds?.maximized) mainWindow.maximize();
+  // Tells the website this is the app, so it never serves the marketing homepage here.
+  mainWindow.webContents.setUserAgent(`${mainWindow.webContents.getUserAgent()} MulticodeDesktop/${app.getVersion()}`);
+  mainWindow.on("close", () => saveWindowBounds(mainWindow));
   if (workspaceSession !== mainWindow.webContents.session) {
     workspaceSession = mainWindow.webContents.session;
     workspaceSession.cookies.on("changed", (_event, cookie) => {

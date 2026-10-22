@@ -33,7 +33,7 @@ if (release && platform === "darwin") verifySignedMac(join(env.DESKTOP_OUTPUT_DI
 await mkdir("desktop-dist", { recursive: true });
 const hashes = [];
 for (const file of (await readdir(env.DESKTOP_OUTPUT_DIR)).sort()) {
-  if (!/\.(dmg|zip|exe|AppImage|blockmap)$/.test(file) && !/^latest.*\.yml$/.test(file)) continue;
+  if (!/\.(dmg|zip|exe|AppImage|deb|blockmap)$/.test(file) && !/^latest.*\.yml$/.test(file)) continue;
   await copyFile(join(env.DESKTOP_OUTPUT_DIR, file), join("desktop-dist", file));
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(join(env.DESKTOP_OUTPUT_DIR, file))) hash.update(chunk);
