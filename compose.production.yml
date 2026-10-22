@@ -83,6 +83,7 @@ x-web: &web
       DESKTOP_DOWNLOAD_MAC_INTEL_URL: ${DESKTOP_DOWNLOAD_MAC_INTEL_URL:-}
       DESKTOP_DOWNLOAD_WINDOWS_URL: ${DESKTOP_DOWNLOAD_WINDOWS_URL:-}
       DESKTOP_DOWNLOAD_LINUX_URL: ${DESKTOP_DOWNLOAD_LINUX_URL:-}
+      DESKTOP_DOWNLOAD_LINUX_DEB_URL: ${DESKTOP_DOWNLOAD_LINUX_DEB_URL:-}
       DESKTOP_DOWNLOAD_CHANNEL: ${DESKTOP_DOWNLOAD_CHANNEL:-preview}
       DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
       NEXT_PUBLIC_ASSET_PREFIX: ${NEXT_PUBLIC_ASSET_PREFIX:-}
@@ -93,6 +94,9 @@ x-web: &web
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
     CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     CLERK_WEBHOOK_SIGNING_SECRET: ${CLERK_WEBHOOK_SIGNING_SECRET:-}
+    # Read while running by /install/latest, which the one-command installers ask
+    # for the current release (the download links themselves are built in).
+    DESKTOP_DOWNLOAD_CHECKSUMS_URL: ${DESKTOP_DOWNLOAD_CHECKSUMS_URL:-}
   # Both replicas use one built image and one data volume. Migrations run once
   # through the migrate service before either replica or the worker is started.
   command: ["node", "scripts/serve.mjs", "-H", "0.0.0.0", "-p", "3000"]
