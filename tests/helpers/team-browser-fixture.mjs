@@ -50,6 +50,9 @@ export function installFixtures() {
     if (path === "/api/orgs") return json({ orgs: [org, {...org, id:"labs", slug:"labs", name:"Side Projects", myRole:"member"}] });
     if (path === "/api/auth/me") return json({user:{id:"alex",handle:"alex",displayName:"Alex Chen",email:"alex@example.test",avatarUrl:null},connectCode:null});
     if (path === "/api/runner/devices") return json({devices:[],requiresComputer:true});
+    // Presence: this tab's heartbeat, and who in the org has the app open.
+    if (path === "/api/presence") return json({intervalMs:20000,online:[],viewers:[]});
+    if (/^\/api\/orgs\/[^/]+\/online$/.test(path)) return json({people:orgMembers.slice(0,3).map((member,index)=>({userId:member.userId,handle:member.handle,displayName:member.displayName,avatarUrl:null,isSelf:index===0}))});
     if (path === "/api/invitations/accept") return json({error:"This invitation has expired. Ask your administrator for a new invitation."},410);
     if (path === "/api/sessions/locked-room") return json({error:"This room is private. Enter your access code to join."},403);
     if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }
