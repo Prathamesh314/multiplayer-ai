@@ -4,6 +4,7 @@ import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mo
 import type { MentionFile } from "../../lib/ai/file-mentions";
 import { LiveAvatars } from "../presence/LiveAvatars";
 import { agentForChat, preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
+import { isChangeSummary } from "../../lib/ai/change-summary";
 import { openUserStream } from "../../lib/events/shared-client";
 
 import { createPortal } from "react-dom";
@@ -355,6 +356,8 @@ export function AiPanel({
           pendingSteps.push(message.body);
           continue;
         }
+        // Older chats stored a changed-files list after each run; the Changes tab shows that.
+        if (message.role === "system" && isChangeSummary(message.body)) continue;
         const role: Turn["role"] = message.role === "user" ? "user" : message.role === "system" ? "system" : "agent";
         restored.push({
           id: uid(),
@@ -763,20 +766,6 @@ export function AiPanel({
                 turn.id === agentTurnId ? { ...turn, streaming: false, failed } : turn,
               );
               next.push({ id: uid(), role: "system", text: summary });
-              // Which files changed, line counts included — same wording as
-              // the durable system turn everyone else sees via the room feed.
-              if (event.changes && event.changes.length > 0) {
-                const added = event.changes.reduce((sum, file) => sum + file.added, 0);
-                const removed = event.changes.reduce((sum, file) => sum + file.removed, 0);
-                next.push({
-                  id: uid(),
-                  role: "system",
-                  text: [
-                    `Changed ${event.changes.length} file${event.changes.length === 1 ? "" : "s"} (+${added} −${removed})`,
-                    ...event.changes.map((file) => `· ${file.path}  +${file.added} −${file.removed}`),
-                  ].join("\n"),
-                });
-              }
               return next;
             });
           }
