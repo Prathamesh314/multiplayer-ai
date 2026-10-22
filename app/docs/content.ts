@@ -53,6 +53,18 @@ Then follow [your first AI conversation](/docs/first-conversation).`, screenshot
     slug: "download-install", category: "Get started", title: "Download & install",
     description: "Install the desktop app on macOS, Windows, or Linux and connect it to your workspace.",
     sections: [
+      { id: "one-command", title: "Install with one command", body: `The quickest way, with no security warnings: open a terminal and run the command for your computer. It downloads the current release, checks it against the published SHA-256 checksums (and installs nothing if they differ), installs it and opens it. Run the same command again to update.
+
+| Computer | Where to run it | Command |
+| --- | --- | --- |
+| Mac with Apple Silicon | Terminal | \`curl -fsSL https://multicode.in/install.sh \| sh -s -- mac-arm64\` |
+| Mac with Intel | Terminal | \`curl -fsSL https://multicode.in/install.sh \| sh -s -- mac-x64\` |
+| Windows (64-bit) | PowerShell | \`irm https://multicode.in/install.ps1 \| iex\` |
+| Linux (64-bit) | Terminal | \`curl -fsSL https://multicode.in/install.sh \| sh -s -- linux\` |
+
+On a Mac, **About This Mac** shows whether you have an Apple chip or Intel. Windows installs just for you, with no administrator rights. On Ubuntu and Debian, Linux installs the package (you may be asked for your password); on other distributions it installs the AppImage in your home folder and adds Multicode AI to your applications.
+
+Why no warning: an installer downloaded in a browser is marked as coming from the internet, and an unsigned app then asks once before it opens. A download made from the terminal carries no such mark.` },
       { id: "download", title: "Get the correct installer", body: `1. Open the [official download section](/#download).
 2. Select **Download for …**: the page recognises your computer, including whether a Mac has an Apple chip or an Intel processor. **Not your computer?** lists the others. Windows and Linux downloads are x64.
 3. Download the installer. If a platform says **Coming soon**, use the browser and the [standalone runner](/docs/connect-computer#terminal-connection) when you need AI execution.

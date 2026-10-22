@@ -399,27 +399,45 @@
 }
 
 /* Download picker: one button for this computer, then how to install it. */
-.picker { display: grid; gap: 20px; margin-bottom: 20px; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); }
-@media (min-width: 900px) { .picker { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; gap: 32px; } }
 .pickerKicker { font-family: var(--mono); font-size: .6875rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-fg); }
-.pickerButton {
-  display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; height: 48px; padding: 0 20px;
-  border-radius: 8px; background: var(--fg); color: var(--bg); font-size: .9375rem; font-weight: 600; transition: opacity .15s, transform .15s;
-}
-.pickerButton:hover { opacity: .92; transform: translateY(-1px); }
-.pickerButton span { font-weight: 400; opacity: .75; }
-.pickerButton svg { width: 16px; height: 16px; margin-left: 4px; }
 .pickerHint { margin-top: 10px; font-size: .875rem; color: var(--muted-fg); }
-.pickerOthers { margin-top: 12px; font-size: .8125rem; color: var(--muted-fg); }
-.pickerOthers button { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
-.pickerOthers button:hover { text-decoration-color: currentColor; }
 .installSteps { display: grid; gap: 14px; padding: 0; list-style: none; }
 .installSteps li { display: flex; gap: 12px; }
 .installSteps li > span {
   display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 24px; height: 24px;
   border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: .75rem; color: var(--muted-fg); transition: background .2s, color .2s, border-color .2s;
 }
-.installStarted li > span { border-color: var(--fg); background: var(--fg); color: var(--bg); }
 .installSteps strong { font-size: .875rem; font-weight: 600; }
 .installSteps p { margin-top: 3px; font-size: .8125rem; line-height: 1.6; color: var(--muted-fg); }
 .installSteps code { padding: 1px 5px; border-radius: 3px; background: var(--highlight); border: 1px solid var(--line); font-family: var(--mono); font-size: .75rem; }
+
+/* Install with one command. */
+.install { display: grid; gap: 16px; margin-bottom: 20px; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); }
+.installLead { margin-top: 6px; font-size: .875rem; line-height: 1.6; color: var(--muted-fg); max-width: 60ch; }
+.installTabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.installTab, .installTabActive {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: 999px; font-size: .8125rem; color: var(--muted-fg); transition: border-color .15s, color .15s, background .15s;
+}
+.installTab:hover { color: var(--fg); border-color: color-mix(in srgb, var(--fg) 30%, transparent); }
+.installTabActive { border-color: var(--fg); background: var(--fg); color: var(--bg); font-weight: 600; }
+.installYours { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--positive) 18%, transparent); color: var(--positive); font-size: .6875rem; font-weight: 600; }
+.installTabActive .installYours { background: color-mix(in srgb, var(--bg) 20%, transparent); color: var(--bg); }
+.installPanel { display: grid; gap: 12px; }
+.installWhere { font-size: .8125rem; color: var(--muted-fg); }
+.terminal {
+  display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 16px; border-radius: 10px;
+  border: 1px solid #ffffff1f; background: #141110; color: #f3efec; font-family: var(--mono); font-size: .8125rem; line-height: 1.6;
+}
+.terminal code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+.terminal code span { margin-right: 6px; color: #8f8580; user-select: none; }
+.terminal button {
+  flex-shrink: 0; height: 30px; padding: 0 12px; border: 1px solid #ffffff2e; border-radius: 6px; color: #fff;
+  font-family: inherit; font-size: .75rem; transition: background .15s;
+}
+.terminal button:hover { background: #ffffff14; }
+.installDirect { font-size: .8125rem; color: var(--muted-fg); }
+.installDirect summary { cursor: pointer; color: var(--fg); }
+.installDirect p { margin-top: 8px; line-height: 1.7; }
+.installDirect a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+.installNote { font-size: .75rem; }
