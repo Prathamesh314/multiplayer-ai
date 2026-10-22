@@ -796,6 +796,10 @@ export function AiPanel({
   // Tools are signed in on the member's own computer; its runner reports them.
   const computerUnavailable = computerStatus !== "connected";
   const ready = !!active?.installed && serverCanRun && canRun && !computerUnavailable;
+  // Whether the message box is shown (not while a chat works, or for someone else's chat).
+  const composerShown = !(running && !entered) && !(entered && !enteredIsMine) && !(entered && (running || ["running", "queued"].includes(entered.status)));
+  // The computer is connected but reports no AI tool yet.
+  const needsAiSetup = !serverCanRun && !agentsError && !computerUnavailable && !!blockedReason && canRun;
   const hasConversation = turns.length > 0;
 
   const activeSpec = connected ? agentById(connected) : undefined;
@@ -1035,9 +1039,6 @@ export function AiPanel({
       {agentsError && (
         <Note tone="warn">{agentsError} <button type="button" disabled={refreshing} onClick={() => void recheck()} className="ml-1 underline">{refreshing ? "Checking…" : "Try again"}</button></Note>
       )}
-      {!serverCanRun && !agentsError && !computerUnavailable && blockedReason && (
-        <Note tone="warn">Your computer is connected. Set up an AI tool on it before sending a message. <button type="button" onClick={onSetUpAi} className="ml-1 font-medium underline">Set up AI</button></Note>
-      )}
       {!canRun && (
         <Note tone="warn">You can read this chat. Ask a project manager for edit access to send AI requests.</Note>
       )}
@@ -1099,6 +1100,13 @@ export function AiPanel({
         />
       )}
       {ready && (!modelAvailable || !effortAvailable) && <p role="status" className="border-t border-vs-border px-3 py-2 text-xs text-vs-warn">Choose an available model{!effortAvailable ? " and effort" : ""}. The previous selection will not be replaced automatically.</p>}
+      {/* Without a message box (a chat still working, or someone else's), the
+          same heads-up sits where the box would be. */}
+      {needsAiSetup && !composerShown && (
+        <div className="ai-composer shrink-0">
+          <div className="mx-auto w-full max-w-4xl rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm"><SetUpAiNotice onSetUp={onSetUpAi} /></div>
+        </div>
+      )}
       {running && !entered ? (
         // A brand-new chat before it is entered: the same working card, no queue yet.
         <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2">
@@ -1150,6 +1158,8 @@ export function AiPanel({
           onSend={ask}
           attachTo={sessionId}
           files={files}
+          // Said where you type rather than as a strip across the chat.
+          notice={needsAiSetup ? <SetUpAiNotice onSetUp={onSetUpAi} /> : undefined}
         />
         </>
       )}
@@ -1867,6 +1877,26 @@ function StatusDot({ ok }: { ok: boolean }) {
     <span
       className={`h-1.5 w-1.5 shrink-0 rounded-full ${ok ? "bg-vs-success" : "bg-vs-muted"}`}
     />
+  );
+}
+
+/** The composer's top row when no AI tool is set up on the connected computer. */
+function SetUpAiNotice({ onSetUp }: { onSetUp?: () => void }) {
+  return (
+    <div role="status" className="flex items-center gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-vs-accent">
+        <SparkleIcon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12.5px] font-medium text-vs-fg">Set up an AI tool to start</p>
+        <p className="text-[11.5px] leading-4 text-vs-muted">Your computer is connected. Add Claude Code or Codex on it, and you can send messages.</p>
+      </div>
+      {onSetUp && (
+        <button type="button" onClick={onSetUp} className="shrink-0 whitespace-nowrap rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-medium text-vs-accent-fg transition hover:opacity-90">
+          Set up AI
+        </button>
+      )}
+    </div>
   );
 }
 

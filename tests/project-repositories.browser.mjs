@@ -366,8 +366,9 @@ try {
   await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
   await click('button[aria-label="Close Your computers"]');
   await evaluate('window.__model.devices[0].online=true;window.__model.aiReady=false;window.__model.emitDevices()');
-  await eventually(()=>evaluate('document.body.innerText.includes("Your computer is connected. Set up an AI tool")'),"connected computer needs AI setup");
-  await button("Set up AI");
+  await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Set up an AI tool to start")'),"connected computer needs AI setup, said in the message box"); 
+  await writeFile(join(tmpdir(),'multiplayer-setup-ai-notice.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate('[...document.querySelectorAll(".ai-composer button")].find(b=>b.textContent.trim()==="Set up AI").click()');
   await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Connect your AI"]\')'),"AI setup action");
   await click('button[aria-label="Close Connect your AI"]');
   await evaluate('window.__model.aiReady=true;window.__model.emitDevices()');
