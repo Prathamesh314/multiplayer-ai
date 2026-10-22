@@ -67,7 +67,9 @@ The steps beside the button show how to install on your system, including the on
 A processor mismatch can stop the app from opening. Recheck **About This Mac** and download the corresponding Apple Silicon or Intel build.` },
       { id: "windows-linux", title: "Install on Windows or Linux", body: `**Windows:** open the downloaded **.exe**, follow the installer, and launch Multicode AI. If an unsigned preview shows **“Windows protected your PC”**, select **More info → Run anyway** (once). Signed releases show the publisher instead. Follow your organisation’s installation policy.
 
-**Linux:** make the downloaded AppImage executable, then launch it. Replace the example filename with your actual downloaded filename:
+**Ubuntu or Debian:** download the **.deb** and open it with your software installer, or run \`sudo apt install ./Multicode-AI-*.deb\`. Then open **Multicode AI** from your applications. On Ubuntu 24.04 and later, use the .deb: it installs the security profile the app needs there, which an AppImage cannot.
+
+**Other Linux:** make the downloaded AppImage executable, then launch it. Replace the example filename with your actual downloaded filename:
 
 \`\`\`sh
 chmod +x ./Multicode-AI.AppImage

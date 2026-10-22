@@ -8,7 +8,14 @@ const withClerk = clerkMiddleware(() => {}, () => ({
   authorizedParties: process.env.AUTH_PUBLIC_URL ? [process.env.AUTH_PUBLIC_URL] : undefined,
 }));
 
+/** The desktop app is the workspace: it never shows the marketing homepage. */
+const DESKTOP_APP = /\bMulticodeDesktop\//;
+
 export default async function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (request.nextUrl.pathname === "/") {
+    if (DESKTOP_APP.test(request.headers.get("user-agent") ?? "")) return NextResponse.redirect(new URL("/workspace", request.url));
+    return NextResponse.next();
+  }
   // Marketing and the setup error page still load before keys are configured.
   // Resource handlers require Clerk and never fall back to the old auth cookie.
   if (!clerkConfigured()) return NextResponse.next();
@@ -27,6 +34,6 @@ export default async function proxy(request: NextRequest, event: NextFetchEvent)
 export const config = {
   // Device- and token-authenticated streaming uploads must not be buffered by
   // Next Proxy, which truncates bodies over 10 MB (attachment-uploads).
-  matcher: ["/login", "/auth/:path*", "/account", "/workspace", "/s/:path*", "/shared/:path*", "/invite/:path*",
+  matcher: ["/", "/login", "/auth/:path*", "/account", "/workspace", "/s/:path*", "/shared/:path*", "/invite/:path*",
     "/api/((?!git/|runner/(?:claim|heartbeat|me|events|workspaces|terminal)(?:/|$)|runner/runs/|webhooks/|attachment-uploads(?:/|$)).*)"],
 };

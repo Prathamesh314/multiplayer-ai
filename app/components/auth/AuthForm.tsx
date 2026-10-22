@@ -9,11 +9,16 @@ import { desktopBridge } from "../../lib/desktop";
 import { DesktopSignIn } from "./DesktopSignIn";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
+  // The desktop app is the workspace: no way back to the marketing homepage.
+  const isDesktop = useSyncExternalStore(subscribe, () => !!desktopBridge()?.isDesktop, () => false);
+  const brand = <><LogoMark className="h-5 w-5" />multicode-ai</>;
   return <main className="app-page h-dvh overflow-y-auto px-5 py-10 text-vs-fg">
     <div className="mx-auto w-full max-w-md space-y-6">
-      <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight"><LogoMark className="h-5 w-5" />multicode-ai</Link>
+      {isDesktop
+        ? <p className="flex items-center gap-2 text-lg font-semibold tracking-tight">{brand}</p>
+        : <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">{brand}</Link>}
       {children}
-      <p className="text-center text-sm text-vs-muted"><Link href="/docs" className="hover:text-vs-fg">Setup guide</Link> · <Link href="/" className="hover:text-vs-fg">Back to home</Link></p>
+      <p className="text-center text-sm text-vs-muted"><Link href="/docs" className="hover:text-vs-fg">Setup guide</Link>{!isDesktop && <> · <Link href="/" className="hover:text-vs-fg">Back to home</Link></>}</p>
     </div>
   </main>;
 }

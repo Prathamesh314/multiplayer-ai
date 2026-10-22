@@ -39,11 +39,11 @@ try {
     assert.equal(await evaluate(`document.querySelectorAll('#download article').length`),3);
   }
   const links=await evaluate(`[...document.querySelectorAll('#download a[aria-label^="Download "]')].map(a=>({url:a.href,label:a.getAttribute('aria-label')}))`);
-  assert.equal(links.length,available?4:0);
+  assert.equal(links.length,available?5:0);
   assert.equal(await evaluate(`!!document.querySelector('#download a[href*="example.com"]')`),false);
   if(!available){
-    assert.equal(await evaluate(`(document.querySelector('#download').innerText.match(/Coming soon/g)||[]).length`),4);
-    console.log('PASS: all four unavailable downloads are clearly disabled, with no fake URLs; desktop/mobile layout fits.');
+    assert.equal(await evaluate(`(document.querySelector('#download').innerText.match(/Coming soon/g)||[]).length`),5);
+    console.log('PASS: all five unavailable downloads are clearly disabled, with no fake URLs; desktop/mobile layout fits.');
   } else {
     // One button for this computer, then how to install it (including the first-launch prompt for unsigned previews).
     await eventually(()=>evaluate(`[...document.querySelectorAll('#download a')].some(a=>a.textContent.startsWith('Download for '))`),'download for this computer');
