@@ -172,6 +172,8 @@ try {
     assert.equal((await readCommittedBytes(roomId, seed.headSha, "shared.txt")).toString(), "initial\n");
     assert.equal((await complete(first, firstSha)).headSha, firstSha);
     assert.equal((await readCommittedBytes(roomId, firstSha, "shared.txt")).toString(), "first turn\n");
+    assert.equal((await listRunMessages(run.id)).some(message => message.role === "system" && /^Changed \d+ file/.test(message.body)), false,
+      "the changed-files list is in the Changes tab, not stored in the chat");
   });
   await test("completion retries do not append duplicate transcript messages", async () => {
     const before = (await listRunMessages(run.id)).length;

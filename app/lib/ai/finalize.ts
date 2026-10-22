@@ -24,28 +24,11 @@ export type FinalizeInput = {
   onError?: (message: string) => void;
 };
 
-const MAX_CHANGED_FILES_LISTED = 20;
 export type FinalizeResult = {
   status: "completed" | "failed";
   changes: FileChange[];
   headSha: string | null;
 };
-
-export function formatChanges(changes: FileChange[]): string {
-  const added = changes.reduce((sum, file) => sum + file.added, 0);
-  const removed = changes.reduce((sum, file) => sum + file.removed, 0);
-  const lines = changes
-    .slice(0, MAX_CHANGED_FILES_LISTED)
-    .map((file) => `· ${file.path}  +${file.added} −${file.removed}`);
-  if (changes.length > MAX_CHANGED_FILES_LISTED) {
-    lines.push(`…and ${changes.length - MAX_CHANGED_FILES_LISTED} more files`);
-  }
-  return [
-    `Changed ${changes.length} file${changes.length === 1 ? "" : "s"} (+${added} −${removed})`,
-    ...lines,
-  ].join("\n");
-}
-
 
 export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeResult> {
   const snapshot = await transaction(async tx => {
@@ -115,7 +98,8 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     const messages = [
       ...(saved.output.trim() ? [{ role: "agent", body: saved.output.trim() }] : []),
       ...(status === "failed" ? [{ role: "system", body: failure || "Execution failed before producing a confirmed result." }] : []),
-      ...(changes.length ? [{ role: "system", body: formatChanges(changes) }] : []),
+      // Which files changed is in the Changes tab and the turn's diff stats; the
+      // chat keeps to the conversation.
     ];
     let agentMessageId: string | null = null;
     for (const message of messages) {
