@@ -9,6 +9,7 @@ import { ProductPreview } from "./components/marketing/ProductPreview";
 import { MobileNavigation } from "./components/marketing/MobileNavigation";
 import styles from "./components/marketing/marketing.module.css";
 import { desktopDownloadUrl } from "./lib/desktop-downloads";
+import { DownloadPicker, type DownloadOption } from "./components/marketing/DownloadPicker";
 import { screenshots } from "./docs/screenshots";
 
 export const metadata: Metadata = {
@@ -87,6 +88,13 @@ export default function Home() {
   const available = platforms.some(platform => platform.downloads.some(download => download.href));
   const preview = process.env.DESKTOP_DOWNLOAD_CHANNEL !== "release";
   const checksums = desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_CHECKSUMS_URL);
+  const pickerOptions: DownloadOption[] = [
+    { key: "mac-arm64", os: "macOS", label: "Apple Silicon", href: platforms[0].downloads[0].href },
+    { key: "mac-x64", os: "macOS", label: "Intel", href: platforms[0].downloads[1].href },
+    { key: "win-x64", os: "Windows", label: "64-bit", href: platforms[1].downloads[0].href },
+    { key: "linux-x64", os: "Linux", label: "AppImage", href: platforms[2].downloads[0].href },
+  ];
+  const address = (process.env.AUTH_PUBLIC_URL || "https://multicode.in").replace(/\/$/, "");
 
   return (
     <div className={styles.site}>
@@ -179,17 +187,17 @@ export default function Home() {
             <h2 id="download-title">Better together. Even better on desktop.</h2>
             <p>A dedicated space for your team, with the local runner built right in. Choose your platform to get started.</p>
           </div>
-          {available && preview && <p id="download-preview-note" className={styles.previewNotice}>Preview builds · macOS builds are not notarized and Windows builds are unsigned. macOS refuses to start a downloaded preview, and nothing appears when you open it. Drag the app to Applications, run <code>xattr -dr com.apple.quarantine &quot;/Applications/Multicode AI.app&quot;</code> in Terminal, then open it again. Windows may warn before installation.</p>}
+          <DownloadPicker options={pickerOptions} preview={preview} address={address} />
           <div className={styles.downloadGrid}>{platforms.map(platform => <article key={platform.name}>
             <span className={styles.platformIcon} aria-hidden="true">{platform.icon}</span><h3>{platform.name}</h3><p>{platform.detail}</p>
             <div className={styles.platformDownloads}>{platform.downloads.map(download => download.href
-              ? <a key={download.label} href={download.href} className={styles.platformDownload} aria-label={`Download ${download.label}`} aria-describedby={preview ? "download-preview-note" : undefined}>{download.label} <Arrow down /></a>
+              ? <a key={download.label} href={download.href} className={styles.platformDownload} aria-label={`Download ${download.label}`}>{download.label} <Arrow down /></a>
               : <span key={download.label} className={styles.platformUnavailable}>{download.label}<small>Coming soon</small></span>)}</div>
           </article>)}</div>
           <ExecutionRequirements className={styles.requirements} />
           <div className={styles.downloadFootnote}>
             <div>
-              <p>After installing, enter this website’s HTTPS address in Workspace address, then sign in.</p>
+              <p>After installing, sign in with your account; your computer connects by itself.</p>
               {checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}
             </div>
             <Link href="/workspace" className={styles.learnMore}>Get started in your browser <Arrow /></Link>

@@ -4,13 +4,21 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
+/** Signing and notarization settings: blank means "not configured", never an empty value. */
+export const SIGNING_KEYS = ['CSC_LINK', 'CSC_NAME', 'CSC_KEY_PASSWORD', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD',
+  'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER',
+  'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AZURE_TRUSTED_SIGNING_ENDPOINT', 'AZURE_TRUSTED_SIGNING_ACCOUNT',
+  'AZURE_TRUSTED_SIGNING_PROFILE', 'AZURE_TRUSTED_SIGNING_PUBLISHER'];
+
 /** Load an ignored local file without running shell code or overriding CI secrets. */
 export function localReleaseEnvironment(base = process.env, file = '.env.desktop.local') {
   const local = existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
   // The template ships every key blank. A blank value means "not configured"; passing it
   // through as an empty string makes electron-builder read CSC_LINK as a certificate path.
   const configured = Object.entries(local).filter(([, value]) => value !== '');
-  return { ...Object.fromEntries(configured), ...base };
+  // CI expands a secret that is not set to an empty string; treat it the same way.
+  const given = Object.entries(base).filter(([key, value]) => value !== '' || !SIGNING_KEYS.includes(key));
+  return { ...Object.fromEntries(configured), ...Object.fromEntries(given) };
 }
 export function releaseChecks(env, platform = process.platform) {
   const errors = [];

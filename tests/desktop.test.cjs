@@ -186,6 +186,22 @@ test("a blank value in the signing template is treated as unconfigured", async (
   } finally { fs.rmSync(file, { force: true }); }
 });
 
+test("a signing secret CI expands to an empty string counts as not configured", async () => {
+  const { localReleaseEnvironment } = await import("../desktop/release-preflight.mjs");
+  const env = localReleaseEnvironment({ CSC_LINK: "", APPLE_API_KEY: "", AZURE_CLIENT_SECRET: "", APPLE_TEAM_ID: "TEAM", OTHER: "" }, "/nonexistent/desktop-signing.env");
+  for (const key of ["CSC_LINK", "APPLE_API_KEY", "AZURE_CLIENT_SECRET"]) assert.equal(key in env, false, key + " must not reach electron-builder empty");
+  assert.equal(env.APPLE_TEAM_ID, "TEAM");
+  assert.equal(env.OTHER, "", "only signing settings are filtered");
+});
+
+test("Windows builds sign with Azure Trusted Signing once its account is configured", () => {
+  const { winSigning } = require("../desktop/targets.cjs");
+  assert.deepEqual(winSigning({}), {}, "unsigned, or signed from a certificate file, otherwise");
+  assert.deepEqual(winSigning({ AZURE_TRUSTED_SIGNING_ENDPOINT: "https://eus.codesigning.azure.net/" }), {}, "needs the whole account");
+  assert.deepEqual(winSigning({ AZURE_TRUSTED_SIGNING_ENDPOINT: "https://eus.codesigning.azure.net/", AZURE_TRUSTED_SIGNING_ACCOUNT: "multicode", AZURE_TRUSTED_SIGNING_PROFILE: "public", AZURE_TRUSTED_SIGNING_PUBLISHER: "Salk AI" }),
+    { azureSignOptions: { endpoint: "https://eus.codesigning.azure.net/", codeSigningAccountName: "multicode", certificateProfileName: "public", publisherName: "Salk AI" } });
+});
+
 test("macOS previews only fall back to ad-hoc signing when no certificate is configured", () => {
   const { macSigning } = require("../desktop/targets.cjs");
   const notarization = { APPLE_ID: "releases@example.com", APPLE_APP_SPECIFIC_PASSWORD: "secret", APPLE_TEAM_ID: "TEAM" };

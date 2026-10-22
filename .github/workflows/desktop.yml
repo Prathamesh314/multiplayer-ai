@@ -69,6 +69,53 @@ jobs:
       - name: Packaged smoke test (virtual display)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
+      # Manual runs (the installers you publish) are rebuilt with this website's
+      # address built in, and signed when the credentials
+      # are configured as repository secrets: macOS with a Developer ID certificate
+      # and notarized by Apple, so it opens without "Apple could not verify";
+      # Windows through Azure Trusted Signing or a code-signing certificate, so
+      # SmartScreen names the publisher. Pull requests build unsigned previews.
+      # Unset secrets arrive empty and are ignored (desktop/release-preflight.mjs).
+      - name: Build the installers to publish
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+          fi
+          npm run desktop:dist -- --${{ matrix.platform }} --${{ matrix.arch }}
+        env:
+          # Built in, so a new install opens straight to sign-in instead of asking for an address.
+          DESKTOP_WORKSPACE_URL: ${{ vars.DESKTOP_WORKSPACE_URL || 'https://multicode.in' }}
+          CSC_LINK: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_P8: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_API_KEY_P8 || '' }}
+          APPLE_API_KEY_ID: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_ID: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+          WIN_CSC_LINK: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          AZURE_TENANT_ID: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && vars.AZURE_TRUSTED_SIGNING_ENDPOINT || '' }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && vars.AZURE_TRUSTED_SIGNING_ACCOUNT || '' }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && vars.AZURE_TRUSTED_SIGNING_PROFILE || '' }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER: ${{ github.event_name == 'workflow_dispatch' && matrix.platform == 'win' && vars.AZURE_TRUSTED_SIGNING_PUBLISHER || '' }}
+      - name: Check the macOS app opens without a Gatekeeper warning
+        if: matrix.platform == 'mac' && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          app="$(node -p "require('./.desktop-build/output.json').executable.replace(/\/Contents\/MacOS\/.*$/, '')")"
+          if codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc"; then
+            echo "::warning::macOS installer is not signed: add the Developer ID secrets (docs/desktop-signing.md) so it opens without 'Apple could not verify'."
+          else
+            spctl --assess --type execute -vv "$app"
+            xcrun stapler validate "$app"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-preview-${{ matrix.platform }}-${{ matrix.arch }}

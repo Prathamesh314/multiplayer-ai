@@ -31,6 +31,18 @@ function macSigning(env = process.env, release = false) {
   return { hardenedRuntime: true, notarize };
 }
 
+/**
+ * Windows signing through Azure Trusted Signing when its account is configured
+ * (the service client authenticates with AZURE_TENANT_ID, AZURE_CLIENT_ID and
+ * AZURE_CLIENT_SECRET). Otherwise electron-builder uses a certificate file from
+ * WIN_CSC_LINK or CSC_LINK when one is given, and leaves the build unsigned when not.
+ */
+function winSigning(env = process.env) {
+  const endpoint = env.AZURE_TRUSTED_SIGNING_ENDPOINT, account = env.AZURE_TRUSTED_SIGNING_ACCOUNT, profile = env.AZURE_TRUSTED_SIGNING_PROFILE;
+  if (!endpoint || !account || !profile) return {};
+  return { azureSignOptions: { endpoint, codeSigningAccountName: account, certificateProfileName: profile, publisherName: env.AZURE_TRUSTED_SIGNING_PUBLISHER || "Multicode AI" } };
+}
+
 function packagedExecutable(directory, platform, arch) {
   if (platform === "darwin") return join(directory, "mac" + (arch === "x64" ? "" : "-" + arch), "Multicode AI.app", "Contents", "MacOS", "Multicode AI");
   if (platform === "win32") return join(directory, "win" + (arch === "x64" ? "" : "-" + arch) + "-unpacked", "Multicode AI.exe");
@@ -38,4 +50,4 @@ function packagedExecutable(directory, platform, arch) {
   throw new Error("Unsupported desktop platform: " + platform);
 }
 
-module.exports = { buildTarget, macSigning, packagedExecutable };
+module.exports = { winSigning, buildTarget, macSigning, packagedExecutable };
