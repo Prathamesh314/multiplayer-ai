@@ -1,6 +1,6 @@
 const path = require("node:path");
 const fs = require("node:fs");
-const { macSigning } = require("./targets.cjs");
+const { macSigning, winSigning } = require("./targets.cjs");
 const release = process.env.DESKTOP_RELEASE === "1";
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, "../.desktop-build/app/release.json"), "utf8"));
 
@@ -30,7 +30,7 @@ module.exports = {
     icon: "icon.png",
     ...macSigning(process.env, release),
   },
-  win: { target: ["nsis"], icon: "icon.png", verifyUpdateCodeSignature: true },
+  win: { target: ["nsis"], icon: "icon.png", verifyUpdateCodeSignature: true, ...winSigning(process.env) },
   nsis: { oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false },
   linux: { target: ["AppImage"], executableName: "multicode-ai", icon: "icon.png", category: "Development" },
 };

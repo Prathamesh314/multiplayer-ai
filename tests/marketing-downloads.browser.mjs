@@ -45,7 +45,11 @@ try {
     assert.equal(await evaluate(`(document.querySelector('#download').innerText.match(/Coming soon/g)||[]).length`),4);
     console.log('PASS: all four unavailable downloads are clearly disabled, with no fake URLs; desktop/mobile layout fits.');
   } else {
-    assert.equal(await evaluate(`document.querySelector('#download-preview-note').textContent.includes('unsigned')`),true);
+    // One button for this computer, then how to install it (including the first-launch prompt for unsigned previews).
+    await eventually(()=>evaluate(`[...document.querySelectorAll('#download a')].some(a=>a.textContent.startsWith('Download for '))`),'download for this computer');
+    const steps=await evaluate(`document.querySelector('#download ol[aria-label^="Install on"]')?.innerText??''`);
+    assert.match(steps,/Sign in/);
+    if(process.platform==='darwin')assert.match(steps,/Open Anyway/,'the macOS first-launch prompt is explained');
     for(const link of links){
       const result=await evaluate(`(async()=>{const head=await fetch(${JSON.stringify(link.url)},{method:'HEAD'});const range=await fetch(${JSON.stringify(link.url)},{headers:{Range:'bytes=0-15'}});return {status:head.status,length:Number(head.headers.get('content-length')),attachment:head.headers.get('content-disposition'),range:range.status,bytes:(await range.arrayBuffer()).byteLength};})()`);
       assert.equal(result.status,200,link.label);assert.ok(result.length>10_000_000,link.label);assert.equal(result.attachment,'attachment');assert.equal(result.range,206);assert.equal(result.bytes,16);

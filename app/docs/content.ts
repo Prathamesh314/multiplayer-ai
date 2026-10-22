@@ -32,7 +32,7 @@ There is no published universal RAM minimum for all projects. A small cloud-back
 
 The website lists Windows 10 or later; operating-system support also depends on the chosen desktop release and AI tool. On a Mac, **About This Mac** shows whether you have an Apple chip or Intel processor. The Linux download is an AppImage.
 
-Preview builds are labeled on the download page. macOS previews are not notarized and Windows previews are unsigned; your operating system may block installation. Follow the [installation guide](/docs/download-install) and your organisation’s device policy.` },
+Until releases are signed, macOS shows a one-time “Apple could not verify” prompt and Windows a “Windows protected your PC” prompt; the download page shows how to continue. Follow the [installation guide](/docs/download-install) and your organisation’s device policy.` },
       { id: "accounts-and-network", title: "Accounts, access, and connectivity", body: `Use your own AI provider account or configured provider credentials. That provider’s subscription, credits, permissions, and rate limits apply. Multicode AI does not include unlimited AI usage just because you created an account.
 
 Your computer needs access to **https://multicode.in** and to the services used by your AI tool. A network that blocks streaming connections may interrupt live updates or computer pairing. Ask your network administrator about the workspace domain if connections repeatedly fail.
@@ -54,18 +54,18 @@ Then follow [your first AI conversation](/docs/first-conversation).`, screenshot
     description: "Install the desktop app on macOS, Windows, or Linux and connect it to your workspace.",
     sections: [
       { id: "download", title: "Get the correct installer", body: `1. Open the [official download section](/#download).
-2. Choose your operating system and processor. For macOS, choose **Apple Silicon** or **Intel Mac**; Windows and Linux downloads are x64.
+2. Select **Download for …**: the page recognises your computer, including whether a Mac has an Apple chip or an Intel processor. **Not your computer?** lists the others. Windows and Linux downloads are x64.
 3. Download the installer. If a platform says **Coming soon**, use the browser and the [standalone runner](/docs/connect-computer#terminal-connection) when you need AI execution.
 4. If **Verify download checksums** is available, compare your file’s SHA-256 digest with that release’s checksum file.
 
-Read the preview notice beside the download buttons. A preview is not a signed production release. Downloads and availability come from the homepage; these docs deliberately do not pin an installer version.` },
+The steps beside the button show how to install on your system, including the one-time prompt an unsigned preview causes. Downloads and availability come from the homepage; these docs deliberately do not pin an installer version.` },
       { id: "macos", title: "Install on macOS", body: `1. Open the downloaded **.dmg**.
 2. Drag **Multicode AI** into **Applications**.
 3. Launch it from Applications.
-4. If macOS blocks a preview build, confirm that it came from the official download page and consult your organisation’s policy or administrator. Do not disable system-wide security controls to run it.
+4. If macOS says **“Apple could not verify Multicode AI…”** (a preview that is not yet notarized by Apple), click **Done**, open **System Settings → Privacy & Security**, scroll to the message about Multicode AI and click **Open Anyway**, then **Open**. macOS remembers this, so you only do it once. Confirm the download came from the official page first, and follow your organisation’s policy; never disable Gatekeeper system-wide. Notarized releases open without this prompt.
 
 A processor mismatch can stop the app from opening. Recheck **About This Mac** and download the corresponding Apple Silicon or Intel build.` },
-      { id: "windows-linux", title: "Install on Windows or Linux", body: `**Windows:** open the downloaded **.exe**, follow the installer, and launch Multicode AI. An unsigned preview may trigger an operating-system warning. Use the release’s published provenance and your organisation’s installation policy to decide whether to proceed.
+      { id: "windows-linux", title: "Install on Windows or Linux", body: `**Windows:** open the downloaded **.exe**, follow the installer, and launch Multicode AI. If an unsigned preview shows **“Windows protected your PC”**, select **More info → Run anyway** (once). Signed releases show the publisher instead. Follow your organisation’s installation policy.
 
 **Linux:** make the downloaded AppImage executable, then launch it. Replace the example filename with your actual downloaded filename:
 
@@ -81,7 +81,7 @@ If your distribution cannot run AppImages because FUSE is unavailable, the packa
 \`\`\`
 
 These commands install neither Git nor your AI tool. Complete the [prerequisites](/docs/prerequisites) separately.` },
-      { id: "workspace-address", title: "Enter your workspace address", body: `On first launch, enter **https://multicode.in** in **Workspace address** and select **Connect**. Use only the origin: no \`/workspace\` path, invitation token, or trailing query string. For a privately hosted installation, use the HTTPS address supplied by its administrator.
+      { id: "workspace-address", title: "Enter your workspace address", body: `Current installers open straight to sign-in, because the workspace address is built in. An older installer asks on first launch: enter **https://multicode.in** in **Workspace address** and select **Connect**. Use only the origin: no \`/workspace\` path, invitation token, or trailing query string. For a privately hosted installation, use the HTTPS address supplied by its administrator.
 
 The desktop app connects to an existing server; it does not create or host one. Sign in using the same account as the browser. The bundled runner connects automatically after sign-in.
 
