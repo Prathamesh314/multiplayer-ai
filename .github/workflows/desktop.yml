@@ -75,12 +75,40 @@ jobs:
       - name: Packaged smoke test (virtual display)
         if: runner.os == 'Linux' && !matrix.installed
         run: xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
-      - name: Install the .deb and smoke-test the installed app
+      # The website's one-command installers, run exactly as people run them, against
+      # this build served locally with its published-style checksum file.
+      - name: Serve this build like a release
+        shell: bash
+        run: |
+          cat desktop-dist/SHA256SUMS-*.txt > desktop-dist/SHA256SUMS.txt
+          cat desktop-dist/SHA256SUMS.txt
+          nohup python3 -m http.server 8799 --bind 127.0.0.1 --directory desktop-dist > "$RUNNER_TEMP/release-server.log" 2>&1 &
+          sleep 2
+      - name: Install with install.sh (the .deb on Ubuntu 24.04) and smoke-test the installed app
         if: matrix.installed == 'deb'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ./desktop-dist/*.deb
+          MULTICODE_DOWNLOAD_BASE=http://127.0.0.1:8799/ MULTICODE_NO_OPEN=1 sh public/install.sh linux
+          dpkg -s multicode-ai-desktop >/dev/null 2>&1 || dpkg -l | grep -i multicode
           DESKTOP_SMOKE_EXECUTABLE="/opt/Multicode AI/multicode-ai" xvfb-run --auto-servernum node tests/desktop-smoke.mjs --packaged
+      - name: Install with install.sh on macOS (no quarantine, so no Gatekeeper prompt)
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p "$RUNNER_TEMP/Applications"
+          MULTICODE_DOWNLOAD_BASE=http://127.0.0.1:8799/ MULTICODE_INSTALL_DIR="$RUNNER_TEMP/Applications" MULTICODE_NO_OPEN=1 sh public/install.sh mac-${{ matrix.arch }}
+          app="$RUNNER_TEMP/Applications/Multicode AI.app"
+          test -x "$app/Contents/MacOS/Multicode AI"
+          if xattr -p com.apple.quarantine "$app" >/dev/null 2>&1; then echo "::error::installed app is quarantined"; exit 1; fi
+      - name: Install with install.ps1, as `irm … | iex` runs it
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $env:MULTICODE_DOWNLOAD_BASE = "http://127.0.0.1:8799/"
+          $env:MULTICODE_NO_OPEN = "1"
+          Get-Content -Raw public/install.ps1 | Invoke-Expression
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\Multicode AI\Multicode AI.exe"
+          if (-not (Test-Path $exe)) { throw "Not installed at $exe" }
+          Write-Host "Installed: $exe"
       # Manual runs (the installers you publish) are rebuilt with this website's
       # address built in, and signed when the credentials
       # are configured as repository secrets: macOS with a Developer ID certificate

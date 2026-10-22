@@ -36,31 +36,35 @@ try {
     await eventually(()=>evaluate(`innerWidth===${width}`),`viewport ${width}px`);
     await evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true)))))');
     assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`no overflow at ${width}px`);
-    assert.equal(await evaluate(`document.querySelectorAll('#download article').length`),3);
+    assert.equal(await evaluate(`document.querySelectorAll('#download [role=tablist][aria-label="Your computer"] [role=tab]').length`),4,'a command for each of the four computers');
   }
-  const links=await evaluate(`[...document.querySelectorAll('#download a[aria-label^="Download "]')].map(a=>({url:a.href,label:a.getAttribute('aria-label')}))`);
-  assert.equal(links.length,available?5:0);
+  // One command per computer: Apple Silicon and Intel Macs, Windows and Linux.
+  const command=async label=>{
+    await evaluate(`[...document.querySelectorAll('#download [role=tab]')].find(t=>t.textContent.startsWith(${JSON.stringify(label)})).click()`);
+    return evaluate(`document.querySelector('#download [role=tabpanel] code')?.textContent??''`);
+  };
+  const links=await evaluate(`[...document.querySelectorAll('#download details a')].map(a=>({url:a.href,label:a.textContent}))`);
   assert.equal(await evaluate(`!!document.querySelector('#download a[href*="example.com"]')`),false);
   if(!available){
-    assert.equal(await evaluate(`(document.querySelector('#download').innerText.match(/Coming soon/g)||[]).length`),5);
-    console.log('PASS: all five unavailable downloads are clearly disabled, with no fake URLs; desktop/mobile layout fits.');
+    assert.equal(links.length,0);
+    assert.match(await evaluate(`document.querySelector('#download').innerText`),/Installers are coming soon/);
+    console.log('PASS: with no published release the section says installers are coming soon, with no fake URLs; desktop/mobile layout fits.');
   } else {
-    // One button for this computer, then how to install it (including the first-launch prompt for unsigned previews).
-    await eventually(()=>evaluate(`[...document.querySelectorAll('#download a')].some(a=>a.textContent.startsWith('Download for '))`),'download for this computer');
-    const steps=await evaluate(`document.querySelector('#download ol[aria-label^="Install on"]')?.innerText??''`);
-    assert.match(steps,/Sign in/);
-    if(process.platform==='darwin')assert.match(steps,/Open Anyway/,'the macOS first-launch prompt is explained');
-    for(const link of links){
-      const result=await evaluate(`(async()=>{const head=await fetch(${JSON.stringify(link.url)},{method:'HEAD'});const range=await fetch(${JSON.stringify(link.url)},{headers:{Range:'bytes=0-15'}});return {status:head.status,length:Number(head.headers.get('content-length')),attachment:head.headers.get('content-disposition'),range:range.status,bytes:(await range.arrayBuffer()).byteLength};})()`);
-      assert.equal(result.status,200,link.label);assert.ok(result.length>10_000_000,link.label);assert.equal(result.attachment,'attachment');assert.equal(result.range,206);assert.equal(result.bytes,16);
+    const site=new URL(base).origin;
+    assert.match(await command('macOS · Apple Silicon'),new RegExp(`curl -fsSL ${site}/install\\.sh \\| sh -s -- mac-arm64$`));
+    assert.match(await command('macOS · Intel'),/\| sh -s -- mac-x64$/);
+    assert.match(await command('Windows'),new RegExp(`irm ${site}/install\\.ps1 \\| iex$`));
+    assert.match(await command('Linux'),/\| sh -s -- linux$/);
+    assert.match(await evaluate(`(await fetch('/install/latest')).text()`),/^https:\/\/.+\/\n$/,'the scripts can find the current release');
+    for(const path of ['/install.sh','/install.ps1']){
+      const response=await evaluate(`fetch(${JSON.stringify(path)}).then(async r=>({status:r.status,type:r.headers.get('content-type'),body:await r.text()}))`);
+      assert.equal(response.status,200,path);assert.match(response.type,/^text\/plain/,path);assert.match(response.body,/SHA256SUMS/,path);
     }
-    await send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:directory,eventsEnabled:true});
-    await evaluate(`document.querySelector('#download a[aria-label^="Download "]').click()`);
-    await eventually(()=>events.some(e=>e.method==='Browser.downloadWillBegin'),'browser download start');
-    const started=events.find(e=>e.method==='Browser.downloadWillBegin').params;
-    assert.match(started.suggestedFilename,/-mac-arm64-preview\.dmg$/);
-    await send('Browser.cancelDownload',{guid:started.guid});
-    console.log('PASS: all four live installer links support HTTPS and resume; clicking the Mac button starts the correct browser download.');
+    for(const link of links){
+      const result=await evaluate(`(async()=>{const head=await fetch(${JSON.stringify("__URL__")},{method:'HEAD'});return {status:head.status,length:Number(head.headers.get('content-length'))};})()`.replace("__URL__",link.url));
+      assert.equal(result.status,200,link.label);assert.ok(result.length>10_000_000,link.label);
+    }
+    console.log('PASS: install commands for Apple Silicon, Intel, Windows and Linux, served scripts and the current release, and live direct downloads.');
   }
 } finally {
   socket?.close();for(const child of [chrome,server])if(child&&child.exitCode===null){child.kill('SIGTERM');await Promise.race([once(child,'exit'),delay(3000)]);}

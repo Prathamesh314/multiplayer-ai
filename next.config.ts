@@ -26,6 +26,18 @@ const nextConfig: NextConfig = {
   // node-pty is a native addon; keep it external so the bundler doesn't try to
   // pull the `.node` binary through webpack/Turbopack — it's required at runtime
   // from node_modules instead.
+  // The one-command installers (public/install.sh, install.ps1) are read as text
+  // by curl and PowerShell; a short cache lets fixes reach people quickly.
+  async headers() {
+    return ["/install.sh", "/install.ps1"].map((source) => ({
+      source,
+      headers: [
+        { key: "content-type", value: "text/plain; charset=utf-8" },
+        { key: "cache-control", value: "public, max-age=300" },
+        { key: "x-content-type-options", value: "nosniff" },
+      ],
+    }));
+  },
   serverExternalPackages: ["node-pty", "tree-sitter", "tree-sitter-typescript", "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-go", "tree-sitter-rust"],
 };
 
