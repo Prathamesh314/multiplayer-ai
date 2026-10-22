@@ -21,6 +21,8 @@ export type SessionStreamOptions = {
   onRunPermission?: (event: { runId: string }) => void;
   onRunActivity?: (event: { runId: string }) => void;
   onTasksChanged?: () => void;
+  /** Someone in the room opened, switched or closed a chat. */
+  onPresenceChanged?: () => void;
   /** Fires for changes made by any *other* tab. */
   onFileSaved?: (event: FileSavedEvent) => void;
   /** Fires while another person types, not when they save. */
@@ -84,6 +86,7 @@ export function openSessionStream(
         case "run.permission": options.onRunPermission?.(event); break;
         case "run.activity": options.onRunActivity?.(event); break;
         case "tasks.changed": options.onTasksChanged?.(); break;
+        case "presence.changed": options.onPresenceChanged?.(); break;
       }
     },
   });

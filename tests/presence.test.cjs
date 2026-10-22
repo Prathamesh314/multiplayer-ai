@@ -169,6 +169,28 @@ async function main() {
       assert.deepEqual(await p.onlineInSession("s-2"), ["u-bob"]);
     });
 
+    await test(label, "a chat's viewers follow the tab that has it open", async () => {
+      const room = { sessionId: "s-run", orgId: "o-run" };
+      const first = await p.heartbeat("c-ann-1", { userId: "u-ann", ...room, runId: "r-1" });
+      assert.deepEqual([first.changed, first.sessionIds], [true, ["s-run"]], "a new viewer is news for the room");
+      assert.deepEqual((await p.heartbeat("c-ann-1", { userId: "u-ann", ...room, runId: "r-1" })).changed, false, "a repeat beat is not");
+      await p.heartbeat("c-cal-1", { userId: "u-cal", ...room, runId: "r-1" });
+      assert.deepEqual((await p.onlineInRun("r-1")).sort(), ["u-ann", "u-cal"]);
+      // Switching chats leaves the old one at once, without waiting for the TTL.
+      assert.equal((await p.heartbeat("c-ann-1", { userId: "u-ann", ...room, runId: "r-2" })).changed, true);
+      assert.deepEqual(await p.onlineInRun("r-1"), ["u-cal"]);
+      assert.deepEqual(await p.onlineInRun("r-2"), ["u-ann"]);
+      // Another tab still on the chat keeps them there.
+      await p.heartbeat("c-cal-2", { userId: "u-cal", ...room, runId: "r-1" });
+      await p.heartbeat("c-cal-1", { userId: "u-cal", ...room, runId: null });
+      assert.deepEqual(await p.onlineInRun("r-1"), ["u-cal"], "the second tab is still on it");
+      const bye = await p.disconnect("c-cal-2");
+      assert.deepEqual([bye.changed, bye.sessionIds], [true, ["s-run"]]);
+      assert.deepEqual(await p.onlineInRun("r-1"), [], "closing the last tab on it leaves");
+      t += TTL_MS + 1;
+      assert.deepEqual(await p.onlineInRun("r-2"), [], "a silent tab drops out with the TTL");
+    });
+
     await test(label, "an unknown user is offline, not an error", async () => {
       assert.equal(await p.isOnline("u-nobody"), false);
       assert.deepEqual(await p.onlineInSession("s-nope"), []);

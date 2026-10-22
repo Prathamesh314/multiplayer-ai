@@ -11,6 +11,7 @@ import { TaskPanel } from "../tasks/TaskPanel";
 import { CollaborationInbox } from "../collaboration/CollaborationControls";
 import { HandoffInbox, type useHandoffInbox } from "../collaboration/HandoffInbox";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
+import { OrgOnlineNow } from "../presence/OrgOnlineNow";
 import type { ComputerConnection } from "../ai/useComputerConnection";
 
 type Props = {
@@ -48,12 +49,16 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
               Open a project to continue your work, or start something new with your team.
             </p>
           </div>
-          {canManageOrg(org.myRole) && (
-            <div className="flex flex-wrap gap-2">
-              <GhostButton onClick={onInvite}><UsersIcon className="h-3.5 w-3.5" /> Invite team</GhostButton>
-              <PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> New project</PrimaryButton>
-            </div>
-          )}
+          <div className="flex flex-col items-end gap-3">
+            {/* Who in the team has the app open, like collaborators on a shared doc. */}
+            <OrgOnlineNow slug={org.slug} orgId={org.id} onInvite={canManageOrg(org.myRole) ? onInvite : undefined} />
+            {canManageOrg(org.myRole) && (
+              <div className="flex flex-wrap gap-2">
+                <GhostButton onClick={onInvite}><UsersIcon className="h-3.5 w-3.5" /> Invite team</GhostButton>
+                <PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> New project</PrimaryButton>
+              </div>
+            )}
+          </div>
         </header>
 
         <ComputerConnectionNotice connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />

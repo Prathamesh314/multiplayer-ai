@@ -30,6 +30,9 @@ export type OrgMember = {
 
 export type OrgMembersResponse = { members: OrgMember[] };
 
+/** Members with the app open right now. */
+export type OrgOnlineResponse = { people: { userId: string; handle: string; displayName: string; avatarUrl: string | null; isSelf: boolean }[] };
+
 /** Admin changes a member's role and/or active status. Either field may be sent. */
 export type UpdateOrgMemberRequest = {
   role?: OrgRole;

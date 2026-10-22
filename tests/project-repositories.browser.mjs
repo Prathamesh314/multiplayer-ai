@@ -286,6 +286,14 @@ try {
   await eventually(()=>evaluate(`!!document.querySelector('button[title^="Claude finished chat ·"]')`),"Claude's chat in the sidebar");
   await click('button[title^="Claude finished chat ·"]');
   await eventually(()=>evaluate(`document.querySelector('button[aria-label="Provider"]')?.title==="Provider: Claude Code"`),"the opened chat's agent is selected");
+  // Who else has this chat open shows at the top of it, and updates as they come and go.
+  await evaluate(`(()=>{const m=window.__model;m.extraMembers=[{userId:"bob",handle:"bob",displayName:"Bob Builder",role:"editor",online:true}];m.viewers=["alice","bob"];m.emit("members.changed");m.emit("presence.changed");})()`);
+  await eventually(()=>evaluate(`!!document.querySelector('.ai-chat-header [aria-label^="1 person · viewing this chat"]') && document.querySelector('.ai-chat-header').innerText.includes("BB")`),"Bob is shown viewing this chat");
+  assert.equal(await evaluate(`window.__model.presenceRun`),"cccccccc-cccc-4ccc-8ccc-cccccccccccc","the open chat is reported");
+  await writeFile(join(tmpdir(),'multiplayer-chat-viewers.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`(()=>{const m=window.__model;m.viewers=["alice"];m.emit("presence.changed");})()`);
+  await eventually(()=>evaluate(`!document.querySelector('.ai-chat-header [aria-label*="viewing this chat"]')`),"Bob leaving is shown at once");
+  await evaluate(`(()=>{const m=window.__model;m.extraMembers=[];m.viewers=undefined;m.emit("members.changed");})()`);
   assert.equal(await evaluate(`!!document.querySelector('[role=note]')`),false,"no warning while continuing with the same agent");
   assert.notEqual(await evaluate(`JSON.parse(localStorage.getItem("multicode.composer.v1")||"{}").agent`),"claude","opening a chat doesn't change the default for new chats");
   await click('button[aria-label="Provider"]');
@@ -336,8 +344,16 @@ try {
   await eventually(()=>evaluate('document.querySelector(".human-message")?.textContent.includes("Review the repository")'),"saved chat opens without a computer");
   assert.ok(await evaluate('document.querySelector(".conversation-transcript").getBoundingClientRect().height > 100'),"offline setup does not hide the conversation");
   assert.ok(await evaluate('document.querySelector(\'button[aria-label="Send message"]\').disabled'),"AI execution needs a computer");
+  await evaluate(`window.__model.orgOnline=[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true},{userId:"bob",handle:"bob",displayName:"Bob Builder",avatarUrl:null,isSelf:false},{userId:"carol",handle:"carol",displayName:"Carol Diaz",avatarUrl:null,isSelf:false}]`);
   await click('button[title="Back to projects"]');
   await eventually(()=>evaluate('location.pathname==="/workspace" && !!document.querySelector("main h1")'),"workspace overview");
+  // Who in the team has the app open, like collaborators on a shared doc.
+  await eventually(()=>evaluate(`(()=>{const s=document.querySelector('section[aria-label="Online now"]');return !!s && s.innerText.includes("3") && s.innerText.includes("Bob and Carol are here") && !!s.querySelector('[aria-label^="2 people · online"]');})()`),"online now in the org");
+  await evaluate(`document.querySelector('section[aria-label="Online now"] button[aria-haspopup]').click()`);
+  await eventually(()=>evaluate(`document.querySelector('[role=dialog][aria-label="Online now"]')?.innerText.includes("Carol Diaz")`),"everyone online, listed");
+  await writeFile(join(tmpdir(),'multiplayer-org-online.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape"}))`);
+  await evaluate(`window.__model.orgOnline=undefined`);
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"workspace connection prompt");
   assert.ok(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\').getBoundingClientRect().top < document.querySelector("#projects-heading").getBoundingClientRect().top'),"connection prompt appears before projects");
   await button("Connect computer");

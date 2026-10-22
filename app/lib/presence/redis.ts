@@ -21,6 +21,7 @@ const connKey = (id: string) => `presence:conn:${id}`;
 const userKey = (id: string) => `presence:user:${id}`;
 const sessionKey = (id: string) => `presence:session:${id}`;
 const orgKey = (id: string) => `presence:org:${id}`;
+const runKey = (id: string) => `presence:run:${id}`;
 
 /**
  * Sorted sets, not sets, and the reason is not style: Redis expires whole keys
@@ -40,15 +41,30 @@ export function createRedisPresence(client: RedisLike, now: () => number = Date.
     return alive;
   }
 
+  /** Drop someone from a chat unless another live tab of theirs is still on it. */
+  async function leaveRun(userId: string, runId: string, exceptConnection: string) {
+    for (const id of await live(userKey(userId))) {
+      if (id === exceptConnection) continue;
+      if ((await client.hGetAll(connKey(id)))?.run_id === runId) return;
+    }
+    await client.zRem(runKey(runId), userId);
+  }
+
   return {
     async heartbeat(connectionId, connection) {
       const at = now();
       const key = connKey(connectionId);
+      const previous = await client.hGetAll(key);
+      const known = !!previous?.user_id;
+      const runId = connection.runId ?? "";
+      const changed = !known || (previous.session_id ?? "") !== (connection.sessionId ?? "") || (previous.run_id ?? "") !== runId;
+      if (known && previous.run_id && previous.run_id !== runId) await leaveRun(previous.user_id, previous.run_id, connectionId);
 
       await client.hSet(key, {
         user_id: connection.userId,
         session_id: connection.sessionId ?? "",
         org_id: connection.orgId ?? "",
+        run_id: runId,
         device: connection.device ?? "",
       });
       await client.expire(key, Math.ceil(TTL_MS / 1000));
@@ -62,22 +78,32 @@ export function createRedisPresence(client: RedisLike, now: () => number = Date.
       if (connection.orgId) {
         await client.zAdd(orgKey(connection.orgId), { score: at, value: connection.userId });
       }
+      if (runId) await client.zAdd(runKey(runId), { score: at, value: connection.userId });
+      const sessionIds = [...new Set([known ? previous.session_id : "", connection.sessionId ?? ""].filter(Boolean))];
+      return { changed, sessionIds: changed ? sessionIds : [] };
     },
 
     async disconnect(connectionId) {
       const key = connKey(connectionId);
       const stored = await client.hGetAll(key);
       const userId = stored?.user_id;
-      if (!userId) return;
+      if (!userId) return { changed: false, sessionIds: [] };
 
       await client.del(key);
       await client.zRem(userKey(userId), connectionId);
+      if (stored.run_id) await leaveRun(userId, stored.run_id, connectionId);
+      const sessionIds = stored.session_id ? [stored.session_id] : [];
 
       // Still present in another tab: leave the session and org sets alone.
-      if ((await live(userKey(userId))).length > 0) return;
+      if ((await live(userKey(userId))).length > 0) return { changed: true, sessionIds };
 
       if (stored.session_id) await client.zRem(sessionKey(stored.session_id), userId);
       if (stored.org_id) await client.zRem(orgKey(stored.org_id), userId);
+      return { changed: true, sessionIds };
+    },
+
+    async onlineInRun(runId) {
+      return live(runKey(runId));
     },
 
     async onlineInSession(sessionId) {

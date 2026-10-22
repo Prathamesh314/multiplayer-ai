@@ -2,6 +2,7 @@
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import type { MentionFile } from "../../lib/ai/file-mentions";
+import { LiveAvatars } from "../presence/LiveAvatars";
 import { agentForChat, preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
 import { openUserStream } from "../../lib/events/shared-client";
 
@@ -67,6 +68,8 @@ type AiPanelProps = {
   isOwner?: boolean;
   /** Room roster, for the "watching" cluster in the header. */
   members: SessionMember[];
+  /** Everyone with this chat open (this account included), from presence. */
+  viewers?: SessionMember[];
   /** The signed-in user's id — reliable even in a public room with no roster row. */
   myUserId: string | null;
   /** The run whose conversation is shown; null = composing a fresh one. */
@@ -149,6 +152,7 @@ export function AiPanel({
   canRun,
   isOwner = false,
   members,
+  viewers = [],
   myUserId,
   entered,
   onRunsChanged,
@@ -937,13 +941,17 @@ export function AiPanel({
       <header className={`ai-chat-header flex min-w-0 shrink-0 flex-wrap items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
         {/* A basis keeps the title readable; the actions wrap below it instead
             of squeezing the chat's name down to an ellipsis. */}
-        <div className="min-w-0 flex-1 basis-44">
-          <ChatTitle title={chatTitle} runId={entered?.id ?? null} />
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
-            {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
-            {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
-            {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
+        <div className="flex min-w-0 flex-1 basis-44 items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <ChatTitle title={chatTitle} runId={entered?.id ?? null} />
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
+              {repoLabel && <span className="flex min-w-0 items-center gap-1.5" title={repoLabel}><GitBranchIcon className="h-3 w-3 shrink-0" /><span className="truncate">{repoLabel}</span></span>}
+              {repoLabel && active?.installed && <span aria-hidden="true">·</span>}
+              {active?.installed && <span className="flex shrink-0 items-center gap-1.5" title={executionDetail}><TerminalIcon className="h-3 w-3" />{executionLabel}</span>}
+            </div>
           </div>
+          {/* Like collaborators at the top of a shared doc: who else has this chat open. */}
+          {entered && <LiveAvatars people={viewers.filter((person) => person.userId !== myId)} label="Viewing this chat" title="Viewing this chat" />}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
         {entered &&
@@ -975,7 +983,7 @@ export function AiPanel({
         {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
         <button ref={setProvidersButton} type="button" onClick={() => setShowProviders(previous => !previous)} aria-haspopup="dialog" aria-expanded={showProviders} className={`rounded px-1.5 py-1 text-[11px] transition hover:bg-vs-hover ${showProviders ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>Providers</button>
         {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
-        <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>
+        {!entered && <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>}
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
         </div>
       </header>
