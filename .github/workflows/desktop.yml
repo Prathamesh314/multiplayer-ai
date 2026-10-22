@@ -64,8 +64,11 @@ jobs:
       - name: Development smoke test
         if: runner.os != 'Linux'
         run: npm run test:desktop:smoke
+      # On Ubuntu 24.04 an Electron that is not installed with its AppArmor profile
+      # cannot start its sandbox ("The SUID sandbox helper binary … is not
+      # configured correctly"), so that job tests only the installed .deb.
       - name: Development smoke test (virtual display)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.installed
         run: xvfb-run --auto-servernum npm run test:desktop:smoke
       - name: Build setup-screen preview installers
         run: npm run desktop:dist -- --${{ matrix.platform }} --${{ matrix.arch }} --setup
