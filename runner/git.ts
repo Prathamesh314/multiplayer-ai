@@ -11,7 +11,7 @@ import type { RunnerApi } from "./api";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { gitCommand } from "../app/lib/git/command";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
@@ -85,7 +85,9 @@ export class RunnerGit {
     // Windows cannot start processes with a cwd beyond MAX_PATH, even when
     // Git supports long filenames. Keep bare-cache commands in the data root.
     const cwd = typeof repository === "string" ? repository : this.dataDir;
-    const location = typeof repository === "string" ? [] : [`--git-dir=${repository.bare}`];
+    // Git also reserves space within PATH_MAX for explicit GIT_DIR values.
+    // A relative cache path leaves room for its own metadata filenames.
+    const location = typeof repository === "string" ? [] : [`--git-dir=${relative(cwd, repository.bare) || "."}`];
     const auth = turnId !== undefined ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, ...(turnId ? ["-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [])] : [];
     try {
       const { stdout } = await run(...gitCommand([...CONFIG, ...auth, ...location, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args]), {
