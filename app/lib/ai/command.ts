@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
+import * as path from "node:path";
 
 /**
  * How to start an AI tool's CLI without a shell.

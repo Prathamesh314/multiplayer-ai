@@ -192,7 +192,10 @@ export class RunnerGit {
         if (!await exists(cache)) {
           await mkdir(dirname(cache), { recursive: true, mode: 0o700 });
           const temp = `${cache}.${randomUUID()}.tmp`;
-          await this.git(dirname(cache), ["init", "--bare", temp]);
+          // Git for Windows changes into an init argument before reading
+          // core.longpaths. Let Node create and enter the directory first.
+          await mkdir(temp, { mode: 0o700 });
+          await this.git(temp, ["init", "--bare"]);
           await rename(temp, cache);
         }
         // Also applies to Git invoked by the AI inside this runner-owned repo.
