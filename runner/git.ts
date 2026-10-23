@@ -270,7 +270,9 @@ export class RunnerGit {
             if (sha === job.baseSha) return null;
             // Keep a named local result even if upload or finalization fails.
             await this.git({ bare: cache }, ["update-ref", `refs/turns/${job.turnId}`, sha, ""]);
-            await this.git(work, ["push", this.remoteUrl(repoRef), `${sha}:refs/turns/${job.turnId}`], job.turnId);
+            // Push the recorded object from the cache. A linked worktree's
+            // absolute GIT_DIR can exceed Windows' limit in pack-objects.
+            await this.git({ bare: cache }, ["push", this.remoteUrl(repoRef), `${sha}:refs/turns/${job.turnId}`], job.turnId);
             return sha;
           });
         },
