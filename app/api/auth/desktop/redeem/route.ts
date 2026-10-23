@@ -17,5 +17,5 @@ export const POST = withApiLimit("/api/auth/desktop/redeem", async request => {
     throw new ClerkAccountError("Your browser session ended. Please start sign-in again.", 401);
   }
   const ticket = await client.signInTokens.createSignInToken({ userId: approval.clerk_user_id, expiresInSeconds: 60 });
-  return Response.json({ ticket: ticket.token }, { headers: { "cache-control": "no-store" } });
+  return Response.json({ ticket: ticket.token, userId: approval.clerk_user_id }, { headers: { "cache-control": "no-store" } });
 });

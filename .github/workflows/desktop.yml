@@ -8,6 +8,8 @@ on:
       - app/lib/ai/**
       - app/lib/git/**
       - app/lib/desktop.ts
+      - app/lib/auth/desktop-sign-in.ts
+      - app/components/auth/DesktopSignIn.tsx
       - app/components/ai/DevicesDialog.tsx
       - tests/desktop*
       - tests/runner-package.test.mjs
@@ -15,6 +17,7 @@ on:
       - tests/agent-command*.mjs
       - scripts/package-runner.mjs
       - tests/fixtures/desktop-runner.cjs
+      - tests/fixtures/desktop-sign-in.jsx
       - package*.json
       - .github/workflows/desktop.yml
   workflow_dispatch:
@@ -63,6 +66,7 @@ jobs:
       # --omit=dev once braces publishes a fix.
       - run: npm audit --audit-level=high --omit=dev
       - run: npm run test:desktop
+      - run: node --import tsx --test tests/desktop-sign-in.test.mjs
       - run: npm run test:runner-package
       # Claude Code and Codex installed with npm are `.cmd` launchers on Windows,
       # which Node will not start by name: a real npm install, started as the app does.
