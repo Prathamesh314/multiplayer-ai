@@ -212,6 +212,7 @@ async function processJob(
   }
 
   await storeCompletion(dataDir, job.turnId, { code, resultSha: sha, output, errOutput, ms });
+  if (code !== 0) console.error(`[runner] run ${job.runId}: ${errOutput.trim().slice(-4000) || `Agent exited without a reply (code ${code}).`}`);
   await deliveries.completions();
   log(`run ${job.runId}: ${code === 0 ? "completed" : "failed"}${sha ? ` → ${sha.slice(0, 8)}` : ""}`);
 }
@@ -243,6 +244,9 @@ async function start(): Promise<void> {
     copyIgnoredFiles: resolveCopyIgnoredFiles(process.env.RUNNER_COPY_IGNORED ?? config.copyIgnoredFiles),
   });
   log(`worktrees: ${workspacesDir}`);
+  // Keep the connection alive so pending results can still sync. A missing
+  // prerequisite is visible immediately and each failed job reports it too.
+  await git.checkAvailable().catch(cause => console.error(`[runner] AI execution needs attention: ${cause instanceof Error ? cause.message : String(cause)}`));
   const once = process.argv.includes("--once");
   const maxParallel = once ? 1 : resolveMaxParallel(flag("parallel"), process.env.RUNNER_MAX_PARALLEL, config.maxParallel);
   const deliveries: Deliveries = {

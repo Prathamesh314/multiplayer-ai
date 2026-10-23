@@ -6,10 +6,13 @@ on:
       - desktop/**
       - runner/**
       - app/lib/ai/**
+      - app/lib/git/**
       - app/lib/desktop.ts
       - app/components/ai/DevicesDialog.tsx
       - tests/desktop*
       - tests/runner-package.test.mjs
+      - tests/runner-execution.test.mjs
+      - tests/agent-command*.mjs
       - scripts/package-runner.mjs
       - tests/fixtures/desktop-runner.cjs
       - package*.json
@@ -64,6 +67,10 @@ jobs:
       # Claude Code and Codex installed with npm are `.cmd` launchers on Windows,
       # which Node will not start by name: a real npm install, started as the app does.
       - run: npm run test:agent-command:real
+      - run: npm run test:agent-command
+      # A connected computer must also prepare its worktree, stream an AI reply,
+      # checkpoint edits and push its result, including on native Windows.
+      - run: npm run test:runner-execution
       - name: Development smoke test
         if: runner.os != 'Linux'
         run: npm run test:desktop:smoke

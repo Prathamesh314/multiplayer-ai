@@ -25,7 +25,7 @@ export async function captureCheckpoint(work: string, cache: string, turnId: str
     await objectGit(work, ["add", "-u"], undefined, env);
     if (untracked.length) await objectGit(work, ["--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"], untracked.join("\0") + "\0", env);
     const tree = await objectText(work, ["write-tree"], undefined, env);
-    const entries = (await objectText(cache, ["ls-tree", "-rlz", tree])).split("\0");
+    const entries = (await objectText(work, ["ls-tree", "-rlz", tree])).split("\0");
     let total = 0;
     for (const entry of entries) {
       const size = Number(entry.split("\t")[0].trim().split(/\s+/)[3]);
@@ -35,8 +35,10 @@ export async function captureCheckpoint(work: string, cache: string, turnId: str
   });
   if (!before.equals(await readFile(indexPath)) || headSha !== await objectText(work, ["rev-parse", "HEAD"])) throw new Error("Repository changed during checkpoint capture; retrying next interval.");
   if (`${trees.tree}:${trees.indexTree}:${headSha}` === previous) return null;
-  const indexSha = await commitTree(cache, trees.indexTree, [headSha], "Checkpoint staged state");
-  const snapshotSha = await commitTree(cache, trees.tree, [headSha, indexSha], "Checkpoint working files");
+  // Use the worktree's shared object database without starting a process in
+  // the much deeper bare-cache directory (Windows limits process cwd length).
+  const indexSha = await commitTree(work, trees.indexTree, [headSha], "Checkpoint staged state");
+  const snapshotSha = await commitTree(work, trees.tree, [headSha, indexSha], "Checkpoint working files");
   return { id: randomUUID(), turnId, sequence, baseSha, headSha, indexSha, snapshotSha, capturedAt: new Date().toISOString() };
 }
 

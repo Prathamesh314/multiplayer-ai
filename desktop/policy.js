@@ -108,6 +108,7 @@ function runnerEnvironment(env, configPath) {
   if (process.platform !== "win32") {
     result.PATH = [...new Set([...(result.PATH || "/usr/bin:/bin").split(path.delimiter), "/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local", "bin"), path.join(os.homedir(), ".npm-global", "bin")])].join(path.delimiter);
   }
+  if (env.CLAUDE_CODE_GIT_BASH_PATH) result.CLAUDE_CODE_GIT_BASH_PATH = env.CLAUDE_CODE_GIT_BASH_PATH;
   result.RUNNER_CONFIG = configPath;
   return result;
 }

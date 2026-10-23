@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveCommand } from "../app/lib/ai/command.ts";
+import { agentEnv } from "../app/lib/ai/env.ts";
 import { pickOrg } from "../app/lib/org/last-org.ts";
 
 const npm = "C:\\Users\\ana\\AppData\\Roaming\\npm";
@@ -73,6 +74,53 @@ test("a native .exe on PATH runs directly", () => {
   const exe = "C:\\Users\\ana\\.local\\bin\\claude.exe";
   const options = windows({ [exe]: "" }, { PATH: "C:\\Users\\ana\\.local\\bin" });
   assert.deepEqual(resolveCommand("claude", options), { file: exe, args: [] });
+});
+
+test("an explicitly selected npm launcher resolves outside PATH", () => {
+  const options = windows({
+    [`${npm}\\codex.cmd`]: codexShim,
+    [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`]: "",
+    [`${nodeDir}\\node.exe`]: "",
+  }, { PATH: nodeDir });
+  assert.deepEqual(resolveCommand(`${npm}\\codex.cmd`, options), {
+    file: `${nodeDir}\\node.exe`, args: [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`],
+  });
+});
+
+test("Git installed after the runner started is found in its Windows installation directory", () => {
+  const git = "C:\\Program Files\\Git\\cmd\\git.exe";
+  assert.deepEqual(resolveCommand("git", windows({ [git]: "" }, {
+    PATH: "C:\\Windows\\System32", ProgramFiles: "C:\\Program Files",
+  })), { file: git, args: [] });
+  const userGit = "C:\\Users\\ana\\AppData\\Local\\Programs\\Git\\cmd\\git.exe";
+  assert.deepEqual(resolveCommand("git", windows({ [userGit]: "" }, {
+    PATH: "", LOCALAPPDATA: "C:\\Users\\ana\\AppData\\Local",
+  })), { file: userGit, args: [] });
+});
+
+test("agent startup preserves Windows Git Bash and login configuration", () => {
+  const values = {
+    CLAUDECODE: "1",
+    CLAUDE_CODE_ENTRYPOINT: "cli",
+    CLAUDE_CODE_GIT_BASH_PATH: "D:\\Developer Tools\\Git\\bin\\bash.exe",
+    CLAUDE_CODE_OAUTH_TOKEN: "test-only-login",
+    CLAUDE_CODE_USE_BEDROCK: "1",
+  };
+  const before = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, values);
+    const env = agentEnv("claude");
+    assert.equal(env.CLAUDECODE, undefined);
+    assert.equal(env.CLAUDE_CODE_ENTRYPOINT, undefined);
+    for (const key of ["CLAUDE_CODE_GIT_BASH_PATH", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"]) {
+      assert.equal(env[key], values[key]);
+    }
+    assert.equal(process.env.CLAUDECODE, "1", "the parent environment is unchanged");
+  } finally {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
 });
 
 test("a launcher that points at an .exe runs that .exe", () => {

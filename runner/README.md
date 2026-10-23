@@ -23,6 +23,18 @@ Pairing codes expire after ten minutes and can only be used once. Keep the
 runner terminal open while working; press Ctrl+C to stop it. Pair once, then use
 the start command whenever you reconnect. If you are already paired, just start.
 
+On Windows, install Git for Windows with command-line access enabled, then open
+a new Command Prompt or PowerShell window before starting the runner. If
+PowerShell blocks `npx.ps1`, use `npx.cmd` in the same pairing/start commands.
+Install and sign in to your AI CLI in that same Windows environment. A CLI
+installed only inside WSL needs a runner started inside WSL too. Custom Claude
+Git Bash settings (`CLAUDE_CODE_GIT_BASH_PATH`) are preserved. The runner enables
+Git long-path support for its own repositories without changing global settings.
+
+After a runner update, stop the old process and copy the current start command
+from **Your computers** to download the new build. Existing pairing and worktrees
+are kept.
+
 If an older instruction produces `multicode-ai-runner: command not found`,
 use the full `npx` commands above. If `npx` itself is not found, install Node.js
 and open a new terminal. You do not need to run `sudo npm install`.

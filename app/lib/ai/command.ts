@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
+import * as path from "node:path";
 
 /**
  * How to start an AI tool's CLI without a shell.
@@ -28,21 +28,36 @@ export function resolveCommand(bin: string, options: Options = {}): Command | nu
   const exists = options.exists ?? ((file: string) => existsSync(file));
   const read = options.read ?? ((file: string) => readFileSync(file, "utf8"));
   const win = path.win32;
+  // Match Node's case-insensitive Windows environment lookup, including plain
+  // objects passed by the desktop app where Path and PATH can coexist.
+  const keys = Object.keys(env).sort();
+  const value = (name: string) => env[keys.find(key => key.toLowerCase() === name.toLowerCase()) ?? name];
+  const folder = (name: string, ...parts: string[]) => {
+    const base = value(name);
+    return base ? win.join(base, ...parts) : undefined;
+  };
 
-  const pathValue = env.PATH ?? env.Path ?? env.path ?? "";
+  const pathValue = value("PATH") ?? "";
   // A running app keeps the PATH it started with, so a CLI or Node installed
   // since then is found in its standard folder too, without a restart.
   const standard = [
-    env.APPDATA && win.join(env.APPDATA, "npm"),
-    env.USERPROFILE && win.join(env.USERPROFILE, ".local", "bin"),
-    env.LOCALAPPDATA && win.join(env.LOCALAPPDATA, "Microsoft", "WinGet", "Links"),
-    env.ProgramFiles && win.join(env.ProgramFiles, "nodejs"),
+    folder("APPDATA", "npm"),
+    folder("USERPROFILE", ".local", "bin"),
+    folder("LOCALAPPDATA", "Microsoft", "WinGet", "Links"),
+    folder("ProgramFiles", "nodejs"),
+    ...(/^git(?:\.exe)?$/i.test(bin) ? [
+      folder("ProgramFiles", "Git", "cmd"),
+      folder("ProgramFiles(x86)", "Git", "cmd"),
+      folder("LOCALAPPDATA", "Programs", "Git", "cmd"),
+    ] : []),
   ].filter((dir): dir is string => !!dir);
   const dirs = [...pathValue.split(";"), ...standard].map((dir) => dir.trim().replace(/^"|"$/g, "")).filter(Boolean);
-  const extensions = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map((ext) => ext.trim().toLowerCase()).filter(Boolean);
+  const extensions = (value("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").map((ext) => ext.trim().toLowerCase()).filter(Boolean);
   const named = /\.[a-z0-9]+$/i.test(bin) ? [bin] : extensions.map((ext) => bin + ext);
 
-  for (const dir of dirs) {
+  // A selected path is already a location, not a name to append to PATH.
+  const explicit = win.isAbsolute(bin) || /[\\/]/.test(bin);
+  for (const dir of explicit ? [""] : dirs) {
     for (const name of named) {
       const candidate = win.join(dir, name);
       if (!exists(candidate)) continue;

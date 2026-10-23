@@ -40,20 +40,21 @@ jobs:
       # Node 24 on these x64 runners intermittently aborts while freeing
       # WebAssembly code ("jit_page_->allocations_.erase(addr) == 1" in
       # ThreadIsolation::UnregisterWasmAllocation), killing whichever PGlite
-      # suite is running. That bookkeeping only runs when V8 protects JIT
-      # memory with protection keys (PKU), which these CPUs have and Macs do
-      # not. V8 flags are refused in NODE_OPTIONS, so this step's `node` is a
-      # wrapper that turns PKU off. Only here: Next's build hands node flags
-      # to its workers through NODE_OPTIONS, which would refuse it.
+      # suite is running. Disable Wasm code GC as well as protection keys:
+      # disabling PKU alone does not reliably avoid Node 24's wrapper GC race
+      # (nodejs/node#66366). Use this wrapper for every PGlite test step,
+      # including Discord tests in the Postgres team-context run. Keep it out
+      # of Next's build: its workers pass node flags through NODE_OPTIONS,
+      # which refuses these V8 flags.
       - name: npm test
         run: |
           shim="$RUNNER_TEMP/node-shim"
           mkdir -p "$shim"
-          printf '#!/bin/sh\nexec "%s" --no-memory-protection-keys "$@"\n' "$(command -v node)" > "$shim/node"
+          printf '#!/bin/sh\nexec "%s" --no-memory-protection-keys --no-wasm-code-gc "$@"\n' "$(command -v node)" > "$shim/node"
           chmod +x "$shim/node"
           PATH="$shim:$PATH" npm test
-      - run: npm run test:team-context
-      - run: npm run test:team-context
+      - run: PATH="$RUNNER_TEMP/node-shim:$PATH" npm run test:team-context
+      - run: PATH="$RUNNER_TEMP/node-shim:$PATH" npm run test:team-context
         env:
           TEAM_CONTEXT_TEST_POSTGRES: "1"
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
@@ -72,7 +73,7 @@ jobs:
         env:
           STORAGE_TEST_POSTGRES: "1"
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
-      - run: npm run test:sharing
+      - run: PATH="$RUNNER_TEMP/node-shim:$PATH" npm run test:sharing
         env:
           SHARING_TEST_POSTGRES: "1"
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
@@ -86,7 +87,7 @@ jobs:
       - run: npm run test:reset
         env:
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
-      - run: npm run test:clerk
+      - run: PATH="$RUNNER_TEMP/node-shim:$PATH" npm run test:clerk
         env:
           CLERK_TEST_POSTGRES: "1"
           DATABASE_URL: postgres://multiplayer:test-only@localhost:5432/multiplayer_test
