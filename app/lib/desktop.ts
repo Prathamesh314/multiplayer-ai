@@ -6,7 +6,15 @@ export type DesktopBridge = {
   secretNames?: () => Promise<{ ok: boolean; names: string[]; error?: string }>;
   setSecret?: (name: string, value: string) => Promise<{ ok: boolean; names?: string[]; error?: string }>;
   removeSecret?: (name: string) => Promise<{ ok: boolean; names?: string[]; error?: string }>;
+  /** A newer release from the website. Absent in older desktop apps. */
+  updateState?: () => Promise<DesktopUpdate>;
+  onUpdate?: (callback: (state: DesktopUpdate) => void) => () => void;
+  installUpdate?: () => Promise<{ ok: boolean; opened?: "download"; error?: string }>;
+  showUpdateChanges?: () => Promise<void>;
 };
+
+/** "ready" once the new installer is downloaded and verified; `changes` when there is a list of what changed. */
+export type DesktopUpdate = { status: "idle" | "downloading" | "ready"; build: string | null; changes: boolean };
 
 export function desktopBridge(): DesktopBridge | undefined {
   if (typeof window === "undefined") return undefined;

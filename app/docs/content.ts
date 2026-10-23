@@ -100,9 +100,13 @@ These commands install neither Git nor your AI tool. Complete the [prerequisites
 The desktop app connects to an existing server; it does not create or host one. Sign in using the same account as the browser. The bundled runner connects automatically after sign-in.
 
 Open **Your computers** in the workspace to confirm the device is online, then choose **Set up AI**.`, screenshot: "desktop-setup" },
-      { id: "updates", title: "Update or reopen the app", body: `Open **Desktop settings** from the application menu, or use **Cmd/Ctrl + ,**. **Reopen workspace** retries the configured server. **Check for updates** uses the update feed configured for your build.
+      { id: "updates", title: "Update or reopen the app", body: `The app updates itself from this website. It checks when it starts and every half hour; when a new release is out, it downloads it in the background and checks it against the published SHA-256 checksums, as the install commands do. Then **New update available** appears in the corner of the workspace:
 
-If updates are not configured, obtain a newer installer from the download page or your administrator. When an update is available, download and installation require confirmation. Save unsent drafts and pause the runner before installing. See [desktop settings and worktrees](/docs/desktop-settings).` },
+- **Restart** installs the update and reopens the app. If an AI task is running on your computer, finish it first; the app says so. On Linux with the .deb package, you are asked for your password.
+- **See changes** lists what changed since your version.
+- **×** hides the notice until the app next starts.
+
+**Check for updates** in the application menu or **Desktop settings** checks straight away. A copy that cannot replace itself (for example, opened straight from the disk image) opens the download page instead. Apps installed before automatic updates existed update once by running the [install command](/docs/download-install#one-command) again. **Reopen workspace** in Desktop settings retries the server. See [desktop settings and worktrees](/docs/desktop-settings).` },
     ],
   },
   {

@@ -152,6 +152,11 @@ jobs:
             printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
             export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
           fi
+          # Which release this is (its folder on the website, published by publish.sh),
+          # so installed apps can tell when the website has a newer one.
+          export DESKTOP_BUILD_ID="preview-${GITHUB_SHA::7}-${GITHUB_RUN_ID}"
+          export DESKTOP_COMMIT="$GITHUB_SHA"
+          export DESKTOP_SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           npm run desktop:dist -- --${{ matrix.platform }} --${{ matrix.arch }}
         env:
           # Built in, so a new install opens straight to sign-in instead of asking for an address.

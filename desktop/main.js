@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const { workspaceUrl, sameOrigin, externalUrl, linkTarget, frameAllowed, downloadAllowed, waitForServer, runnerEnvironment } = require("./policy");
 const { createAutoConnection } = require("./connection");
+const { createSiteUpdater, installUpdate: installSiteUpdate } = require("./site-update");
 
 app.setName("Multicode AI");
 // userData is derived from the app name, so the Multicode AI rename would
@@ -44,6 +45,7 @@ let updater = null;
 let updateTimer = null;
 let updateReady = false;
 let updateBusy = false;
+let siteUpdater = null;
 let workspaceSession = null;
 let connectionTimer = null;
 
@@ -243,7 +245,7 @@ function createWorkspace() {
       if (host === domain || host.endsWith("." + domain)) autoConnection.invalidate();
     });
   }
-  mainWindow.webContents.on("did-finish-load", () => { void autoConnection.sync(); });
+  mainWindow.webContents.on("did-finish-load", () => { void autoConnection.sync(); sendUpdateState(); });
   mainWindow.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) {
       report("The workspace could not load. Check your connection and reopen it.");
@@ -449,6 +451,13 @@ function registerIpc() {
     await connect();
   });
   setupHandler("desktop:retry", connect);
+  ipcMain.handle("desktop:update-state", event => { requireWorkspace(event); return updateForPage(); });
+  ipcMain.handle("desktop:update-install", event => { requireWorkspace(event); return installFromSite(); });
+  ipcMain.handle("desktop:update-changes", async event => {
+    requireWorkspace(event);
+    const url = siteUpdater?.state().changesUrl;
+    if (url && url.startsWith("https://github.com/")) await shell.openExternal(url).catch(() => {});
+  });
   setupHandler("desktop:toggle-runner", toggleRunner);
   setupHandler("desktop:updates", checkUpdates);
   ipcMain.handle("desktop:secret-names", event => {
@@ -500,6 +509,13 @@ function registerIpc() {
 }
 
 async function checkUpdates() {
+  if (!updater && siteUpdater) {
+    report("Checking for updates…");
+    const state = await siteUpdater.check();
+    report(state.error ? "Could not check for updates. Try again when you are online."
+      : state.status === "ready" ? "An update is ready. Choose Restart in the workspace to install it." : "You are up to date.");
+    return;
+  }
   if (!updater) { report("Updates are not configured for this build. Obtain a new installer from your administrator."); return; }
   if (updateReady) { await installUpdate(); return; }
   if (updateBusy) return;
@@ -515,8 +531,58 @@ async function installUpdate() {
   if (result.response === 1 && !runnerProcess && !pairing) updater.quitAndInstall();
 }
 
+/** What the workspace page may know about an update: never the file's path. */
+function updateForPage() {
+  const state = siteUpdater?.state() ?? { status: "idle" };
+  return { status: state.status, build: state.build ?? null, changes: !!state.changesUrl };
+}
+
+function sendUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:update", updateForPage());
+}
+
+/**
+ * Installers published on the website (no update feed, no signature) update
+ * from the website's current release: checked at launch and every half hour,
+ * downloaded and verified in the background, installed when the person
+ * chooses Restart in the workspace.
+ */
+function configureSiteUpdates() {
+  if (!app.isPackaged || !release.build) return;
+  const exePath = app.getPath("exe");
+  const linuxKind = process.platform !== "linux" ? null : exePath.startsWith("/opt/") ? "deb" : process.env.APPIMAGE ? "appimage" : null;
+  if (process.platform === "linux" && !linuxKind) return;
+  siteUpdater = createSiteUpdater({
+    origin: () => settings.url, build: release.build, commit: release.commit, sourceUrl: release.sourceUrl,
+    platform: process.platform, arch: process.arch, linuxKind, dir: path.join(app.getPath("userData"), "updates"),
+    fetch: (...args) => fetch(...args), notify: sendUpdateState,
+  });
+  setTimeout(() => void siteUpdater.check(), 15000).unref();
+  updateTimer = setInterval(() => void siteUpdater.check(), 30 * 60 * 1000);
+  updateTimer.unref();
+}
+
+async function installFromSite() {
+  const state = siteUpdater?.state();
+  if (!state || state.status !== "ready") return { ok: false, error: "No update is ready yet." };
+  if (runnerState === "running" || pairing) return { ok: false, error: "An AI task is running on this computer. Restart once it finishes." };
+  let replaced = false;
+  try {
+    replaced = installSiteUpdate({ file: state.file, platform: process.platform, exePath: app.getPath("exe"), pid: process.pid });
+  } catch {
+    replaced = false;
+  }
+  if (!replaced) {
+    // This install cannot replace itself (for example, run from the disk image): get it from the website.
+    await shell.openExternal(new URL("/#download", settings.url).href).catch(() => {});
+    return { ok: true, opened: "download" };
+  }
+  app.quit();
+  return { ok: true };
+}
+
 function configureUpdates() {
-  if (!app.isPackaged || !release.updateUrl) return;
+  if (!app.isPackaged || !release.updateUrl) { configureSiteUpdates(); return; }
   const { autoUpdater } = require("electron-updater");
   updater = autoUpdater;
   updater.autoDownload = false;

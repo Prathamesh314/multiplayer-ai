@@ -566,6 +566,24 @@ try {
   await evaluate(`(()=>{const m=window.__model;m.devices=m.devices.filter(d=>d.id!=="computer-2");m.emitDevices();})()`);
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
   await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes after pairing");
+  // In the desktop app, a newer release that is downloaded and verified: "New update available".
+  await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.desktop={isDesktop:true,platform:"darwin",pairComputer:async()=>({ok:true}),calls:[],
+    updateState:async()=>({status:"ready",build:"preview-bbbbbbb-2",changes:true}),onUpdate:()=>()=>{},
+    installUpdate:async()=>{window.desktop.calls.push("install");return {ok:false,error:"An AI task is running on this computer. Restart once it finishes."};},
+    showUpdateChanges:async()=>{window.desktop.calls.push("changes");}};`});
+  await send("Page.reload",{});
+  await eventually(()=>evaluate('!!document.body && !!window.__model && !!document.querySelector(\'section[aria-label="Desktop update"]\')'),"update notice in the desktop app");
+  assert.equal(await evaluate('document.querySelector(\'section[aria-label="Desktop update"]\').innerText.includes("New update available")'),true);
+  await writeFile(join(tmpdir(),'multiplayer-desktop-update.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`[...document.querySelectorAll('section[aria-label="Desktop update"] button')].find(b=>b.textContent.trim()==="See changes").click()`);
+  await evaluate(`[...document.querySelectorAll('section[aria-label="Desktop update"] button')].find(b=>b.textContent.trim()==="Restart").click()`);
+  await eventually(()=>evaluate('document.querySelector(\'section[aria-label="Desktop update"] [role=alert]\')?.innerText.includes("An AI task is running")'),"a refused restart says why");
+  assert.deepEqual(await evaluate("window.desktop.calls"),["changes","install"]);
+  await click('button[aria-label="Close update notice"]');
+  await eventually(()=>evaluate('!document.querySelector(\'section[aria-label="Desktop update"]\')'),"the notice closes");
+  await send("Page.reload",{});
+  await eventually(()=>evaluate('!!document.body && !!window.__model'),"reloaded");await delay(500);
+  assert.equal(await evaluate('!!document.querySelector(\'section[aria-label="Desktop update"]\')'),false,"closed stays closed until the app restarts");
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

@@ -71,7 +71,7 @@ function harness() {
     throw Object.assign(new Error("missing"), { code: "ENOENT" });
   }, mkdirSync() {}, writeFileSync: (file, value, options) => writes.set(file, { value, options }), renameSync: (from, to) => { writes.set(to, writes.get(from)); writes.delete(from); } };
   const requests = [];
-  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : name === "./connection" ? require("../desktop/connection") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, Buffer, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
+  const context = vm.createContext({ require: name => name === "electron" ? electron : name === "node:fs" ? mockFs : name === "./policy" ? require("../desktop/policy") : name === "./connection" ? require("../desktop/connection") : name === "./site-update" ? require("../desktop/site-update") : require(name), __dirname: path.resolve("desktop"), process: { env: {}, platform: process.platform, argv: [], resourcesPath: "/resources" }, URL, AbortController, AbortSignal, Buffer, console, setInterval, clearInterval, fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ token: "private-device-token" }) }; } });
   const source = fs.readFileSync("desktop/main.js", "utf8");
   vm.runInContext(source + "\nglobalThis.api = { security, registerIpc, requireSetup, toggleRunner, setWindows: (workspace, setup) => { mainWindow = workspace; setupWindow = setup; }, setupUrl };", context);
   context.api.registerIpc();
@@ -447,4 +447,93 @@ test('sign-out during automatic pairing cannot start or save a stale connection'
   while (!f.state.requests.some(request=>request.url.endsWith('/pairing'))) await new Promise(resolve=>setImmediate(resolve));
   f.state.user=null; f.connection.invalidate(); release(); await pending; await f.connection.sync();
   assert.equal(f.state.starts,0); assert.equal(f.config(),null); assert.equal(f.state.pairs,0);
+});
+
+test("updates come from the website's current release, verified against its checksums", async () => {
+  const { assetPattern, pickAsset, latestRelease, commitOf, createSiteUpdater, installUpdate } = require("../desktop/site-update");
+  const crypto = require("node:crypto");
+  const os = require("node:os");
+  const path = require("node:path");
+  const origin = "https://multicode.in";
+  const installer = Buffer.from("new installer");
+  const hash = crypto.createHash("sha256").update(installer).digest("hex");
+  const sums = [
+    `${"1".repeat(64)}  Multicode-AI-0.1.0-mac-x64-preview.dmg`,
+    `${hash}  Multicode-AI-0.1.0-mac-arm64-preview.dmg`,
+    `${"2".repeat(64)}  Multicode-AI-0.1.0-win-x64-preview.exe`,
+    `${"3".repeat(64)}  Multicode-AI-0.1.0-linux-amd64-preview.deb`,
+    `${"4".repeat(64)}  Multicode-AI-0.1.0-linux-x86_64-preview.AppImage`,
+  ].join("\n");
+  assert.equal(pickAsset(sums, assetPattern("darwin", "arm64")).name, "Multicode-AI-0.1.0-mac-arm64-preview.dmg");
+  assert.equal(pickAsset(sums, assetPattern("darwin", "x64")).name, "Multicode-AI-0.1.0-mac-x64-preview.dmg");
+  assert.equal(pickAsset(sums, assetPattern("win32", "x64")).name, "Multicode-AI-0.1.0-win-x64-preview.exe");
+  assert.equal(pickAsset(sums, assetPattern("linux", "x64", "deb")).name, "Multicode-AI-0.1.0-linux-amd64-preview.deb");
+  assert.equal(pickAsset(sums, assetPattern("linux", "x64", "appimage")).name, "Multicode-AI-0.1.0-linux-x86_64-preview.AppImage");
+  assert.equal(pickAsset("garbage\n../evil  Multicode-AI-0.1.0-win-x64.exe", assetPattern("win32", "x64")), null);
+
+  // Only the workspace's own site, over HTTPS, with a plain release name.
+  assert.deepEqual(latestRelease(`${origin}/downloads/desktop/preview-859e164-39946229657/\n`, origin), { id: "preview-859e164-39946229657", base: `${origin}/downloads/desktop/preview-859e164-39946229657/` });
+  for (const bad of ["https://evil.test/downloads/x/", "http://multicode.in/downloads/x/", `${origin}/downloads/x/?a=1`, `${origin}/downloads/%2e%2e/`]) assert.throws(() => latestRelease(bad, origin));
+  assert.equal(commitOf("preview-859e164-39946229657"), "859e164");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mc-updates-"));
+  const requests = [];
+  let latest = "preview-859e164-1";
+  let body = installer;
+  const fakeFetch = async (url) => {
+    requests.push(url);
+    const respond = (data) => ({ ok: true, status: 200, text: async () => String(data), body: (async function* () { yield data; })() });
+    if (url === `${origin}/install/latest`) return respond(`${origin}/downloads/desktop/${latest}/`);
+    if (url.endsWith("/SHA256SUMS.txt")) return respond(sums);
+    if (url.endsWith(".dmg")) return respond(body);
+    return { ok: false, status: 404 };
+  };
+  const seen = [];
+  const updater = (build) => createSiteUpdater({ origin: () => origin, build, commit: "aaaaaaa", sourceUrl: "https://github.com/acme/app",
+    platform: "darwin", arch: "arm64", dir, fetch: fakeFetch, notify: (state) => seen.push(state.status) });
+
+  // The installed release is the current one: nothing to do.
+  assert.equal((await updater("preview-859e164-1").check()).status, "idle");
+  assert.ok(!requests.some((url) => url.endsWith(".dmg")));
+
+  // A newer release: downloaded once, verified, then ready with what changed.
+  latest = "preview-bbbbbbb-2";
+  const newer = updater("preview-859e164-1");
+  const ready = await newer.check();
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.build, "preview-bbbbbbb-2");
+  assert.equal(ready.changesUrl, "https://github.com/acme/app/compare/aaaaaaa...bbbbbbb");
+  assert.deepEqual(fs.readFileSync(ready.file), installer);
+  assert.deepEqual(seen.slice(-2), ["downloading", "ready"]);
+  const downloads = requests.filter((url) => url.endsWith(".dmg")).length;
+  await newer.check();
+  assert.equal(requests.filter((url) => url.endsWith(".dmg")).length, downloads, "a verified download is not fetched again");
+
+  // A file that does not match its checksum is never kept or offered.
+  latest = "preview-ccccccc-3";
+  body = Buffer.from("tampered");
+  const result = await updater("preview-859e164-1").check();
+  assert.match(result.error, /does not match its published checksum/);
+  assert.notEqual(result.status, "ready");
+  assert.ok(!fs.existsSync(path.join(dir, "preview-ccccccc-3", "Multicode-AI-0.1.0-mac-arm64-preview.dmg")));
+
+  // Development and test builds have no release id, so they never check.
+  const before = requests.length;
+  await createSiteUpdater({ origin: () => origin, build: "", platform: "darwin", arch: "arm64", dir, fetch: fakeFetch }).check();
+  assert.equal(requests.length, before);
+
+  // An app that cannot be replaced in place (run from the disk image) gets the download page instead.
+  assert.equal(installUpdate({ file: "/tmp/x.dmg", platform: "darwin", exePath: "/private/var/folders/x/AppTranslocation/y/Multicode AI.app/Contents/MacOS/Multicode AI", pid: 1 }), false);
+  assert.equal(installUpdate({ file: "/tmp/x.AppImage", platform: "linux", exePath: "/tmp/x", pid: 1, env: {} }), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the workspace sees an update's state, never its file, and only the workspace can install it", () => {
+  const main = fs.readFileSync("desktop/main.js", "utf8");
+  for (const channel of ["desktop:update-state", "desktop:update-install", "desktop:update-changes"]) {
+    assert.match(main, new RegExp(`ipcMain\\.handle\\("${channel}", (async )?event => \\{\\s*requireWorkspace\\(event\\);`));
+  }
+  assert.match(main, /return \{ status: state\.status, build: state\.build \?\? null, changes: !!state\.changesUrl \};/);
+  assert.match(main, /if \(runnerState === "running" \|\| pairing\) return \{ ok: false/);
+  assert.match(fs.readFileSync(".github/workflows/desktop.yml", "utf8"), /DESKTOP_BUILD_ID="preview-\$\{GITHUB_SHA::7\}-\$\{GITHUB_RUN_ID\}"/);
 });
