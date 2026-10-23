@@ -132,7 +132,7 @@ Use the same account in desktop and browser. A computer connected to one account
     slug: "connect-computer", category: "Get started", title: "Connect your computer",
     description: "Connect automatically through desktop, or pair a standalone runner from a terminal.",
     sections: [
-      { id: "desktop", title: "Connect with the desktop app", body: `1. [Install the desktop app](/docs/download-install) and connect to your workspace’s HTTPS address.
+      { id: "desktop", title: "Connect with the desktop app", body: `1. [Install the desktop app](/docs/download-install). It opens your workspace; there is no address to enter.
 2. Sign in with the account you use in the browser. The app starts its bundled runner and pairs automatically.
 3. Open **Your computers** from the workspace’s connection notice or computer icon.
 4. Confirm your computer is online. Select **Next: Set up AI** to check your installed tools.
@@ -140,13 +140,11 @@ Use the same account in desktop and browser. A computer connected to one account
 Keep the app running and the computer awake during tasks. Closing the browser does not move an active task to the server. If you want another teammate to continue, use [Handoff](/docs/handoff) and wait for the current turn to finish.`, screenshot: "computers" },
       { id: "terminal-connection", title: "Use a terminal instead", body: `This path requires **Node.js 22 or newer**, npm/npx, Git, and your installed AI tool. It works without an application source checkout.
 
-1. In the browser, open **Your computers**.
-2. Expand **Use a terminal instead (advanced)**.
-3. Choose **Connect a new computer with commands**.
-4. Copy and run the exact pairing command shown there. It includes your workspace’s runner-package URL and a fresh pairing code.
-5. Copy and run the **start** command. Leave that terminal open while working.
+1. In the browser, open **Your computers** and choose the **Terminal (npx)** tab. (With a computer already connected, expand **Connect another computer** first.)
+2. Choose **Create pairing code**, then copy and run step 1, the exact pair command. It includes your workspace’s runner-package URL and the fresh code.
+3. Copy and run step 2, the **start** command. Leave that terminal open while working.
 
-Pairing codes are single-use and expire in **10 minutes**. Never publish or reuse a code from a screenshot. Pair once; on later visits, use the start command again.
+The bottom of the dialog says where things stand: it waits after step 1, and turns green only once the computer connects. Pairing codes are single-use and expire in **10 minutes**; the dialog counts down and offers **Get new code** when one expires. Never publish or reuse a code from a screenshot. Pair once; on later visits, use the start command again.
 
 For the hosted workspace, the start command is:
 
