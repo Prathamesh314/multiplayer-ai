@@ -846,9 +846,11 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
     await sender.block([]);
     await sender.click("Check connection again");
-    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && Array.from(document.querySelectorAll("dialog button")).some(button => button.textContent.trim() === "Connect a new computer with commands" && !button.disabled)'), "device loading retry recovers");
-    await sender.evaluate('document.querySelector("dialog details summary").click()');
-    await sender.click("Connect a new computer with commands");
+    await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && !!document.querySelector("dialog [role=tablist]")'), "device loading retry recovers");
+    await sender.click("Terminal (npx)");
+    // Reconnecting needs no code: the start command is there before pairing.
+    assert.equal(await sender.evaluate('!!document.querySelector(\'button[aria-label="Copy start command"]\')'), true);
+    await sender.click("Create pairing code");
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("multicode-ai-runner pair")'), "standalone runner pairing instructions");
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multicode-ai-runner.tgz`));
