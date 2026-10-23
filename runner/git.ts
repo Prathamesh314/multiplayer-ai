@@ -78,13 +78,17 @@ export class RunnerGit {
   }
 
   /** `turnId` authenticates the call for that turn; null authenticates a read with no turn. */
-  private async git(cwd: string, args: string[], turnId?: string | null, checkpointSequence?: number): Promise<string> {
+  private async git(repository: string | { bare: string }, args: string[], turnId?: string | null, checkpointSequence?: number): Promise<string> {
     // A runner launched from another worktree must not inherit its Git paths.
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
+    // Windows cannot start processes with a cwd beyond MAX_PATH, even when
+    // Git supports long filenames. Keep bare-cache commands in the data root.
+    const cwd = typeof repository === "string" ? repository : this.dataDir;
+    const location = typeof repository === "string" ? [] : [`--git-dir=${repository.bare}`];
     const auth = turnId !== undefined ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, ...(turnId ? ["-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [])] : [];
     try {
-      const { stdout } = await run(...gitCommand([...CONFIG, ...auth, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args]), {
+      const { stdout } = await run(...gitCommand([...CONFIG, ...auth, ...location, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args]), {
         cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
         timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
       });
@@ -182,7 +186,7 @@ export class RunnerGit {
           await this.checkWorktree(legacyWork, cache, legacyBranch(key));
           // Git updates both ends of the linked worktree, including its index.
           // Dirty, untracked and ignored files travel together; no reset/copy.
-          await this.git(cache, ["worktree", "move", legacyWork, work]);
+          await this.git({ bare: cache }, ["worktree", "move", legacyWork, work]);
         }
         if (await exists(cache)) {
           await this.adoptReadableName(root, key, bindingPath, binding, cache);
@@ -192,27 +196,27 @@ export class RunnerGit {
         if (!await exists(cache)) {
           await mkdir(dirname(cache), { recursive: true, mode: 0o700 });
           const temp = `${cache}.${randomUUID()}.tmp`;
-          // Git for Windows changes into an init argument before reading
-          // core.longpaths. Let Node create and enter the directory first.
+          // Git init changes into a directory argument before reading config.
+          // Create it with Node and select it through --git-dir instead.
           await mkdir(temp, { mode: 0o700 });
-          await this.git(temp, ["init", "--bare"]);
+          await this.git({ bare: temp }, ["init", "--bare"]);
           await rename(temp, cache);
         }
         // Also applies to Git invoked by the AI inside this runner-owned repo.
         // Do not change the member's global or system Git settings.
-        if (process.platform === "win32") await this.git(cache, ["config", "core.longpaths", "true"]);
+        if (process.platform === "win32") await this.git({ bare: cache }, ["config", "core.longpaths", "true"]);
         // Fetch only the authorized room (or chat), even when other rooms share
         // objects. Credentials and remote URLs are per-command, never persisted.
         const remoteRef = isolated ? `refs/remotes/chats/${key}` : `refs/remotes/rooms/${key}`;
         const source = isolated ? `refs/heads/${job.chatBranch}` : `refs/heads/session/${repoRef}`;
-        await this.git(cache, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(repoRef), `+${source}:${remoteRef}`], job.turnId);
-        await this.git(cache, ["merge-base", "--is-ancestor", job.baseSha, remoteRef]);
+        await this.git({ bare: cache }, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(repoRef), `+${source}:${remoteRef}`], job.turnId);
+        await this.git({ bare: cache }, ["merge-base", "--is-ancestor", job.baseSha, remoteRef]);
         if (await this.hasRef(cache, attempt)) throw new Error("This turn already started locally. Recover its result instead of replaying the agent.");
 
         if (!await exists(work)) {
           await mkdir(dirname(work), { recursive: true, mode: 0o700 });
           // Never force: a leftover branch/registration may hold undelivered work.
-          await this.git(cache, ["worktree", "add", "-b", branch, work, job.baseSha]);
+          await this.git({ bare: cache }, ["worktree", "add", "-b", branch, work, job.baseSha]);
           if (isolated) await this.copyIgnoredFiles(root, digest(repoRef), work);
         } else {
           await this.checkWorktree(work, cache, branch);
@@ -230,8 +234,8 @@ export class RunnerGit {
         if (job.restoreCheckpoint) {
           const snapshot = job.restoreCheckpoint;
           if (snapshot.baseSha !== job.baseSha && snapshot.headSha !== job.baseSha) throw new Error("The repository advanced since this checkpoint. Review it before restoring.");
-          await this.git(cache, ["fetch", "--no-tags", this.remoteUrl(repoRef), `${checkpointRef(snapshot)}:${checkpointRef(snapshot)}`], job.turnId);
-          if ((await this.git(cache, ["rev-parse", checkpointRef(snapshot)])).trim() !== snapshot.snapshotSha) throw new Error("Checkpoint ref does not match its recorded content.");
+          await this.git({ bare: cache }, ["fetch", "--no-tags", this.remoteUrl(repoRef), `${checkpointRef(snapshot)}:${checkpointRef(snapshot)}`], job.turnId);
+          if ((await this.git({ bare: cache }, ["rev-parse", checkpointRef(snapshot)])).trim() !== snapshot.snapshotSha) throw new Error("Checkpoint ref does not match its recorded content.");
           await restoreCheckpoint(work, snapshot);
         }
         binding.checkpointOwner = digest(`${this.server}\0${this.token}`);
@@ -240,7 +244,7 @@ export class RunnerGit {
         binding.checkpointTree = undefined;
         await writeWorkspaceMetadata(bindingPath, binding);
         // Durable marker: even a clean workspace cannot replay a paid turn.
-        await this.git(cache, ["update-ref", attempt, job.baseSha, ""]);
+        await this.git({ bare: cache }, ["update-ref", attempt, job.baseSha, ""]);
       });
 
       let active = true;
@@ -264,7 +268,7 @@ export class RunnerGit {
             const sha = (await this.git(work, ["rev-parse", "HEAD"])).trim();
             if (sha === job.baseSha) return null;
             // Keep a named local result even if upload or finalization fails.
-            await this.git(cache, ["update-ref", `refs/turns/${job.turnId}`, sha, ""]);
+            await this.git({ bare: cache }, ["update-ref", `refs/turns/${job.turnId}`, sha, ""]);
             await this.git(work, ["push", this.remoteUrl(repoRef), `${sha}:refs/turns/${job.turnId}`], job.turnId);
             return sha;
           });
@@ -340,8 +344,8 @@ export class RunnerGit {
         if ((await this.git(work, ["status", "--porcelain", "--untracked-files=all"])).trim()) return "it has unsaved edits";
         // A local turn ref is written before its push, so it proves nothing:
         // the server's own chat branch must already contain every commit.
-        await this.git(cache, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(binding.repoRef), `+refs/heads/chat/${binding.chatRunId}:${remoteRef}`], null);
-        try { await this.git(cache, ["merge-base", "--is-ancestor", branch, remoteRef]); }
+        await this.git({ bare: cache }, ["fetch", "--no-tags", "--no-write-fetch-head", this.remoteUrl(binding.repoRef), `+refs/heads/chat/${binding.chatRunId}:${remoteRef}`], null);
+        try { await this.git({ bare: cache }, ["merge-base", "--is-ancestor", branch, remoteRef]); }
         catch { return "it has commits the server does not have"; }
         return null;
       };
@@ -354,9 +358,9 @@ export class RunnerGit {
         await withWorkspaceLock(lockPath, randomUUID(), () => withWorkspaceLock(join(root, "locks", `cache-${binding.cacheKey}`), randomUUID(), async () => {
           if (await check()) throw new Error("The worktree changed while it was being removed; it was preserved.");
           // Without --force, Git itself refuses a worktree with untracked or modified files.
-          await this.git(cache, ["worktree", "remove", work]);
-          await this.git(cache, ["branch", "-D", branch]);
-          await this.git(cache, ["update-ref", "-d", remoteRef]);
+          await this.git({ bare: cache }, ["worktree", "remove", work]);
+          await this.git({ bare: cache }, ["branch", "-D", branch]);
+          await this.git({ bare: cache }, ["update-ref", "-d", remoteRef]);
           await unlink(bindingPath);
         }, 125_000));
       } catch (cause) {
@@ -378,12 +382,12 @@ export class RunnerGit {
     const sequence = (binding.checkpointSequence ?? 0) + 1;
     const snapshot = await captureCheckpoint(work, cache, job.turnId, job.baseSha, sequence, binding.checkpointTree);
     if (!snapshot) return;
-    const tree = (await this.git(cache, ["rev-parse", `${snapshot.snapshotSha}^{tree}`])).trim() + ":" +
-      (await this.git(cache, ["rev-parse", `${snapshot.indexSha}^{tree}`])).trim() + ":" + snapshot.headSha;
+    const tree = (await this.git({ bare: cache }, ["rev-parse", `${snapshot.snapshotSha}^{tree}`])).trim() + ":" +
+      (await this.git({ bare: cache }, ["rev-parse", `${snapshot.indexSha}^{tree}`])).trim() + ":" + snapshot.headSha;
     if (binding.checkpointTree === tree) return;
     binding.checkpointSequence = sequence;
     await writeWorkspaceMetadata(bindingPath, binding);
-    await this.git(cache, ["update-ref", checkpointRef(snapshot), snapshot.snapshotSha, ""]);
+    await this.git({ bare: cache }, ["update-ref", checkpointRef(snapshot), snapshot.snapshotSha, ""]);
     const directory = this.checkpointDirectory();
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeWorkspaceMetadata(join(directory, `${snapshot.id}.json`), { snapshot, repoRef: binding.repoRef, cache });
@@ -477,13 +481,13 @@ export class RunnerGit {
         const from = locationPath(binding.previousLocation);
         if (await exists(from)) {
           if (await exists(target)) throw new Error(`Both ${from} and ${target} exist; neither was moved.`);
-          await this.git(cache, ["worktree", "move", from, target]);
+          await this.git({ bare: cache }, ["worktree", "move", from, target]);
         }
       }
       if (await exists(target)) {
         if (await head(target) === `refs/heads/${legacy}`) await this.git(target, ["branch", "-m", legacy, binding.branch!]);
       } else if (await this.hasRef(cache, `refs/heads/${legacy}`) && !await this.hasRef(cache, `refs/heads/${binding.branch}`)) {
-        await this.git(cache, ["branch", "-m", legacy, binding.branch!]);
+        await this.git({ bare: cache }, ["branch", "-m", legacy, binding.branch!]);
       }
       if (binding.previousLocation) {
         delete binding.previousLocation;
@@ -561,9 +565,9 @@ export class RunnerGit {
         const { snapshot, cache, repoRef } = entry;
         const ref = checkpointRef(snapshot);
         // A lost HTTP response after push is safe to retry without updating the immutable ref.
-        const remote = (await this.git(cache, ["ls-remote", this.remoteUrl(repoRef), ref], snapshot.turnId)).trim().split(/\s+/)[0];
+        const remote = (await this.git({ bare: cache }, ["ls-remote", this.remoteUrl(repoRef), ref], snapshot.turnId)).trim().split(/\s+/)[0];
         if (remote && remote !== snapshot.snapshotSha) throw new Error("Remote checkpoint sequence has different content.");
-        if (!remote) await this.git(cache, ["push", this.remoteUrl(repoRef), `${snapshot.snapshotSha}:${ref}`], snapshot.turnId, snapshot.sequence);
+        if (!remote) await this.git({ bare: cache }, ["push", this.remoteUrl(repoRef), `${snapshot.snapshotSha}:${ref}`], snapshot.turnId, snapshot.sequence);
         await api.checkpoint(snapshot);
         await unlink(join(directory, file));
       } catch (cause) { console.error(`[runner] checkpoint retained for retry: ${String(cause)}`); }
@@ -580,7 +584,7 @@ export class RunnerGit {
   }
 
   private async hasRef(cache: string, ref: string): Promise<boolean> {
-    return Boolean((await this.git(cache, ["for-each-ref", "--format=%(refname)", ref])).trim());
+    return Boolean((await this.git({ bare: cache }, ["for-each-ref", "--format=%(refname)", ref])).trim());
   }
 
   private async checkBranch(work: string, branch: string): Promise<void> {
