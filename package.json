@@ -113,7 +113,7 @@
     "test:collaboration": "node --import tsx tests/collaboration-flow.test.mjs",
     "docs:capture": "npm run desktop:prepare && node scripts/capture-docs.mjs --start-server",
     "test:docs": "node --import tsx --test tests/docs.test.mjs && node --import tsx tests/docs.browser.mjs --start-server",
-    "test:clerk": "node --import tsx --test tests/clerk-auth.test.mjs tests/auth-request.test.mjs tests/username.test.mjs",
+    "test:clerk": "node --import tsx --test tests/clerk-auth.test.mjs tests/auth-request.test.mjs tests/desktop-sign-in.test.mjs tests/username.test.mjs",
     "test:clerk:http": "node --import tsx tests/clerk-auth-http.mjs"
   },
   "dependencies": {

@@ -1,17 +1,21 @@
 "use client";
-import { useSignIn } from "@clerk/nextjs";
-import { useState, useSyncExternalStore } from "react";
+import { useClerk } from "@clerk/nextjs";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { desktopBridge } from "../../lib/desktop";
 import { authRequest, authErrorMessage } from "../../lib/auth/request";
+import { finishDesktopSignIn, type DesktopSignInAttempt } from "../../lib/auth/desktop-sign-in";
 const subscribe = () => () => {};
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 export function DesktopSignIn({ complete, flow }: { complete: string; flow: string }) {
   const isDesktop = useSyncExternalStore(subscribe, () => !!desktopBridge()?.isDesktop, () => false);
-  const { signIn } = useSignIn();
-  const [pending, setPending] = useState<{ id: string; code: string; verifier: string; url: string } | null>(null);
+  const clerk = useClerk();
+  const [pending, setPending] = useState<(DesktopSignInAttempt & { code: string; url: string }) | null>(null);
+  const inFlight = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   if (!isDesktop) return null;
   async function start() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setError(null);
     try {
       const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -21,19 +25,21 @@ export function DesktopSignIn({ complete, flow }: { complete: string; flow: stri
       const url = new URL(`/login?${params}`, location.origin).href;
       setPending({ ...result, verifier, url }); window.open(url, "_blank", "noopener,noreferrer");
     } catch (cause) { setError(authErrorMessage(cause, "Could not open sign-in. Please try again.")); }
-    finally { setBusy(false); }
+    finally { inFlight.current = false; setBusy(false); }
   }
   async function finish() {
-    if (!pending || !signIn) return;
+    if (!pending || !clerk.loaded || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setError(null);
     try {
-      const { ticket } = await authRequest<{ ticket: string }>("/api/auth/desktop/redeem", "POST", { id: pending.id, verifier: pending.verifier });
-      const attempt = await signIn.ticket({ ticket });
-      if (attempt.error || signIn.status !== "complete") throw new Error("Could not finish desktop sign-in. Start again and approve it in your browser.");
-      const result = await signIn.finalize({ navigate: async ({ decorateUrl }) => { location.assign(decorateUrl(complete)); } });
-      if (result.error) throw new Error("Could not activate your session. Please start sign-in again.");
+      await finishDesktopSignIn(pending, clerk, async ({ session, decorateUrl }) => {
+        // Pending sessions must finish Clerk's required tasks before the app's
+        // account-completion endpoint can treat them as signed in.
+        const destination = session.currentTask ? `/login?${flow}#/tasks` : complete;
+        location.assign(decorateUrl(destination));
+      });
     } catch (cause) { setError(authErrorMessage(cause, "Could not complete desktop sign-in.")); }
-    finally { setBusy(false); }
+    finally { inFlight.current = false; setBusy(false); }
   }
   if (!pending) return <div className="space-y-4">
     <button disabled={busy} onClick={start}
@@ -46,7 +52,7 @@ export function DesktopSignIn({ complete, flow }: { complete: string; flow: stri
   </div>;
   return <section className="space-y-3 rounded-xl border border-vs-border bg-vs-panel p-4 text-sm">
     <p className="leading-6 text-vs-muted">Sign in in your browser and confirm code <strong className="font-mono text-vs-fg">{pending.code}</strong>. Then return here.</p>
-    <button disabled={busy || !signIn} onClick={finish} className="w-full rounded-lg bg-vs-accent p-3 text-vs-accent-fg disabled:opacity-50">{busy ? "Completing sign-in…" : "Complete sign-in"}</button>
+    <button disabled={busy || !clerk.loaded} onClick={finish} className="w-full rounded-lg bg-vs-accent p-3 text-vs-accent-fg disabled:opacity-50">{busy ? "Completing sign-in…" : "Complete sign-in"}</button>
     <a href={pending.url} target="_blank" rel="noopener noreferrer" className="inline-block text-vs-muted underline">Reopen browser</a>
     <button disabled={busy} onClick={() => { setPending(null); setError(null); }} className="ml-4 text-vs-muted underline">Start again</button>
     {error && <p role="alert" className="text-red-300">{error}</p>}

@@ -70,7 +70,9 @@ try{
  assert.equal((await api('/api/auth/desktop/approve',null,{id:desktop.id})).status,401);
  assert.equal((await api('/api/auth/desktop/approve',alice,{id:desktop.id})).status,200);
  assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier:'x'.repeat(43)})).status,400);
- assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier})).status,200);
+ const redeemed=await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier});
+ assert.equal(redeemed.status,200);
+ assert.deepEqual(await redeemed.json(),{ticket:'one-use-fixture-ticket',userId:'user_'+f.alice},'the ticket is bound to the approving account for desktop session recovery');
  assert.equal((await api('/api/auth/desktop/redeem',null,{id:desktop.id,verifier})).status,400);
  // One account, several devices at once: each device has its own Clerk session.
  const laptop=await clerk.token('user_'+f.alice,{origin:base,sessionId:'sess_alice_laptop'}),phone=await clerk.token('user_'+f.alice,{origin:base,sessionId:'sess_alice_phone'});
