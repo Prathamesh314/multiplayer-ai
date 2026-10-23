@@ -11,7 +11,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const target = join(root, ".desktop-build", "app");
 const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const release = process.env.DESKTOP_RELEASE === "1";
-const origin = process.env.DESKTOP_WORKSPACE_URL ? workspaceUrl(process.env.DESKTOP_WORKSPACE_URL, !release) : "";
+// Installers open multicode.in unless built for another server. Only `--setup`
+// test builds (DESKTOP_WORKSPACE_URL="") ask for an address on first launch.
+const configured = process.env.DESKTOP_WORKSPACE_URL ?? "https://multicode.in";
+const origin = configured ? workspaceUrl(configured, !release) : "";
 let updateUrl = "";
 if (process.env.DESKTOP_UPDATE_URL) {
   const parsed = new URL(process.env.DESKTOP_UPDATE_URL);

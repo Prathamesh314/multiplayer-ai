@@ -186,6 +186,34 @@ test("the workspace can set and remove AI-tool keys on this computer, never read
   assert.deepEqual([...remove(sender, "GITHUB_TOKEN").names], []);
 });
 
+test("sign-in works in the app: Clerk's bot check may load in a frame, nothing else from elsewhere", () => {
+  const { frameAllowed } = require("../desktop/policy");
+  const origin = "https://multicode.in";
+  assert.deepEqual([origin + "/login", "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0/abc"].map(url => frameAllowed(url, origin)), [true, true]);
+  assert.deepEqual(["https://evil.test/", "http://challenges.cloudflare.com/x", "https://challenges.cloudflare.com.evil.test/", "https://a:b@challenges.cloudflare.com/", "javascript:alert(1)"].map(url => frameAllowed(url, origin)), [false, false, false, false, false]);
+  const instance = harness();
+  const window = mockWindow(origin);
+  instance.security(window);
+  const frame = (url) => { let blocked = false; window.webContents.emit("will-frame-navigate", { url, isMainFrame: false, preventDefault() { blocked = true; } }); return blocked; };
+  assert.equal(frame("https://challenges.cloudflare.com/turnstile/if/ov2"), false);
+  assert.equal(frame("https://evil.test/frame"), true);
+});
+
+test("installers open multicode.in; only --setup test builds ask for an address", () => {
+  const prepare = fs.readFileSync("desktop/prepare.mjs", "utf8");
+  assert.match(prepare, /process\.env\.DESKTOP_WORKSPACE_URL \?\? "https:\/\/multicode\.in"/);
+  assert.match(fs.readFileSync("desktop/package.mjs", "utf8"), /if \(setup\) \{\s*env\.DESKTOP_WORKSPACE_URL = "";/);
+  // With an address built in, Desktop settings has nothing to type.
+  assert.match(fs.readFileSync("desktop/setup.js", "utf8"), /connect-form"\)\.hidden = !!state\.builtIn/);
+});
+
+test("the runner can find Node and npm-installed AI tools on Windows", () => {
+  const env = runnerEnvironment({ PATH: "C:\\Windows", APPDATA: "C:\\Users\\a\\AppData\\Roaming", PATHEXT: ".COM;.EXE;.CMD", ProgramFiles: "C:\\Program Files" }, "C:\\cfg");
+  assert.equal(env.APPDATA, "C:\\Users\\a\\AppData\\Roaming");
+  assert.equal(env.PATHEXT, ".COM;.EXE;.CMD");
+  assert.equal(env.ProgramFiles, "C:\\Program Files");
+});
+
 test("desktop staging uses an allowlist and release packaging requires signing", () => {
   const prepare = fs.readFileSync("desktop/prepare.mjs", "utf8");
   const builder = fs.readFileSync("desktop/builder.cjs", "utf8");
