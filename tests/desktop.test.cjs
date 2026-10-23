@@ -201,7 +201,7 @@ test("sign-in works in the app: Clerk's bot check may load in a frame, nothing e
 
 test("installers open multicode.in; only --setup test builds ask for an address", () => {
   const prepare = fs.readFileSync("desktop/prepare.mjs", "utf8");
-  assert.match(prepare, /process\.env\.DESKTOP_WORKSPACE_URL \?\? "https:\/\/multicode\.in"/);
+  assert.match(prepare, /process\.argv\.includes\("--setup"\) \? "" : process\.env\.DESKTOP_WORKSPACE_URL \?\? "https:\/\/multicode\.in"/);
   assert.match(fs.readFileSync("desktop/package.mjs", "utf8"), /if \(setup\) \{\s*env\.DESKTOP_WORKSPACE_URL = "";/);
   // With an address built in, Desktop settings has nothing to type.
   assert.match(fs.readFileSync("desktop/setup.js", "utf8"), /connect-form"\)\.hidden = !!state\.builtIn/);
