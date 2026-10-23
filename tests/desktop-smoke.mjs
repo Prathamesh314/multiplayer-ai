@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { once } from "node:events";
+import { createHash } from "node:crypto";
+import { build as bundle } from "esbuild";
 
 const require = createRequire(import.meta.url);
 const packaged = process.argv.includes("--packaged") || Boolean(process.env.DESKTOP_SMOKE_EXECUTABLE);
@@ -21,9 +23,26 @@ let output = "";
 let automaticPairs = 0;
 const fixtureUser = "a06b6c4d-b8ed-43c1-a092-f7304c6c94e4";
 const fixtureDevice = "15dc2939-43e7-450b-9d4e-f7f19a7c02c1";
-const server = createServer((request, response) => {
+let signInBundle, desktopApproval, desktopApproved=false, desktopRedemptions=0;
+const server = createServer(async (request, response) => {
   const json = body => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
-  if (request.url === "/api/auth/me") {
+  if (request.url === "/desktop-sign-in.js") {
+    response.writeHead(200, {"content-type":"text/javascript"}).end(signInBundle);
+  } else if (request.url === "/login") {
+    response.writeHead(200, {"content-type":"text/html"}).end('<!doctype html><html><body><div id="root"></div><script src="/desktop-sign-in.js"></script></body></html>');
+  } else if (["/api/auth/desktop", "/api/auth/desktop/redeem"].includes(request.url)) {
+    let raw="";for await(const chunk of request)raw+=chunk;
+    const body=JSON.parse(raw);
+    if(request.url==="/api/auth/desktop") {
+      desktopApproval={id:"11111111-1111-1111-1111-111111111111",challenge:body.challenge};
+      json({id:desktopApproval.id,code:"11111111"});
+    } else if(!desktopApproved || desktopRedemptions || body.id!==desktopApproval.id ||
+      createHash("sha256").update(body.verifier).digest("base64url")!==desktopApproval.challenge) {
+      response.writeHead(400,{"content-type":"application/json"}).end(JSON.stringify({error:"Approve sign-in in your browser first, or start again."}));
+    } else {
+      desktopRedemptions++;json({ticket:"desktop-fixture-ticket",userId:"user_desktop_fixture"});
+    }
+  } else if (request.url === "/api/auth/me") {
     json({ user: request.headers.cookie?.includes("__session=fixture-alice") ? { id: fixtureUser } : null });
   } else if (request.url === "/api/runner/pairing") {
     assert.match(request.headers.cookie ?? "", /__session=fixture-alice/);
@@ -82,6 +101,14 @@ async function client(target) {
 }
 
 try {
+  if(!packaged) {
+    const result=await bundle({entryPoints:["tests/fixtures/desktop-sign-in.jsx"],bundle:true,write:false,platform:"browser",jsx:"automatic",
+      plugins:[{name:"clerk-fixture",setup(build){
+        build.onResolve({filter:/^@clerk\/nextjs$/},()=>({path:"clerk",namespace:"fixture"}));
+        build.onLoad({filter:/.*/,namespace:"fixture"},()=>({contents:"export const useClerk=()=>window.clerkFixture;",loader:"js"}));
+      }}]});
+    signInBundle=result.outputFiles[0].contents;
+  }
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const origin = "http://127.0.0.1:" + server.address().port;
   const args = packaged ? [] : [".desktop-build/app"];
@@ -121,6 +148,26 @@ try {
     assert.equal((await targets()).filter(target => target.type === "page").length, 2);
     console.log("ok workspace preload, privileged bridge separation, popup and navigation blocks");
     assert.equal(automaticPairs, 0, "No device is paired before sign-in");
+    await workspace.send("Page.navigate",{url:origin+"/login"});
+    const click=label=>workspace.evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent===${JSON.stringify(label)}).click()`);
+    await eventually(()=>workspace.evaluate("document.body.innerText.includes('Continue with Google')"),"desktop sign-in form");
+    await click("Continue with Google");
+    await eventually(()=>workspace.evaluate("!!window.approvalUrl"),"browser approval opened");
+    assert.equal(new URL(await workspace.evaluate("window.approvalUrl")).searchParams.get("desktop"),desktopApproval.id);
+    await click("Complete sign-in");
+    await eventually(()=>workspace.evaluate("document.querySelector('[role=alert]')?.textContent.includes('Approve sign-in')"),"approval is required");
+    desktopApproved=true;
+    await click("Complete sign-in");
+    await eventually(()=>workspace.evaluate("document.querySelector('[role=alert]')?.textContent.includes('could not be activated')"),"actionable activation error");
+    assert.equal(desktopRedemptions,1);
+    assert.deepEqual(await workspace.evaluate("window.signInCalls"),{tickets:1,activations:1});
+    // A same-tick double click cannot spend another approval or activate twice.
+    await workspace.evaluate("const complete=Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Complete sign-in');complete.click();complete.click();");
+    await eventually(()=>workspace.evaluate("location.pathname==='/auth/complete'"),"retry opens the workspace completion page");
+    assert.equal(desktopRedemptions,1,"activation retry must not replay the single-use approval");
+    assert.deepEqual(await workspace.evaluate("JSON.parse(sessionStorage.getItem('desktop-sign-in-calls'))"),{tickets:1,activations:2});
+    assert.equal(automaticPairs,0,"the fixture cannot authenticate or pair a real account");
+    console.log("ok desktop browser approval, ticket exchange, activation failure and successful retry without replay");
     await workspace.send("Network.setCookie", { name: "__session", value: "fixture-alice", url: origin, httpOnly: true });
     await eventually(async () => (await setup.evaluate("window.desktopSetup.status()")).runner === "online", "automatic desktop connection after sign-in");
     assert.equal(automaticPairs, 1);

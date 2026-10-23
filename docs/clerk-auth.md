@@ -37,6 +37,8 @@ The app opens straight to the same Clerk sign-in and sign-up form as the website
 
 For the browser flow, choose **Continue with Google**, sign in through Clerk, and explicitly approve the matching code. Return to the desktop app and choose **Complete sign-in**. A request expires after ten minutes. Redemption requires the desktop's random verifier, succeeds once, and checks that the approving Clerk session is still active. The app exchanges approval for a Clerk sign-in ticket valid for sixty seconds. No application login cookie is minted.
 
+If session activation is interrupted, choose **Complete sign-in** again. The app keeps the redeemed ticket and created session in memory for that request, refreshes Clerk's client, and resumes only a session belonging to the approved account. It does not redeem the approval again. An expired ticket requires **Start again**; closing or reloading the sign-in screen also starts a new request. Required Clerk session tasks still complete before entering the workspace.
+
 Runner device credentials remain separate machine credentials. Signing out of one browser does not disconnect a paired computer. Disconnect computers in the workspace. Deleting the Clerk account revokes its devices; disabled accounts cannot use device tokens.
 
 ## Operations and verification
