@@ -18,6 +18,7 @@ import { loadSession, notifyEditing } from "../../lib/session/client";
 import type { FileSavedEvent } from "../../lib/events/types";
 import type { ChatMessage } from "../../lib/session/types";
 import { startHeartbeat } from "../../lib/presence/client";
+import { rememberOrg } from "../../lib/org/last-org";
 import { takeFolder } from "../../lib/session/handoff";
 import {
   addRepoFiles,
@@ -529,6 +530,9 @@ export function Workspace({
     },
     [hasRepo, readOnly, activePath, session.id, chatRepoId],
   );
+
+  // "Back to projects" (and a later visit) reopens this room's organisation.
+  useEffect(() => { if (session.orgId) rememberOrg({ id: session.orgId }); }, [session.orgId]);
 
   // One heartbeat per open tab, for as long as this session is open. The tab
   // being open is what "online" means, so it starts and stops with the mount.

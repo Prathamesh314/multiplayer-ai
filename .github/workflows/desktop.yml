@@ -61,6 +61,9 @@ jobs:
       - run: npm audit --audit-level=high --omit=dev
       - run: npm run test:desktop
       - run: npm run test:runner-package
+      # Claude Code and Codex installed with npm are `.cmd` launchers on Windows,
+      # which Node will not start by name: a real npm install, started as the app does.
+      - run: npm run test:agent-command:real
       - name: Development smoke test
         if: runner.os != 'Linux'
         run: npm run test:desktop:smoke

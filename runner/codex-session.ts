@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { agentEnv } from "../app/lib/ai/env";
+import { commandLine } from "../app/lib/ai/command";
 import { WakeSignal } from "./signals";
 import type { RunInput, LocalRunResult } from "./execute";
 import { Deadline, type ToolRequest } from "./permissions";
@@ -53,8 +54,8 @@ export function codexApprovalResult(method: string, params: ApprovalParams, allo
 /** Codex's app-server keeps one thread alive and accepts native turn/steer input. */
 export async function runCodexSession(input: RunInput): Promise<LocalRunResult> {
   const started = Date.now(), wake = new WakeSignal();
-  const child = spawn(input.spec.bin, ["app-server"], {
-    cwd: input.cwd, detached: process.platform !== "win32",
+  const child = spawn(...commandLine(input.spec.bin, ["app-server"]), {
+    cwd: input.cwd, detached: process.platform !== "win32", windowsHide: true,
     env: { ...agentEnv(input.spec.id), CI: "1", NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"],
   });
   let outputBytes = 0;

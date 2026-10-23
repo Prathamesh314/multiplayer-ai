@@ -1,0 +1,128 @@
+// Starting an AI tool's CLI on Windows without a shell: npm installs CLIs as
+// `.cmd` launchers, which Node will not start, so the launcher's own target is
+// started instead. Without this a Windows computer reports no AI tools at all.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { resolveCommand } from "../app/lib/ai/command.ts";
+import { pickOrg } from "../app/lib/org/last-org.ts";
+
+const npm = "C:\\Users\\ana\\AppData\\Roaming\\npm";
+const nodeDir = "C:\\Program Files\\nodejs";
+// What npm 10's cmd-shim writes for `npm i -g @openai/codex`.
+const codexShim = `@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\\node.exe" (
+  SET "_prog=%dp0%\\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*
+`;
+
+function windows(files, env = {}) {
+  const lower = new Map(Object.entries(files).map(([file, text]) => [file.toLowerCase(), text]));
+  return {
+    platform: "win32",
+    env: { PATH: `C:\\Windows\\system32;${nodeDir};${npm}`, PATHEXT: ".COM;.EXE;.BAT;.CMD;.VBS;.JS", ...env },
+    exists: (file) => lower.has(file.toLowerCase()),
+    read: (file) => {
+      const text = lower.get(file.toLowerCase());
+      if (text === undefined) throw new Error("ENOENT");
+      return text;
+    },
+  };
+}
+
+test("macOS and Linux start the CLI by name", () => {
+  assert.deepEqual(resolveCommand("codex", { platform: "darwin" }), { file: "codex", args: [] });
+  assert.deepEqual(resolveCommand("claude", { platform: "linux" }), { file: "claude", args: [] });
+});
+
+test("an npm-installed CLI runs its JavaScript entry under Node, with no shell", () => {
+  const options = windows({
+    [`${npm}\\codex.cmd`]: codexShim,
+    [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`]: "",
+    [`${nodeDir}\\node.exe`]: "",
+  });
+  assert.deepEqual(resolveCommand("codex", options), {
+    file: `${nodeDir}\\node.exe`,
+    args: [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`],
+  });
+});
+
+test("a node.exe beside the launcher is preferred, as the launcher does", () => {
+  const options = windows({
+    [`${npm}\\codex.cmd`]: codexShim,
+    [`${npm}\\node.exe`]: "",
+    [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`]: "",
+    [`${nodeDir}\\node.exe`]: "",
+  });
+  assert.equal(resolveCommand("codex", options).file, `${npm}\\node.exe`);
+});
+
+test("a native .exe on PATH runs directly", () => {
+  const exe = "C:\\Users\\ana\\.local\\bin\\claude.exe";
+  const options = windows({ [exe]: "" }, { PATH: "C:\\Users\\ana\\.local\\bin" });
+  assert.deepEqual(resolveCommand("claude", options), { file: exe, args: [] });
+});
+
+test("a launcher that points at an .exe runs that .exe", () => {
+  const target = `${npm}\\node_modules\\tool\\bin\\tool.exe`;
+  const options = windows({ [`${npm}\\tool.cmd`]: '@"%~dp0\\node_modules\\tool\\bin\\tool.exe"   %*\r\n', [target]: "" });
+  assert.deepEqual(resolveCommand("tool", options), { file: target, args: [] });
+});
+
+test("a CLI installed after the app started is found in npm's folder", () => {
+  // PATH as it was when the app started: no npm folder yet.
+  const options = windows({
+    [`${npm}\\codex.cmd`]: codexShim,
+    [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`]: "",
+    [`${nodeDir}\\node.exe`]: "",
+  }, { PATH: "C:\\Windows\\system32", APPDATA: "C:\\Users\\ana\\AppData\\Roaming", ProgramFiles: "C:\\Program Files" });
+  assert.equal(resolveCommand("codex", options).file, `${nodeDir}\\node.exe`);
+});
+
+test("nothing runnable means no command, never a shell", () => {
+  assert.equal(resolveCommand("codex", windows({})), null);
+  // An unknown launcher format is not guessed at.
+  assert.equal(resolveCommand("codex", windows({ [`${npm}\\codex.cmd`]: "@echo off\r\ncodex-real %*\r\n" })), null);
+  // A launcher whose target is missing.
+  assert.equal(resolveCommand("codex", windows({ [`${npm}\\codex.cmd`]: codexShim, [`${nodeDir}\\node.exe`]: "" })), null);
+  // No Node to run it with.
+  assert.equal(resolveCommand("codex", windows({
+    [`${npm}\\codex.cmd`]: codexShim,
+    [`${npm}\\node_modules\\@openai\\codex\\bin\\codex.js`]: "",
+  })), null);
+});
+
+test("a refresh reopens the organisation you were in", () => {
+  const orgs = [{ id: "o1", slug: "first" }, { id: "o2", slug: "second" }, { id: "o3", slug: "third" }];
+  const store = new Map();
+  globalThis.window = { localStorage: { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) } };
+  try {
+    assert.equal(pickOrg(orgs, null, null), "first");
+    store.set("multicode:last-org", JSON.stringify({ id: "o2", slug: "second" }));
+    assert.equal(pickOrg(orgs, null, null), "second");
+    // Renamed since: the id still finds it.
+    store.set("multicode:last-org", JSON.stringify({ id: "o3", slug: "old-name" }));
+    assert.equal(pickOrg(orgs, null, null), "third");
+    // The address wins, then the org already open.
+    assert.equal(pickOrg(orgs, "first", "second"), "first");
+    assert.equal(pickOrg(orgs, "missing", "second"), "second");
+    // Left an org: fall back to the first.
+    store.set("multicode:last-org", JSON.stringify({ id: "gone", slug: "gone" }));
+    assert.equal(pickOrg(orgs, null, null), "first");
+    assert.equal(pickOrg([], null, null), null);
+  } finally {
+    delete globalThis.window;
+  }
+});
