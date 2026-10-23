@@ -109,6 +109,9 @@ test("the app is the workspace: homepage goes to the workspace, docs and other s
   assert.deepEqual([origin, origin + "/", origin + "/#download"].map(url => linkTarget(url, origin)), ["home", "home", "home"]);
   assert.deepEqual([origin + "/workspace", origin + "/s/room", origin + "/docsx"].map(url => linkTarget(url, origin)), ["app", "app", "app"]);
   assert.deepEqual([origin + "/docs", origin + "/docs/download-install"].map(url => linkTarget(url, origin)), ["browser", "browser"]);
+  // Continue with Google: Google sign-in only works in the browser.
+  assert.equal(linkTarget(origin + "/login?next=%2Fworkspace&desktop=01a16797-8cd1", origin), "browser");
+  assert.equal(linkTarget(origin + "/login?next=%2Fworkspace", origin), "app");
   assert.equal(linkTarget("https://github.com", origin), "external");
   assert.equal(linkTarget("file:///etc/passwd", origin), "blocked");
   assert.deepEqual([origin + "/api/file", "blob:" + origin + "/1"].map(url => downloadAllowed(url, origin)), [true, true]);

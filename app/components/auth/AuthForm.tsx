@@ -33,7 +33,8 @@ export function AuthUnavailable() {
 const subscribe = () => () => {};
 // Google refuses sign-in inside an app's own window, so in the desktop app the
 // Google button is ours (it signs in through the browser) and Clerk's is hidden.
-const desktopAppearance = { elements: { socialButtonsRoot: "hidden", dividerRow: "hidden" } };
+// (Style objects, not classes: Clerk's own display rules outrank a utility class.)
+const desktopAppearance = { elements: { socialButtonsRoot: { display: "none" }, dividerRow: { display: "none" } } };
 export function AuthForm({ signupMode }: { signupMode: "open" | "invite" | "closed" }) {
   const isDesktop = useSyncExternalStore(subscribe, () => !!desktopBridge()?.isDesktop, () => false);
   const params = useSearchParams(), router = useRouter();

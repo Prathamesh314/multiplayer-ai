@@ -40,15 +40,17 @@ function externalUrl(value) {
  * - "home": the marketing homepage (with any #section), never shown in the app:
  *   in the window it means "go to the workspace", from a new-tab link (such as
  *   "Download the latest app") it opens in the browser;
- * - "browser": this site's documentation, read in the browser;
+ * - "browser": this site's documentation, read in the browser, and the
+ *   browser half of desktop sign-in (/login?desktop=…), which only works there;
  * - "external": other http(s)/mailto links, opened in the browser after asking;
  * - "blocked": anything else.
  */
 function linkTarget(value, origin) {
   if (sameOrigin(value, origin)) {
-    const { pathname } = new URL(value);
+    const { pathname, searchParams } = new URL(value);
     if (pathname === "/" || pathname === "") return "home";
     if (pathname === "/docs" || pathname.startsWith("/docs/")) return "browser";
+    if (pathname === "/login" && searchParams.has("desktop")) return "browser";
     return "app";
   }
   return externalUrl(value) ? "external" : "blocked";
