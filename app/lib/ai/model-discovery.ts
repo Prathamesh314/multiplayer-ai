@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { agentEnv } from "./env";
+import { commandLine } from "./command";
 import { AGENTS, type AgentChoice, type AgentSpec, type ModelInventory } from "./catalog";
 
 const MAX_MODELS = 1000;
@@ -50,7 +51,7 @@ export function parseOpenCodeModels(output: string): AgentChoice[] {
 
 function command(bin: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { cwd: homedir(), env: { ...agentEnv(), NO_COLOR: "1" }, timeout: 15_000, maxBuffer: MAX_BYTES, windowsHide: true }, (error, stdout) => {
+    execFile(...commandLine(bin, args), { cwd: homedir(), env: { ...agentEnv(), NO_COLOR: "1" }, timeout: 15_000, maxBuffer: MAX_BYTES, windowsHide: true }, (error, stdout) => {
       if (error) reject(new Error("Model discovery command failed. Check the CLI installation and connection on this machine."));
       else resolve(stdout);
     });
@@ -59,7 +60,7 @@ function command(bin: string, args: string[]): Promise<string> {
 
 export function codexModels(): Promise<AgentChoice[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn("codex", ["app-server"], { cwd: homedir(), env: agentEnv(), stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn(...commandLine("codex", ["app-server"]), { cwd: homedir(), env: agentEnv(), stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     let done = false;
     let buffer = "";
     let bytes = 0;

@@ -25,6 +25,7 @@ import {
 import { listProjects, listRooms } from "../../lib/project/client";
 import { canManageProject, type Project } from "../../lib/project/types";
 import { NotSignedIn } from "../../lib/session/client";
+import { pickOrg, rememberOrg } from "../../lib/org/last-org";
 import type { Session } from "../../lib/session/types";
 import {
   ChevronIcon,
@@ -99,7 +100,7 @@ export function OrgWorkspace() {
     const list = await listMyOrgs();
     setOrgs(list);
     const requestedOrg = new URLSearchParams(window.location.search).get('org');
-    setActiveSlug((current) => list.find(org=>org.slug===requestedOrg)?.slug ?? current ?? list[0]?.slug ?? null);
+    setActiveSlug((current) => pickOrg(list, requestedOrg, current));
     return list;
   }, []);
 
@@ -126,6 +127,17 @@ export function OrgWorkspace() {
   }, [reloadOrgs, router, loadVersion]);
 
   const activeOrg = orgs?.find((o) => o.slug === activeSlug) ?? null;
+
+  // Keep the open org across a refresh: in the address (per tab, and shareable)
+  // and in this browser (for a plain /workspace, or coming back from a room).
+  useEffect(() => {
+    if (!activeOrg) return;
+    rememberOrg({ id: activeOrg.id, slug: activeOrg.slug });
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("org") === activeOrg.slug) return;
+    url.searchParams.set("org", activeOrg.slug);
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, [activeOrg]);
 
   async function onAcceptInvite(id: string) {
     const slug = await acceptInvitation(id);

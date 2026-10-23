@@ -6,6 +6,10 @@ async function refresh() {
   const state = await api.status();
   const input = document.getElementById("workspace");
   if (!input.value && state.url) input.value = state.url;
+  // Installers come with their website built in: nothing to type.
+  document.getElementById("connect-form").hidden = !!state.builtIn;
+  document.getElementById("built-in").hidden = !state.builtIn;
+  document.getElementById("built-in-url").textContent = state.url ? new URL(state.url).host : "";
   document.getElementById("runner").textContent = `Runner: ${state.runner}`;
   document.getElementById("toggle").textContent = state.enabled ? "Pause after current task" : "Resume runner";
   document.getElementById("toggle").disabled = busy || !state.paired || state.runner === "stopping";

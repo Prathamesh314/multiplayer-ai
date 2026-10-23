@@ -1,5 +1,6 @@
 import { modelInventory } from "./model-discovery";
 import { execFile } from "node:child_process";
+import { commandLine } from "./command";
 import { AGENTS, type AgentAuth, type AgentSpec, type AgentStatus } from "./catalog";
 
 /**
@@ -19,8 +20,7 @@ let cache: { at: number; statuses: AgentStatus[] } | null = null;
 function probe(agent: AgentSpec): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
-      agent.bin,
-      agent.versionArgs,
+      ...commandLine(agent.bin, agent.versionArgs),
       { timeout: PROBE_TIMEOUT_MS, windowsHide: true },
       (error, stdout) => {
         if (error) {
@@ -47,8 +47,7 @@ export function authStatus(agent: AgentSpec): Promise<AgentAuth | null> {
   if (!auth) return Promise.resolve(null);
   return new Promise((resolve) => {
     execFile(
-      agent.bin,
-      auth.statusArgs,
+      ...commandLine(agent.bin, auth.statusArgs),
       { timeout: PROBE_TIMEOUT_MS, windowsHide: true },
       (_error, stdout) => {
         try {

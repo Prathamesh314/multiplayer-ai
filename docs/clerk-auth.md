@@ -33,7 +33,9 @@ An email already linked to a different Clerk identity cannot be reassigned autom
 
 ## Desktop sign-in
 
-Choose **Sign in with your browser**, sign in through Clerk, and explicitly approve the matching code. Return to the desktop app and choose **Complete sign-in**. A request expires after ten minutes. Redemption requires the desktop's random verifier, succeeds once, and checks that the approving Clerk session is still active. The app exchanges approval for a Clerk sign-in ticket valid for sixty seconds. No application login cookie is minted.
+The app opens straight to the same Clerk sign-in and sign-up form as the website; email sign-in and sign-up happen in the app. Google does not allow sign-in inside an app's own window, so in the app Clerk's social buttons are hidden and **Continue with Google** signs in through the browser instead. The only frames from another site the app allows are Cloudflare Turnstile, Clerk's bot check (`desktop/policy.js`, `frameAllowed`).
+
+For the browser flow, choose **Continue with Google**, sign in through Clerk, and explicitly approve the matching code. Return to the desktop app and choose **Complete sign-in**. A request expires after ten minutes. Redemption requires the desktop's random verifier, succeeds once, and checks that the approving Clerk session is still active. The app exchanges approval for a Clerk sign-in ticket valid for sixty seconds. No application login cookie is minted.
 
 Runner device credentials remain separate machine credentials. Signing out of one browser does not disconnect a paired computer. Disconnect computers in the workspace. Deleting the Clerk account revokes its devices; disabled accounts cannot use device tokens.
 

@@ -54,6 +54,20 @@ function linkTarget(value, origin) {
   return externalUrl(value) ? "external" : "blocked";
 }
 
+/**
+ * Frames inside a workspace page: its own, plus Cloudflare Turnstile, the bot
+ * check Clerk shows when creating an account. Nothing else loads in a frame.
+ */
+function frameAllowed(value, origin) {
+  if (sameOrigin(value, origin)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "challenges.cloudflare.com" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 /** Downloads the workspace starts itself (exports, files); never other origins. */
 function downloadAllowed(value, origin) {
   if (sameOrigin(value, origin)) return true;
@@ -86,7 +100,7 @@ async function waitForServer(value, { timeoutMs = 60000, intervalMs = 500, signa
 
 function runnerEnvironment(env, configPath) {
   const result = {};
-  for (const key of ["HOME", "USERPROFILE", "PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR", "SHELL", "LANG", "LC_ALL", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
+  for (const key of ["HOME", "USERPROFILE", "PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR", "SHELL", "LANG", "LC_ALL", "APPDATA", "LOCALAPPDATA", "PATHEXT", "ProgramFiles", "XDG_CONFIG_HOME", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
     if (env[key]) result[key] = env[key];
   }
   if (process.platform !== "win32") {
@@ -96,4 +110,4 @@ function runnerEnvironment(env, configPath) {
   return result;
 }
 
-module.exports = { workspaceUrl, sameOrigin, externalUrl, linkTarget, downloadAllowed, waitForServer, runnerEnvironment };
+module.exports = { workspaceUrl, sameOrigin, externalUrl, linkTarget, frameAllowed, downloadAllowed, waitForServer, runnerEnvironment };

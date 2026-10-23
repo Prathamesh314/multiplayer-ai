@@ -31,6 +31,9 @@ export function AuthUnavailable() {
 }
 
 const subscribe = () => () => {};
+// Google refuses sign-in inside an app's own window, so in the desktop app the
+// Google button is ours (it signs in through the browser) and Clerk's is hidden.
+const desktopAppearance = { elements: { socialButtonsRoot: "hidden", dividerRow: "hidden" } };
 export function AuthForm({ signupMode }: { signupMode: "open" | "invite" | "closed" }) {
   const isDesktop = useSyncExternalStore(subscribe, () => !!desktopBridge()?.isDesktop, () => false);
   const params = useSearchParams(), router = useRouter();
@@ -52,8 +55,8 @@ export function AuthForm({ signupMode }: { signupMode: "open" | "invite" | "clos
     {signupMode !== "open" && <p className="text-sm text-vs-muted">{signupMode === "closed" ? "New workspace accounts are currently closed." : "New workspace accounts need an invitation. You can enter it after verifying your email."}</p>}
     {desktopId && <p className="rounded-xl border border-vs-border p-4 text-sm text-vs-muted">Only continue if you started sign-in from the desktop app. You’ll confirm its code after signing in.</p>}
     <DesktopSignIn complete={complete} flow={flow.toString()} />
-    {!isDesktop && (!isLoaded || isSignedIn ? <p role="status" className="text-sm text-vs-muted">Opening sign in…</p> : signup
-      ? <SignUp routing="hash" signInUrl={`/login?${flow}`} forceRedirectUrl={complete} signInForceRedirectUrl={complete} />
-      : <SignIn routing="hash" signUpUrl={`/login?${flow}&mode=signup`} forceRedirectUrl={complete} signUpForceRedirectUrl={complete} />)}
+    {!isLoaded || isSignedIn ? <p role="status" className="text-sm text-vs-muted">Opening sign in…</p> : signup
+      ? <SignUp routing="hash" signInUrl={`/login?${flow}`} forceRedirectUrl={complete} signInForceRedirectUrl={complete} appearance={isDesktop ? desktopAppearance : undefined} />
+      : <SignIn routing="hash" signUpUrl={`/login?${flow}&mode=signup`} forceRedirectUrl={complete} signUpForceRedirectUrl={complete} appearance={isDesktop ? desktopAppearance : undefined} />}
   </AuthShell>;
 }

@@ -5,7 +5,7 @@ const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 const { spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
-const { workspaceUrl, sameOrigin, externalUrl, linkTarget, downloadAllowed, waitForServer, runnerEnvironment } = require("./policy");
+const { workspaceUrl, sameOrigin, externalUrl, linkTarget, frameAllowed, downloadAllowed, waitForServer, runnerEnvironment } = require("./policy");
 const { createAutoConnection } = require("./connection");
 
 app.setName("Multicode AI");
@@ -153,7 +153,7 @@ function security(window, local = false) {
     contents.setWindowOpenHandler(({ url }) => { route(url, { newWindow: true }); return { action: "deny" }; });
     contents.on("will-navigate", (event, url) => { if (route(typeof url === "string" ? url : event.url) !== true) event.preventDefault(); });
     contents.on("will-redirect", (event, url) => { if (linkTarget(typeof url === "string" ? url : event.url, settings.url) !== "app") event.preventDefault(); });
-    contents.on("will-frame-navigate", (event) => { if (!event.isMainFrame && linkTarget(event.url, settings.url) !== "app") event.preventDefault(); });
+    contents.on("will-frame-navigate", (event) => { if (!event.isMainFrame && !frameAllowed(event.url, settings.url)) event.preventDefault(); });
     // Client-side navigation (a link to "/" inside the app) changes the URL without loading.
     contents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
       if (isMainFrame && linkTarget(url, settings.url) === "home") void window.loadURL(new URL("/workspace", settings.url).href);
@@ -414,7 +414,7 @@ function changeRunnerSecret(name, value) {
 }
 
 function registerIpc() {
-  setupHandler("desktop:status", () => ({ url: settings.url, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion(), workspacesDir: workspacesDir(), workspacesLocked: !!runnerProcess || pairing }));
+  setupHandler("desktop:status", () => ({ url: settings.url, builtIn: !!release.workspaceUrl && app.isPackaged, enabled: settings.runnerEnabled, paired: paired(), runner: runnerState, message, version: app.getVersion(), workspacesDir: workspacesDir(), workspacesLocked: !!runnerProcess || pairing }));
   setupHandler("desktop:open-workspaces", openWorkspacesFolder);
   setupHandler("desktop:choose-workspaces", async () => {
     if (runnerProcess || pairing || autoConnection.busy()) throw new Error("Pause the runner and wait for it to stop connecting before changing the worktrees folder.");

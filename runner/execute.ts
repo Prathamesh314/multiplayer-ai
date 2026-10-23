@@ -13,6 +13,7 @@
 import { Deadline, type PermissionAsker } from "./permissions";
 import { allowResponse, denyResponse, describeToolUse, errorResponse, isControlRequest, type CanUseTool, type ControlRequest } from "./claude-control";
 import { assertAvailableModel } from "../app/lib/ai/model-discovery";
+import { commandLine } from "../app/lib/ai/command";
 import type { InputSource } from "./input-types";
 import { runCodexSession } from "./codex-session";
 import { spawn } from "node:child_process";
@@ -121,9 +122,11 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
 
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(input.spec.bin, args, {
+      // On Windows the npm launcher's own entry point, without a shell (lib/ai/command.ts).
+      child = spawn(...commandLine(input.spec.bin, args), {
         cwd: input.cwd,
         detached: process.platform !== "win32",
+        windowsHide: true,
         env: { ...agentEnv(input.spec.id), CI: "1", NO_COLOR: "1" },
         stdio: [interactive ? "pipe" : "ignore", "pipe", "pipe"],
       });

@@ -697,9 +697,9 @@ You can share up to **10 public channels per connection selection**. A project m
     slug: "desktop-settings", category: "Manage & troubleshoot", title: "Desktop settings & local files",
     description: "Pause execution, find your worktrees, change their location, and update the desktop client.",
     sections: [
-      { id: "settings", title: "Open desktop settings", body: `Open **Multicode AI → Desktop settings**, or press **Cmd/Ctrl + ,**. This screen controls the workspace address, runner connection, local worktree location, and update checks.
+      { id: "settings", title: "Open desktop settings", body: `Open **Multicode AI → Desktop settings**, or press **Cmd/Ctrl + ,**. This screen controls the runner connection, local worktree location, and update checks.
 
-Use **Reopen workspace** to retry the configured server. Changing the workspace address changes which server the desktop client connects to; use the HTTPS origin your team trusts.`, screenshot: "desktop-setup" },
+Use **Reopen workspace** to retry the server. Installers open multicode.in, so there is no address to enter; only a test build or an older installer shows **Workspace address**. Changing the workspace address changes which server the desktop client connects to; use the HTTPS origin your team trusts.`, screenshot: "desktop-setup" },
       { id: "pause", title: "Pause, resume, and quit", body: `**Pause after current task** stops new execution and waits for already accepted work to drain. A manual pause persists across relaunches. Use **Resume runner** when ready to accept tasks again.
 
 Signing out stops new work for that account. Quitting normally waits for an active task and its completion report. Force-quitting, shutting down, or letting the computer sleep can interrupt work. Use [Handoff](/docs/handoff) when another person should continue, and inspect uploaded history after an interruption.` },
