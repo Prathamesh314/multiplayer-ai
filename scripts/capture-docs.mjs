@@ -14,11 +14,9 @@ function sampleWorkspace(){
   state.repos=[{id:'frontendabcd',sessionId:state.room.id,rootName:'frontend',projectRepositoryId:'11111111-1111-4111-8111-111111111111',headSha:'a'.repeat(40),baseSha:'a'.repeat(40),seededAt:1,createdAt:1,createdBy:'alice'}];
   state.runs=[{id:runId,sessionId:state.room.id,repoId:'frontendabcd',startedBy:'alice',startedByName:'Alice',driverUserId:'alice',driverName:'Alice',controlVersion:0,agentId:'codex',title:'Plan the checkout flow',status:'completed',baseSha:'a'.repeat(40),createdAt:Date.now(),startedAt:Date.now()-60000,endedAt:Date.now(),archivedAt:null}];
   state.canGrant=true;
-  // The terminal panel is shown working, as it is in an enabled local install.
-  // Output is scripted here rather than spawned, so captures stay deterministic
-  // and never leak the capturing machine's user, host, or paths.
-  // The hosted-availability guide flips `enabled` off for its own capture.
-  window.__terminal={enabled:true};
+  // The terminal panel is shown working on the member's computer. Output is
+  // scripted here rather than spawned, so captures stay deterministic and never
+  // leak the capturing machine's user, host, or paths.
   const prompt='\x1b[38;5;180m~/northstar-checkout\x1b[0m \x1b[2m$\x1b[0m ';
   const session=[
     prompt+'git status --short\r\n',
@@ -30,6 +28,9 @@ function sampleWorkspace(){
     '      \x1b[2mTests\x1b[0m  \x1b[32m3 passed\x1b[0m (3)\r\n\r\n',
     prompt,
   ];
+  // Captures are served from 127.0.0.1, where the terminal adds a local-only
+  // "Open :port" link that people on multicode.in never see.
+  document.addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent='a[href^="http://localhost:"]{display:none!important}';document.head.append(style);});
   const frame=text=>btoa(String.fromCharCode(...new TextEncoder().encode(text)));
   const RealEventSource=window.EventSource;
   window.EventSource=function(url,config){
@@ -44,21 +45,20 @@ function sampleWorkspace(){
     const json=body=>new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
     if(path.endsWith('/access'))return json({invitationId:'sample-invite',email:'teammate@example.test',userId:'guest',canGrant:true,canRequest:true,requestPending:false,reason:null,scope:['Join organisation “Alice’s workspace” as a member.','Edit this project and workspace.','Handoff remains a separate action.'],scopeKey:'sample-scope',alreadyEditor:false,sessionId:state.room.id});
     if(path.endsWith('/tree'))return json({rootName:'frontend',root:{name:'frontend',path:'',type:'directory',children:[{name:'checkout.ts',path:'checkout.ts',type:'file',size:354},{name:'README.md',path:'README.md',type:'file',size:180}]},headSha:'a'.repeat(40),sessionBranch:'session/frontendabcd'});
-    if(path.endsWith('/changes'))return json({changes:[{path:'checkout.ts',status:'M'}]});
+    if(path.endsWith('/changes')&&url.searchParams.get('path'))return json({diff:['diff --git a/checkout.ts b/checkout.ts','--- a/checkout.ts','+++ b/checkout.ts','@@ -1,7 +1,11 @@',' export function validateQuantity(quantity: number) {','-  if (quantity < 1) {','-    return { valid: false, message: "Invalid quantity" };','+  if (!Number.isInteger(quantity) || quantity < 1) {','+    return { valid: false, message: "Choose at least one item." };','+  }','+  if (quantity > 99) {','+    return { valid: false, message: "You can order up to 99 at a time." };','   }',' ','   return { valid: true, message: "" };',' }',''].join('\n')});
+    if(path.endsWith('/changes'))return json({head:'b'.repeat(40),totals:{files:3,added:33,removed:3},changes:[{path:'checkout.ts',status:'M',added:6,removed:2},{path:'checkout.test.ts',status:'A',added:24,removed:0},{path:'README.md',status:'M',added:3,removed:1}]});
     if(path.endsWith('/file')){const text='export function validateQuantity(quantity: number) {\n  if (!Number.isInteger(quantity) || quantity < 1) {\n    return { valid: false, message: "Choose at least one item." };\n  }\n\n  return { valid: true, message: "" };\n}\n';return json({text,size:text.length,truncated:false,binary:false});}
     if(path.endsWith('/runs/'+runId))return json({run:state.runs[0],messages:[
       {role:'user',body:'Help me plan a clearer checkout flow. Keep quantity errors close to the input and explain what to verify before we ship.'},
       {role:'tool',body:'Read checkout.ts'},
-      {role:'tool',body:'Search "validateQuantity"'},
+      {role:'tool',body:'Grep validateQuantity'},
       {role:'tool',body:'Edit checkout.ts'},
       {role:'assistant',body:'## A clearer checkout flow\n\nKeep the item summary and quantity controls together. Show a specific error beside the field that needs attention.\n\n### Next steps\n\n1. Validate quantity with `validateQuantity` before continuing.\n2. Keep keyboard focus on the field when it needs correction.\n3. Ask a teammate to check the empty-cart and error states.\n\nReview the saved code and run your checks before publishing.'},
     ]});
     if(path.endsWith('/handoff'))return json({run:state.runs[0],offers:[],recipients:[{id:'bob',name:'Bob'}]});
     if(path.endsWith('/reviews'))return json({reviews:[],hasMore:false,headSha:'a'.repeat(40),reviewers:[{id:'bob',name:'Bob'}],canRequest:true});
     if(path==='/api/tasks')return json({tasks:[],members:[{userId:'bob',handle:'bob',displayName:'Bob',role:'editor'}],hasMore:false});
-    if(path==='/api/terminal')return window.__terminal.enabled
-      ? json({enabled:true,cwd:'/Users/alice/northstar-checkout',shell:'/bin/zsh',platform:'darwin'})
-      : json({enabled:false,reason:'The terminal is disabled in production builds. Set MULTIPLAYER_AI_TERMINAL=1 to enable it — every signed-in member then gets a shell on this server.',cwd:'',shell:'',platform:''});
+    if(path==='/api/terminal')return json({enabled:true,location:'computer',device:'Alice’s Mac',cwd:'~/multicode-ai/workspaces/northstar-checkout',shell:'/bin/zsh',platform:'darwin'});
     if(path==='/api/terminal/pty')return json({ok:true});
     if(path.endsWith('/memories'))return json({memories:[{id:'memory-1',kind:'fact',text:'Show quantity errors next to the checkout input.',status:'approved',revision:1,stated_at:new Date().toISOString(),source_run_id:runId,publish_gated:false}],nextCursor:null});
     if(path.endsWith('/memories/memory-1'))return json({nodes:[{id:'memory-1',kind:'fact',text:'Show quantity errors next to the checkout input.',status:'approved',revision:1,stated_at:new Date().toISOString(),source_run_id:runId,publish_gated:false}],edges:[],events:[],jobs:[],sources:[{memory_id:'memory-1',body:'Keep the quantity validation close to the input so the problem is easy to fix.',author:'Alice'}]});
@@ -85,26 +85,17 @@ async function closeDialog(){
     await delay(150);if(!await evaluate('!!document.querySelector("dialog[open]")'))break;
   }
 }
-/** Wait for the terminal panel to settle. Changing its status remounts the
- *  panel, because it reads availability once when it opens. */
-async function terminalSession(enabled){
-  const toggle='button[aria-label="Toggle terminal (Ctrl+Shift+Z)"]';
-  if(enabled===undefined){
-    if(!await evaluate('document.body.innerText.includes("Server terminal")'))await click(toggle);
-  }else{
-    await evaluate(`window.__terminal.enabled=${enabled}`);
-    if(await evaluate('document.body.innerText.includes("Server terminal")'))await click(toggle);
-    await click(toggle);
-  }
-  const expected=enabled===false?'The terminal is disabled':'3 passed';
-  await eventually(()=>evaluate(`document.body.innerText.includes(${JSON.stringify(expected)})`),'terminal: '+expected);
+/** Open the terminal panel (it starts open) and wait for its scripted session. */
+async function terminalSession(){
+  if(!await evaluate(`!!document.querySelector('button[aria-label="Close terminal"]')`))await click('button[aria-label="Toggle terminal (Ctrl+Shift+Z)"]');
+  await eventually(()=>evaluate('document.body.innerText.includes("3 passed")'),'terminal session');
   await delay(250);
 }
 try{
   // Authentication is rendered by Clerk. Capture it separately using a Clerk
   // development application; never mock email delivery or real credentials here.
-  await install(`window.desktopSetup={status:async()=>({url:'https://multicode.in',runner:'connected',enabled:true,paired:true,workspacesDir:'~/multicode-ai/workspaces',workspacesLocked:true,version:'preview',message:''})};`);
-  await navigate(pathToFileURL(resolve('.desktop-build/app/setup.html')).href,'document.querySelector("#workspace")?.value==="https://multicode.in"');await capture('desktop-setup');
+  await install(`window.desktopSetup={status:async()=>({url:'https://multicode.in',builtIn:true,runner:'connected',enabled:true,paired:true,workspacesDir:'~/multicode-ai/workspaces',workspacesLocked:true,version:'preview',message:''})};`);
+  await navigate(pathToFileURL(resolve('.desktop-build/app/setup.html')).href,'document.querySelector("#built-in-url")?.textContent==="multicode.in"');await capture('desktop-setup');
   await evaluate('document.querySelector("#worktrees-heading").scrollIntoView({block:"center"})');await capture('desktop-worktrees');
   await install(`(${teamFixtures.toString()})()`);
   await navigate('/workspace','document.body?.innerText.includes("Northstar Checkout")');await capture('workspace');
@@ -116,13 +107,16 @@ try{
   await navigate('/s/modelroomabc?run=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','document.body?.innerText.includes("A clearer checkout flow")');
   await terminalSession();
   // Show the agent's tool steps rather than the collapsed summary.
-  await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Thought & steps'))?.click()`);
-  await eventually(()=>evaluate('document.body.innerText.includes("Edit checkout.ts")'),'tool steps');
+  await evaluate(`[...document.querySelectorAll('button')].find(b=>/Thought & steps|Worked through \\d+ steps/.test(b.textContent))?.click()`);
+  await eventually(()=>evaluate(`[...document.querySelectorAll('ol li')].some(li=>li.textContent.includes('checkout.ts'))`),'tool steps');
   await evaluate(`document.querySelector('.conversation-transcript')?.parentElement?.scrollTo(0,0)`);await delay(200);
   await capture('conversation');
   await click('button[aria-label="Choose model"]');await eventually(()=>evaluate('!!document.querySelector("[role=listbox]")'),'model menu');await capture('model-picker');await closeDialog();
   await click('button[aria-label="File: checkout.ts"]');await eventually(()=>evaluate('!!document.querySelector(".room-file-document textarea")'),'file viewer');await capture('files');
-  await button('Changes');await eventually(()=>evaluate('document.body.innerText.includes("files changed")'),'saved changes');await capture('changes');await button('All files');await click('button[aria-label="Close checkout.ts"]');
+  // The Changes tab shows its file count ("Changes3"), so it is found by its start.
+  await evaluate(`[...document.querySelectorAll('[aria-label="Explorer view"] [role=tab]')].find(b=>b.textContent.startsWith('Changes')).click()`);
+  await eventually(()=>evaluate('document.body.innerText.includes("3 files changed")'),'saved changes');
+  await click('ul[aria-label="Changed files"] button[aria-label$=": checkout.ts"]');await eventually(()=>evaluate('document.body.innerText.includes("You can order up to 99")'),'file diff');await capture('changes');await button('All files');await click('button[aria-label="Close checkout.ts"]');
   await click('button[aria-label="Add repository"]');await capture('add-repository');await click('button[aria-label="Start without files"]');await type('dialog input','Ideas and questions');await capture('empty-project');await closeDialog();
   await click('button[aria-label="Add repository"]');await button('Project repositories');await eventually(()=>evaluate('document.body.innerText.includes("backend")'),'project repositories');await capture('project-repositories');await closeDialog();
   await button('Room guide');await button('Set up AI');await eventually(()=>evaluate('document.body.innerText.includes("Connect your AI")'),'provider setup');await capture('providers');await closeDialog();
@@ -139,10 +133,7 @@ try{
   await button('Assign Tasks');await capture('tasks');await closeDialog();
   await button('Teammate review');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Request teammate review")'),'review');await capture('reviews');await closeDialog();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Feedback')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Please check delivery errors")'),'feedback');await capture('feedback');await closeDialog();
-  // The hosted-availability guide documents the disabled panel, so this one
-  // capture flips the status back off before restoring the working terminal.
-  await terminalSession(false);await capture('terminal');
-  await terminalSession(true);
+  await terminalSession();await capture('terminal');
   await evaluate(`window.__model.runs[0].status='running';window.__model.emit('run.started')`);
   await delay(500);await click('button[title^="Plan the checkout flow ·"]');
   await eventually(()=>evaluate('document.body.innerText.includes("Queue message")'),'running message queue');

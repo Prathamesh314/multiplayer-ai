@@ -1,6 +1,6 @@
 /** Captured from the real components using isolated sample data; see docs/user-documentation.md. */
 export const screenshots: Record<string, { src: string; alt: string; label: string; width: number; height: number }> = Object.fromEntries([
-  ["desktop-setup", "Desktop setup", "Desktop settings with Workspace address and runner controls."],
+  ["desktop-setup", "Desktop setup", "Desktop settings showing the website the app opens and the runner controls."],
   ["desktop-worktrees", "Local worktree settings", "Desktop settings showing the local worktrees folder and update controls."],
   ["workspace", "Project overview", "A sample organisation’s project overview and workspace navigation."],
   ["computers", "Your computers", "The Your computers dialog showing a connected sample computer."],
@@ -13,7 +13,7 @@ export const screenshots: Record<string, { src: string; alt: string; label: stri
   ["model-picker", "Choose a model", "The searchable model picker above the AI composer; the listed models are sample data."],
   ["files", "File viewer", "A repository file open in the centre panel beside the file manager."],
   ["changes", "Saved file changes", "The Changes tab showing a modified file beside its current saved contents."],
-  ["terminal", "Hosted terminal availability", "The terminal panel explaining that interactive shell access is unavailable on the hosted workspace."],
+  ["terminal", "Terminal on your computer", "The terminal panel running tests in the chat's worktree on Alice's Mac."],
   ["history", "Activity and checkpoints", "The Synchronized workspace history dialog and code checkpoint picker."],
   ["briefing", "Conversation briefing", "An expanded conversation briefing with its goal, decisions, progress, checks, and next action."],
   ["memory", "Room memory", "The Room memory dialog for inspecting records and their source evidence."],
