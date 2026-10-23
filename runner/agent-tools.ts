@@ -19,6 +19,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import { fillSecrets, normaliseSpec, type McpSpec, type PluginSpec, type RunTool } from "../app/lib/ai/agent-tools-spec";
+import { gitCommand } from "../app/lib/git/command";
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 const MAX_SECRET_BYTES = 16 * 1024;
@@ -92,7 +93,7 @@ function codexServer(spec: McpSpec) {
 }
 
 const git = (args: string[], cwd?: string) => new Promise<void>((resolve, reject) => {
-  execFile("git", args, { cwd, timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GCM_INTERACTIVE: "never" } },
+  execFile(...gitCommand(args), { cwd, windowsHide: true, timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GCM_INTERACTIVE: "never" } },
     (error, _stdout, stderr) => error ? reject(new Error(String(stderr || error.message).trim().split("\n").pop())) : resolve());
 });
 

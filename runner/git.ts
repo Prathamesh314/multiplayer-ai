@@ -13,6 +13,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { gitCommand } from "../app/lib/git/command";
 import type { AgentRunJob } from "../app/lib/ai/run-events";
 import { withWorkspaceLock } from "./workspace-lock";
 import { allocateWorkspaceLocation, locationPath, prepareWorkspaceParent, readableName, writeWorkspaceMetadata, type WorkspaceLocation } from "./workspace-layout";
@@ -67,6 +68,11 @@ export class RunnerGit {
 
   constructor(private readonly server: string, private readonly token: string, private readonly dataDir: string, private readonly workspacesDir = join(dataDir, "workspaces"), private readonly options: RunnerGitOptions = {}) {}
 
+  /** Pairing and CLI detection can succeed even when Git cannot start. */
+  async checkAvailable(): Promise<void> {
+    await this.git(process.cwd(), ["--version"]);
+  }
+
   private scopeRoot(userId: string): string {
     return resolve(this.dataDir, "workspaces-v1", digest(`${this.server.replace(/\/$/, "")}\0${userId}`));
   }
@@ -78,14 +84,16 @@ export class RunnerGit {
     for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
     const auth = turnId !== undefined ? ["-c", `http.extraHeader=Authorization: Bearer ${this.token}`, ...(turnId ? ["-c", `http.extraHeader=X-Turn-Id: ${turnId}`] : [])] : [];
     try {
-      const { stdout } = await run("git", [...CONFIG, ...auth, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args], {
+      const { stdout } = await run(...gitCommand([...CONFIG, ...auth, ...(checkpointSequence === undefined ? [] : ["-c", `http.extraHeader=X-Checkpoint-Sequence: ${checkpointSequence}`]), ...args]), {
         cwd, env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" },
         timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
       });
       return stdout;
     } catch (cause) {
       // execFile's message includes argv, which contains the device token.
-      const detail = (cause as { stderr?: string }).stderr || "could not execute Git";
+      const detail = (cause as NodeJS.ErrnoException).code === "ENOENT"
+        ? "Git was not found. Install Git for your operating system, then restart the runner. On Windows, install Git for Windows with command-line access enabled."
+        : (cause as { stderr?: string }).stderr || `could not execute Git (${(cause as NodeJS.ErrnoException).code ?? "unknown error"})`;
       throw new Error(`Git ${args[0]} failed: ${this.token ? detail.split(this.token).join("[redacted]") : detail}`);
     }
   }
@@ -187,6 +195,9 @@ export class RunnerGit {
           await this.git(dirname(cache), ["init", "--bare", temp]);
           await rename(temp, cache);
         }
+        // Also applies to Git invoked by the AI inside this runner-owned repo.
+        // Do not change the member's global or system Git settings.
+        if (process.platform === "win32") await this.git(cache, ["config", "core.longpaths", "true"]);
         // Fetch only the authorized room (or chat), even when other rooms share
         // objects. Credentials and remote URLs are per-command, never persisted.
         const remoteRef = isolated ? `refs/remotes/chats/${key}` : `refs/remotes/rooms/${key}`;

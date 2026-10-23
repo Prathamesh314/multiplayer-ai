@@ -211,10 +211,11 @@ test("installers open multicode.in; only --setup test builds ask for an address"
 });
 
 test("the runner can find Node and npm-installed AI tools on Windows", () => {
-  const env = runnerEnvironment({ PATH: "C:\\Windows", APPDATA: "C:\\Users\\a\\AppData\\Roaming", PATHEXT: ".COM;.EXE;.CMD", ProgramFiles: "C:\\Program Files" }, "C:\\cfg");
+  const env = runnerEnvironment({ PATH: "C:\\Windows", APPDATA: "C:\\Users\\a\\AppData\\Roaming", PATHEXT: ".COM;.EXE;.CMD", ProgramFiles: "C:\\Program Files", CLAUDE_CODE_GIT_BASH_PATH: "D:\\Tools\\Git\\bin\\bash.exe" }, "C:\\cfg");
   assert.equal(env.APPDATA, "C:\\Users\\a\\AppData\\Roaming");
   assert.equal(env.PATHEXT, ".COM;.EXE;.CMD");
   assert.equal(env.ProgramFiles, "C:\\Program Files");
+  assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, "D:\\Tools\\Git\\bin\\bash.exe");
 });
 
 test("desktop staging uses an allowlist and release packaging requires signing", () => {

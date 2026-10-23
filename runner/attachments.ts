@@ -16,6 +16,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
+import { gitCommand } from "../app/lib/git/command";
 
 const run = promisify(execFile);
 export const ATTACHMENT_ROOT = ".multicode/attachments";
@@ -39,7 +40,7 @@ export function attachmentDestination(worktree: string, path: string) {
 /** Keep `.multicode/` out of Git for this repository (shared by its worktrees). */
 export async function excludeFromGit(worktree: string) {
   // Worktrees share their repository's info/exclude (the common Git dir).
-  const { stdout } = await run("git", ["rev-parse", "--git-common-dir"], { cwd: worktree });
+  const { stdout } = await run(...gitCommand(["rev-parse", "--git-common-dir"]), { cwd: worktree, windowsHide: true });
   const file = join(resolve(worktree, stdout.trim()), "info", "exclude");
   const current = await readFile(file, "utf8").catch(() => "");
   if (current.split(/\r?\n/).includes(EXCLUDE)) return;
