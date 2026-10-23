@@ -10,7 +10,7 @@ import type { RunnerApi } from "./api";
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { gitCommand } from "../app/lib/git/command";
@@ -195,10 +195,9 @@ export class RunnerGit {
         branch = branchOf(binding, key);
         if (!await exists(cache)) {
           await mkdir(dirname(cache), { recursive: true, mode: 0o700 });
-          const temp = `${cache}.${randomUUID()}.tmp`;
-          // Git init changes into a directory argument before reading config.
-          // Create it with Node and select it through --git-dir instead.
-          await mkdir(temp, { mode: 0o700 });
+          // Git init resolves its directory before reading core.longpaths.
+          // Initialize in a short sibling, then atomically publish the cache.
+          const temp = await mkdtemp(join(this.dataDir, "repo-init-"));
           await this.git({ bare: temp }, ["init", "--bare"]);
           await rename(temp, cache);
         }

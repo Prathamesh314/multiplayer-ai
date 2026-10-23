@@ -39,7 +39,7 @@ test("a missing Git installation reports the required fix before an AI task", as
 });
 
 // Real child processes and Git; provider fixtures avoid paid AI calls. Native
-// Windows CI exercises npm .cmd resolution, pipes, and long worktree paths.
+// Windows CI exercises npm .cmd resolution, pipes, and long repository files.
 for (const provider of ["claude", "codex", "gemini"]) {
   test(`${provider}: workspace -> streamed reply -> checkpoint -> pushed commit -> next turn`, { timeout: 30_000 }, async t => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "runner execution ")));
@@ -48,6 +48,9 @@ for (const provider of ["claude", "codex", "gemini"]) {
     await mkdir(seed);
     await git(seed, "init", "-b", "main");
     await writeFile(join(seed, "code.txt"), "before\n");
+    const longFile = join("source-" + "x".repeat(120), "nested-" + "y".repeat(100), "code.txt");
+    await mkdir(dirname(join(seed, longFile)), { recursive: true });
+    await writeFile(join(seed, longFile), "long path\n");
     await git(seed, "add", "-A");
     await git(seed, "commit", "-m", "Initial");
     const baseSha = await git(seed, "rev-parse", "HEAD");
@@ -56,7 +59,9 @@ for (const provider of ["claude", "codex", "gemini"]) {
     await mkdir(dirname(remote), { recursive: true });
     await git(root, "clone", "--bare", seed, remote);
     await git(remote, "update-ref", "refs/heads/session/room-a", baseSha);
-    const data = join(root, "private runner state " + "x".repeat(70));
+    // Windows limits process working directories and repository roots even
+    // with core.longpaths enabled; exercise long file paths inside the repo.
+    const data = join(root, "runner state");
     const runner = new RunnerGit(pathToFileURL(serverRoot).href, "test-only-token", data, join(root, "workspaces"));
     const job = { userId: "alice", sessionId: "room-a", repoId: null, baseSha, turnId: randomUUID() };
     const source = join(root, "agent.cjs");
@@ -108,8 +113,13 @@ process.stdin.on("end", () => process.exit(0));
     const sha = await runner.withWorkspace(job, async workspace => {
       work = workspace.path;
       const cache = await git(work, "rev-parse", "--path-format=absolute", "--git-common-dir");
-      assert.ok(cache.length > 260, "exercise paths beyond the Windows default limit");
-      if (process.platform === "win32") assert.equal(await git(work, "config", "--local", "core.longpaths"), "true");
+      assert.ok(join(work, longFile).length > 260, "exercise files beyond the Windows default limit");
+      assert.equal(await readFile(join(work, longFile), "utf8"), "long path\n");
+      if (process.platform === "win32") {
+        assert.ok(cache.length < 260, "the repository root must fit Windows' directory limit");
+        assert.ok(`${cache}.${randomUUID()}.tmp`.length > 260, "a temp suffix on the cache would exceed the directory limit");
+        assert.equal(await git(work, "config", "--local", "core.longpaths"), "true");
+      }
       await workspace.checkpoint();
       const events = [];
       const input = { spec: { ...agentById(provider), bin }, cwd: work, prompt, onEvent: event => events.push(event),
