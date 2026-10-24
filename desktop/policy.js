@@ -100,12 +100,21 @@ async function waitForServer(value, { timeoutMs = 60000, intervalMs = 500, signa
   throw new Error("The workspace did not respond. Check the address, connection, and server status, then retry.");
 }
 
-function runnerEnvironment(env, configPath) {
+function runnerEnvironment(env, configPath, platform = process.platform) {
   const result = {};
   for (const key of ["HOME", "USERPROFILE", "PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR", "SHELL", "LANG", "LC_ALL", "APPDATA", "LOCALAPPDATA", "PATHEXT", "ProgramFiles", "XDG_CONFIG_HOME", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
     if (env[key]) result[key] = env[key];
   }
-  if (process.platform !== "win32") {
+  // Windows' own settings (not secrets) that AI tools and the shells they use
+  // need: Codex runs commands in PowerShell, Claude Code in Git Bash, and both
+  // look up programs, the user's home and system folders through these.
+  if (platform === "win32") {
+    for (const key of ["ComSpec", "SystemDrive", "ProgramData", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "CommonProgramFiles(x86)", "CommonProgramW6432",
+      "ALLUSERSPROFILE", "PUBLIC", "HOMEDRIVE", "HOMEPATH", "USERNAME", "USERDOMAIN", "COMPUTERNAME", "PSModulePath", "OS", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE"]) {
+      if (env[key]) result[key] = env[key];
+    }
+  }
+  if (platform !== "win32") {
     result.PATH = [...new Set([...(result.PATH || "/usr/bin:/bin").split(path.delimiter), "/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local", "bin"), path.join(os.homedir(), ".npm-global", "bin")])].join(path.delimiter);
   }
   if (env.CLAUDE_CODE_GIT_BASH_PATH) result.CLAUDE_CODE_GIT_BASH_PATH = env.CLAUDE_CODE_GIT_BASH_PATH;

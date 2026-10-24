@@ -109,6 +109,18 @@ async function runSequence(input: RunInput): Promise<LocalRunResult> {
   return result;
 }
 
+/** Windows starts a program with one command line of at most 32,767 characters. */
+const WINDOWS_COMMAND_LINE_MAX = 32_767;
+
+/** Its length once quoted the way Node passes arguments to a Windows program. */
+export function windowsCommandLineLength(file: string, argv: string[]): number {
+  return [file, ...argv].reduce((total, arg) => {
+    const quotes = /[\s"]/.test(arg) || arg === "" ? 2 : 0;
+    const escapes = (arg.match(/"/g)?.length ?? 0) + (arg.match(/\\+(?="|$)/g)?.join("").length ?? 0);
+    return total + arg.length + quotes + escapes + 1;
+  }, 0);
+}
+
 async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise<LocalRunResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -123,7 +135,11 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     let child: ReturnType<typeof spawn>;
     try {
       // On Windows the npm launcher's own entry point, without a shell (lib/ai/command.ts).
-      child = spawn(...commandLine(input.spec.bin, args), {
+      const [file, argv] = commandLine(input.spec.bin, args);
+      if (process.platform === "win32" && windowsCommandLineLength(file, argv) > WINDOWS_COMMAND_LINE_MAX) {
+        throw new Error(`${input.spec.name} takes its prompt on the command line, which Windows limits to 32,767 characters, and this one is longer (it includes the conversation so far). Start a new chat, or use Claude Code or Codex, which have no such limit.`);
+      }
+      child = spawn(file, argv, {
         cwd: input.cwd,
         detached: process.platform !== "win32",
         windowsHide: true,
