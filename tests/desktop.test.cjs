@@ -218,6 +218,16 @@ test("the runner can find Node and npm-installed AI tools on Windows", () => {
   assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, "D:\\Tools\\Git\\bin\\bash.exe");
 });
 
+test("on Windows the runner also gets the system settings AI tools and their shells rely on, and still no secrets", () => {
+  const windows = { PATH: "C:\\Windows", ComSpec: "C:\\Windows\\system32\\cmd.exe", PSModulePath: "C:\\Program Files\\WindowsPowerShell\\Modules", HOMEDRIVE: "C:", HOMEPATH: "\\Users\\a",
+    ProgramData: "C:\\ProgramData", "ProgramFiles(x86)": "C:\\Program Files (x86)", USERNAME: "a", DATABASE_URL: "secret", NODE_OPTIONS: "--require=evil" };
+  const env = runnerEnvironment(windows, "C:\\cfg", "win32");
+  for (const key of ["ComSpec", "PSModulePath", "HOMEDRIVE", "HOMEPATH", "ProgramData", "ProgramFiles(x86)", "USERNAME"]) assert.equal(env[key], windows[key], key);
+  assert.equal(env.DATABASE_URL, undefined);
+  assert.equal(env.NODE_OPTIONS, undefined);
+  assert.equal(runnerEnvironment(windows, "/cfg", "darwin").ComSpec, undefined, "only on Windows");
+});
+
 test("desktop staging uses an allowlist and release packaging requires signing", () => {
   const prepare = fs.readFileSync("desktop/prepare.mjs", "utf8");
   const builder = fs.readFileSync("desktop/builder.cjs", "utf8");

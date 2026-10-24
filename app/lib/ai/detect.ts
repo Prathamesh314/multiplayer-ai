@@ -10,7 +10,10 @@ import { AGENTS, type AgentAuth, type AgentSpec, type AgentStatus } from "./cata
  * symlink from an uninstalled node version — should read as missing, because
  * offering Connect for it would fail later and more confusingly.
  */
-const PROBE_TIMEOUT_MS = 4_000;
+// A CLI's first start on a laptop can be slow: Windows Defender scans a newly
+// installed binary, and Node-based CLIs load a large bundle. A tool that
+// answers late is still installed, so allow well over the usual second or two.
+const PROBE_TIMEOUT_MS = 20_000;
 
 /** Spawning three processes per poll would be wasteful; installs are rare. */
 const CACHE_MS = 30_000;
@@ -36,11 +39,13 @@ function probe(agent: AgentSpec): Promise<string | null> {
 
 /**
  * Reads an agent's login state via its own CLI — a fast, local, token-free
- * call. Returns null when the agent has no login mechanism. An unparseable or
- * failed status is treated as "installed but signed out" rather than unknown,
- * because that is the state that should surface a Sign in button: the CLI
- * prints its logged-out JSON on a nonzero exit too, and even a total failure
- * is best resolved by signing in.
+ * call. Returns null when the agent has no login mechanism, or when the check
+ * could not run at all (it timed out or printed nothing): then the login state
+ * is unknown, and the tool stays offered — a run that needs a sign-in says so,
+ * while hiding a signed-in tool would leave "Set up AI" showing for no reason.
+ * Output that is not the expected status reads as signed out, because that is
+ * the state that should surface a Sign in button: the CLI prints its
+ * logged-out JSON on a nonzero exit too.
  */
 export function authStatus(agent: AgentSpec): Promise<AgentAuth | null> {
   const auth = agent.auth;
@@ -49,7 +54,11 @@ export function authStatus(agent: AgentSpec): Promise<AgentAuth | null> {
     execFile(
       ...commandLine(agent.bin, auth.statusArgs),
       { timeout: PROBE_TIMEOUT_MS, windowsHide: true },
-      (_error, stdout) => {
+      (error, stdout) => {
+        if (error && !stdout.trim()) {
+          resolve(null);
+          return;
+        }
         try {
           resolve(auth.parseStatus(stdout));
         } catch {

@@ -174,3 +174,29 @@ test("a refresh reopens the organisation you were in", () => {
     delete globalThis.window;
   }
 });
+
+test("a slow or silent sign-in check never hides an installed AI tool", async (t) => {
+  const { authStatus } = await import("../app/lib/ai/detect.ts");
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "mc-auth-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cli = async (name, source) => { const file = join(dir, name); await writeFile(file, source); return file; };
+  const parseStatus = (stdout) => { const data = JSON.parse(stdout); return { loggedIn: !!data.loggedIn, method: null, email: null, plan: null }; };
+  const spec = (script) => ({ bin: process.execPath, auth: { statusArgs: [script], loginArgs: [], logoutArgs: [], parseStatus } });
+  // Signed out: the CLI says so (on a nonzero exit, as Claude Code does).
+  assert.deepEqual(await authStatus(spec(await cli("out.js", "console.log(JSON.stringify({ loggedIn: false })); process.exit(1);"))), { loggedIn: false, method: null, email: null, plan: null });
+  // Signed in.
+  assert.equal((await authStatus(spec(await cli("in.js", "console.log(JSON.stringify({ loggedIn: true }));"))))?.loggedIn, true);
+  // The check failed without saying anything: unknown, so the tool stays offered.
+  assert.equal(await authStatus(spec(await cli("silent.js", "process.exit(3);"))), null);
+});
+
+test("Windows command lines over 32,767 characters are refused with a reason, not a spawn error", async () => {
+  const { windowsCommandLineLength } = await import("../runner/execute.ts");
+  assert.equal(windowsCommandLineLength("gemini.exe", ["-p", "hello"]), "gemini.exe".length + 1 + 3 + 6);
+  assert.equal(windowsCommandLineLength("a", ['say "hi"']), 1 + 1 + 'say "hi"'.length + 2 + 2 + 1, "quotes are escaped and the argument quoted");
+  assert.ok(windowsCommandLineLength("node.exe", ["gemini.js", "-p", "x".repeat(20_000)]) < 32_767, "a full-size prompt fits");
+  assert.ok(windowsCommandLineLength("node.exe", ["gemini.js", "-p", "x".repeat(40_000)]) > 32_767, "a prompt with long history does not");
+});
