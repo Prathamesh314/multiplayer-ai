@@ -29,7 +29,12 @@ const main = await build({ ...options, entryPoints: [join(root, "desktop", "main
 const runner = await build({ ...options, entryPoints: [join(root, "runner", "index.ts")], outfile: join(target, "runner.cjs") });
 for (const file of ["preload.js", "setup-preload.js", "setup.html", "setup.css", "setup.js"]) await copyFile(join(root, "desktop", file), join(target, file));
 await sharp(join(root, "desktop", "icon.svg")).png().toFile(join(target, "icon.png"));
-await writeFile(join(target, "release.json"), JSON.stringify({ workspaceUrl: origin, updateUrl }, null, 2));
+// The release this build becomes (its folder name on the website, e.g.
+// preview-<commit>-<run>), so the app can tell when the website has a newer one.
+const releaseId = /^[A-Za-z0-9._-]{1,100}$/.test(process.env.DESKTOP_BUILD_ID ?? "") ? process.env.DESKTOP_BUILD_ID : "";
+const commit = /^[0-9a-f]{7,40}$/.test(process.env.DESKTOP_COMMIT ?? "") ? process.env.DESKTOP_COMMIT : "";
+const sourceUrl = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(process.env.DESKTOP_SOURCE_URL ?? "") ? process.env.DESKTOP_SOURCE_URL : "";
+await writeFile(join(target, "release.json"), JSON.stringify({ workspaceUrl: origin, updateUrl, build: releaseId, commit, sourceUrl }, null, 2));
 await writeFile(join(target, "package.json"), JSON.stringify({ name: "multicode-ai-desktop", productName: "Multicode AI", version: manifest.version, description: "A shared workspace for your team's AI work", author: "Multicode AI", private: true, main: "main.js", dependencies: {} }, null, 2));
 
 const notices = [];
