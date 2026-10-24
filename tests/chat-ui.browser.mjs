@@ -73,7 +73,8 @@ try {
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:base+"/workspace"});
   await eventually(()=>evaluate('!!document.querySelector("#projects-heading") && !!document.querySelector("main article")'),"project overview");
-  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Collaboration inbox"]\')?.textContent.includes("You’re caught up.")'),"collaboration inbox loaded without errors");
+  // One action queue: handoffs, tasks and collaboration requests, each list loaded without errors.
+  await eventually(()=>evaluate('(q=>!!q && !q.innerText.includes("Checking what needs you") && !q.querySelector("[role=alert]"))(document.querySelector(\'[aria-label="Action queue"]\'))'),"action queue loaded without errors");
   assert.ok(await evaluate('document.querySelector("#projects-heading").getBoundingClientRect().top < document.querySelector("#workflow-heading").getBoundingClientRect().top'),"projects precede onboarding help");
   assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--vs-editor").trim()`),"#141210","project overview shares the session palette");
   await evaluate("document.fonts.ready");await screenshot("projects");
@@ -81,7 +82,12 @@ try {
   await eventually(()=>evaluate('document.querySelector("#handoffs")?.innerText.includes("Priya Shah handed you Checkout polish")'),"a handoff waiting for you");
   assert.ok(await evaluate('document.querySelector("#handoffs").innerText.includes("Copy is done; please wire the analytics.") && document.querySelector("#handoffs").innerText.includes("Cart totals")'),"the note and your own sent offer");
   assert.ok(await evaluate(`[...document.querySelectorAll('#workspace-navigation button')].some(b=>b.textContent.includes("Project overview")&&b.textContent.includes("1"))`),"the sidebar counts handoffs waiting for you");
-  assert.ok(await evaluate('document.querySelector("#handoffs").getBoundingClientRect().top < document.querySelector(\'[aria-label="Collaboration inbox"]\').getBoundingClientRect().top'),"handoffs come first");
+  assert.equal(await evaluate('[...document.querySelectorAll(\'[aria-label="Action queue"] [role=tabpanel] section\')][0]?.id'),"handoffs","handoffs come first: they expire");
+  assert.ok(await evaluate(`[...document.querySelectorAll('[aria-label="Action queue"] [role=tab]')].some(t=>t.textContent.startsWith("Handoffs")&&t.textContent.endsWith("1"))`),"the Handoffs tab counts what waits for you");
+  // Each tab shows one list; the others keep loading behind it.
+  await evaluate(`[...document.querySelectorAll('[aria-label="Action queue"] [role=tab]')].find(t=>t.textContent.startsWith("Collaboration")).click()`);
+  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Collaboration inbox"]\')?.innerText.includes("You’re caught up.") && !document.querySelector("#handoffs").checkVisibility()'),"collaboration tab");
+  await evaluate(`[...document.querySelectorAll('[aria-label="Action queue"] [role=tab]')].find(t=>t.textContent.startsWith("Action queue")).click()`);
   await screenshot('handoffs');
   await evaluate('[...document.querySelectorAll("#handoffs button")].find(b=>b.textContent.trim()==="Decline").click()');
   await eventually(()=>evaluate('JSON.stringify(window.__chatFixture.handoffActions?.[0])===JSON.stringify({action:"decline",handoffId:"h-received",version:3}) && !document.querySelector("#handoffs").innerText.includes("Checkout polish")'),"declining sends the chat’s version and clears it");

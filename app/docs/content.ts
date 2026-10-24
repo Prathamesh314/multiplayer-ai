@@ -556,7 +556,7 @@ Select **Copy link** to copy the right address. With link sharing on, it contain
 A host can separately publish the conversation briefing and its evidence to people added by email. Review that content before enabling guest visibility. Link-only viewers don't see the briefing.
 
 Access for people added by email lasts until you remove it. Older invitation links still work until they expire (7 days). Chats shared with you appear in **Shared with me**.` },
-      { id: "feedback", title: "Read and respond to feedback", body: `Guests with commenting permission write in the shared conversation’s feedback area. Hosts and authorised teammates can open **Feedback** directly in the room’s chat. The workspace **Collaboration inbox** links to unread feedback and review requests.
+      { id: "feedback", title: "Read and respond to feedback", body: `Guests with commenting permission write in the shared conversation’s feedback area. Hosts and authorised teammates can open **Feedback** directly in the room’s chat. The workspace **Action queue**, under **Collaboration**, links to unread feedback and review requests.
 
 Use **Preview the shared chat & reply to comments** if you want to inspect the guest-facing view. See [feedback and inbox](/docs/feedback) for the direct reply flow.` },
       { id: "revoke", title: "Change or remove access", body: `Open **Share chat** again. Each person shows **Opened** or **Hasn’t opened yet**. Use the menu beside them to switch between **Viewer** and **Commenter**, or choose **Remove access**.
@@ -575,7 +575,7 @@ Removing access stops future access; it cannot recall text someone already saw. 
 5. If you have authority, check **I approve the additional access described above** and select **Grant editing access**.
 
 Do this only when the broader scope is appropriate. The guest may gain access to more than the shared transcript. The preview describes the actual scope rather than silently granting it.`, screenshot: "guest-access" },
-      { id: "admin", title: "Request an admin’s approval", body: `If you cannot grant all required permissions, use **Request admin approval** after reviewing the scope. The request appears in the organisation admins’ **Collaboration inbox**. Until approved, the person keeps their existing chat-only access.
+      { id: "admin", title: "Request an admin’s approval", body: `If you cannot grant all required permissions, use **Request admin approval** after reviewing the scope. The request appears in the organisation admins’ **Action queue**, under **Collaboration**. Until approved, the person keeps their existing chat-only access.
 
 An authorised admin reviews the request and can grant or decline it. Access is checked again when the action is submitted, so a changed membership or scope can require refreshing the preview. Suspended or removed accounts are not automatically reactivated by this flow.` },
       { id: "continue", title: "Offer handoff after access is granted", body: `Editing access alone does not transfer chat control or start AI. The new editor can open the workspace from the shared chat. They must [connect their own computer](/docs/connect-computer) and configure an AI tool to execute prompts.
@@ -597,7 +597,7 @@ Handoff transfers control of the conversation. It does not migrate a running pro
 5. Select **Offer handoff**.
 
 An offer expires after **one hour**. You can cancel a pending offer. A specifically invited recipient can decline it.`, screenshot: "handoff" },
-      { id: "accept", title: "Accept and continue", body: `The recipient sees the offer at the top of their dashboard under **Handoffs**, with a count beside **Project overview** in the sidebar: who handed over which chat, in which project and room, their note and when it expires. **Accept & open** takes control and opens the chat, **Decline** turns down an offer made to you by name, and **View chat** opens it first. Offers you sent wait under **Sent by you**, where you can **Cancel** them. In the chat itself, the recipient can also select **Accept control**. Acceptance stays disabled while the current turn is running. Once accepted, the UI shows the new driver.
+      { id: "accept", title: "Accept and continue", body: `The recipient sees the offer at the top of their dashboard’s **Action queue**, under **Handoffs**, with a count beside **Project overview** in the sidebar: who handed over which chat, in which project and room, their note and when it expires. **Accept & open** takes control and opens the chat, **Decline** turns down an offer made to you by name, and **View chat** opens it first. Offers you sent wait under **Sent by you**, where you can **Cancel** them. In the chat itself, the recipient can also select **Accept control**. Acceptance stays disabled while the current turn is running. Once accepted, the UI shows the new driver.
 
 Accepting does not run a task or spend AI usage. Read the briefing, inspect the transcript and saved changes, and check uploaded checkpoints before sending the next prompt from your own computer.
 
@@ -616,7 +616,7 @@ Open [Activity & checkpoints](/docs/history) and distinguish saved work from unc
 For example: “Please check keyboard navigation and report any remaining issues in this conversation.” Keep the request specific enough that the assignee knows what result to return.
 
 You need room edit access to create an assignment. The assignee must have access to the room, but can be a viewer. If no teammate is available, invite someone with the appropriate access first.`, screenshot: "tasks" },
-      { id: "track", title: "Track and finish work", body: `Assignments appear in **Chat tasks** for their source conversation and in the assignee’s workspace **My tasks**. Open the source link to see the relevant room and chat.
+      { id: "track", title: "Track and finish work", body: `Assignments appear in **Chat tasks** for their source conversation and in the assignee’s workspace **Action queue**, under **My tasks**. Open the source link to see the relevant room and chat.
 
 Use the status picker to move between **To do**, **In progress**, **Done**, and **Cancelled**. The assignee, or an authorised creator, can update status. Completed tasks remain available rather than disappearing immediately.
 
@@ -642,7 +642,7 @@ This action requires the same computer/provider readiness as any AI prompt. It d
 3. Explain the requirements, risks, or files to inspect.
 4. Select **Request teammate review**.
 
-The request appears in that person’s workspace **Collaboration inbox**. If no reviewer is available, invite another editor or explicitly grant an accepted guest editing access.`, screenshot: "reviews" },
+The request appears in that person’s workspace **Action queue**, under **Collaboration**. If no reviewer is available, invite another editor or explicitly grant an accepted guest editing access.`, screenshot: "reviews" },
       { id: "respond", title: "Approve or request changes", body: `The assigned reviewer opens the source chat, inspects the saved changes, and enters findings in the review panel. They can **Approve** the displayed version or **Request changes** with a note.
 
 Approval applies only to the requested saved commit. If the repository changes, the older review is labeled as an earlier version and does not approve the new work. Request a new review after those changes.
@@ -657,7 +657,7 @@ Reviews preserve their history. The requester can cancel a pending request. Neit
       { id: "reply", title: "Respond from the chat", body: `Open **Feedback** in an AI conversation to read guest comments and reply. The feedback count helps you see unread discussion without reopening the share dialog. Load older comments when you need more history.
 
 Write your response and send it. If sending fails, the draft remains so you can retry. Reading displayed comments updates your own unread state; it does not mark everyone else’s inbox as read.`, screenshot: "feedback" },
-      { id: "inbox", title: "Use the workspace inbox", body: `The workspace’s **Collaboration inbox** brings together conversations with unread feedback, teammate review requests, and access requests you can handle. Select an item to open the relevant conversation and panel.
+      { id: "inbox", title: "Use the workspace inbox", body: `The workspace **Action queue**, under **Collaboration**, brings together conversations with unread feedback, teammate review requests, and access requests you can handle. Select an item to open the relevant conversation and panel.
 
 Admins may see metadata for an access request without gaining access to the private conversation itself. Review the permission preview before approving a guest’s additional access.
 
