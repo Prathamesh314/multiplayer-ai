@@ -35,3 +35,25 @@ test("a paired computer is online only after its first heartbeat reports its too
     await f.close();
   }
 });
+
+test("an AI tool installed but signed out is recorded for Set up AI, and never given work", async () => {
+  const f = await memoryFixture();
+  try {
+    const { query } = await import("../app/lib/db/client.ts");
+    const { token } = await exchangePairingCode({ code: (await createPairingCode(f.alice)).code, name: "Windows laptop", platform: "win32", version: "2" });
+    // A tool cannot be both ready and signed out; unknown tools are dropped.
+    assert.equal((await beat(token, { version: "2", agentIds: ["codex"], signedOutAgentIds: ["claude", "codex", "not-a-tool"], modelCatalog: {} })).status, 200);
+    const [row] = await query("SELECT agent_ids, signed_out_agent_ids FROM runner_devices WHERE name = 'Windows laptop'");
+    assert.deepEqual([row.agent_ids, row.signed_out_agent_ids], [["codex"], ["claude"]]);
+    assert.equal(await hasOnlineDevice(f.alice, "claude", undefined, undefined, true), false, "a signed-out tool takes no work");
+    assert.equal(await hasOnlineDevice(f.alice, "codex", undefined, undefined, true), true);
+    // Signing in moves it across; an older runner that sends no list clears it.
+    await beat(token, { version: "2", agentIds: ["codex", "claude"], signedOutAgentIds: [], modelCatalog: {} });
+    assert.deepEqual((await query("SELECT signed_out_agent_ids FROM runner_devices WHERE name = 'Windows laptop'"))[0].signed_out_agent_ids, []);
+    await beat(token, { version: "2", agentIds: ["codex"], signedOutAgentIds: ["claude"], modelCatalog: {} });
+    await beat(token, { version: "2", agentIds: ["codex"], modelCatalog: {} });
+    assert.deepEqual((await query("SELECT signed_out_agent_ids FROM runner_devices WHERE name = 'Windows laptop'"))[0].signed_out_agent_ids, []);
+  } finally {
+    await f.close();
+  }
+});

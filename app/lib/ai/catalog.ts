@@ -105,6 +105,8 @@ export type AgentSpec = {
     command: string;
     /** Offered when the vendor has a first-party installer worth preferring. */
     alternative?: string;
+    /** Run once after installing, in a terminal on that computer, to sign in. */
+    signIn?: string;
     docs: string;
   };
   blurb: string;
@@ -189,6 +191,7 @@ export const AGENTS: AgentSpec[] = [
     install: {
       command: "npm install -g @anthropic-ai/claude-code",
       alternative: "curl -fsSL https://claude.ai/install.sh | bash",
+      signIn: "claude auth login",
       docs: "https://docs.claude.com/en/docs/claude-code",
     },
     blurb: "Reads and edits files, runs commands, works across the whole repo.",
@@ -219,6 +222,7 @@ export const AGENTS: AgentSpec[] = [
     install: {
       command: "npm install -g @openai/codex",
       alternative: "brew install codex",
+      signIn: "codex login",
       docs: "https://developers.openai.com/codex/cli",
     },
     blurb: "Runs a task to completion in the working copy and reports back.",
@@ -238,6 +242,7 @@ export const AGENTS: AgentSpec[] = [
     efforts: [],
     install: {
       command: "npm install -g @google/gemini-cli",
+      signIn: "gemini",
       docs: "https://github.com/google-gemini/gemini-cli",
     },
     blurb: "Large-context agent for reading and changing a codebase.",
@@ -266,7 +271,7 @@ export const AGENTS: AgentSpec[] = [
     promptArgs: (prompt, opts) => ["run", "--format", "json", "--model", requiredModel(opts), ...(opts?.effort ? ["--variant", opts.effort] : []), "--", prompt],
     createStreamParser: createOpenCodeStreamParser,
     models: [], efforts: [],
-    install: { command: "npm install -g opencode-ai", docs: "https://opencode.ai/docs/providers/" },
+    install: { command: "npm install -g opencode-ai", signIn: "opencode auth login", docs: "https://opencode.ai/docs/providers/" },
     blurb: "Coding agents through configured providers: OpenRouter, Anthropic, Google, OpenAI, DeepSeek, Groq, and more. Connect accounts once with opencode auth login on your runner.",
   },
   ...(["ollama", "lmstudio"] as const).map(provider => ({

@@ -835,13 +835,13 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sender.command("Network.enable", {});
     await sender.block(["*/api/ai/agents*"]);
     await sender.evaluate('document.querySelector(\'button[aria-label="AI providers"]\').click()');
-    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect your computer.")'), "AI setup provides next steps");
+    await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("connect it first")'), "AI setup provides next steps");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "AI setup failures surface with a retry");
     await sender.block([]);
-    await sender.click("Check connections");
+    await sender.click("Check again");
     await eventually(() => sender.evaluate('!document.querySelector("dialog [role=alert]") && document.querySelectorAll("dialog li").length > 0'), "AI setup refresh recovers");
     await sender.block(["*/api/runner/devices*"]);
-    await sender.click("Connect your computer");
+    await sender.click("Connect computer");
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("Connect a computer to send AI messages")'), "AI setup links to device pairing");
     await eventually(() => sender.evaluate('!!document.querySelector("dialog [role=alert]")'), "device loading failures are visible");
     await sender.block([]);

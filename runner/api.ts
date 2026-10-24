@@ -63,7 +63,7 @@ export class RunnerApi {
   async heartbeat(onlyChanged = false): Promise<void> {
     const agents = await detectAgents();
     const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
-    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, supportsTerminal: this.supportsTerminal, supportsAttachments: true, supportsAgentTools: true, supportsPermissions: true, secretNames: this.secretNames(), agentIds: available.map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
+    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, supportsTerminal: this.supportsTerminal, supportsAttachments: true, supportsAgentTools: true, supportsPermissions: true, secretNames: this.secretNames(), agentIds: available.map(agent => agent.id), signedOutAgentIds: agents.filter(agent => agent.installed && agent.auth?.loggedIn === false).map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
     // Timestamps change when the CLI cache is refreshed; they are not inventory changes.
     const signature = JSON.stringify(body, (key, value) => ["checkedAt", "refreshedAt"].includes(key) ? undefined : value);
     if (onlyChanged && this.inventory === signature) return;

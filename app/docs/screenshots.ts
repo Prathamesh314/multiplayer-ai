@@ -4,7 +4,7 @@ export const screenshots: Record<string, { src: string; alt: string; label: stri
   ["desktop-worktrees", "Local worktree settings", "Desktop settings showing the local worktrees folder and update controls."],
   ["workspace", "Project overview", "A sample organisation’s project overview and workspace navigation."],
   ["computers", "Your computers", "The Your computers dialog showing a connected sample computer."],
-  ["providers", "Connect your AI", "The Connect your AI dialog showing installation and connection status."],
+  ["providers", "Connect your AI", "The Set up AI dialog: the connected computer and each AI tool’s status, with its install or sign-in command."],
   ["empty-project", "Start without files", "Create a named conversation space without uploading a repository."],
   ["add-repository", "Add a repository", "The Add repository dialog offering a conversation space, folder import, and project repositories."],
   ["project-repositories", "Project repositories", "The shared repository catalog with Add to room controls."],
