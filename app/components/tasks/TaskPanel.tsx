@@ -16,8 +16,12 @@ async function request<T>(url:string, init?:RequestInit):Promise<T> {
 }
 
 /** Same durable assignments in their source chat and the assignee's inbox. */
-export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignAction=true,hideWhenEmpty=false,refreshVersion=0}: {
+export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignAction=true,hideWhenEmpty=false,refreshVersion=0,queue,onCount}: {
   userId:string; sessionId?:string; runId?:string; canAssign?:boolean; showAssignAction?:boolean; hideWhenEmpty?:boolean; refreshVersion?:number;
+  /** One-line rows inside the overview's action queue; `label` heads the group in its All view. */
+  queue?:{label?:string};
+  /** Tasks still to do (open or in progress), once loaded. */
+  onCount?:(count:number)=>void;
 }) {
   const [tasks,setTasks] = useState<RoomTask[]>([]);
   const [members,setMembers] = useState<TaskMember[]>([]);
@@ -82,7 +86,23 @@ export function TaskPanel({userId,sessionId,runId,canAssign=false,showAssignActi
     finally { mutation.current=false; setBusy(false); }
   }
 
+  const actionable = tasks.filter(task => task.status === "open" || task.status === "in_progress").length;
+  useEffect(() => { if (!loading) onCount?.(actionable); }, [loading, actionable, onCount]);
+
   if (hideWhenEmpty && !loading && !error && tasks.length === 0) return null;
+  if (queue) return <section aria-label="My tasks" className="text-xs">
+    {queue.label && <h3 className="border-y border-vs-border/70 bg-vs-editor/50 px-4 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-vs-muted">{queue.label}</h3>}
+    {error && <p role="alert" className="px-4 py-3 text-vs-danger">{error} <button type="button" onClick={() => void refresh()} className="underline">Refresh</button></p>}
+    {loading ? <p className="px-4 py-3 text-vs-muted">Loading tasks…</p> : !error && tasks.length === 0 ? <p className="px-4 py-4 text-[13px] text-vs-muted">No tasks assigned to you yet. When a teammate assigns you something with # in a chat, it appears here.</p> : null}
+    <ul className="divide-y divide-vs-border/70">{tasks.map(task => <li key={task.id} className="flex items-center gap-4 px-4 py-3 transition hover:bg-vs-hover">
+      <div className="min-w-0 flex-1">
+        <Link href={`/s/${task.sessionId}?run=${task.runId}`} title={task.body} className="block truncate text-[13px] font-medium text-vs-fg hover:underline">{task.body}</Link>
+        <p className="mt-0.5 truncate text-[11.5px] text-vs-muted">{task.creatorName} · <span className="font-mono">{task.roomName} / {task.chatTitle}</span> · {new Date(task.createdAt).toLocaleDateString()}</p>
+      </div>
+      {task.assigneeId === userId ? <ComposerPicker label={`Status for ${task.body.slice(0,60)}`} variant="field" disabled={busy} value={task.status} onChange={value => void changeStatus(task.id,value as TaskStatus)} options={taskStatuses.map(status => ({ id: status, label: labels[status] }))} /> : <span className="shrink-0 text-vs-muted">{labels[task.status]}</span>}
+    </li>)}</ul>
+    {(offset > 0 || hasMore) && <div className="flex gap-3 px-4 py-2.5 text-vs-muted"><button disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0,offset-50))}>Previous</button><button disabled={!hasMore || busy} onClick={() => setOffset(offset+50)}>Next</button></div>}
+  </section>;
 
   return <section aria-label={runId ? "Chat tasks" : "My tasks"} className="my-5 rounded-2xl border border-vs-border bg-vs-panel p-4 text-xs">
     <div className="flex flex-wrap items-center justify-between gap-2">
