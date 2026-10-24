@@ -14,7 +14,7 @@ process.env.BACKUP_ENCRYPTION_KEY=randomBytes(32).toString('hex');
 const yaml=`x-app: &app
   image: ${image}
   entrypoint: ["node"]
-  command: ["-e", "setInterval(()=>{},1000)"]
+  command: ["-e", "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)"]
   environment:
     DATABASE_URL: postgres://fixture:test-only@postgres:5432/fixture
     STORAGE_PROVIDER: local
@@ -32,7 +32,7 @@ services:
     image: pgvector/pgvector:0.8.6-pg18-trixie
     environment: {POSTGRES_USER: fixture, POSTGRES_PASSWORD: test-only, POSTGRES_DB: fixture}
     volumes: ["postgres-data:/var/lib/postgresql"]
-    healthcheck: {test: ["CMD-SHELL", "pg_isready -U fixture -d fixture"], interval: 1s, timeout: 3s, retries: 30}
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U fixture -d fixture"], interval: 1s, timeout: 3s, retries: 30}
   redis:
     image: redis:7-alpine
     volumes: ["redis-data:/data"]
@@ -43,7 +43,7 @@ services:
   mnemosyne:
     image: ${image}
     entrypoint: ["node"]
-    command: ["-e", "setInterval(()=>{},1000)"]
+    command: ["-e", "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)"]
     volumes: ["mnemosyne-data:/data"]
 volumes:
   workspace_data:

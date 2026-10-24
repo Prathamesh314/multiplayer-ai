@@ -17,7 +17,7 @@ const composeFile=join(directory,'compose.json');
 await writeFile(composeFile,JSON.stringify({
   services:{
     postgres:{image:'pgvector/pgvector:0.8.6-pg18-trixie',environment:{POSTGRES_USER:'fixture',POSTGRES_PASSWORD:'test-only',POSTGRES_DB:'fixture'},
-      healthcheck:{test:['CMD-SHELL','pg_isready -U fixture -d fixture'],interval:'1s',timeout:'3s',retries:30}},
+      healthcheck:{test:['CMD-SHELL','pg_isready -h 127.0.0.1 -U fixture -d fixture'],interval:'1s',timeout:'3s',retries:30}},
     worker:{image,environment:{NODE_ENV:'production',DATABASE_URL:database,
       STORAGE_PROVIDER:'local',MULTIPLAYER_AI_DATA:'/app/workspaces'},volumes:['workspace:/app/workspaces']},
     redis:{image:'redis:7-alpine'},
