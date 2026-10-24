@@ -86,7 +86,13 @@ export async function createBackup(options) {
   };
   try {
     if(stopped.length)await capture([...profile.args,'stop','--timeout','90',...stopped]);
-    if((await capture([...profile.args,'ps','--status','running','--services'])).split('\n').some(name=>writers.includes(name)))throw new Error('A writer is still running; backup refused.');
+    // Docker can report a container as running for a moment after a stop that
+    // ended in a kill; give it a few seconds before refusing.
+    const writerRunning=async()=>(await capture([...profile.args,'ps','--status','running','--services'])).split('\n').some(name=>writers.includes(name));
+    for(let waited=0;await writerRunning();waited+=500){
+      if(waited>=15000)throw new Error('A writer is still running; backup refused.');
+      await new Promise(resolveWait=>setTimeout(resolveWait,500));
+    }
     const before=await inventory(profile);
     await save('inventory.json',Readable.from([JSON.stringify(before)]));
     await saveCommand('database.dump',[...profile.args,'exec','-T','postgres','sh','-c','exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl']);
