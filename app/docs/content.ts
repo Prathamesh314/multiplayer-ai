@@ -42,7 +42,7 @@ Imported files are uploaded to the workspace, and authorised teammates can acces
 
 - You can sign in and open your project’s room.
 - **Your computers** shows an online computer under the same account.
-- **Connect your AI** shows an installed, configured execution option.
+- **Set up AI** shows at least one AI tool as **Ready**.
 - The composer has an available provider and model selected.
 - You have edit access and control of the conversation.
 
@@ -207,11 +207,11 @@ Using a tool still asks in the chat, as described above. MCP servers work with C
     sections: [
       { id: "connect", title: "Install and connect one tool", body: `1. Install Git and your chosen AI command-line tool on the connected computer. Use its official installer and sign-in instructions.
 2. Run that tool directly in a terminal once and finish its login/provider setup.
-3. In Multicode AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat.
-4. Select **Check connections**. If a detected tool offers **Connect**, follow its login flow; you can also complete the CLI login in your terminal.
+3. In Multicode AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat. The top line names your connected computer; **Change** opens Your computers.
+4. Select **Check again**. Each tool shows **Ready**, **Sign in needed** (with the command to sign in, such as \`claude auth login\` or \`codex login\`), **No models yet**, or **Not installed** (with the install command for that computer; on Windows, Homebrew commands are replaced by the vendor's Windows installer).
 5. Return to the room and choose its provider and model in the composer.
 
-You only need **one** working tool. The app displays installation commands for missing tools and status for installed tools. It does not install every provider or purchase AI credits for you.`, screenshot: "providers" },
+You only need **one** working tool; the footer counts how many are ready. It does not install every provider or purchase AI credits for you.`, screenshot: "providers" },
       { id: "options", title: "Available execution options", body: `| Option | Required setup | Behavior in this app |
 | --- | --- | --- |
 | Claude Code | Installed CLI and provider sign-in | Coding agent; available aliases or discovered models |
@@ -765,7 +765,7 @@ Do not post the complete token in a public support thread.` },
       { id: "email", title: "The verification email hasn’t arrived", body: `Check the entered address and spam folder. Wait for the resend timer, then request a new code and use the newest email. Follow the code expiry and resend instructions shown by Clerk.
 
 If the page reports delivery failure, follow its retry guidance or contact the workspace administrator. Email delivery acceptance does not guarantee placement in the inbox. Google sign-in does not require this separate code flow.` },
-      { id: "provider", title: "A model is missing or the provider fails", body: `Try the installed AI CLI directly on the connected computer and finish its own login or provider configuration. Update the CLI if needed, then use **Check connections** and refresh the model picker.
+      { id: "provider", title: "A model is missing or the provider fails", body: `Try the installed AI CLI directly on the connected computer and finish its own login or provider configuration. Update the CLI if needed, then use **Check again** in Set up AI and refresh the model picker.
 
 If the app marks a model unavailable, select an available model explicitly. If the provider reports quota or billing errors, resolve them in that provider’s account. For local models, confirm the model is installed and the expected local server is running. Discovery does not download weights.` },
       { id: "files", title: "Files or changes are missing", body: `Confirm the selected room and repository. Your original imported folder, the app’s saved repository, and the runner’s managed worktree are separate locations. Check import completion, save status, the last uploaded activity, and whether the correct repository was published or synced.

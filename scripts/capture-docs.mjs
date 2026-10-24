@@ -119,7 +119,13 @@ try{
   await click('ul[aria-label="Changed files"] button[aria-label$=": checkout.ts"]');await eventually(()=>evaluate('document.body.innerText.includes("You can order up to 99")'),'file diff');await capture('changes');await button('All files');await click('button[aria-label="Close checkout.ts"]');
   await click('button[aria-label="Add repository"]');await capture('add-repository');await click('button[aria-label="Start without files"]');await type('dialog input','Ideas and questions');await capture('empty-project');await closeDialog();
   await click('button[aria-label="Add repository"]');await button('Project repositories');await eventually(()=>evaluate('document.body.innerText.includes("backend")'),'project repositories');await capture('project-repositories');await closeDialog();
-  await button('Room guide');await button('Set up AI');await eventually(()=>evaluate('document.body.innerText.includes("Connect your AI")'),'provider setup');await capture('providers');await closeDialog();
+  // Set up AI with each state a tool can be in, then back to the room's single tool.
+  await evaluate(`window.__model.extraAgents=[
+    {id:'claude',name:'Claude Code',vendor:'Anthropic',blurb:'Reads and edits files, runs commands, works across the whole repo.',installed:true,auth:null,models:{choices:[{id:'',label:'Auto'}],source:'Sample',checkedAt:1,refreshedAt:1,stale:false},install:{command:'npm install -g @anthropic-ai/claude-code',signIn:'claude auth login',docs:'https://docs.claude.com'}},
+    {id:'gemini',name:'Gemini CLI',vendor:'Google',blurb:'Large-context agent for reading and changing a codebase.',installed:true,auth:{loggedIn:false,method:null,email:null,plan:null},install:{command:'npm install -g @google/gemini-cli',signIn:'gemini',docs:'https://github.com/google-gemini/gemini-cli'}},
+    {id:'opencode',name:'OpenCode',vendor:'Many providers',blurb:'Coding agents through configured providers.',installed:false,auth:null,install:{command:'npm install -g opencode-ai',signIn:'opencode auth login',docs:'https://opencode.ai/docs/providers/'}}]`);
+  await button('Room guide');await button('Set up AI');await eventually(()=>evaluate('document.body.innerText.includes("2 of 4 AI tools ready")'),'provider setup');await capture('providers');await closeDialog();
+  await evaluate('window.__model.extraAgents=undefined');
   await button('Room guide');await button('Connect your computer');await eventually(()=>evaluate('document.body.innerText.includes("Alice’s Mac")'),'computers');await capture('computers');await closeDialog();
   await button('Briefing');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Accepted decisions")'),'briefing');await capture('briefing');await closeDialog();
   await button('Activity & checkpoints');await eventually(()=>evaluate('document.body.innerText.includes("No uploaded checkpoints yet")'),'history');await capture('history');await closeDialog();

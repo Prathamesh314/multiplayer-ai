@@ -394,10 +394,27 @@ try {
   await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Set up an AI tool to start")'),"connected computer needs AI setup, said in the message box"); 
   await writeFile(join(tmpdir(),'multiplayer-setup-ai-notice.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await evaluate('[...document.querySelectorAll(".ai-composer button")].find(b=>b.textContent.trim()==="Set up AI").click()');
-  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Connect your AI"]\')'),"AI setup action");
-  await click('button[aria-label="Close Connect your AI"]');
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog[aria-label="Set up AI"]\')'),"AI setup action");
+  await eventually(()=>evaluate('document.querySelector(\'dialog[open] section[aria-label="Connected computer"]\')?.innerText.includes("Alice’s Mac")'),"names the connected computer");
+  await click('button[aria-label="Close Set up AI"]');
   await evaluate('window.__model.aiReady=true;window.__model.emitDevices()');
   await eventually(()=>evaluate('!document.querySelector(\'button[aria-label="Choose model"]\')?.disabled && !!document.querySelector(\'button[aria-label="Choose model"]\')'),"AI reconnects without reloading the page");
+  // Set up AI on a Windows computer: one tool ready, one installed but signed out (with
+  // its sign-in command), one missing whose Homebrew command means nothing on Windows.
+  await evaluate(`(()=>{const m=window.__model;m.devices[0].platform="win32";m.extraAgents=[
+    {id:"claude",name:"Claude Code",vendor:"Anthropic",blurb:"Reads and edits files.",installed:true,auth:{loggedIn:false,method:null,email:null,plan:null},install:{command:"npm install -g @anthropic-ai/claude-code",signIn:"claude auth login",docs:"https://docs.claude.com"}},
+    {id:"ollama",name:"Ollama",vendor:"Local",blurb:"Local models.",installed:false,auth:null,install:{command:"brew install ollama",alternative:"Download the installer from ollama.com",docs:"https://ollama.com"}}];m.emitDevices();})()`);
+  await button("Room guide");await button("Set up AI");
+  await eventually(()=>evaluate('document.querySelectorAll(\'dialog[open] ul[aria-label="AI tools"] li\').length===3'),"every AI tool listed");
+  const rows=await evaluate(`[...document.querySelectorAll('dialog[open] ul[aria-label="AI tools"] li')].map(li=>li.innerText)`);
+  assert.match(rows[0],/Codex[\s\S]*Ready/);
+  assert.match(rows[1],/Claude Code[\s\S]*Sign in needed[\s\S]*claude auth login/);
+  assert.match(rows[2],/Ollama[\s\S]*Not installed[\s\S]*Download the installer from ollama\.com/);
+  assert.ok(!rows[2].includes("brew install"),"no Homebrew command for a Windows computer");
+  assert.match(await evaluate('document.querySelector("dialog[open] footer [role=status]").innerText'),/1 of 3 AI tools ready/);
+  await writeFile(join(tmpdir(),'multiplayer-set-up-ai.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await click('button[aria-label="Close Set up AI"]');
+  await evaluate('(()=>{const m=window.__model;m.devices[0].platform="darwin";m.extraAgents=undefined;m.emitDevices();})()');
   await evaluate('window.__model.agentsFailure=true;window.__model.emitDevices()');
   await eventually(()=>evaluate('document.body.innerText.includes("We couldn’t check your AI tools")'),"AI discovery failure has a message");
   assert.ok(await evaluate('!!document.querySelector(".human-message")'),"AI discovery failure never hides saved chats");
