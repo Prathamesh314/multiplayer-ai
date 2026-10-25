@@ -7,9 +7,8 @@ import { addProjectMember, listRooms } from "../../lib/project/client";
 import type { Project } from "../../lib/project/types";
 import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
-import { TaskPanel } from "../tasks/TaskPanel";
-import { CollaborationInbox } from "../collaboration/CollaborationControls";
-import { HandoffInbox, type useHandoffInbox } from "../collaboration/HandoffInbox";
+import { type useHandoffInbox } from "../collaboration/HandoffInbox";
+import { ActionQueue } from "./ActionQueue";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { OrgOnlineNow } from "../presence/OrgOnlineNow";
 import type { ComputerConnection } from "../ai/useComputerConnection";
@@ -61,9 +60,9 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
           </div>
         </header>
 
-        <ComputerConnectionNotice connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
+        <ComputerConnectionNotice bar connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
 
-        {me && <><HandoffInbox inbox={handoffs} /><CollaborationInbox /><TaskPanel key={me.id} userId={me.id} /></>}
+        {me && <ActionQueue key={me.id} userId={me.id} handoffs={handoffs} />}
 
         <section className="mt-8" aria-labelledby="projects-heading" aria-busy={projects === null && !error}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
