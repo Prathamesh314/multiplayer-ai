@@ -567,8 +567,7 @@ try {
   await eventually(()=>evaluate(`[...document.querySelectorAll("dialog[open] details summary")].some(s=>s.textContent.includes("Connect another computer"))`),"connect another computer");
   await evaluate(`[...document.querySelectorAll("dialog[open] details summary")].find(s=>s.textContent.includes("Connect another computer")).click()`);
   await evaluate(`[...document.querySelectorAll("dialog[open] [role=tab]")].find(t=>t.textContent.includes("Terminal")).click()`);
-  await eventually(()=>evaluate(`[...document.querySelectorAll("dialog[open] button")].some(b=>b.textContent.trim()==="Create pairing code"&&!b.disabled)`),"pair with commands");
-  await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Create pairing code").click()`);
+  // Opening the Terminal tab creates the pairing code: both commands are ready to copy.
   await eventually(()=>evaluate(`!!document.querySelector('dialog[open] button[aria-label="Copy pair command"]') && /Code RN-[A-Z0-9-]+ · \\d+:\\d\\d/.test(document.querySelector("dialog[open]").innerText)`),"both commands shown, with the code's countdown");
   await evaluate(`(()=>{const m=window.__model;m.devices.push({id:"computer-2",userId:"alice",name:"Studio Mac",platform:"darwin",version:"2",lastSeenAt:null,createdAt:Date.now(),revokedAt:null,online:false,supportsPermissions:true});m.emitDevices();})()`);
   await eventually(()=>evaluate(`document.querySelector('dialog[open] [role=tabpanel][aria-label="Terminal"]')?.innerText.includes("Studio Mac is linked to your account.")`),"after pairing, step 1 is done");

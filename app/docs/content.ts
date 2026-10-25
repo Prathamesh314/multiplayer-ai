@@ -145,7 +145,7 @@ Keep the app running and the computer awake during tasks. Closing the browser do
       { id: "terminal-connection", title: "Use a terminal instead", body: `This path requires **Node.js 22 or newer**, npm/npx, Git, and your installed AI tool. It works without an application source checkout.
 
 1. In the browser, open **Your computers** and choose the **Terminal (npx)** tab. (With a computer already connected, expand **Connect another computer** first.)
-2. Choose **Create pairing code**, then copy and run step 1, the exact pair command. It includes your workspace’s runner-package URL and the fresh code.
+2. The tab creates a pairing code for you. Copy and run step 1, the exact pair command; it includes your workspace’s runner-package URL and the fresh code.
 3. Copy and run step 2, the **start** command. Leave that terminal open while working.
 
 The bottom of the dialog says where things stand: it waits after step 1, and turns green only once the computer connects. Pairing codes are single-use and expire in **10 minutes**; the dialog counts down and offers **Get new code** when one expires. Never publish or reuse a code from a screenshot. Pair once; on later visits, use the start command again.

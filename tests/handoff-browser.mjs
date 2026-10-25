@@ -850,7 +850,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sender.click("Terminal (npx)");
     // Reconnecting needs no code: the start command is there before pairing.
     assert.equal(await sender.evaluate('!!document.querySelector(\'button[aria-label="Copy start command"]\')'), true);
-    await sender.click("Create pairing code");
+    // The Terminal tab creates the pairing code by itself.
     await eventually(() => sender.evaluate('document.querySelector("dialog")?.textContent.includes("multicode-ai-runner pair")'), "standalone runner pairing instructions");
     const instructions = await sender.evaluate('document.querySelector("dialog").textContent');
     assert.ok(instructions.includes(`${server}/downloads/multicode-ai-runner.tgz`));
