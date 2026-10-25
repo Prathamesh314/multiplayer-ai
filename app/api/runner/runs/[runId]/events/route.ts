@@ -7,6 +7,7 @@ import { appendMessage } from "../../../../../lib/ai/runs";
 import type { AiRunEvent } from "../../../../../lib/ai/run-events";
 import { bearerToken, deviceFromToken } from "../../../../../lib/runner/devices";
 import { artifactJob, claimedJob, renewLease } from "../../../../../lib/runner/jobs";
+import { queryOne } from "../../../../../lib/db/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,7 +89,8 @@ async function handlePOST(request: Request, context: RouteContext<"/api/runner/r
   }
 
   await renewLease(runId, device.id);
-  return Response.json({ ok: true, acknowledged: body.sequence ?? null });
+  const stop = await queryOne<{ stop: boolean }>(`SELECT stop_requested_at IS NOT NULL AS stop FROM agent_turns WHERE id = $1`, [runId]);
+  return Response.json({ ok: true, acknowledged: body.sequence ?? null, stop: !!stop?.stop });
 }
 
 export const POST = withApiLimit("/api/runner/runs/[runId]/events", handlePOST);

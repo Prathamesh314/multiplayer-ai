@@ -35,7 +35,12 @@ export type LocalRunResult = {
 /** Targets the process group so a helper the agent spawned dies with it. */
 function kill(child: ReturnType<typeof spawn>): void {
   try {
-    if (!child.pid || process.platform === "win32") { child.kill("SIGKILL"); return; }
+    if (child.pid && process.platform === "win32") {
+      // Windows has no process groups: end the agent and every command it started.
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => child.kill("SIGKILL"));
+      return;
+    }
+    if (!child.pid) { child.kill("SIGKILL"); return; }
     process.kill(-child.pid, "SIGKILL");
   } catch {
     try {

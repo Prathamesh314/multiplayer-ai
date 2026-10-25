@@ -143,3 +143,44 @@ process.stdin.on("end", () => process.exit(0));
     });
   });
 }
+
+// Stop in the chat aborts the run: the agent and every command it started end,
+// and what it wrote and changed so far is still there to keep.
+test("stopping a run ends the agent and the commands it started, and keeps its partial work", { timeout: 30_000 }, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "runner stop ")));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 3 }));
+  const pidFile = join(root, "grandchild.pid");
+  const source = join(root, "agent.cjs");
+  await writeFile(source, `#!${process.execPath}
+const { writeFileSync } = require("node:fs");
+const { spawn } = require("node:child_process");
+const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+  if (JSON.parse(line).type !== "user") return;
+  writeFileSync("code.txt", "partial\\n");
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+  send({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Working on it" } } });
+  setInterval(() => {}, 1000);
+});
+`, { mode: 0o755 });
+  let bin = source;
+  if (process.platform === "win32") {
+    bin = join(root, "claude.cmd");
+    await writeFile(bin, '@echo off\r\nnode "%~dp0\\agent.cjs" %*\r\n');
+  }
+  const stop = new AbortController();
+  const events = [];
+  const started = Date.now();
+  const running = runAgentLocally({ spec: { ...agentById("claude"), bin }, cwd: root, prompt: "Do the long task", signal: stop.signal,
+    onEvent: event => { events.push(event); if (event.t === "out") stop.abort(); } });
+  const result = await running;
+  assert.ok(Date.now() - started < 20_000, "stops promptly");
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /Working on it/);
+  assert.equal(await readFile(join(root, "code.txt"), "utf8"), "partial\n");
+  const pid = Number(await readFile(pidFile, "utf8"));
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let waited = 0; alive() && waited < 10_000; waited += 200) await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(alive(), false, "the command the agent started ended too");
+});

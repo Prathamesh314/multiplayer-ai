@@ -337,6 +337,14 @@ export function CloseIcon({ className }: IconProps) {
   );
 }
 
+export function StopIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={`${base} ${className ?? ""}`}>
+      <rect x="4" y="4" width="8" height="8" rx="1.5" />
+    </svg>
+  );
+}
+
 export function SendIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>

@@ -2,15 +2,16 @@
 import { useEffect, useRef, useState } from "react";
 import { openSessionStream } from "../../lib/events/client";
 import type { ChatInput } from "../../lib/ai/input-queue";
-import { SendIcon } from "../icons";
+import { SendIcon, SpinnerIcon, StopIcon } from "../icons";
 
 /**
  * The agent's working state where the composer sits: one card, shaped like the
  * composer, with a quiet shimmering status and elapsed time instead of a
- * separate bar. `onDetach` stops following the run in this tab only.
+ * separate bar. `onDetach` stops following the run in this tab only; `onStop`
+ * stops the agent itself (the person running the chat only).
  */
-export function WorkingStatus({ agentName, since, onDetach, children }: {
-  agentName: string; since: number | null; onDetach?: () => void; children?: React.ReactNode;
+export function WorkingStatus({ agentName, since, onDetach, onStop, children }: {
+  agentName: string; since: number | null; onDetach?: () => void; onStop?: () => Promise<void>; children?: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
@@ -24,10 +25,31 @@ export function WorkingStatus({ agentName, since, onDetach, children }: {
             Detach
           </button>
         )}
+        {/* With no message box (a new chat starting), Stop sits on the status line. */}
+        {onStop && !children && <span className={onDetach ? "" : "ml-auto"}><StopButton onStop={onStop} /></span>}
       </div>
       {children}
     </div>
   );
+}
+
+/** Stops the agent: what it wrote and changed so far is kept, and the chat says it was stopped. */
+export function StopButton({ onStop }: { onStop: () => Promise<void> }) {
+  const [stopping, setStopping] = useState(false), [error, setError] = useState("");
+  async function stop() {
+    if (stopping) return;
+    setStopping(true); setError("");
+    // Stays "Stopping…" until the turn ends and this card goes away.
+    try { await onStop(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setStopping(false); }
+  }
+  return <span className="inline-flex items-center gap-2">
+    {error && <span role="alert" className="max-w-64 truncate text-[11.5px] text-vs-danger" title={error}>{error}</span>}
+    <button type="button" onClick={() => void stop()} disabled={stopping} aria-label={stopping ? "Stopping" : "Stop"}
+      title="Stop the agent. What it has written and changed so far is kept."
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-vs-fg text-vs-editor transition hover:opacity-85 disabled:opacity-60">
+      {stopping ? <SpinnerIcon className="h-3.5 w-3.5" /> : <StopIcon className="h-3 w-3" />}
+    </button>
+  </span>;
 }
 
 function Elapsed({ since }: { since: number }) {
@@ -37,12 +59,14 @@ function Elapsed({ since }: { since: number }) {
   return <span className="shrink-0 tabular-nums text-[11.5px] text-vs-muted/80">{seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`}</span>;
 }
 
-export function QueuedMessages({ sessionId, runId, version, active, canSend, agentId, agentName, startedAt, workingSince = null, onDetach, moveDraft }: {
+export function QueuedMessages({ sessionId, runId, version, active, canSend, agentId, agentName, startedAt, workingSince = null, onDetach, onStop, moveDraft }: {
   sessionId: string; runId: string; version: number; active: boolean; canSend: boolean; agentId: string; agentName: string; startedAt: number | null;
   /** When the current turn started, for its elapsed time; unknown for a watcher. */
   workingSince?: number | null;
   /** Set while this tab follows the run's live stream. */
   onDetach?: () => void;
+  /** Stop the agent; offered in place of Queue message while the box is empty. */
+  onStop?: () => Promise<void>;
   moveDraft(text: string): void;
 }) {
   const [entries, setEntries] = useState<ChatInput[]>([]), [draft, setDraft] = useState("");
@@ -116,12 +140,17 @@ export function QueuedMessages({ sessionId, runId, version, active, canSend, age
           <textarea aria-label="Message working agent" placeholder="Queue a follow-up…" value={draft} maxLength={32000} readOnly={busy} rows={2}
             onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }}
             className="vs-scroll max-h-40 min-h-10 flex-1 resize-none bg-transparent text-[13px] text-vs-fg outline-none placeholder:text-vs-muted" />
-          <button type="submit" disabled={busy || !draft.trim()} title="Queue message"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30">
-            <SendIcon className="h-3.5 w-3.5" /><span className="sr-only">Queue message</span>
-          </button>
+          {/* Empty box: Stop. Typing: queue the message, as before. */}
+          {onStop && !draft.trim() && !busy ? <StopButton onStop={onStop} /> : (
+            <button type="submit" disabled={busy || !draft.trim()} title="Queue message"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-vs-accent text-vs-accent-fg transition hover:opacity-90 disabled:opacity-30">
+              <SendIcon className="h-3.5 w-3.5" /><span className="sr-only">Queue message</span>
+            </button>
+          )}
         </div>
-        <p className="mt-1.5 text-[11px] text-vs-muted">{agentId === "codex" ? "Codex takes it during this turn." : "Sent once this response finishes."} Enter to queue · Shift+Enter for a new line</p>
+        <p className="mt-1.5 text-[11px] text-vs-muted">{draft.trim() || !onStop
+          ? `${agentId === "codex" ? "Codex takes it during this turn." : "Sent once this response finishes."} Enter to queue · Shift+Enter for a new line`
+          : "Type to queue a follow-up, or stop the agent: what it wrote and changed so far is kept."}</p>
       </form>}
     </WorkingStatus>}
     {!active && draft && <div className="rounded-xl border border-vs-border px-3 py-2 text-[13px]"><p className="text-vs-muted">Your unsent instruction is preserved.</p><button className="text-vs-accent" onClick={() => { moveDraft(draft); setDraft(""); }}>Move draft to message</button></div>}

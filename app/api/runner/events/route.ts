@@ -17,7 +17,7 @@ async function handleGET(request: Request) {
     });
     // Terminals this computer hosts for its owner (lib/terminal/remote.ts).
     const own = await bus.subscribe(`device:${device.id}`, event => {
-      if (event.type.startsWith("terminal.")) send(event);
+      if (event.type.startsWith("terminal.") || event.type === "run.stop") send(event);
     });
     return async () => { await Promise.all([user(), own()]); };
   }, {
