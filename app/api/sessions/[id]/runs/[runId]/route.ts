@@ -3,7 +3,7 @@ import { runHiddenFrom } from "../../../../../lib/ai/runs";
 import { reconcileCompletions } from "../../../../../lib/ai/finalize";
 import { events } from "../../../../../lib/events";
 import { access, denied, forbidden } from "../../../../../lib/session/auth";
-import { getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
+import { forkedFrom, getRun, listRunMessages, renameRun, setRunArchived } from "../../../../../lib/ai/runs";
 import type { RunResponse } from "../../../../../lib/ai/runs";
 import { MAX_TITLE } from "../../../../../lib/ai/titles";
 
@@ -35,7 +35,9 @@ async function handleGET(
   const after = Number(new URL(request.url).searchParams.get("after") ?? 0);
   const messages = await listRunMessages(runId, Number.isFinite(after) ? after : 0);
 
-  return Response.json({ run: refreshed ?? run, messages } satisfies RunResponse, {
+  // Only on the first load: the notice that links to it is near the top.
+  const source = after > 0 ? undefined : await forkedFrom(runId, result.user.id);
+  return Response.json({ run: refreshed ?? run, messages, ...(source !== undefined ? { forkedFrom: source } : {}) } satisfies RunResponse, {
     headers: { "cache-control": "no-store" },
   });
 }

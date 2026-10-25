@@ -1169,6 +1169,11 @@ export function Workspace({
                   icon: <SparkleIcon className="h-3.5 w-3.5" />,
                   node: (
                       <AiPanel
+                        onOpenChat={(targetSession, targetRun) => {
+                          // A chat in this room opens in place; one in another room is a page change.
+                          if (targetSession !== session.id) { router.push(`/s/${encodeURIComponent(targetSession)}?run=${encodeURIComponent(targetRun)}`); return; }
+                          void fetchRun(session.id, targetRun).then(({ run }) => enterRun(run)).catch(() => setError("That chat is unavailable or you no longer have access."));
+                        }}
                         computerStatus={computerConnection.status}
                         onSetUpAi={() => setHelpDialog("providers")}
                         actionsHost={actionsHost}

@@ -70,7 +70,12 @@ export type AgentRunMessage = {
 };
 
 export type RunsResponse = { runs: AgentRun[] };
-export type RunResponse = { run: AgentRun; messages: AgentRunMessage[] };
+export type RunResponse = {
+  run: AgentRun;
+  messages: AgentRunMessage[];
+  /** The chat this one imported its context from, when the viewer can open it. */
+  forkedFrom?: { runId: string; sessionId: string } | null;
+};
 export type StartRunRequest = { agentId: AgentId; prompt: string; title?: string };
 
 type RunRow = {
@@ -469,4 +474,17 @@ export async function leaveRun(runId: string, userId: string): Promise<void> {
 export async function runHiddenFrom(runId: string, userId: string): Promise<boolean> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) return false;
   return (await queryOne<{ hidden: boolean }>(`SELECT agent_run_hidden($1, $2) AS hidden`, [runId, userId]))?.hidden === true;
+}
+
+/**
+ * The chat a forked chat imported its context from (ai_memories records every
+ * fork), for its "Imported context from …" notice to link to. Null when there
+ * is none, or when this viewer cannot open that chat.
+ */
+export async function forkedFrom(runId: string, viewerId: string): Promise<{ runId: string; sessionId: string } | null> {
+  const row = await queryOne<{ run_id: string; session_id: string }>(
+    `SELECT r.id AS run_id, r.session_id FROM ai_memories m JOIN agent_runs r ON r.id = m.forked_from_run_id
+      WHERE m.run_id = $1 AND room_access_role(r.session_id, $2) IS NOT NULL AND NOT agent_run_hidden(r.id, $2)
+      ORDER BY m.created_at LIMIT 1`, [runId, viewerId]);
+  return row ? { runId: row.run_id, sessionId: row.session_id } : null;
 }
