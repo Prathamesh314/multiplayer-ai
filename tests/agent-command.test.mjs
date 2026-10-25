@@ -200,3 +200,8 @@ test("Windows command lines over 32,767 characters are refused with a reason, no
   assert.ok(windowsCommandLineLength("node.exe", ["gemini.js", "-p", "x".repeat(20_000)]) < 32_767, "a full-size prompt fits");
   assert.ok(windowsCommandLineLength("node.exe", ["gemini.js", "-p", "x".repeat(40_000)]) > 32_767, "a prompt with long history does not");
 });
+
+test("the runner reads Git's version on this computer (AI tasks need Git)", async () => {
+  const { gitVersion } = await import("../app/lib/git/command.ts");
+  assert.match(await gitVersion(), /^\d+\.\d+/);
+});

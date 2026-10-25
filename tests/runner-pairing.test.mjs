@@ -57,3 +57,19 @@ test("an AI tool installed but signed out is recorded for Set up AI, and never g
     await f.close();
   }
 });
+
+test("each computer reports Git, which AI tasks need: its version, missing, or unknown from an older runner", async () => {
+  const f = await memoryFixture();
+  try {
+    const { token } = await exchangePairingCode({ code: (await createPairingCode(f.alice)).code, name: "Git laptop", platform: "win32", version: "2" });
+    const git = async () => (await listDevices(f.alice)).find((item) => item.name === "Git laptop").git;
+    await beat(token, { version: "2", agentIds: ["codex"], modelCatalog: {}, git: { version: "2.47.1.windows.1" } });
+    assert.equal(await git(), "2.47.1.windows.1");
+    await beat(token, { version: "2", agentIds: ["codex"], modelCatalog: {}, git: { version: null } });
+    assert.equal(await git(), "missing", "Git could not start on that computer");
+    await beat(token, { version: "2", agentIds: ["codex"], modelCatalog: {} });
+    assert.equal(await git(), null, "an older runner does not say");
+  } finally {
+    await f.close();
+  }
+});

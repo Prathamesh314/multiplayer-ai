@@ -21,10 +21,19 @@ export function agentReady(agent: AgentStatus): boolean {
     && (!NEEDS_MODEL.includes(agent.id) || !!agent.models?.choices.length);
 }
 
-type State = "ready" | "sign-in" | "models" | "missing";
+type State = "ready" | "sign-in" | "models" | "missing" | "git";
 
-function stateOf(agent: AgentStatus): State {
+/** Installing Git for that computer's operating system. AI tasks cannot run without it. */
+export function gitInstall(platform: string | null | undefined): { command: string | null; note: string } {
+  if (platform === "win32") return { command: "winget install --id Git.Git -e --source winget", note: "In PowerShell, or download Git for Windows from git-scm.com. Then restart the Multicode AI app or runner." };
+  if (platform === "darwin") return { command: "xcode-select --install", note: "Installs Apple’s command-line tools, which include Git (or use brew install git). Then restart the Multicode AI app or runner." };
+  if (platform === "linux") return { command: "sudo apt install git", note: "On Ubuntu or Debian; on other distributions use your package manager. Then restart the Multicode AI app or runner." };
+  return { command: null, note: "Download it from git-scm.com/downloads, then restart the Multicode AI app or runner." };
+}
+
+function stateOf(agent: AgentStatus, gitMissing: boolean): State {
   if (!agent.installed) return "missing";
+  if (gitMissing) return "git";
   if (agent.auth && !agent.auth.loggedIn) return "sign-in";
   return agentReady(agent) ? "ready" : "models";
 }
@@ -74,10 +83,13 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
     }).catch(() => setError("Could not copy. Select and copy the command manually."));
   }
 
-  const readyCount = agents?.filter(agentReady).length ?? 0;
   const connected = connection.status === "connected";
   const computer = connection.computer;
   const platform = computer?.platform;
+  // AI tasks run in a Git worktree: without Git on the computer, nothing is ready.
+  const gitMissing = connected && computer?.git === "missing";
+  const readyCount = gitMissing ? 0 : agents?.filter(agentReady).length ?? 0;
+  const git = gitInstall(platform);
 
   return (
     <Modal
@@ -88,7 +100,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       footer={
         <>
           <span role="status" className="mr-auto text-[12px] text-vs-muted">
-            {agents === null ? "" : `${readyCount} of ${agents.length} AI tools ready`}
+            {agents === null ? "" : gitMissing ? "Install Git to run your AI tools" : `${readyCount} of ${agents.length} AI tools ready`}
           </span>
           <PrimaryButton onClick={onClose}>{readyCount > 0 ? "Done" : "Skip for now"}</PrimaryButton>
         </>
@@ -106,6 +118,9 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
               : "No computer connected"}
           </span>
           {connected && <span className="shrink-0 text-vs-muted">· connected</span>}
+          {connected && computer?.git && (gitMissing
+            ? <span className="shrink-0 rounded border border-vs-danger/40 bg-vs-danger/10 px-1.5 py-0.5 font-mono text-[10.5px] text-vs-danger">Git missing</span>
+            : <span title="Git, which AI tasks need, is installed" className="inline-flex shrink-0 items-center gap-1 rounded border border-vs-border bg-vs-panel px-1.5 py-0.5 font-mono text-[10.5px] text-vs-muted"><CheckIcon className="h-2.5 w-2.5 text-vs-success" />Git {computer.git}</span>)}
         </div>
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={recheck} disabled={refreshing || connection.checking}
@@ -117,6 +132,21 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
             : <button type="button" onClick={onOpenDevices} className="rounded-lg bg-vs-accent px-2.5 py-1 text-[12px] font-medium text-vs-accent-fg transition hover:opacity-90">Connect computer</button>)}
         </div>
       </section>
+      {gitMissing && (
+        <section aria-label="Git is missing" role="alert" className="-mt-1 space-y-2 rounded-xl border border-vs-danger/40 bg-vs-danger/5 p-3.5">
+          <p className="text-[13px] font-semibold text-vs-fg">Install Git on {computer?.name ?? "your computer"}</p>
+          <p className="text-[12px] leading-5 text-vs-muted">AI tools work in a Git copy of your project, so nothing can run until Git is installed. {git.note}</p>
+          {git.command && (
+            <div className="flex items-center gap-2 rounded-lg border border-vs-border bg-vs-panel py-1.5 pl-3 pr-1.5">
+              <code className="vs-scroll min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12px] text-vs-fg">{git.command}</code>
+              <button type="button" aria-label="Copy the Git install command" onClick={() => copy("git", git.command!)}
+                className="shrink-0 rounded-md border border-vs-border bg-vs-editor px-2.5 py-1 text-[11.5px] text-vs-fg transition hover:bg-vs-hover">
+                {copied === "git" ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
       {!connected && connection.status !== "checking" && (
         <p className="-mt-2 text-[12.5px] leading-5 text-vs-muted">AI tools are detected on your computer, so connect it first: open the desktop app and sign in with this account.</p>
       )}
@@ -130,7 +160,7 @@ export function ConnectAiDialog({ onClose, onOpenDevices }: { onClose: () => voi
       ) : (
         <ul aria-label="AI tools" className="space-y-2.5">
           {(agents ?? []).map((agent) => {
-            const state = stateOf(agent);
+            const state = stateOf(agent, gitMissing);
             const install = installStep(agent, platform);
             const step = state === "missing" ? install.command : state === "sign-in" ? agent.install.signIn ?? null : null;
             return (
@@ -173,7 +203,7 @@ function StatePill({ state }: { state: State }) {
   if (state === "ready") {
     return <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-vs-success/25 bg-vs-success/10 px-2.5 py-1 text-[12px] font-medium text-vs-success"><CheckIcon className="h-3 w-3" />Ready</span>;
   }
-  const label = state === "sign-in" ? "Sign in needed" : state === "models" ? "No models yet" : "Not installed";
+  const label = state === "sign-in" ? "Sign in needed" : state === "models" ? "No models yet" : state === "git" ? "Needs Git" : "Not installed";
   const tone = state === "missing" ? "border-vs-border bg-vs-panel text-vs-muted" : "border-vs-warn/30 bg-vs-warn/10 text-vs-warn";
   return <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[11.5px] font-medium ${tone}`}>{label}</span>;
 }

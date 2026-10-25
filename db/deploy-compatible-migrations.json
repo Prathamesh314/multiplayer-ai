@@ -17,5 +17,6 @@
   "064_hide_unearned_member_rooms.sql": "638ba7a71df3743f992f0cea08e68fdbccd166014155a957df2bf702d0f1b3c2",
   "065_platform_admins.sql": "fc83307caaff7a4316ff65659fc0d98a344329745d1860dbd61cf016ed54d994",
   "066_signed_out_agents.sql": "616717f1eab78c2ee9166a60fbd89b5b7af90437d575e0c5f8929acfcef09eb8",
-  "067_stop_turns.sql": "f777212656f5ee4046e7da12997d94a7574667dcb9803fa083fbdf69cea431d5"
+  "067_stop_turns.sql": "f777212656f5ee4046e7da12997d94a7574667dcb9803fa083fbdf69cea431d5",
+  "068_runner_git.sql": "08dc73f7b5ecd9aa1efe761c1f12580b3ea878d913ca0c266671cea1c57b155b"
 }

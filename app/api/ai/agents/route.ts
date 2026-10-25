@@ -23,11 +23,13 @@ async function handleGET() {
 
   // AI tools run only on members' own computers, so the tools that count are
   // the ones their connected runners report (refreshed by each heartbeat).
-  const devices = localRunnersEnabled() ? await query<{ agent_ids: string[]; signed_out_agent_ids: string[]; model_catalog: Record<string, ModelInventory> }>(
-    `SELECT agent_ids, signed_out_agent_ids, model_catalog FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
+  const devices = localRunnersEnabled() ? await query<{ agent_ids: string[]; signed_out_agent_ids: string[]; model_catalog: Record<string, ModelInventory>; git_version: string | null }>(
+    `SELECT agent_ids, signed_out_agent_ids, model_catalog, git_version FROM runner_devices WHERE user_id = $1 AND revoked_at IS NULL AND version = '2'
       AND last_seen_at > now() - interval '30 seconds'`, [user.id],
   ) : [];
-  const localIds = new Set(devices.flatMap(device => device.agent_ids));
+  // AI tasks need Git: a computer that reports it missing runs nothing (older runners do not say).
+  const localIds = new Set(devices.filter(device => device.git_version !== "missing").flatMap(device => device.agent_ids));
+  const gitMissing = devices.length > 0 && devices.every(device => device.git_version === "missing");
   const detected: AgentStatus[] = AGENTS.map(spec => ({
     id: spec.id, name: spec.name, vendor: spec.vendor, blurb: spec.blurb, installed: false, version: null, auth: null, install: spec.install,
   }));
@@ -58,7 +60,7 @@ async function handleGET() {
     {
       agents,
       canRun: localIds.size > 0,
-      reason: localIds.size > 0 ? null : "Connect your computer, then install and sign in to an AI tool on it.",
+      reason: localIds.size > 0 ? null : gitMissing ? "Install Git on your computer, then restart the Multicode AI app or runner." : "Connect your computer, then install and sign in to an AI tool on it.",
       parallelChats: parallelChatsEnabled(),
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },

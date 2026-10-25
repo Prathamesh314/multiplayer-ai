@@ -247,6 +247,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
                       : device.lastSeenAt
                         ? `Offline · last connected ${relativeTime(device.lastSeenAt)}`
                         : "Paired · not connected yet"}
+                    {device.git === "missing" ? <span className="text-vs-danger"> · Git missing</span> : device.git ? ` · Git ${device.git}` : ""}
                     {device.platform ? ` · ${device.platform}` : ""}
                     {device.version ? ` · v${device.version}` : ""}
                   </p>
