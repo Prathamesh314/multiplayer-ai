@@ -151,6 +151,9 @@ export function installFixtures() {
         if(init.method==="POST") {const input={...JSON.parse(init.body),runId:run.id,status:"queued",createdAt:new Date().toISOString()};inputs.push(input);return json({input});}
         return json({inputs});
       }
+      // state.forks[runId]: this chat imported its context from another ({runId,sessionId,name}).
+      const fork=state.forks?.[run.id];
+      if(fork)return json({run,forkedFrom:{runId:fork.runId,sessionId:fork.sessionId},messages:[{role:"system",body:"Imported context from #"+fork.name},{role:"user",body:"Continue from that chat."}]});
       return json({run,messages:[{role:"user",body:"Review the repository and explain how the session works."},{role:"assistant",body:"## Session workspace\n\nThe repository is ready. Use `executeAgentRun` to start an agent turn.\n\n### Next steps\n\nSelect a file to inspect its contents, or continue the conversation."}]});
     }
     if(path==="/api/tasks"&&init.method==="POST"){(state.taskPosts??=[]).push(JSON.parse(init.body));return json({ok:true,runId:state.runs[0]?.id??null});}

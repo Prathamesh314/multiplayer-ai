@@ -589,6 +589,16 @@ try {
     assert.deepEqual((await sql(`SELECT status, error FROM agent_runs WHERE id = $1`, [chat.id])).rows[0], { status: "completed", error: null });
     await assert.rejects(requestStop(chat.id, alice), /Nothing is running/);
   });
+  await test("a forked chat names the chat it imported context from, only to people who can open it", async () => {
+    const { forkRunMemory } = await import("../app/lib/ai/memory.ts");
+    const { forkedFrom } = await import("../app/lib/ai/runs.ts");
+    const fork = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: seed.headSha });
+    assert.equal(await forkedFrom(fork.id, alice), null, "not a fork yet");
+    await forkRunMemory({ sourceRunId: run.id, destRunId: fork.id, createdBy: alice });
+    assert.deepEqual(await forkedFrom(fork.id, alice), { runId: run.id, sessionId: roomId });
+    const outsider = (await sql(`INSERT INTO users(handle, email, display_name, connect_code) VALUES ('outsider','outsider@example.test','Outsider','PK-AAAA-AAAZ') RETURNING id`)).rows[0].id;
+    assert.equal(await forkedFrom(fork.id, outsider), null, "no link to a room they cannot open");
+  });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");
     const { browserChecks } = await import("./handoff-browser.mjs");

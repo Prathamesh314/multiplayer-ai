@@ -1,4 +1,4 @@
-import type { AgentRun, AgentRunMessage, RunResponse, RunsResponse } from "./runs";
+import type { AgentRun, RunResponse, RunsResponse } from "./runs";
 import type {
   ChatBranchActionRequest, ChatBranchActionResponse, ChatBranchResponse, ChatFileDiffResponse,
 } from "../../api/sessions/[id]/runs/[runId]/branch/route";
@@ -22,7 +22,7 @@ export async function fetchRun(
   sessionId: string,
   runId: string,
   afterSeq = 0,
-): Promise<{ run: AgentRun; messages: AgentRunMessage[] }> {
+): Promise<RunResponse> {
   const query = afterSeq > 0 ? `?after=${afterSeq}` : "";
   const response = await fetch(`${base(sessionId)}/${encodeURIComponent(runId)}${query}`, {
     cache: "no-store",

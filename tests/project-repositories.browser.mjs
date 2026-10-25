@@ -605,6 +605,19 @@ try {
   await evaluate(`(()=>{const m=window.__model;m.devices=m.devices.filter(d=>d.id!=="computer-2");m.emitDevices();})()`);
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
   await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes after pairing");
+  // A chat that imported another chat's context links to it from its first notice.
+  const [chatA,chatB]=await evaluate(`["Queue context A","Queue context B"].map(title=>window.__model.runs.find(run=>run.title===title).id)`);
+  await evaluate(`window.__model.forks={${JSON.stringify(chatB)}:{runId:${JSON.stringify(chatA)},sessionId:"modelroomabc",name:"modelroomabc"}}`);
+  await click('button[title^="Queue context A ·"]');
+  await eventually(()=>evaluate('document.querySelector(".ai-chat-header h2")?.textContent==="Queue context A"'),"chat A");
+  await click('button[title^="Queue context B ·"]');
+  const sourceLink=`document.querySelector('a[title="Open the chat this context was imported from"]')`;
+  await eventually(()=>evaluate(`${sourceLink}?.textContent.includes("Imported context from #modelroomabc")`),"the imported-context notice is a link");
+  assert.equal(await evaluate(`${sourceLink}.getAttribute("href")`),`/s/modelroomabc?run=${chatA}`);
+  await evaluate(`${sourceLink}.click()`);
+  // Same room: it opens in place, like choosing it in the sidebar.
+  await eventually(()=>evaluate(`document.querySelector(".ai-chat-header h2")?.textContent==="Queue context A" && !${sourceLink}`),"clicking it opens the source chat");
+  await evaluate('window.__model.forks=undefined');
   // In the desktop app, a newer release that is downloaded and verified: "New update available".
   await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.desktop={isDesktop:true,platform:"darwin",pairComputer:async()=>({ok:true}),calls:[],
     updateState:async()=>({status:"ready",build:"preview-bbbbbbb-2",changes:true}),onUpdate:()=>()=>{},

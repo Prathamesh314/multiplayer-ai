@@ -12,6 +12,7 @@ import { Modal } from "../ui/Modal";
 import { ComposerPicker, type ComposerOption } from "./ComposerPicker";
 import { ModelPicker } from "./ModelPicker";
 
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
 import {
@@ -90,6 +91,8 @@ type AiPanelProps = {
    */
   forkFromRunId: string | null;
   onForkFromChange: (runId: string | null) => void;
+  /** Open another chat (an imported-context notice's source): in place when it is in this room. */
+  onOpenChat?: (sessionId: string, runId: string) => void;
   /** "Fork" a run in view: open a fresh chat that imports that run's context. */
   onForkEntered: (run: AgentRun) => void;
   /** Clear the entered run to compose a fresh one. */
@@ -132,6 +135,8 @@ type Turn = {
   activities?: string[];
   /** Epoch ms this agent turn began, for the live elapsed timer. */
   startedAt?: number;
+  /** A notice that opens another chat: "Imported context from …" links to its source. */
+  source?: { sessionId: string; runId: string };
   /**
    * The run's stderr, live. Nothing the AI emits is hidden from the chat: the
    * log is always openable under the turn, and surfaces expanded when the run
@@ -145,6 +150,7 @@ type Turn = {
 };
 
 export function AiPanel({
+  onOpenChat,
   computerStatus,
   onSetUpAi,
   actionsHost,
@@ -344,7 +350,8 @@ export function AiPanel({
     const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
     setTurns([]);
     try {
-      const { messages } = await fetchRun(sessionId, target.id);
+      const { messages, forkedFrom } = await fetchRun(sessionId, target.id);
+      const source = forkedFrom ?? undefined;
       if (generation !== historyGeneration.current || enteredRef.current?.id !== target.id) return;
       // Every stored turn shows — replies, notices, warnings, errors, the
       // changed-files record. The old blanket drop of system turns on
@@ -373,6 +380,7 @@ export function AiPanel({
           activities: role === "agent" && pendingSteps.length ? pendingSteps : undefined,
           author: message.authorName ?? null,
           agentName: role === "agent" ? agentName : null,
+          source: role === "system" && message.body.startsWith(IMPORTED_CONTEXT) ? source : undefined,
         });
         if (role === "agent") pendingSteps = [];
       }
@@ -647,7 +655,7 @@ export function AiPanel({
       if (continuing) return [...prev, userTurn];
       if (forkSource) {
         return [
-          { id: uid(), role: "system", text: `Imported context from #${forkSource.sessionName}` },
+          { id: uid(), role: "system", text: `${IMPORTED_CONTEXT}${forkSource.sessionName}`, source: { sessionId: forkSource.sessionId, runId: forkSource.id } },
           userTurn,
         ];
       }
@@ -1061,7 +1069,7 @@ export function AiPanel({
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scroller} onScroll={onConversationScroll} data-scroller="conversation" className="vs-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {hasConversation ? (
-          <Conversation turns={turns} sessionId={sessionId} />
+          <Conversation turns={turns} sessionId={sessionId} onOpenChat={onOpenChat} />
         ) : (
           <EmptyState
             ready={ready}
@@ -1426,7 +1434,7 @@ function agentSubtitle(agent: AgentStatus): string {
 // Conversation
 // ---------------------------------------------------------------------------
 
-function Conversation({ turns, sessionId }: { turns: Turn[]; sessionId: string }) {
+function Conversation({ turns, sessionId, onOpenChat }: { turns: Turn[]; sessionId: string; onOpenChat?: (sessionId: string, runId: string) => void }) {
   // Agent/system turns carry CLI framing (Codex's banner, model-manager error
   // logs, its echo of the prompt, the token tally). Strip it to the reply;
   // a turn that was nothing but noise is dropped entirely.
@@ -1448,7 +1456,7 @@ function Conversation({ turns, sessionId }: { turns: Turn[]; sessionId: string }
       <details className="text-[11px] text-vs-muted"><summary className="cursor-pointer">{plural(turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0), "step")} · {plural(visible.filter(turn => turn.role !== "system").length, "message")}</summary><p className="mt-2">Steps are the agent’s tool calls in this conversation. Expand a response’s steps to inspect them.</p></details>
       {visible.map((turn) =>
         turn.role === "system" ? (
-          <SystemLine key={turn.id} text={turn.text} waiting={turn.waiting} />
+          <SystemLine key={turn.id} text={turn.text} waiting={turn.waiting} source={turn.source} onOpenChat={onOpenChat} />
         ) : (
           <TurnBubble key={turn.id} turn={turn} sessionId={sessionId} />
         ),
@@ -1693,7 +1701,31 @@ function ActivityTrace({
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-function SystemLine({ text, waiting }: { text: string; waiting?: boolean }) {
+/** The notice a forked chat starts with; the server writes the same text. */
+const IMPORTED_CONTEXT = "Imported context from #";
+const chatHref = (sessionId: string, runId: string) => `/s/${encodeURIComponent(sessionId)}?run=${encodeURIComponent(runId)}`;
+
+function SystemLine({ text, waiting, source, onOpenChat }: {
+  text: string; waiting?: boolean; source?: { sessionId: string; runId: string }; onOpenChat?: (sessionId: string, runId: string) => void;
+}) {
+  // "Imported context from #room" opens the chat the context came from. The
+  // link stays a real one (new tab, copy link); a plain click opens it here.
+  if (source && !waiting) {
+    return (
+      <div className="flex justify-center px-1">
+        <Link href={chatHref(source.sessionId, source.runId)} title="Open the chat this context was imported from"
+          onClick={event => {
+            if (!onOpenChat || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            onOpenChat(source.sessionId, source.runId);
+          }}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-vs-border bg-vs-panel/60 px-3 py-1 text-[11.5px] text-vs-muted transition hover:border-vs-accent/50 hover:text-vs-fg">
+          <span className="truncate underline decoration-vs-muted/40 underline-offset-2">{text}</span>
+          <span aria-hidden className="shrink-0">↗</span>
+        </Link>
+      </div>
+    );
+  }
   // A live wait is a soft pill that pulses; short run boundaries ("Finished in
   // 12.4s") are a quiet pill too; a long stderr dump is a wrapped, muted note
   // so it never blows out the panel width.
