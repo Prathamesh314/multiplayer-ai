@@ -2,7 +2,7 @@
 export function installFixtures() {
   const room = { id: "modelroomabc", name: "Alice", joinCode: "ABCD-EFGH", ownerId: "alice", orgId: "org", projectId: "project", visibility: "public", createdAt: 1, repo: null, lastActiveAt: 1, pinned: true, archivedAt: null, myRole: "owner" };
   const repositories = [{id:"11111111-1111-4111-8111-111111111111",name:"frontend"},{id:"22222222-2222-4222-8222-222222222222",name:"backend"}].map(r=>({...r,projectId:"project",defaultBranch:"main",ready:true}));
-  const computer={id:"computer-1",userId:"alice",name:"Alice’s Mac",platform:"darwin",version:"2",lastSeenAt:Date.now(),createdAt:1,revokedAt:null,online:true,supportsPermissions:true};
+  const computer={id:"computer-1",userId:"alice",name:"Alice’s Mac",platform:"darwin",version:"2",lastSeenAt:Date.now(),createdAt:1,revokedAt:null,online:true,supportsPermissions:true,git:"2.47.1"};
   const state = window.__model = { room, repos: [], runs: [], inputs: {}, files: {}, failSave: false, devices:[computer], deviceFailure:false, agentsFailure:false, aiReady:true, sources: [], requests: [], unknown: [] };
   state.emit = (type, data={}) => state.sources.filter(source=>source.url.includes(`/sessions/${room.id}/events`)).forEach(source=>source.dispatchEvent(new MessageEvent(type,{data:JSON.stringify({type,...data})})));
   state.emitDevices = () => state.sources.filter(source=>source.url==="/api/events").forEach(source=>source.dispatchEvent(new MessageEvent("devices.changed",{data:"{}"})));

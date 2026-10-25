@@ -207,7 +207,7 @@ Using a tool still asks in the chat, as described above. MCP servers work with C
     sections: [
       { id: "connect", title: "Install and connect one tool", body: `1. Install Git and your chosen AI command-line tool on the connected computer. Use its official installer and sign-in instructions.
 2. Run that tool directly in a terminal once and finish its login/provider setup.
-3. In Multicode AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat. The top line names your connected computer; **Change** opens Your computers.
+3. In Multicode AI, open **AI providers**, **Set up AI**, or **Providers** inside a chat. The top line names your connected computer and its Git version; **Change** opens Your computers. AI tools work in a Git copy of your project, so if Git is missing there, Set up AI says so first and shows the command to install it for that computer (Windows, macOS or Linux); restart the app or runner afterwards.
 4. Select **Check again**. Each tool shows **Ready**, **Sign in needed** (with the command to sign in, such as \`claude auth login\` or \`codex login\`), **No models yet**, or **Not installed** (with the install command for that computer; on Windows, Homebrew commands are replaced by the vendor's Windows installer).
 5. Return to the room and choose its provider and model in the composer.
 

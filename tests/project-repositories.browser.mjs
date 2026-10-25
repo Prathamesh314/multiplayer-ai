@@ -412,7 +412,7 @@ try {
   await eventually(()=>evaluate('!document.querySelector(\'button[aria-label="Choose model"]\')?.disabled && !!document.querySelector(\'button[aria-label="Choose model"]\')'),"AI reconnects without reloading the page");
   // Set up AI on a Windows computer: one tool ready, one installed but signed out (with
   // its sign-in command), one missing whose Homebrew command means nothing on Windows.
-  await evaluate(`(()=>{const m=window.__model;m.devices[0].platform="win32";m.extraAgents=[
+  await evaluate(`(()=>{const m=window.__model;m.devices[0].platform="win32";m.devices[0].git="2.47.1";m.extraAgents=[
     {id:"claude",name:"Claude Code",vendor:"Anthropic",blurb:"Reads and edits files.",installed:true,auth:{loggedIn:false,method:null,email:null,plan:null},install:{command:"npm install -g @anthropic-ai/claude-code",signIn:"claude auth login",docs:"https://docs.claude.com"}},
     {id:"ollama",name:"Ollama",vendor:"Local",blurb:"Local models.",installed:false,auth:null,install:{command:"brew install ollama",alternative:"Download the installer from ollama.com",docs:"https://ollama.com"}}];m.emitDevices();})()`);
   await button("Room guide");await button("Set up AI");
@@ -423,6 +423,18 @@ try {
   assert.match(rows[2],/Ollama[\s\S]*Not installed[\s\S]*Download the installer from ollama\.com/);
   assert.ok(!rows[2].includes("brew install"),"no Homebrew command for a Windows computer");
   assert.match(await evaluate('document.querySelector("dialog[open] footer [role=status]").innerText'),/1 of 3 AI tools ready/);
+  assert.ok(await evaluate('document.querySelector(\'dialog[open] section[aria-label="Connected computer"]\').innerText.includes("Git 2.47.1")'),"Git's version beside the computer");
+  await click('button[aria-label="Close Set up AI"]');
+  // Without Git nothing can run: Set up AI says so first, with the command for that computer.
+  await evaluate('(()=>{const m=window.__model;m.devices[0].git="missing";m.emitDevices();})()');
+  await button("Room guide");await button("Set up AI");
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog[open] section[aria-label="Git is missing"]\')'),"Git missing explained");
+  assert.ok(await evaluate('document.querySelector(\'dialog[open] section[aria-label="Git is missing"]\').innerText.includes("winget install --id Git.Git")'),"the Windows install command");
+  assert.ok(await evaluate('document.querySelector(\'dialog[open] section[aria-label="Connected computer"]\').innerText.includes("Git missing")'));
+  assert.match(await evaluate(`[...document.querySelectorAll('dialog[open] ul[aria-label="AI tools"] li')][0].innerText`),/Codex[\s\S]*Needs Git/,"tools cannot run without Git");
+  assert.match(await evaluate('document.querySelector("dialog[open] footer [role=status]").innerText'),/Install Git to run your AI tools/);
+  await writeFile(join(tmpdir(),'multiplayer-set-up-ai-git.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate('(()=>{const m=window.__model;m.devices[0].git="2.47.1";m.emitDevices();})()');
   await writeFile(join(tmpdir(),'multiplayer-set-up-ai.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   await click('button[aria-label="Close Set up AI"]');
   await evaluate('(()=>{const m=window.__model;m.devices[0].platform="darwin";m.extraAgents=undefined;m.emitDevices();})()');
