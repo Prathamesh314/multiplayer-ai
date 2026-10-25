@@ -61,3 +61,16 @@ test('missing Clerk credentials refuse activation before any network or traffic 
   try{for(const key of keys)delete process.env[key];await assert.rejects(checkWebRuntime({requireAuth:true}),/Clerk authentication is not configured/);}
   finally{keys.forEach((key,index)=>{if(before[index]===undefined)delete process.env[key];else process.env[key]=before[index];});}
 });
+
+test('every migration a release can apply has a reviewed rollback policy for its exact bytes',async()=>{
+  // Without one, the production release stops before migrating and restores the previous
+  // revision, so a missing entry must fail here rather than at deploy time.
+  const {readdir}=await import('node:fs/promises');
+  const approved=JSON.parse(await readFile(new URL('../db/deploy-compatible-migrations.json',import.meta.url),'utf8'));
+  const first=Object.keys(approved).sort()[0];
+  const files=(await readdir(new URL('../db/migrations/',import.meta.url))).filter(name=>name.endsWith('.sql')&&name>=first).sort();
+  for(const name of files){
+    const sha256=createHash('sha256').update(await readFile(new URL(`../db/migrations/${name}`,import.meta.url))).digest('hex');
+    assert.equal(approved[name],sha256,`${name}: add it to db/deploy-compatible-migrations.json once reviewed as safe for the previous release`);
+  }
+});
