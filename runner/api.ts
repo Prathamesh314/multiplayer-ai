@@ -63,7 +63,7 @@ export class RunnerApi {
   async heartbeat(onlyChanged = false): Promise<void> {
     const agents = await detectAgents();
     const available = agents.filter(agent => agent.installed && agent.auth?.loggedIn !== false);
-    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, supportsTerminal: this.supportsTerminal, supportsAttachments: true, supportsAgentTools: true, supportsPermissions: true, secretNames: this.secretNames(), agentIds: available.map(agent => agent.id), signedOutAgentIds: agents.filter(agent => agent.installed && agent.auth?.loggedIn === false).map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
+    const body = { version: "2", supportsInputs: true, supportsIsolatedChats: true, supportsTerminal: this.supportsTerminal, supportsAttachments: true, supportsAgentTools: true, supportsPermissions: true, supportsStop: true, secretNames: this.secretNames(), agentIds: available.map(agent => agent.id), signedOutAgentIds: agents.filter(agent => agent.installed && agent.auth?.loggedIn === false).map(agent => agent.id), modelCatalog: Object.fromEntries(available.filter(agent => agent.models).map(agent => [agent.id, agent.models])) };
     // Timestamps change when the CLI cache is refreshed; they are not inventory changes.
     const signature = JSON.stringify(body, (key, value) => ["checkedAt", "refreshedAt"].includes(key) ? undefined : value);
     if (onlyChanged && this.inventory === signature) return;
@@ -138,9 +138,11 @@ export class RunnerApi {
     return this.post<RunnerWorkspacesResponse>("/api/runner/workspaces", {});
   }
 
-  async postEvents(runId: string, events: AiRunEvent[], sequence?: number): Promise<void> {
-    const result = await this.post<{ acknowledged?: number }>(`/api/runner/runs/${encodeURIComponent(runId)}/events`, { events, sequence });
+  /** `stop`: the chat's driver asked to stop this turn. */
+  async postEvents(runId: string, events: AiRunEvent[], sequence?: number): Promise<{ stop: boolean }> {
+    const result = await this.post<{ acknowledged?: number; stop?: boolean }>(`/api/runner/runs/${encodeURIComponent(runId)}/events`, { events, sequence });
     if (sequence !== undefined && result.acknowledged !== sequence) throw new Error("Server did not durably acknowledge the activity batch. Update the server.");
+    return { stop: result.stop === true };
   }
 
   async checkpoint(snapshot: Checkpoint): Promise<void> {

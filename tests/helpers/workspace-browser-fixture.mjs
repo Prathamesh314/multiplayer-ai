@@ -121,7 +121,7 @@ export function installFixtures() {
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});
     if(path.endsWith("/members"))return json({members:[{userId:"alice",handle:"alice",displayName:"Alice",role:"owner",online:true},...(state.extraMembers??[])]});
     if(path.endsWith("/runs"))return json({runs:state.runs});
-    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch|permissions)(?:\/([^/]+))?)?$/);
+    const runPath=path.match(/\/runs\/([^/]+)(?:\/(handoff|history|inputs|join|branch|permissions|stop)(?:\/([^/]+))?)?$/);
     if(runPath) {
       const run=state.runs.find(item=>item.id===runPath[1]);
       if(runPath[2]==="branch") {
@@ -144,6 +144,8 @@ export function installFixtures() {
           setTimeout(()=>state.emit?.("run.permission",{runId:run.id,at:Date.now()}),0);return json({mode,released});}
         return json({requests});
       }
+      // Stop: recorded, then the agent "stops" (the run finishes) when the test says so.
+      if(runPath[2]==="stop") { state.stops=(state.stops??0)+1; return json({status:"stopping"}); }
       if(runPath[2]==="inputs") {
         const inputs=state.inputs[run.id]??=[];
         if(init.method==="POST") {const input={...JSON.parse(init.body),runId:run.id,status:"queued",createdAt:new Date().toISOString()};inputs.push(input);return json({input});}

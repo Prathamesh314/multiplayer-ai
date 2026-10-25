@@ -63,7 +63,10 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     }
     let sha = saved.sha;
     let failure = saved.errOutput.trim();
-    let status: "completed" | "failed" = saved.code === 0 ? "completed" : "failed";
+    // Stopped by its driver: whatever the agent wrote and changed so far is kept,
+    // like a finished turn, and the chat says it was stopped.
+    const stopped = !!turn.stop_requested_at;
+    let status: "completed" | "failed" = saved.code === 0 || stopped ? "completed" : "failed";
     if (sha) {
       try {
         await promoteTurn(repoRef, saved.turnId, saved.baseSha, sha, isolated ? chatBranchOf(run.id) : undefined);
@@ -98,6 +101,7 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     const messages = [
       ...(saved.output.trim() ? [{ role: "agent", body: saved.output.trim() }] : []),
       ...(status === "failed" ? [{ role: "system", body: failure || "Execution failed before producing a confirmed result." }] : []),
+      ...(stopped && status === "completed" ? [{ role: "system", body: "Stopped." }] : []),
       // Which files changed is in the Changes tab and the turn's diff stats; the
       // chat keeps to the conversation.
     ];
@@ -117,7 +121,8 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     [saved.runId, status, sha, status === "failed" ? (saved.code || 1) : 0, status === "failed" ? failure : null,
       totals.reduce((sum, file) => sum + file.added, 0), totals.reduce((sum, file) => sum + file.removed, 0)]);
     await tx.query(`UPDATE runner_jobs SET status = 'done' WHERE turn_id = $1`, [saved.turnId]);
-    if (status === "completed") {
+    // A stopped exchange is unfinished: it is not learned from.
+    if (status === "completed" && !stopped) {
       await ingestExchange(tx, { sessionId: saved.sessionId, runId: saved.runId, turnId: saved.turnId,
         prompt: saved.userPrompt, reply: saved.output, agentMessageId, commitSha: sha, repoRef });
     }

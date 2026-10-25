@@ -170,7 +170,9 @@ export type RunnerTerminalEvent =
       repoRef: string | null; runId: string | null; isolated: boolean; at: number }
   | { type: "terminal.input"; id: string; data: string; at: number }
   | { type: "terminal.resize"; id: string; cols: number; rows: number; at: number }
-  | { type: "terminal.kill" | "terminal.detach"; id: string; at: number };
+  | { type: "terminal.kill" | "terminal.detach"; id: string; at: number }
+  /** Stop this turn's agent: sent only to the runner executing it, on `device:<id>`. */
+  | { type: "run.stop"; turnId: string; at: number };
 export type TerminalStreamEvent =
   | { type: "terminal.output"; id: string; data: string; at: number }
   | { type: "terminal.exit"; id: string; code: number | null; at: number }

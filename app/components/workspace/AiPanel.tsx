@@ -249,6 +249,12 @@ export function AiPanel({
   const [error, setError] = useState<string | null>(null);
   const [historyFailed, setHistoryFailed] = useState(false);
   const run = useRef<RunHandle | null>(null);
+  /** Stop the agent running this chat's turn (the person running it only). */
+  const stopRun = useCallback(async (runId: string | null) => {
+    if (!runId) throw new Error("The task is still starting. Try again in a moment.");
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
+    if (!response.ok) throw new Error((await response.json().catch(() => null) as { error?: string } | null)?.error ?? "Could not stop the agent. Try again.");
+  }, [sessionId]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
   const historyGeneration = useRef(0);
@@ -1107,7 +1113,7 @@ export function AiPanel({
       {running && !entered ? (
         // A brand-new chat before it is entered: the same working card, no queue yet.
         <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2">
-          <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onDetach={() => run.current?.cancel()} />
+          <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onDetach={() => run.current?.cancel()} onStop={() => stopRun(localRunIdRef.current)} />
         </div>
       ) : entered && !enteredIsMine ? (
         <>
@@ -1162,7 +1168,8 @@ export function AiPanel({
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
         agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId} startedAt={entered.startedAt} workingSince={liveTurnStart}
-        onDetach={running ? () => run.current?.cancel() : undefined} moveDraft={text => composer.current?.insertPrompt(text)} />}
+        onDetach={running ? () => run.current?.cancel() : undefined} onStop={enteredIsMine && canRun ? () => stopRun(entered.id) : undefined}
+        moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
   );
 }

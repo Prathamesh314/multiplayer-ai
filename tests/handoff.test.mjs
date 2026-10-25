@@ -556,6 +556,39 @@ try {
     await assert.rejects(consumeChatInput(job,{kind:"ack",id:firstInput.id}),/controls/);
     await assert.rejects(enqueueChatInput(target.id,alice,{id:randomUUID(),body:"Too late",controlVersion:0}),/finishing/);
   });
+  await test("Stop: before pickup a turn ends at once; while running the runner is told, and the reply and changes are kept", async () => {
+    const { requestStop } = await import("../app/lib/ai/stop.ts");
+    const chat = await createRun({ sessionId: roomId, startedBy: alice, agentId: "codex", baseSha: seed.headSha });
+    const jobFor = turnId => ({ ...makeJob(turnId, alice, 0), runId: chat.id });
+    const messages = async () => (await sql(`SELECT role, body FROM agent_run_messages WHERE run_id = $1 ORDER BY seq`, [chat.id])).rows;
+    // Not picked up by a computer yet: nothing to interrupt, so it ends now.
+    const waiting = jobFor(randomUUID());
+    await reserveTurn(chat.id, alice, waiting.turnId, 0);
+    await prepareTurn(waiting);
+    await assert.rejects(requestStop(chat.id, bob), /Only the person running/);
+    assert.deepEqual(await requestStop(chat.id, alice), { status: "stopped" });
+    assert.equal((await sql(`SELECT status FROM agent_turns WHERE id = $1`, [waiting.turnId])).rows[0].status, "cancelled");
+    assert.equal((await sql(`SELECT status FROM runner_jobs WHERE turn_id = $1`, [waiting.turnId])).rows[0].status, "failed");
+    assert.deepEqual((await sql(`SELECT status, error FROM agent_runs WHERE id = $1`, [chat.id])).rows[0], { status: "completed", error: null });
+    assert.equal((await messages()).at(-1).body, "Stopped before it started.");
+    // Running on a computer: an outdated runner cannot stop, so the person is told.
+    const running = jobFor(randomUUID());
+    await reserveTurn(chat.id, alice, running.turnId, 0);
+    await prepareTurn(running);
+    const { deviceId } = await claimTurn(sql, running);
+    await sql(`UPDATE runner_devices SET supports_stop = false WHERE id = $1`, [deviceId]);
+    await assert.rejects(requestStop(chat.id, alice), /too old to stop/);
+    await sql(`UPDATE runner_devices SET supports_stop = true WHERE id = $1`, [deviceId]);
+    assert.deepEqual(await requestStop(chat.id, alice), { status: "stopping" });
+    assert.ok((await sql(`SELECT stop_requested_at FROM agent_turns WHERE id = $1`, [running.turnId])).rows[0].stop_requested_at);
+    // The runner ends the agent (no exit code) and reports: kept as a completed, stopped turn.
+    const result = await finalizeAgentRun({ turnId: running.turnId, sessionId: roomId, runId: chat.id, repoId: null, baseSha: running.baseSha,
+      userPrompt: running.userPrompt, binName: "codex", author, sha: null, code: null, output: "Partial answer", errOutput: "Terminated" });
+    assert.equal(result.status, "completed");
+    assert.deepEqual((await messages()).slice(-2), [{ role: "agent", body: "Partial answer" }, { role: "system", body: "Stopped." }]);
+    assert.deepEqual((await sql(`SELECT status, error FROM agent_runs WHERE id = $1`, [chat.id])).rows[0], { status: "completed", error: null });
+    await assert.rejects(requestStop(chat.id, alice), /Nothing is running/);
+  });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");
     const { browserChecks } = await import("./handoff-browser.mjs");

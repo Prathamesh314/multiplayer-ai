@@ -231,6 +231,17 @@ try {
   await type(queue,"Instruction for chat B only");await button("Queue message");
   await eventually(()=>evaluate(`document.querySelector('[aria-label="Chat message queue"]')?.textContent.includes("Instruction for chat B only")`),"queued instruction");
   assert.equal(await evaluate('window.__model.requests.filter(r=>r.method==="POST" && r.path.endsWith("/inputs")).at(-1).path'),"/api/sessions/modelroomabc/runs/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/inputs");
+  // While the agent works: an empty box offers Stop; typing turns it back into Queue message.
+  const stopButton=`document.querySelector('[aria-label="Chat message queue"] button[aria-label="Stop"]')`;
+  await eventually(()=>evaluate(`!!${stopButton} && !document.querySelector('[aria-label="Chat message queue"] button[title="Queue message"]')`),"empty box shows Stop");
+  await type(queue,"One more thing");
+  await eventually(()=>evaluate(`!${stopButton} && !!document.querySelector('[aria-label="Chat message queue"] button[title="Queue message"]')`),"typing shows Queue message");
+  await type(queue,"");
+  await eventually(()=>evaluate(`!!${stopButton}`),"clearing the box shows Stop again");
+  await writeFile(join(tmpdir(),'multiplayer-stop-button.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  await evaluate(`${stopButton}.click()`);
+  await eventually(()=>evaluate('window.__model.stops===1 && !!document.querySelector(\'[aria-label="Chat message queue"] button[aria-label="Stopping"]\')'),"Stop asks the server and shows Stopping until the turn ends");
+  assert.equal(await evaluate('window.__model.requests.filter(r=>r.method==="POST" && r.path.endsWith("/stop")).at(-1).path'),"/api/sessions/modelroomabc/runs/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/stop");
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat control"]').length`),1);
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Chat message queue"]').length`),1);
   assert.deepEqual(keyWarnings,[],"chat refresh and switching have no React key warnings");

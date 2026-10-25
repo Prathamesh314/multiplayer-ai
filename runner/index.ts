@@ -44,6 +44,8 @@ const stopSignal = new AbortController();
 const jobsReady = new WakeSignal();
 const inputsReady = new WakeSignal();
 const stop = () => { stopping = true; stopSignal.abort(); jobsReady.wake(); inputsReady.wake(); };
+/** Turns being run here, by turn id: Stop in the chat ends the agent (run.stop). */
+const stopTurn = new Map<string, () => void>();
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 const desktopPort = (process as NodeJS.Process & {
@@ -131,11 +133,22 @@ async function processJob(
   const abortExecution = () => execution.abort();
   stopSignal.signal.addEventListener("abort", abortExecution, { once: true });
   if (stopSignal.signal.aborted) abortExecution();
+  // Stop from the chat: end the agent. Whatever it wrote and changed is still
+  // checkpointed, committed and reported, and the server marks the turn stopped.
+  let stopped = false;
+  const stopRequested = () => {
+    if (stopped) return;
+    stopped = true;
+    log(`run ${job.runId}: stopped from the chat`);
+    execution.abort();
+  };
+  stopTurn.set(job.turnId, stopRequested);
   let renewedAt = Date.now(), renewing = false;
   const leaseTimer = setInterval(() => {
     if (renewing) return;
     renewing = true;
-    void api.postEvents(job.turnId, []).then(() => { renewedAt = Date.now(); }).catch(cause => {
+    // The lease renewal also carries a stop the live signal may have missed.
+    void api.postEvents(job.turnId, []).then(result => { renewedAt = Date.now(); if (result.stop) stopRequested(); }).catch(cause => {
       if (Date.now() - renewedAt > 40_000 || permanentRunnerFailure(cause)) execution.abort();
     }).finally(() => { renewing = false; });
   }, 15_000);
@@ -206,6 +219,7 @@ async function processJob(
   } finally {
     clearInterval(timer);
     clearInterval(leaseTimer);
+    stopTurn.delete(job.turnId);
     stopSignal.signal.removeEventListener("abort", abortExecution);
     flush();
     await activity.deliver(api);
@@ -281,6 +295,7 @@ async function start(): Promise<void> {
       try {
         await api.signals(stopSignal.signal, (type, data) => {
           if (type.startsWith("terminal.")) { terminals?.handle(type, data); return; }
+          if (type === "run.stop") { stopTurn.get(String((data as { turnId?: unknown } | null)?.turnId ?? ""))?.(); return; }
           if (type === "ready" || type === "runner.work" || type === "resync" || type === "devices.changed") jobsReady.wake();
           if (type === "ready" || type === "run.inputs" || type === "resync") inputsReady.wake();
         });
