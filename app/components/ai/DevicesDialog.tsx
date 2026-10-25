@@ -15,7 +15,7 @@
 import { UpdateComputerHelp } from "./UpdateComputerHelp";
 import { runnerCommand } from "../../lib/runner/package";
 import { useEffect, useState } from "react";
-import { mintPairingCode, revokeDevice } from "../../lib/runner/client";
+import { fetchComputerConnection, mintPairingCode, revokeDevice } from "../../lib/runner/client";
 import type { RunnerDevice } from "../../lib/runner/client";
 import { relativeTime } from "../../lib/format";
 import { CheckIcon, ChevronIcon, ComputerIcon, SpinnerIcon, TerminalIcon } from "../icons";
@@ -52,15 +52,18 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
   const newOneConnected = !!paired && paired.online && paired.version === "2";
   const tray = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "menu bar" : "system tray";
 
-  async function startPairing() {
+  /** `via`: the desktop tab connects this computer through the app; the terminal tab only needs the code. */
+  async function startPairing(via: Method) {
     setBusy(true);
     setError(null);
     try {
-      setKnownIds(new Set((devices ?? []).map((device) => device.id)));
+      // The computers that exist now; the one that appears after is the new one.
+      const existing = devices ?? (await fetchComputerConnection()).devices;
+      setKnownIds(new Set(existing.map((device) => device.id)));
       const minted = await mintPairingCode();
       setPairing(minted);
       setNow(Date.now());
-      if (desktop && method === "desktop") {
+      if (desktop && via === "desktop") {
         const result = await desktopBridge()!.pairComputer(minted.code);
         if (!result.ok) throw new Error(result.error || "Could not connect this computer. Please try again.");
         await connection.refresh();
@@ -102,7 +105,12 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
     <section aria-label="Connect a computer" className="space-y-4">
       <div role="tablist" aria-label="How to connect" className="grid grid-cols-2 gap-1 rounded-xl border border-vs-border bg-vs-editor p-1 text-[12.5px] font-medium">
         {([["desktop", desktop ? "This app" : "Desktop app", " (easiest)", ComputerIcon], ["terminal", "Terminal", " (npx)", TerminalIcon]] as const).map(([id, label, hint, Icon]) => (
-          <button key={id} type="button" role="tab" aria-selected={method === id} onClick={() => setMethod(id)}
+          <button key={id} type="button" role="tab" aria-selected={method === id} onClick={() => {
+            setMethod(id);
+            // The terminal steps open with their pairing code ready; once a code exists,
+            // an expired one is renewed with Get new code.
+            if (id === "terminal" && !pairing && !busy) void startPairing("terminal");
+          }}
             className={`flex items-center justify-center gap-2 rounded-lg px-2 py-2 transition ${method === id ? "bg-vs-active text-vs-fg shadow-sm" : "text-vs-muted hover:text-vs-fg"}`}>
             <Icon className="h-3.5 w-3.5 shrink-0" /><span>{label}<span className="hidden sm:inline">{hint}</span></span>
           </button>
@@ -113,7 +121,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
         <div role="tabpanel" aria-label="Desktop app" className="space-y-3">
           {desktop ? (
             <div className="space-y-2.5 rounded-xl border border-vs-border bg-vs-editor p-4">
-              <PrimaryButton disabled={busy || devices === null} onClick={() => void startPairing()}>
+              <PrimaryButton disabled={busy || devices === null} onClick={() => void startPairing("desktop")}>
                 {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Connect this computer
               </PrimaryButton>
               <p className="text-[12.5px] leading-5 text-vs-muted">Confirm in the dialog that opens to enable the runner built into this app. No npm command is needed. Git and your AI tool’s CLI must already be installed.</p>
@@ -153,15 +161,19 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
             ) : expired ? (
               <div className="space-y-2.5 px-3.5 py-3 text-[12.5px]">
                 <p role="status" className="text-vs-warn">This code has expired. Get a new one and run the pair command again.</p>
-                <GhostButton disabled={busy} onClick={() => void startPairing()}>Get new code</GhostButton>
+                <GhostButton disabled={busy} onClick={() => void startPairing("terminal")}>Get new code</GhostButton>
               </div>
             ) : pairing ? (
               <Command id="pair" command={pairCommand} copied={copied === "pair"} onCopy={copy} />
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-3 text-[12.5px] text-vs-muted">
-                <span>Creates a single-use code for a new computer. Already paired? Skip to step 2.</span>
-                <GhostButton disabled={busy || devices === null} onClick={() => void startPairing()}>{busy ? "Creating code…" : "Create pairing code"}</GhostButton>
-              </div>
+              busy ? (
+                <p role="status" className="flex items-center gap-2 px-3.5 py-3 text-[12.5px] text-vs-muted"><SpinnerIcon className="h-3.5 w-3.5" /> Creating your pairing code…</p>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-3 text-[12.5px] text-vs-muted">
+                  <span>The pairing code could not be created. Already paired? Skip to step 2.</span>
+                  <GhostButton onClick={() => void startPairing("terminal")}>Try again</GhostButton>
+                </div>
+              )
             )}
           </CommandCard>
 
