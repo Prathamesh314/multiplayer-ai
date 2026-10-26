@@ -129,6 +129,13 @@ try {
   // A teammate's chat offers Fork instead of New.
   await evaluate(`${bobRow}.click()`);
   await eventually(async () => (await navLabels()).includes("Fork chat"), "fork a teammate's chat");
+  // Where you'd type: whose chat it is, and Fork chat in place of the message box.
+  const watching = `document.querySelector('section[aria-label="Watching Bob Stone’s chat"]')`;
+  await eventually(() => evaluate(`!!${watching}`), "watching card in place of the message box");
+  assert.match(await evaluate(`${watching}.innerText`), /You’re watching Bob Stone’s chat[\s\S]*Only Bob can message the AI here/);
+  assert.equal(await evaluate(`!!document.querySelector('.ai-composer textarea')`), false, "no message box on someone else's chat");
+  assert.ok(await evaluate(`[...${watching}.querySelectorAll('button')].some(b=>b.textContent.trim()==="Fork chat")`));
+  await writeFile(join(tmpdir(), "multiplayer-watching.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 260, y: 560, width: 660, height: 400, scale: 1 } })).data, "base64"));
   // Straight back, while the teammate's chat is still loading: it must not pull you back to it.
   await evaluate(`${row}.click()`);
   await eventually(async () => (await navLabels()).includes("Changes"), "back to the parallel chat");
