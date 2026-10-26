@@ -7,6 +7,7 @@ import { archiveRun, renameRun } from "../../lib/ai/runs-client";
 import { relativeTime } from "../../lib/format";
 import type { ChatMessage, SessionMember } from "../../lib/session/types";
 import { CheckIcon, ChevronIcon, FolderPlusIcon, GitBranchIcon, LinkIcon, PlusIcon, SpinnerIcon } from "../icons";
+import { Avatar } from "../presence/LiveAvatars";
 import { useTitleTransition } from "./useTitleTransition";
 
 type RoomSidebarProps = {
@@ -167,11 +168,12 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
   const renderRun = (run: AgentRun, self: boolean) => {
     const active = run.id === enteredRunId;
     const archived = !!run.archivedAt;
+    const owner = ownerOf(run, myId, members);
 
     if (editingId === run.id) {
       return (
         <div key={run.id} className="flex min-h-10 min-w-0 items-center gap-3 rounded-md px-2 py-1">
-          <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-vs-accent" />
+          <ChatOwner run={run} owner={owner} />
           <input
             autoFocus
             value={draft}
@@ -207,24 +209,12 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
               setEditingId(run.id);
             }
           }}
-          title={`${run.title ?? "Agent run"} · ${run.agentId} · ${run.status} · ${relativeTime(Math.floor(run.createdAt / 1000))}`}
+          title={`${run.title ?? "Agent run"} · ${owner.label} · ${run.agentId} · ${run.status} · ${relativeTime(Math.floor(run.createdAt / 1000))}`}
           className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left ${
             active ? "text-vs-fg" : "text-vs-muted"
           }`}
         >
-          {run.status === "running" ? (
-            <SpinnerIcon className="h-3.5 w-3.5 shrink-0 text-vs-warn" />
-          ) : (
-            <GitBranchIcon
-              className={`h-3.5 w-3.5 shrink-0 ${
-                active
-                  ? "text-vs-accent"
-                  : run.status === "failed"
-                    ? "text-vs-danger"
-                    : "text-vs-muted"
-              }`}
-            />
-          )}
+          <ChatOwner run={run} owner={owner} />
           <RunTitle runId={run.id} title={run.title ?? `${run.agentId} run`} />
           <DiffStat added={run.addedLines} removed={run.removedLines} />
           <BranchChip run={run} />
@@ -388,6 +378,40 @@ function UnarchiveIcon({ className }: { className?: string }) {
       <path d="M3 6.5v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-6" strokeLinejoin="round" />
       <path d="M8 12V8.5M8 8.5 6.5 10M8 8.5 9.5 10" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+type ChatOwnerInfo = { userId: string; displayName: string; avatarUrl: string | null; label: string };
+
+/**
+ * Who started a chat, for its row: "Started by you", or by a teammate, plus
+ * who has it now when it was handed over. The picture falls back to the room
+ * member's, then to initials in the person's colour.
+ */
+function ownerOf(run: AgentRun, myId: string | null, members: SessionMember[]): ChatOwnerInfo {
+  const member = members.find(item => item.userId === run.startedBy);
+  const displayName = run.startedByName || member?.displayName || "Someone";
+  const mine = run.startedBy === myId;
+  const started = mine ? "Started by you" : `Started by ${displayName}`;
+  const driver = run.driverUserId === run.startedBy ? "" : run.driverUserId === myId ? " · now with you" : ` · now with ${run.driverName}`;
+  return { userId: run.startedBy, displayName, avatarUrl: run.startedByAvatarUrl ?? member?.avatarUrl ?? null, label: started + driver };
+}
+
+/**
+ * The starter's face at the front of a chat row, so whose chat is whose reads
+ * at a glance. A spinning ring while the agent works; a red dot if it failed.
+ */
+function ChatOwner({ run, owner }: { run: AgentRun; owner: ChatOwnerInfo }) {
+  return (
+    <span className="relative inline-flex shrink-0" aria-hidden>
+      <Avatar person={owner} size="xs" />
+      {run.status === "running" && (
+        <span className="absolute -inset-[3px] animate-spin rounded-full border-2 border-vs-warn border-t-transparent motion-reduce:animate-none" />
+      )}
+      {run.status === "failed" && (
+        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-vs-danger ring-2 ring-vs-panel" />
+      )}
+    </span>
   );
 }
 
