@@ -33,8 +33,14 @@ import { openSessionStream } from "../../lib/events/client";
 import { colorOf, initialsOf } from "../../lib/people";
 import type { SessionMember } from "../../lib/session/types";
 import {
+  ActivityIcon,
   AlertIcon,
+  BriefingIcon,
+  ChatIcon,
   CheckIcon,
+  CommentIcon,
+  CopyIcon,
+  UsersIcon,
   ChevronIcon,
   CloseIcon,
   EyeIcon,
@@ -55,7 +61,8 @@ import { ChatBranchPanel } from "./ChatBranchPanel";
 import { useTitleTransition } from "./useTitleTransition";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { BriefingCard } from "../collaboration/BriefingCard";
-import { CollaborationControls } from "../collaboration/CollaborationControls";
+import { CollaborationControls, linkedCollaborationTab, type CollaborationTab } from "../collaboration/CollaborationControls";
+import { ChatNav, ChatNavAction, type ChatNavItem } from "./ChatNav";
 import { isSelfAssignment, SELF_ASSIGNMENT_ERROR } from "../../lib/tasks/types";
 import { Markdown } from "./Markdown";
 import type { ComputerStatus } from "../ai/useComputerConnection";
@@ -191,6 +198,17 @@ export function AiPanel({
   const [heldPrompt, setHeldPrompt] = useState<{ prompt: string; contextRefs?: string[]; attachments?: MessageAttachment[]; fileRefs?: string[] } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  // The chat whose activity is open, and which collaboration view of which
+  // chat: by run id, so switching chats never shows the old one's. A shared
+  // `?collaboration=` link opens on the first chat shown (run id null).
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [historyStatus, setHistoryStatus] = useState<{ hint: string; checkpointSelected: boolean } | null>(null);
+  const [collaboration, setCollaboration] = useState<{ runId: string | null; tab: CollaborationTab } | null>(() => {
+    const tab = linkedCollaborationTab();
+    return tab ? { runId: null, tab } : null;
+  });
+  const [collaborationCounts, setCollaborationCounts] = useState({ unread: 0, reviews: 0 });
+  const [copied, setCopied] = useState(false);
   // Whether this server runs chats on their own branches, and whether the next
   // new chat should. Off by default: an ordinary chat works on the room branch.
   const [parallelChats, setParallelChats] = useState(false);
@@ -949,12 +967,42 @@ export function AiPanel({
     ? "Tasks run in local worktrees on your paired computer, using its tools and AI account."
     : "Tasks run on the machine hosting this app. Connect your computer to use its local worktrees instead.";
 
+  // The chat's nav: its views on the left, rarer ones under More. Each view is
+  // a dialog or popover over the conversation, so "Chat" is current otherwise.
+  const openCollaboration = entered && collaboration && (collaboration.runId ?? entered.id) === entered.id ? collaboration.tab : null;
+  const activeView = showProviders ? "providers" : !entered ? "chat"
+    : briefingOpen ? "briefing" : historyFor === entered.id ? "activity" : branchOpen ? "changes" : openCollaboration ?? "chat";
+  const closeViews = () => { setShowProviders(false); setBriefingOpen(false); setHistoryFor(null); setBranchOpen(false); setCollaboration(null); };
+  const navItems: ChatNavItem[] = [
+    { id: "chat", label: "Chat", icon: <ChatIcon className="h-3.5 w-3.5" />, onSelect: () => { closeViews(); onShowConversation?.(); } },
+    ...(entered ? [
+      { id: "briefing", label: "Briefing", hint: "A starting point for joining the work", icon: <BriefingIcon className="h-3.5 w-3.5" />, onSelect: () => setBriefingOpen(true) },
+      { id: "activity", label: "Activity", hint: historyStatus?.hint ?? "Activity & checkpoints", dot: historyStatus?.checkpointSelected, icon: <ActivityIcon className="h-3.5 w-3.5" />, onSelect: () => setHistoryFor(entered.id) },
+      ...(entered.isolation === "isolated" ? [{ id: "changes", label: "Changes", accent: true, hint: "Review this parallel chat's changes and merge them into the room", icon: <GitBranchIcon className="h-3.5 w-3.5" />, onSelect: () => setBranchOpen(true) }] : []),
+    ] : []),
+    { id: "providers", label: "Providers", minor: true, hint: "AI providers on your computer", popover: true, anchor: setProvidersButton, icon: <SparkleIcon className="h-3.5 w-3.5" />, onSelect: () => setShowProviders(previous => !previous) },
+  ];
+  const moreItems: ChatNavItem[] = entered && myUserId ? [
+    { id: "feedback", label: "Feedback", hint: "Conversation feedback from guests and teammates", badge: collaborationCounts.unread, badgeLabel: "unread", icon: <CommentIcon className="h-3.5 w-3.5" />, onSelect: () => setCollaboration({ runId: entered.id, tab: "feedback" }) },
+    { id: "reviews", label: "Teammate review", hint: "Ask teammates to review this chat's work", badge: collaborationCounts.reviews, badgeLabel: "waiting", icon: <UsersIcon className="h-3.5 w-3.5" />, onSelect: () => setCollaboration({ runId: entered.id, tab: "reviews" }) },
+    ...(enteredIsMine ? [{ id: "fork", label: "Fork this chat", hint: "A new chat that imports this one's context", icon: <GitBranchIcon className="h-3.5 w-3.5" />, onSelect: () => onForkEntered(entered) }] : []),
+  ] : [];
+  async function copyChatLink() {
+    if (!entered) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/s/${encodeURIComponent(sessionId)}?run=${encodeURIComponent(entered.id)}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // The clipboard can be unavailable (permissions, insecure origin); nothing to undo.
+    }
+  }
+
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-vs-editor">
-      <header className={`ai-chat-header flex min-w-0 shrink-0 flex-wrap items-center gap-3 ${entered ? "" : "border-b border-vs-border"}`}>
-        {/* A basis keeps the title readable; the actions wrap below it instead
-            of squeezing the chat's name down to an ellipsis. */}
-        <div className="flex min-w-0 flex-1 basis-44 items-start gap-3">
+      {/* The title row; the chat's views and actions are in the nav below it. */}
+      <header className="ai-chat-header flex min-w-0 shrink-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="min-w-0 flex-1">
             <ChatTitle title={chatTitle} runId={entered?.id ?? null} />
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-vs-muted">
@@ -966,40 +1014,21 @@ export function AiPanel({
           {/* Like collaborators at the top of a shared doc: who else has this chat open. */}
           {entered && <LiveAvatars people={viewers.filter((person) => person.userId !== myId)} label="Viewing this chat" title="Viewing this chat" />}
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {entered &&
-          (enteredIsMine ? (
-            <button
-              type="button"
-              onClick={onNewRun}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-            >
-              <PlusIcon className="h-3 w-3" />
-              New
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onForkEntered(entered)}
-              title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
-            >
-              <GitBranchIcon className="h-3 w-3" />
-              Copy chat
-            </button>
-          ))}
-        {/* Briefing and synchronized history are reference material, not part of
-            the conversation, so they open from here instead of sitting above it. */}
-        {entered?.isolation === "isolated" && <button type="button" onClick={() => setBranchOpen(true)} title="Review this parallel chat's changes and merge them into the room" className="rounded px-1.5 py-1 text-[11px] text-vs-accent transition hover:bg-vs-hover">Changes</button>}
-        {entered && enteredIsMine && myId && approvalsPicker}
-        {entered && <button type="button" onClick={() => setBriefingOpen(true)} className="rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">Briefing</button>}
-        {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} />}
-        <button ref={setProvidersButton} type="button" onClick={() => setShowProviders(previous => !previous)} aria-haspopup="dialog" aria-expanded={showProviders} className={`rounded px-1.5 py-1 text-[11px] transition hover:bg-vs-hover ${showProviders ? "bg-vs-hover text-vs-fg" : "text-vs-muted"}`}>Providers</button>
-        {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId} />}
         {!entered && <span className="ml-1 hidden sm:inline-flex"><WatchingCluster members={members} /></span>}
         {onClose && <button type="button" onClick={onClose} aria-label="Close AI chat" className="rounded-md p-1 text-vs-muted hover:bg-vs-hover hover:text-vs-fg"><CloseIcon className="h-3 w-3" /></button>}
-        </div>
       </header>
+      <ChatNav active={activeView} items={navItems} more={moreItems} actions={entered && <>
+        {enteredIsMine && myId && approvalsPicker}
+        <ChatNavAction icon={copied ? <CheckIcon className="h-3.5 w-3.5 text-vs-success" /> : <CopyIcon className="h-3.5 w-3.5" />}
+          label={copied ? "Copied" : "Copy"} title="Copy a link to this chat, for people in this room" onClick={() => void copyChatLink()} />
+        {enteredIsMine
+          ? <ChatNavAction primary icon={<PlusIcon className="h-3.5 w-3.5" />} label="New chat" title="Start a new chat in this repository" onClick={onNewRun} />
+          : <ChatNavAction primary icon={<GitBranchIcon className="h-3.5 w-3.5" />} label="Fork chat" title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`} onClick={() => onForkEntered(entered)} />}
+      </>} />
+      {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} open={historyFor === entered.id} onClose={() => setHistoryFor(null)} onStatus={setHistoryStatus} />}
+      {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId}
+        tab={collaboration && (collaboration.runId ?? entered.id) === entered.id ? collaboration.tab : null}
+        onTab={tab => setCollaboration(tab ? { runId: entered.id, tab } : null)} onCounts={setCollaborationCounts} />}
       {actionsHost && createPortal(<>
         <button type="button" disabled={!canRun} onClick={() => setAssignOpen(true)} className="rounded px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover disabled:opacity-40">Assign Tasks</button>
         {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
