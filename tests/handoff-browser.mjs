@@ -328,7 +328,10 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await inbox.selectPicker(`Status for ${taskText.slice(0,60)}`, "done");
     await eventually(async () => (await sql(`SELECT status FROM room_tasks WHERE id=$1`,[stored[0].id])).rows[0].status === "done", "task completion saved");
     await inbox.evaluate('document.querySelector(\'section[aria-label="My tasks"] a\').click()');
-    await eventually(() => inbox.evaluate(`location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
+    // A chat's tasks open from Tasks in its nav.
+    await eventually(() => inbox.evaluate(`(()=>{if(!document.querySelector('section[aria-label="Chat tasks"]'))[...document.querySelectorAll('nav[aria-label="Chat"] button')].find(b=>b.textContent.trim().startsWith("Tasks"))?.click();})(); location.search === ${JSON.stringify(`?run=${chat.id}`)} && document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(taskText)})`), "task source chat deep link");
+    await inbox.evaluate(`document.querySelector('button[aria-label="Close Chat tasks"]')?.click()`);
+    await eventually(() => inbox.evaluate(`!document.querySelector('dialog[open][aria-label="Chat tasks"]')`), "tasks dialog closed");
     // A session the server rejects on the dashboard leads to the sign-in page,
     // not a crash. /workspace is prerendered; when that happened without the
     // publishable key (as in CI builds), a client-side route change to /login
@@ -344,7 +347,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.deepEqual(runtimeErrors.slice(errorsBefore), [], "no exception while leaving for sign-in");
     await assigner.command("Page.bringToFront");
     await assigner.evaluate('window.dispatchEvent(new Event("focus"))');
-    await eventually(() => assigner.evaluate('document.querySelector(\'section[aria-label="Chat tasks"] button[aria-label^="Status for"]\')?.textContent === "Done"'), "status refresh in source chat");
+    await eventually(() => assigner.evaluate(`(()=>{if(!document.querySelector('section[aria-label="Chat tasks"]'))[...document.querySelectorAll('nav[aria-label="Chat"] button')].find(b=>b.textContent.trim().startsWith("Tasks"))?.click();})(); document.querySelector('section[aria-label="Chat tasks"] button[aria-label^="Status for"]')?.textContent === "Done"`), "status refresh in source chat");
+    await assigner.evaluate(`document.querySelector('button[aria-label="Close Chat tasks"]')?.click()`);
+    await eventually(() => assigner.evaluate(`!document.querySelector('dialog[open][aria-label="Chat tasks"]')`), "tasks dialog closed");
     // The File Manager assignment dialog works without running AI.
     await assigner.click("Assign Tasks");
     const composerSelector = taskSelector;
@@ -435,7 +440,9 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     assert.equal((await sql('SELECT count(*)::int AS n FROM agent_runs')).rows[0].n,chatCount);
     await fresh.block([]);
     await fresh.evaluate(`document.querySelector('button[aria-label="Assign task"]').click()`);
-    await eventually(()=>fresh.evaluate(`document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(freshBody)})`),"new source chat opens with assigned task");
+    await eventually(()=>fresh.evaluate(`(()=>{if(!document.querySelector('section[aria-label="Chat tasks"]'))[...document.querySelectorAll('nav[aria-label="Chat"] button')].find(b=>b.textContent.trim().startsWith("Tasks"))?.click();})(); document.querySelector('section[aria-label="Chat tasks"]')?.textContent.includes(${JSON.stringify(freshBody)})`),"new source chat opens with assigned task");
+    await fresh.evaluate(`document.querySelector('button[aria-label="Close Chat tasks"]')?.click()`);
+    await eventually(() => fresh.evaluate(`!document.querySelector('dialog[open][aria-label="Chat tasks"]')`), "tasks dialog closed");
     const freshTask=(await sql('SELECT t.*,r.repo_id,r.driver_user_id FROM room_tasks t JOIN agent_runs r ON r.id=t.run_id WHERE t.body=$1',[freshBody])).rows;
     assert.equal(freshTask.length,1);assert.equal(freshTask[0].assignee_id,bob);
     assert.equal(freshTask[0].repo_id,imported.id);assert.equal(freshTask[0].driver_user_id,alice);

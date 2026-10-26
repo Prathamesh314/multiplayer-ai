@@ -453,3 +453,12 @@ export function MoreIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function TasksIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path d="M2.5 4.25l1.25 1.25L6 3.25M2.5 10.25l1.25 1.25L6 9.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 4.5h5M8.5 10.5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
