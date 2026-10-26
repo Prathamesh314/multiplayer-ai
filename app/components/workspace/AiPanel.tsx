@@ -15,6 +15,7 @@ import { ModelPicker } from "./ModelPicker";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { agentById, type AgentChoice, type AgentStatus } from "../../lib/ai/catalog";
+import { explainFailure, splitFailure } from "../../lib/ai/failure";
 import {
   fetchAgents,
   fetchForkableRuns,
@@ -135,6 +136,8 @@ type Turn = {
   activities?: string[];
   /** Epoch ms this agent turn began, for the live elapsed timer. */
   startedAt?: number;
+  /** A failed run: what went wrong in one sentence, and the tool's output as its log. */
+  failure?: { message: string; log: string };
   /** A notice that opens another chat: "Imported context from …" links to its source. */
   source?: { sessionId: string; runId: string };
   /**
@@ -381,6 +384,7 @@ export function AiPanel({
           author: message.authorName ?? null,
           agentName: role === "agent" ? agentName : null,
           source: role === "system" && message.body.startsWith(IMPORTED_CONTEXT) ? source : undefined,
+          failure: role === "system" ? splitFailure(message.body) ?? undefined : undefined,
         });
         if (role === "agent") pendingSteps = [];
       }
@@ -776,10 +780,12 @@ export function AiPanel({
               : `Finished in ${(event.ms / 1000).toFixed(1)}s` +
                 (event.committed ? ` · committed ${event.headSha?.slice(0, 8)}` : " · no file changes");
             setTurns((prev) => {
+              const log = failed ? (prev.find((turn) => turn.id === agentTurnId)?.errText ?? "").trim() : "";
               const next = prev.map((turn) =>
-                turn.id === agentTurnId ? { ...turn, streaming: false, failed } : turn,
+                turn.id === agentTurnId ? { ...turn, streaming: false, failed, ...(failed ? { errText: undefined } : {}) } : turn,
               );
               next.push({ id: uid(), role: "system", text: summary });
+              if (failed) next.push({ id: uid(), role: "system", text: "", failure: { message: explainFailure(log, toolInfo(agentId)), log } });
               return next;
             });
           }
@@ -1456,7 +1462,8 @@ function Conversation({ turns, sessionId, onOpenChat }: { turns: Turn[]; session
       <details className="text-[11px] text-vs-muted"><summary className="cursor-pointer">{plural(turns.reduce((count, turn) => count + (turn.activities?.length ?? 0), 0), "step")} · {plural(visible.filter(turn => turn.role !== "system").length, "message")}</summary><p className="mt-2">Steps are the agent’s tool calls in this conversation. Expand a response’s steps to inspect them.</p></details>
       {visible.map((turn) =>
         turn.role === "system" ? (
-          <SystemLine key={turn.id} text={turn.text} waiting={turn.waiting} source={turn.source} onOpenChat={onOpenChat} />
+          turn.failure ? <FailureCard key={turn.id} failure={turn.failure} />
+            : <SystemLine key={turn.id} text={turn.text} waiting={turn.waiting} source={turn.source} onOpenChat={onOpenChat} />
         ) : (
           <TurnBubble key={turn.id} turn={turn} sessionId={sessionId} />
         ),
@@ -1569,14 +1576,11 @@ function TurnBubble({ turn, sessionId }: { turn: Turn; sessionId: string }) {
           </>
         )}
         {!!turn.errText?.trim() && (
-          <details
-            open={turn.failed}
-            className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60"
-          >
+          <details className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60">
             <summary
               className={`cursor-pointer px-3 py-1.5 text-[12px] ${turn.failed ? "text-vs-danger" : "text-vs-muted"}`}
             >
-              {turn.failed ? "Run failed — agent log" : "Agent log"}
+              Agent log
             </summary>
             <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-4 text-vs-muted">
               {turn.errText.trim()}
@@ -1700,6 +1704,27 @@ function ActivityTrace({
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** The tool a run used, for its failure message (and the command that signs in to it). */
+const toolInfo = (id: string) => { const spec = agentById(id); return { name: spec?.name ?? id, signIn: spec?.install.signIn }; };
+
+/** A failed run: one clear sentence, with the tool's own output folded under it. */
+function FailureCard({ failure }: { failure: { message: string; log: string } }) {
+  return (
+    <div role="alert" className="rounded-xl border border-vs-danger/30 bg-vs-danger/5 px-3.5 py-3">
+      <p className="flex items-start gap-2 text-[13px] leading-5 text-vs-fg">
+        <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-vs-danger" />
+        <span className="min-w-0 break-words">{failure.message}</span>
+      </p>
+      {failure.log && (
+        <details className="mt-2 rounded-lg border border-vs-border bg-vs-editor/60">
+          <summary className="cursor-pointer px-3 py-1.5 text-[12px] text-vs-muted">Agent log</summary>
+          <pre className="vs-scroll max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-4 text-vs-muted">{failure.log}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
 
 /** The notice a forked chat starts with; the server writes the same text. */
 const IMPORTED_CONTEXT = "Imported context from #";

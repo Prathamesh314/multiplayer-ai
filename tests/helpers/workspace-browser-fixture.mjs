@@ -151,6 +151,8 @@ export function installFixtures() {
         if(init.method==="POST") {const input={...JSON.parse(init.body),runId:run.id,status:"queued",createdAt:new Date().toISOString()};inputs.push(input);return json({input});}
         return json({inputs});
       }
+      // state.messages[runId]: this chat's stored messages, when a test sets them.
+      if(state.messages?.[run.id])return json({run,messages:state.messages[run.id]});
       // state.forks[runId]: this chat imported its context from another ({runId,sessionId,name}).
       const fork=state.forks?.[run.id];
       if(fork)return json({run,forkedFrom:{runId:fork.runId,sessionId:fork.sessionId},messages:[{role:"system",body:"Imported context from #"+fork.name},{role:"user",body:"Continue from that chat."}]});

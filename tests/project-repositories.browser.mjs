@@ -605,6 +605,19 @@ try {
   await evaluate(`(()=>{const m=window.__model;m.devices=m.devices.filter(d=>d.id!=="computer-2");m.emitDevices();})()`);
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find(b=>b.textContent.trim()==="Close").click()`);
   await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes after pairing");
+  // A failed run: one clear sentence in the chat, the tool's output folded under it as the agent log.
+  const failedChat=await evaluate(`window.__model.runs.find(run=>run.title==="Queue context B").id`);
+  await evaluate(`window.__model.messages={${JSON.stringify(failedChat)}:[{role:"user",body:"Summarise the repo"},{role:"system",body:"Gemini CLI couldn’t reach its AI service over the network. Check the internet connection on your computer.\\n\\n--- Agent log ---\\nAttempt 1 failed. Retrying with backoff... Error: exception TypeError: fetch failed sending request\\n    at async Models.generateContentStream (chunk.js:1:1)"}]}`);
+  await click('button[title^="Queue context A ·"]');
+  await eventually(()=>evaluate('document.querySelector(".ai-chat-header h2")?.textContent==="Queue context A"'),"chat A before the failed chat");
+  await click('button[title^="Queue context B ·"]');
+  const card=`[...document.querySelectorAll('[role=alert]')].find(el=>el.innerText.includes("couldn’t reach its AI service"))`;
+  await eventually(()=>evaluate(`!!${card}`),"the failure reads as one sentence");
+  await writeFile(join(tmpdir(),'multiplayer-run-failure.png'),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  assert.equal(await evaluate(`${card}.querySelector("details").open`),false,"the agent log is folded");
+  assert.ok(await evaluate(`${card}.querySelector("details pre").textContent.includes("fetch failed sending request")`),"the full output is in the agent log");
+  assert.ok(!(await evaluate(`[...document.querySelectorAll(".conversation-transcript p, .conversation-transcript pre")].some(el=>!el.closest("details")&&el.textContent.includes("generateContentStream"))`)),"no stack trace in the chat itself");
+  await evaluate('window.__model.messages=undefined');
   // A chat that imported another chat's context links to it from its first notice.
   const [chatA,chatB]=await evaluate(`["Queue context A","Queue context B"].map(title=>window.__model.runs.find(run=>run.title===title).id)`);
   await evaluate(`window.__model.forks={${JSON.stringify(chatB)}:{runId:${JSON.stringify(chatA)},sessionId:"modelroomabc",name:"modelroomabc"}}`);
