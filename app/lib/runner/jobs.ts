@@ -47,7 +47,6 @@ export async function claimedJob(turnId: string, deviceId: string, allowComplete
      JOIN agent_runs r ON r.id = j.run_id
      WHERE j.turn_id = $1 AND j.device_id = $2 AND j.status IN ('claimed', 'done')
        AND (j.status = 'claimed' AND t.status = 'running' OR $3 AND j.status = 'done')
-       AND (j.lease_expires_at > now() OR t.completion IS NOT NULL OR j.status = 'done')
        AND (t.status = 'completed' OR t.status = 'failed' OR
          (r.driver_user_id = t.driver_user_id AND r.control_version = t.control_version))
        AND room_access_role(r.session_id, j.user_id) IN ('owner', 'editor')`, [turnId, deviceId, allowCompleted],
@@ -55,9 +54,15 @@ export async function claimedJob(turnId: string, deviceId: string, allowComplete
   return row?.payload ?? null;
 }
 
+/**
+ * The lease says the computer is still there; it does not take the turn away.
+ * A computer back from a network drop or sleep renews it and carries on. Only
+ * the owner's explicit recovery (handoff.ts, once the lease has lapsed) moves
+ * control, and it fails the job, which fences the old computer out.
+ */
 export async function renewLease(turnId: string, deviceId: string): Promise<void> {
   await query(`UPDATE runner_jobs SET lease_expires_at = now() + make_interval(secs => $3)
-    WHERE turn_id = $1 AND device_id = $2 AND status = 'claimed' AND lease_expires_at > now()`,
+    WHERE turn_id = $1 AND device_id = $2 AND status = 'claimed'`,
   [turnId, deviceId, JOB_LEASE_MS / 1000]);
 }
 

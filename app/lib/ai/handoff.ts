@@ -145,18 +145,24 @@ export async function changeHandoff(runId: string, sessionId: string, actorId: s
   });
 }
 
-export async function continuationContext(runId: string): Promise<string> {
+/**
+ * The chat so far, for a turn that cannot resume the tool's own session. Tools
+ * with a large prompt budget get much more of it (`depth`: messages, and the
+ * characters kept from each); assembleAgentPrompt keeps the most recent part
+ * that fits.
+ */
+export async function continuationContext(runId: string, depth: { messages: number; perMessage: number } = { messages: 24, perMessage: 1800 }): Promise<string> {
   const messages = await query<{ role: string; body: string; name: string | null }>(
     `SELECT m.role, m.body, u.display_name AS name FROM agent_run_messages m
      LEFT JOIN users u ON u.id = m.author_user_id WHERE m.run_id = $1
-     AND m.role IN ('user', 'agent', 'system') ORDER BY m.seq DESC LIMIT 24`, [runId],
+     AND m.role IN ('user', 'agent', 'system') ORDER BY m.seq DESC LIMIT $2`, [runId, depth.messages],
   );
   const handoffs = await query<{ note: string; checkpoint_sha: string | null }>(
     `SELECT note, checkpoint_sha FROM run_handoffs WHERE run_id = $1 AND status = 'accepted'
      ORDER BY resolved_at DESC LIMIT 3`, [runId],
   );
   return [
-    ...messages.reverse().map(message => `${message.role}${message.name ? ` (${message.name})` : ""}: ${message.body.slice(0, 1800)}`),
+    ...messages.reverse().map(message => `${message.role}${message.name ? ` (${message.name})` : ""}: ${message.body.slice(0, depth.perMessage)}`),
     ...handoffs.reverse().map(offer => `Handoff checkpoint: ${offer.checkpoint_sha ?? "last confirmed repository state"}\nHandoff note: ${offer.note || "No note provided."}`),
   ].join("\n\n");
 }

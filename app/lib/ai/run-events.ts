@@ -74,8 +74,14 @@ export type AgentRunJob = {
   isolation?: "isolated";
   chatBranch?: string;
   agentId: string;
-  /** The assembled argv prompt (already budgeted and woven). */
+  /** The assembled prompt (already budgeted and woven), with the conversation so far. */
   agentPrompt: string;
+  /**
+   * The same without the conversation so far, for a computer that resumes this
+   * chat's own session with the tool (which already remembers it). Absent on a
+   * chat's first turn.
+   */
+  resumePrompt?: string;
   /**
    * Tool rules the chat's driver chose to always allow (lib/ai/permissions.ts),
    * e.g. WebFetch(domain:docs.google.com). Anything else that needs permission

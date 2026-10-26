@@ -93,3 +93,54 @@ export class Deadline {
   /** Run `work` with the limit paused. */
   async hold<T>(work: () => Promise<T>): Promise<T> { this.pause(); try { return await work(); } finally { this.resume(); } }
 }
+
+/** The end of `text`, within `max` characters: a long session's answer is at its end. */
+export function keepTail(text: string, max: number): string {
+  return text.length <= max ? text : `[…earlier output trimmed…]\n${text.slice(-max)}`;
+}
+
+const minutes = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  return (Number.isFinite(parsed) && parsed > 0 ? parsed : fallback) * 60_000;
+};
+
+/**
+ * How long a turn may run. Long tasks run for hours, as in a terminal: a turn
+ * is stopped only when the agent goes quiet (no reply, thinking, tool step or
+ * log line) for RUNNER_IDLE_MINUTES (default 30), or after RUNNER_MAX_RUN_MINUTES
+ * in all (default 8 hours). Time spent waiting for a person to answer a tool
+ * request counts towards neither.
+ */
+export const runLimits = () => ({
+  idleMs: minutes(process.env.RUNNER_IDLE_MINUTES, 30),
+  maxMs: minutes(process.env.RUNNER_MAX_RUN_MINUTES, 8 * 60),
+});
+
+/** The overall cap and the quiet timer for one turn; `activity()` on every sign of life. */
+export class RunWatch {
+  private readonly total: Deadline;
+  private last = Date.now();
+  private holds = 0;
+  private readonly timer: ReturnType<typeof setInterval>;
+  private done = false;
+  constructor(private readonly limits: { idleMs: number; maxMs: number }, onExpire: (reason: "idle" | "time") => void) {
+    const expire = (reason: "idle" | "time") => { if (this.done) return; this.clear(); onExpire(reason); };
+    this.total = new Deadline(limits.maxMs, () => expire("time"));
+    this.timer = setInterval(() => {
+      if (!this.holds && Date.now() - this.last >= limits.idleMs) expire("idle");
+    }, Math.min(30_000, Math.max(1_000, Math.floor(limits.idleMs / 4))));
+    this.timer.unref?.();
+  }
+  activity() { this.last = Date.now(); }
+  clear() { this.done = true; this.total.clear(); clearInterval(this.timer); }
+  /** Run `work` with both limits paused (a person deciding on a tool request). */
+  async hold<T>(work: () => Promise<T>): Promise<T> {
+    this.holds++;
+    try { return await this.total.hold(work); } finally { this.holds--; this.last = Date.now(); }
+  }
+  describe(reason: "idle" | "time") {
+    return reason === "idle"
+      ? `Stopped: the agent produced no output for ${Math.round(this.limits.idleMs / 60_000)} minutes.`
+      : `Stopped after ${Math.round(this.limits.maxMs / 3_600_000 * 10) / 10} hours, the longest a task may run.`;
+  }
+}

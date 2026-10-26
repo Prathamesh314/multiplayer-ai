@@ -3,7 +3,7 @@ import { agentEnv } from "../app/lib/ai/env";
 import { commandLine } from "../app/lib/ai/command";
 import { WakeSignal } from "./signals";
 import type { RunInput, LocalRunResult } from "./execute";
-import { Deadline, type ToolRequest } from "./permissions";
+import { RunWatch, keepTail, runLimits, type ToolRequest } from "./permissions";
 
 type ApprovalParams = {
   command?: string | null; reason?: string | null; grantRoot?: string | null;
@@ -75,8 +75,9 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
   };
   const abort = () => { fail(new Error("Execution stopped.")); stop(); };
   input.signal?.addEventListener("abort", abort, { once: true });
-  // Paused while a person decides on an approval request.
-  const deadline = new Deadline(600_000, () => { fail(new Error("Stopped after 10 minutes.")); stop(); });
+  // Stopped only when Codex goes quiet or runs past the overall cap; both are
+  // paused while a person decides on an approval request.
+  const deadline = new RunWatch(runLimits(), reason => { fail(new Error(deadline.describe(reason))); stop(); });
   const approvals = input.permissions ? "on-request" : "never";
   const approve = async (id: number, method: string, params: ApprovalParams) => {
     const request = describeCodexApproval(method, params);
@@ -100,10 +101,14 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
   const closed = new Promise<void>(resolve => child.once("close", () => { exited = true; if (!ending) fail(new Error("Agent disconnected before completing the chat.")); resolve(); }));
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (text: string) => {
-    if (errOutput.length < 256_000) { errOutput += text.slice(0, 256_000 - errOutput.length); input.onEvent({ t: "err", d: text.slice(0, 16000) }); }
+    deadline.activity();
+    errOutput = keepTail(errOutput + text, 256_000);
+    if (outputBytes < 64 * 1024 * 1024) input.onEvent({ t: "err", d: text.slice(0, 16000) });
   });
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
+    // Any frame (reasoning, a command's output, a plan update) is a sign of life.
+    deadline.activity();
     buffer += chunk;
     if (buffer.length > 4 * 1024 * 1024) { fail(new Error("Agent protocol frame exceeds the limit.")); stop(); return; }
     let newline: number;
@@ -120,10 +125,11 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
       if (frame.id != null && frame.method) { void approve(frame.id, frame.method, (frame.params ?? {}) as ApprovalParams); continue; }
       const params = frame.params;
       if (frame.method === "item/agentMessage/delta" && params?.delta) {
-        output += params.delta; input.onEvent({ t: "out", d: params.delta });
+        // The reply's end is kept; past 64 MB live output pauses, and Codex keeps working.
+        output = keepTail(output + params.delta, 2 * 1024 * 1024);
         outputBytes += Buffer.byteLength(params.delta);
-        if (outputBytes > 2 * 1024 * 1024) { fail(new Error("Output limit reached.")); stop(); }
-      } else if (frame.method === "item/started" && params?.item && activityBytes < 256_000) {
+        if (outputBytes <= 64 * 1024 * 1024) input.onEvent({ t: "out", d: params.delta });
+      } else if (frame.method === "item/started" && params?.item && activityBytes < 8 * 1024 * 1024) {
         const text = params.item.command ?? params.item.type;
         activityBytes += text.length; input.onEvent({ t: "act", d: text.slice(0, 16000) });
       } else if (frame.method === "turn/completed" && params?.turn) {
@@ -139,17 +145,35 @@ export async function runCodexSession(input: RunInput): Promise<LocalRunResult> 
     if (input.signal?.aborted) abort();
     await rpc("initialize", { clientInfo: { name: "multicode-ai", title: "Multicode AI", version: "0.1.0" } });
     write({ method: "initialized", params: {} });
-    const thread = await rpc("thread/start", { cwd: input.cwd, model: input.model, approvalPolicy: approvals, sandbox: "workspace-write", ephemeral: true,
-      ...(input.tools?.codexConfig ? { config: input.tools.codexConfig } : {}) });
-    if (!thread.thread?.id) throw new Error("Agent did not create a thread.");
-    const threadId = thread.thread.id;
+    // The chat's own Codex thread: resumed when this computer has it, so Codex
+    // remembers earlier turns; otherwise a new one, kept on disk for next time.
+    const settings = { cwd: input.cwd, model: input.model, approvalPolicy: approvals, sandbox: "workspace-write",
+      ...(input.tools?.codexConfig ? { config: input.tools.codexConfig } : {}) };
+    let threadId: string | null = null;
+    let prompt = input.prompt;
+    if (input.session?.previous) {
+      try {
+        const resumed = await rpc("thread/resume", { threadId: input.session.previous, ...settings });
+        threadId = resumed.thread?.id ?? input.session.previous;
+        prompt = input.session.resumePrompt ?? input.prompt;
+      } catch (cause) {
+        if (failure || exited) throw cause;
+        input.onEvent({ t: "notice", message: "Started a new session with the AI tool: the chat's earlier one isn't on this computer. It has the conversation so far." });
+      }
+    }
+    if (!threadId) {
+      const thread = await rpc("thread/start", { ...settings, ephemeral: !input.session });
+      if (!thread.thread?.id) throw new Error("Agent did not create a thread.");
+      threadId = thread.thread.id;
+    }
+    input.session?.save(threadId);
     const start = async (text: string) => {
       const reply = await rpc("turn/start", { threadId, cwd: input.cwd, model: input.model, effort: input.effort, approvalPolicy: approvals,
         sandboxPolicy: { type: "workspaceWrite", writableRoots: [input.cwd], networkAccess: false }, input: [{ type: "text", text }] });
       if (!reply.turn?.id) throw new Error("Agent did not create a turn.");
       active = completed.has(reply.turn.id) ? null : reply.turn.id;
     };
-    await start(input.prompt);
+    await start(prompt);
     for (;;) {
       if (failure) throw failure;
       const revision = wake.version();

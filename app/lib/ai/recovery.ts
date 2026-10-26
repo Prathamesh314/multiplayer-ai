@@ -18,7 +18,11 @@ async function settleAbandoned(turnId: string, token: string) {
       COALESCE(execution_lease_until,created_at+interval '12 minutes')<now() AS server_expired
       FROM agent_turns WHERE id=$1 AND recovery_token=$2 AND status IN ('preparing','queued','running') FOR UPDATE`,[turnId,token]);
     if (!turn || !run) return null;
-    const { rows: [job] } = await tx.query(`SELECT *,lease_expires_at<now() AS expired FROM runner_jobs WHERE turn_id=$1 FOR UPDATE`,[turnId]);
+    // A computer can drop off the network or sleep and come back to finish its
+    // task (it keeps working, and renews its lease when back), so it is only
+    // given up on after 30 minutes without a word. The owner can recover
+    // control by hand before that (handoff.ts).
+    const { rows: [job] } = await tx.query(`SELECT *,lease_expires_at<now()-interval '30 minutes' AS expired FROM runner_jobs WHERE turn_id=$1 FOR UPDATE`,[turnId]);
     let reason: string | null = null;
     if (!["owner","editor"].includes(run.role) || run.driver_user_id!==turn.driver_user_id || run.control_version!==turn.control_version) {
       reason = "Execution stopped because its access or chat control changed. Saved results remain available for review.";

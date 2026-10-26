@@ -184,3 +184,142 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", li
   for (let waited = 0; alive() && waited < 10_000; waited += 200) await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(alive(), false, "the command the agent started ended too");
 });
+
+// Long tasks: a turn runs as long as the agent keeps working, and is stopped
+// only when it goes quiet (or past the overall cap), never on a fixed clock.
+test("a busy agent runs past the quiet limit; a silent one is stopped with the reason", { timeout: 30_000 }, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "runner long ")));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 3 }));
+  const previous = process.env.RUNNER_IDLE_MINUTES;
+  process.env.RUNNER_IDLE_MINUTES = String(1.5 / 60); // 1.5 seconds
+  t.after(() => { if (previous === undefined) delete process.env.RUNNER_IDLE_MINUTES; else process.env.RUNNER_IDLE_MINUTES = previous; });
+  const agent = async (name, body) => {
+    const source = join(root, `${name}.cjs`);
+    await writeFile(source, `#!${process.execPath}
+const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
+const say = text => send({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } });
+require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+  if (JSON.parse(line).type !== "user") return;
+  ${body}
+});
+`, { mode: 0o755 });
+    if (process.platform !== "win32") return source;
+    const shim = join(root, `${name}.cmd`);
+    await writeFile(shim, `@echo off\r\nnode "%~dp0\\${name}.cjs" %*\r\n`);
+    return shim;
+  };
+  // Working for 4 s (past the 1.5 s quiet limit) but never quiet for long: it finishes.
+  const busy = await agent("busy", `let n = 0; const timer = setInterval(() => { say("step " + (++n) + "\\n"); if (n === 16) { clearInterval(timer); send({ type: "result", subtype: "success" }); process.exit(0); } }, 250);`);
+  const started = Date.now();
+  const done = await runAgentLocally({ spec: { ...agentById("claude"), bin: busy }, cwd: root, prompt: "Long task", onEvent: () => {} });
+  assert.equal(done.code, 0, done.errOutput);
+  assert.ok(Date.now() - started >= 3500, "it ran past the quiet limit");
+  assert.match(done.output, /step 16/);
+  // Says one thing, then nothing: stopped once quiet, with why.
+  const silent = await agent("silent", `say("Starting"); setInterval(() => {}, 1000);`);
+  const events = [];
+  const stopped = await runAgentLocally({ spec: { ...agentById("claude"), bin: silent }, cwd: root, prompt: "Hang", onEvent: event => events.push(event) });
+  assert.notEqual(stopped.code, 0);
+  assert.ok(events.some(event => event.t === "notice" && /produced no output for/.test(event.message)), "says it stopped because the agent went quiet");
+});
+
+test("run limits: quiet time and the overall cap, both paused while a person decides; long replies keep their end", async () => {
+  const { RunWatch, keepTail } = await import("../runner/permissions.ts");
+  const expired = [];
+  const watch = new RunWatch({ idleMs: 300, maxMs: 60_000 }, reason => expired.push(reason));
+  await new Promise(resolve => setTimeout(resolve, 200)); watch.activity();
+  await new Promise(resolve => setTimeout(resolve, 200)); watch.activity();
+  assert.deepEqual(expired, [], "activity keeps it going");
+  await watch.hold(() => new Promise(resolve => setTimeout(resolve, 700)));
+  assert.deepEqual(expired, [], "waiting for a person does not count");
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  assert.deepEqual(expired, ["idle"]);
+  const capped = [];
+  const total = new RunWatch({ idleMs: 60_000, maxMs: 200 }, reason => capped.push(reason));
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.deepEqual(capped, ["time"]);
+  total.clear();
+  assert.equal(keepTail("abcdef", 10), "abcdef");
+  assert.equal(keepTail("x".repeat(20) + "THE ANSWER", 10), "[…earlier output trimmed…]\nTHE ANSWER");
+});
+
+test("the computer is kept awake while a task runs, and released after", async () => {
+  const { keepAwake, awakeHolds } = await import("../runner/keep-awake.ts");
+  const first = keepAwake(), second = keepAwake();
+  assert.equal(awakeHolds(), 2, "parallel tasks share one hold");
+  first(); first();
+  assert.equal(awakeHolds(), 1, "releasing twice counts once");
+  second();
+  assert.equal(awakeHolds(), 0);
+});
+
+// A chat's next turn resumes the tool's own session, so the agent remembers
+// earlier turns; a session this computer does not have starts a new one with
+// the conversation so far in the prompt.
+test("each chat resumes its own session with the tool, and starts a new one when it cannot", { timeout: 30_000 }, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "runner sessions ")));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 3 }));
+  const known = join(root, "known-sessions.txt");
+  await writeFile(known, "");
+  const source = join(root, "agent.cjs");
+  // A Claude-like tool: --session-id starts a session, --resume needs one it knows.
+  await writeFile(source, `#!${process.execPath}
+const { appendFileSync, readFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+const known = ${JSON.stringify(known)};
+const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
+const at = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : null;
+const resume = at("--resume"), start = at("--session-id");
+if (resume && !readFileSync(known, "utf8").split("\\n").includes(resume)) { console.error("No conversation found with session ID: " + resume); process.exit(1); }
+if (start) appendFileSync(known, start + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+  const q = JSON.parse(line);
+  if (q.type !== "user") return;
+  send({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: JSON.stringify({ resume, start, prompt: q.message.content[0].text }) } } });
+  send({ type: "result", subtype: "success" });
+  process.exit(0);
+});
+`, { mode: 0o755 });
+  let bin = source;
+  if (process.platform === "win32") { bin = join(root, "claude.cmd"); await writeFile(bin, '@echo off\r\nnode "%~dp0\\agent.cjs" %*\r\n'); }
+  const { ChatSessions } = await import("../runner/chat-sessions.ts");
+  const sessions = new ChatSessions(join(root, "chat-sessions.json"));
+  const runId = randomUUID();
+  const turn = async (prompt, resumePrompt) => {
+    const previous = await sessions.get(runId, "claude", root);
+    const events = [];
+    const result = await runAgentLocally({ spec: { ...agentById("claude"), bin }, cwd: root, prompt, onEvent: event => events.push(event),
+      session: { previous, resumePrompt, save: id => void sessions.set(runId, { agentId: "claude", sessionId: id, cwd: root }) } });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(result.code, 0, result.errOutput);
+    return { said: JSON.parse(result.output), notices: events.filter(event => event.t === "notice").map(event => event.message) };
+  };
+  // First turn: a new session, with an id chosen by the runner.
+  const first = await turn("Full prompt 1");
+  assert.match(first.said.start, /^[0-9a-f-]{36}$/);
+  assert.equal(first.said.prompt, "Full prompt 1");
+  // Next turn: the same session, resumed with the shorter prompt.
+  const second = await turn("Full prompt 2 with the conversation so far", "Just the new message");
+  assert.equal(second.said.resume, first.said.start);
+  assert.equal(second.said.prompt, "Just the new message");
+  // A session this computer does not have (another computer's, or deleted): a new one, with everything.
+  await writeFile(known, "");
+  const third = await turn("Full prompt 3 with the conversation so far", "Just the newest message");
+  assert.equal(third.said.resume, null);
+  assert.equal(third.said.prompt, "Full prompt 3 with the conversation so far");
+  assert.ok(third.notices.some(message => /Started a new session/.test(message)));
+  assert.equal(await sessions.get(runId, "claude", root), third.said.start, "the new session is the chat's from now on");
+  // Sessions belong to a chat, its tool and its folder.
+  assert.equal(await sessions.get(runId, "codex", root), null);
+  assert.equal(await sessions.get(runId, "claude", join(root, "elsewhere")), null);
+  assert.equal(await sessions.get(randomUUID(), "claude", root), null);
+});
+
+test("tools that take the prompt on stdin get a much larger context budget", async () => {
+  const { promptBudget, maxUserPrompt, MAX_PROMPT, MAX_SESSION_PROMPT } = await import("../app/lib/ai/prompt.ts");
+  assert.equal(promptBudget("claude"), MAX_SESSION_PROMPT);
+  assert.equal(promptBudget("codex"), MAX_SESSION_PROMPT);
+  assert.equal(promptBudget("gemini"), MAX_PROMPT, "Gemini takes its prompt on the command line");
+  assert.ok(maxUserPrompt("claude") >= 200_000);
+  assert.equal(maxUserPrompt("gemini"), MAX_PROMPT - 8000);
+});

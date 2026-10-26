@@ -327,8 +327,9 @@ try {
     await claimNextJob({ userId: alice, deviceId: device });
     await assert.rejects(changeHandoff(target.id, roomId, alice, { action: "recover", version: 0 }));
     await sql(`UPDATE runner_jobs SET lease_expires_at = now() - interval '1 second' WHERE turn_id = $1`, [job.turnId]);
-    assert.equal(await claimedJob(job.turnId, device), null);
+    assert.ok(await claimedJob(job.turnId, device), "a computer back from a network drop carries on with its task");
     await changeHandoff(target.id, roomId, alice, { action: "recover", version: 0 });
+    assert.equal(await claimedJob(job.turnId, device), null, "after the owner recovers control, the old computer is fenced out");
     await assert.rejects(complete(job));
     assert.equal((await getRun(target.id)).controlVersion, 1);
     const next = randomUUID();
