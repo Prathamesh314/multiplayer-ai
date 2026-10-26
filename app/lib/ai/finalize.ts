@@ -7,6 +7,8 @@ import { ensureRepoContext } from "../knowledge/repo-context";
 import { chatBranchOf, diffFilesBare, mergeBase, promoteTurn, withRepoLock, type FileChange } from "../session/repo";
 import { ingestExchange } from "./shared-memory";
 import { ControlError } from "./turns";
+import { AGENTS } from "./catalog";
+import { failureMessage } from "./failure";
 
 export type FinalizeInput = {
   turnId: string;
@@ -100,7 +102,8 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     }
     const messages = [
       ...(saved.output.trim() ? [{ role: "agent", body: saved.output.trim() }] : []),
-      ...(status === "failed" ? [{ role: "system", body: failure || "Execution failed before producing a confirmed result." }] : []),
+      // One clear sentence in the chat, with the tool's own output kept under it as the agent log.
+      ...(status === "failed" ? [{ role: "system", body: failure ? failureMessage(failure, toolInfo(saved.binName)) : "Execution failed before producing a confirmed result." }] : []),
       ...(stopped && status === "completed" ? [{ role: "system", body: "Stopped." }] : []),
       // Which files changed is in the Changes tab and the turn's diff stats; the
       // chat keeps to the conversation.
@@ -151,4 +154,10 @@ export async function reconcileCompletions(runId: string): Promise<void> {
     `SELECT completion FROM agent_turns WHERE run_id = $1 AND status = 'running' AND completion IS NOT NULL`, [runId],
   );
   if (pending) await finalizeAgentRun(pending.completion);
+}
+
+/** The tool a run used, by the executable it ran, for its failure message. */
+function toolInfo(binName: string) {
+  const spec = AGENTS.find(agent => agent.bin === binName || agent.id === binName);
+  return { name: spec?.name ?? binName, signIn: spec?.install.signIn };
 }

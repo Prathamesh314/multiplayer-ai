@@ -599,6 +599,23 @@ try {
     const outsider = (await sql(`INSERT INTO users(handle, email, display_name, connect_code) VALUES ('outsider','outsider@example.test','Outsider','PK-AAAA-AAAZ') RETURNING id`)).rows[0].id;
     assert.equal(await forkedFrom(fork.id, outsider), null, "no link to a room they cannot open");
   });
+  await test("a failed turn is stored as one clear sentence with the tool's output as its agent log", async () => {
+    const { splitFailure } = await import("../app/lib/ai/failure.ts");
+    const chat = await createRun({ sessionId: roomId, startedBy: alice, agentId: "gemini", baseSha: seed.headSha });
+    const job = { ...makeJob(randomUUID(), alice, 0), runId: chat.id, agentId: "gemini" };
+    await reserveTurn(chat.id, alice, job.turnId, 0);
+    await prepareTurn(job);
+    await claimTurn(sql, job);
+    const log = "Attempt 1 failed. Retrying with backoff... Error: exception TypeError: fetch failed sending request\n    at async Models.generateContentStream (chunk.js:1:1)";
+    const result = await finalizeAgentRun({ turnId: job.turnId, sessionId: roomId, runId: chat.id, repoId: null, baseSha: job.baseSha,
+      userPrompt: job.userPrompt, binName: "gemini", author, sha: null, code: 1, output: "", errOutput: log });
+    assert.equal(result.status, "failed");
+    const [message] = (await sql(`SELECT body FROM agent_run_messages WHERE run_id = $1 AND role = 'system' ORDER BY seq DESC LIMIT 1`, [chat.id])).rows;
+    const failure = splitFailure(message.body);
+    assert.match(failure.message, /^Gemini CLI couldn’t reach its AI service over the network/);
+    assert.equal(failure.log, log, "the full output is kept");
+    assert.equal((await sql(`SELECT error FROM agent_runs WHERE id = $1`, [chat.id])).rows[0].error, log, "the run's error stays the raw output");
+  });
   if (process.env.HANDOFF_TEST_BROWSER === "1") {
     if (!realPostgres) throw new Error("Browser tests require HANDOFF_TEST_POSTGRES=1.");
     const { browserChecks } = await import("./handoff-browser.mjs");

@@ -205,3 +205,31 @@ test("the runner reads Git's version on this computer (AI tasks need Git)", asyn
   const { gitVersion } = await import("../app/lib/git/command.ts");
   assert.match(await gitVersion(), /^\d+\.\d+/);
 });
+
+test("a failed run reads as one clear sentence, with the tool's output kept as its agent log", async () => {
+  const { explainFailure, failureMessage, splitFailure } = await import("../app/lib/ai/failure.ts");
+  const gemini = { name: "Gemini CLI", signIn: "gemini" }, claude = { name: "Claude Code", signIn: "claude auth login" };
+  // The log a Windows tester sent: Gemini CLI could not reach Google.
+  const offline = `Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended for a better visual experience.
+Ripgrep is not available. Falling back to GrepTool.
+Attempt 1 failed. Retrying with backoff... Error: exception TypeError: fetch failed sending request
+    at file:///C:/Users/hp/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/chunk-DKZARV6U.js:267745:13
+    at async Models.generateContentStream (file:///C:/Users/hp/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/chunk-DKZARV6U.js:268766:16)
+Attempt 2 failed. Retrying with backoff... Error: exception TypeError: fetch failed sending request
+    at async retryWithBackoff (file:///C:/Users/hp/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/chunk-DKZARV6U.js:309072:23)`;
+  assert.match(explainFailure(offline, gemini), /^Gemini CLI couldn’t reach its AI service over the network\. Check the internet connection/);
+  assert.match(explainFailure("Error: self signed certificate in certificate chain", gemini), /certificate on your network isn’t trusted/);
+  assert.match(explainFailure("Invalid API key · Please run /login", claude), /isn’t signed in on your computer.*Run claude auth login in a terminal there/);
+  assert.match(explainFailure("unexpected status 401 Unauthorized", { name: "Codex CLI", signIn: "codex login" }), /Run codex login/);
+  assert.match(explainFailure('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}', gemini), /usage or rate limit/);
+  assert.match(explainFailure("The model `gpt-9` does not exist or you do not have access to it.", { name: "Codex CLI" }), /chosen model isn’t available to Codex CLI/);
+  assert.equal(explainFailure("Git clone failed: Git was not found. Install Git for your operating system, then restart the runner.", claude),
+    "Git was not found. Install Git for your operating system, then restart the runner.");
+  assert.equal(explainFailure("Execution limit reached.", claude), "This task ran past its time or output limit and was stopped.");
+  assert.equal(explainFailure("Choose an available model before running this provider.", claude), "Choose an available model before running this provider.", "short messages are already clear");
+  assert.equal(explainFailure("Something odd happened\n    at foo (bar.js:1:1)\nError: disk is full\n    at baz (qux.js:2:2)", claude), "Claude Code stopped with an error: disk is full");
+  // Stored as explanation + log, and split back for the chat.
+  const stored = failureMessage(offline, gemini);
+  assert.deepEqual(splitFailure(stored), { message: explainFailure(offline, gemini), log: offline.trim() });
+  assert.equal(splitFailure("Finished in 3.1s"), null);
+});
