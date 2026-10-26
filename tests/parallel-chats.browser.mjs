@@ -42,6 +42,9 @@ function seedParallelChat() {
     createdAt: Date.now() - 60000, startedAt: Date.now() - 60000, endedAt: Date.now() - 30000, archivedAt: null,
     isolation: "isolated", forkSha: sha("a"), headSha: sha("c"), mergeState: "open", mergedSha: null, mergedAt: null };
   state.runs.push(run);
+  // A teammate's ordinary chat in the same repository, to tell whose chat is whose.
+  state.runs.push({ ...run, id: "44444444-4444-4444-8444-444444444444", startedBy: "bob", startedByName: "Bob Stone", driverUserId: "bob", driverName: "Bob Stone",
+    title: "Bob's API cleanup", addedLines: null, removedLines: null, resultSha: null, isolation: "shared", forkSha: null, headSha: null, mergeState: null });
   state.branches = { [run.id]: { runId: run.id, mergeState: "open", chatHead: sha("c"), roomHead: sha("b"), base: sha("a"), ahead: 2, behind: 1,
     mergedSha: null, files: [{ path: "src/login.ts", status: "M", added: 3, removed: 1 }], conflictMarkers: [], running: false, driverUserId: "alice", controlVersion: 0 } };
   state.diffs = { "src/login.ts": "diff --git a/src/login.ts b/src/login.ts\nindex 1..2 100644\n--- a/src/login.ts\n+++ b/src/login.ts\n@@ -1,2 +1,4 @@\n const attempts = 3;\n-legacyLogin();\n+fixedLogin();\n+audit();\n+done();\n" };
@@ -82,6 +85,14 @@ try {
   const row = `Array.from(document.querySelectorAll('aside[aria-label="Repositories and chats"] button')).find(b=>b.textContent.includes("Parallel login fix"))`;
   await eventually(() => evaluate(`!!${row}`), "parallel chat in the sidebar");
   assert.equal(await evaluate(`${row}.querySelector('span[title^="Parallel chat"]')?.textContent`), "review", "a parallel chat with changes is ready to review");
+  // Each chat starts with the face of whoever started it.
+  const bobRow = row.replace("Parallel login fix", "Bob's API cleanup");
+  await eventually(() => evaluate(`!!${bobRow}`), "teammate's chat in the sidebar");
+  assert.match(await evaluate(`${row}.title`), / · Started by you · /);
+  assert.match(await evaluate(`${bobRow}.title`), / · Started by Bob Stone · /);
+  assert.equal(await evaluate(`${row}.querySelector('.rounded-full')?.textContent`), "AL", "your chat shows your initials");
+  assert.equal(await evaluate(`${bobRow}.querySelector('.rounded-full')?.textContent`), "BS", "a teammate's chat shows theirs");
+  await writeFile(join(tmpdir(), "multiplayer-chat-owners.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 420, height: 500, scale: 2 } })).data, "base64"));
 
   // Review its changes.
   await evaluate(`${row}.click()`);

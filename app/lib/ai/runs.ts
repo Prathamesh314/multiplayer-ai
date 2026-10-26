@@ -24,6 +24,8 @@ export type AgentRun = {
   repoId: string | null;
   startedBy: string;
   startedByName: string;
+  /** The starter's profile picture, for the chat list; null shows their initials. */
+  startedByAvatarUrl?: string | null;
   driverUserId: string;
   driverName: string;
   controlVersion: number;
@@ -84,6 +86,7 @@ type RunRow = {
   repo_id: string | null;
   started_by: string;
   started_by_name: string;
+  started_by_avatar_url: string | null;
   driver_user_id: string;
   driver_name: string;
   control_version: number;
@@ -116,6 +119,7 @@ const toRun = (row: RunRow): AgentRun => ({
   repoId: row.repo_id,
   startedBy: row.started_by,
   startedByName: row.started_by_name,
+  startedByAvatarUrl: row.started_by_avatar_url,
   driverUserId: row.driver_user_id,
   driverName: row.driver_name,
   controlVersion: row.control_version,
@@ -144,7 +148,7 @@ const toRun = (row: RunRow): AgentRun => ({
 
 const RUN_COLUMNS = `
   r.id, r.session_id, r.repo_id, r.driver_user_id, r.control_version, r.restore_snapshot_id,
-  (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, r.agent_id,
+  (SELECT display_name FROM users WHERE id = r.driver_user_id) AS driver_name, r.started_by, u.display_name AS started_by_name, u.avatar_url AS started_by_avatar_url, r.agent_id,
   r.title, r.status, r.base_sha, r.result_sha, r.added_lines, r.removed_lines,
   r.exit_code, r.error, r.created_at, r.started_at, r.ended_at, r.archived_at,
   r.isolation, r.fork_sha, r.head_sha, r.merge_state, r.merged_sha, r.merged_at, r.permission_mode

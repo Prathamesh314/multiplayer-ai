@@ -12,7 +12,7 @@ import { colorOf, initialsOf } from "../../lib/people";
 
 export type LivePerson = { userId: string; displayName: string; handle?: string | null; avatarUrl?: string | null };
 
-const SIZES = { sm: "h-6 w-6 text-[10px]", md: "h-8 w-8 text-[11px]" } as const;
+const SIZES = { xs: "h-[18px] w-[18px] text-[8px]", sm: "h-6 w-6 text-[10px]", md: "h-8 w-8 text-[11px]" } as const;
 
 export function LiveAvatars({ people, label, max = 4, size = "sm", title }: {
   people: LivePerson[];
