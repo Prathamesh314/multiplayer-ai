@@ -368,17 +368,21 @@ try {
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"workspace connection prompt");
   assert.ok(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\').getBoundingClientRect().top < document.querySelector("#projects-heading").getBoundingClientRect().top'),"connection prompt appears before projects");
   await button("Connect computer");
+  // In a browser the terminal steps come first, already showing the pairing code.
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog button[aria-label="Copy pair command"]\') && /Code RN-[A-Z0-9-]+ · \\d+:\\d\\d/.test(document.querySelector("dialog").innerText)'),"pairing code ready when the dialog opens");
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("dialog [role=tab]")].map(t=>t.textContent.trim())'),["Terminal (npx)","Desktop app"],"terminal first, desktop app second");
+  assert.equal(await evaluate('document.querySelector("dialog [role=tab][aria-selected=true]")?.textContent.trim()'),"Terminal (npx)","the terminal tab is open by default");
+  assert.ok(await evaluate('document.querySelector("dialog footer [role=status]")?.innerText.includes("Waiting for your computer to pair")'),"the footer says it is waiting, not connected");
+  await evaluate(`[...document.querySelectorAll("dialog [role=tab]")].find(t=>t.textContent.trim()==="Desktop app").click()`);
   await eventually(()=>evaluate('!!document.querySelector(\'dialog a[href="/#download"]\')'),"desktop setup instructions");
-  assert.equal(await evaluate('document.querySelector("dialog [role=tab][aria-selected=true]")?.textContent.trim()'),"Desktop app (easiest)","the desktop app is the first way shown; the terminal is the other tab");
-  assert.ok(await evaluate('document.querySelector("dialog footer [role=status]")?.innerText.includes("Waiting for a computer")'),"the footer says it is waiting, not connected");
-  for (const tab of ["Desktop app (easiest)","Terminal (npx)"]) for (const width of [1440,390]) {
+  for (const tab of ["Terminal (npx)","Desktop app"]) for (const width of [1440,390]) {
     await evaluate(`[...document.querySelectorAll("dialog [role=tab]")].find(t=>t.textContent.trim()===${JSON.stringify(tab)}).click()`);
     await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
     assert.ok(await evaluate('[...document.querySelectorAll("dialog[open] .ui-dialog-body > *")].every(el=>el.getBoundingClientRect().right<=document.querySelector("dialog[open] .ui-dialog-body").getBoundingClientRect().right+1)'),`${tab} fits at ${width}`);
     await writeFile(join(tmpdir(),`multiplayer-connect-${tab.startsWith("Desktop")?"desktop":"terminal"}-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   }
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
-  await evaluate(`[...document.querySelectorAll("dialog [role=tab]")].find(t=>t.textContent.trim()==="Desktop app (easiest)").click()`);
+  await evaluate(`[...document.querySelectorAll("dialog [role=tab]")].find(t=>t.textContent.trim()==="Terminal (npx)").click()`);
   await click('button[aria-label="Close Your computers"]');
   await evaluate('window.__model.deviceFailure=true;window.__model.emitDevices()');
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="error"'),"network failure is not reported as no computer");
