@@ -10,20 +10,27 @@
  * rate limits. Nothing is injected and nothing is read back.
  */
 
-import { Deadline, type PermissionAsker } from "./permissions";
+import { RunWatch, keepTail, runLimits, type PermissionAsker } from "./permissions";
 import { allowResponse, denyResponse, describeToolUse, errorResponse, isControlRequest, type CanUseTool, type ControlRequest } from "./claude-control";
 import { assertAvailableModel } from "../app/lib/ai/model-discovery";
 import { commandLine } from "../app/lib/ai/command";
 import type { InputSource } from "./input-types";
 import { runCodexSession } from "./codex-session";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { AgentSpec } from "../app/lib/ai/catalog";
 import { agentEnv } from "../app/lib/ai/env";
 import type { AiRunEvent } from "../app/lib/ai/run-events";
 
-const MAX_RUN_MS = 10 * 60 * 1000;
+/** The reply kept for the chat: its end (where the answer is) when a long session says more. */
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const MAX_THINK_BYTES = 256 * 1024;
+/** What is streamed live; past it the agent keeps working and its reply's end is still kept. */
+const MAX_LIVE_BYTES = 64 * 1024 * 1024;
+/** Thinking and tool steps: an hours-long task takes thousands of steps. */
+const MAX_THINK_BYTES = 8 * 1024 * 1024;
+const MAX_ERR_BYTES = 256 * 1024;
+
+export { keepTail };
 
 export type LocalRunResult = {
   code: number | null;
@@ -62,49 +69,96 @@ export type RunInput = {
   signal?: AbortSignal;
   /** Asks the chat before the agent uses a tool that needs permission. Absent: refused. */
   permissions?: PermissionAsker;
+  /**
+   * The chat's own session with the tool on this computer (runner/chat-sessions.ts):
+   * resumed when there is one, so the agent remembers earlier turns; `save`
+   * records the session this turn used.
+   */
+  session?: ChatSessionLink;
   /** Tool rules the chat always allows. */
   allowedTools?: string[];
   /** MCP servers and plugins for this run (runner/agent-tools.ts). */
   tools?: { args: string[]; codexConfig?: object };
 };
 
+export type ChatSessionLink = {
+  /** The session to resume, if this chat has one here. */
+  previous: string | null;
+  /** The prompt without the conversation so far, for a resumed session (which remembers it). */
+  resumePrompt?: string;
+  save(sessionId: string): void;
+};
+
+/**
+ * Tools whose sessions the runner resumes by a session id it chooses, with how
+ * a resume that cannot work says so (then a new session starts instead).
+ */
+const SESSION_FLAGS: Record<string, { start: string; resume: string; missing: RegExp }> = {
+  claude: { start: "--session-id", resume: "--resume", missing: /No conversation found|Failed to resume|Unable to load transcript/i },
+  gemini: { start: "--session-id", resume: "--resume", missing: /Error resuming session|Invalid session identifier/i },
+};
+
 export async function runAgentLocally(input: RunInput): Promise<LocalRunResult> {
   await assertAvailableModel(input.spec, input.model, input.effort);
   if (input.spec.id === "codex" && input.inputs) return runCodexSession(input);
+  // Each run is watched for silence and its overall length (RunWatch); this
+  // is only the backstop for the whole sequence of queued follow-ups.
   const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), MAX_RUN_MS);
+  const deadline = setTimeout(() => controller.abort(), runLimits().maxMs);
+  deadline.unref?.();
   const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal;
-  let bytes = 0;
-  const limited = { ...input, signal, onEvent: (event: AiRunEvent) => {
-    if (event.t === "out" || event.t === "err") {
-      bytes += Buffer.byteLength(event.d);
-      if (bytes > MAX_OUTPUT_BYTES) controller.abort();
+  try { return await runSequence({ ...input, signal }); } finally { clearTimeout(deadline); }
+}
+
+/**
+ * One run in the chat's own session: resume it when there is one (with the
+ * shorter prompt, as the tool remembers the rest), otherwise start a new one
+ * with an id chosen here. A session that cannot be resumed on this computer
+ * (gone, or from another one) is replaced by a new one with the full prompt;
+ * any other failure is the run's own and is not retried.
+ */
+async function runInSession(input: RunInput, accepted?: () => Promise<void>): Promise<{ result: LocalRunResult; sessionId: string | null }> {
+  const flags = SESSION_FLAGS[input.spec.id];
+  const session = input.session;
+  if (!flags || !session) return { result: await runOnce(input, accepted), sessionId: null };
+  if (session.previous) {
+    const resumed = await runOnce({ ...input, prompt: session.resumePrompt ?? input.prompt, sessionArgs: [flags.resume, session.previous] }, accepted);
+    if (!flags.missing.test(resumed.errOutput) || input.signal?.aborted) {
+      session.save(session.previous);
+      return { result: resumed, sessionId: session.previous };
     }
-    input.onEvent(event);
-  } };
-  try { return await runSequence(limited); } finally { clearTimeout(deadline); }
+    input.onEvent({ t: "notice", message: "Started a new session with the AI tool: the chat's earlier one isn't on this computer. It has the conversation so far." });
+  }
+  const id = randomUUID();
+  const fresh = await runOnce({ ...input, sessionArgs: [flags.start, id] }, accepted);
+  session.save(id);
+  return { result: fresh, sessionId: id };
 }
 
 async function runSequence(input: RunInput): Promise<LocalRunResult> {
   const started = Date.now();
-  let result = await runOnce(input);
+  const first = await runInSession(input);
+  let result = first.result;
+  // Follow-ups queued during the turn continue the same session, which remembers the turn.
+  const sessionId = first.sessionId;
   let history = `Agent: ${result.output}`;
   try {
   while (result.code === 0 && input.inputs) {
     const next = await input.inputs.claim(true);
     if (!next) break;
-    if (Date.now() - started >= MAX_RUN_MS || Buffer.byteLength(result.output) >= MAX_OUTPUT_BYTES) {
+    if (Date.now() - started >= runLimits().maxMs) {
       await input.inputs.uncertain(next.id, "Execution limit reached before delivery.");
       return { ...result, code: 1, errOutput: "Execution limit reached." };
     }
     let acknowledged = false;
-    const followup = await runOnce({ ...input, prompt: `${input.prompt}\n\nPrevious conversation:\n${history.slice(-64000)}\n\nAdditional user instruction (continue in the current workspace):\n${next.body}` }, async () => {
-      await input.inputs!.acknowledge(next.id); acknowledged = true;
-    });
+    const deliver = async () => { await input.inputs!.acknowledge(next.id); acknowledged = true; };
+    const followup = sessionId && SESSION_FLAGS[input.spec.id]
+      ? await runOnce({ ...input, prompt: next.body, sessionArgs: [SESSION_FLAGS[input.spec.id].resume, sessionId] }, deliver)
+      : await runOnce({ ...input, prompt: `${input.prompt}\n\nPrevious conversation:\n${history.slice(-64000)}\n\nAdditional user instruction (continue in the current workspace):\n${next.body}` }, deliver);
     if (!acknowledged) await input.inputs.uncertain(next.id, "Delivery could not be confirmed; inspect the output before sending again.").catch(() => {});
     history += `\nUser: ${next.body}\nAgent: ${followup.output}`;
     history = history.slice(-64000);
-    result = { code: followup.code, output: result.output + "\n\n" + followup.output, errOutput: result.errOutput + followup.errOutput, ms: Date.now() - started };
+    result = { code: followup.code, output: keepTail(result.output + "\n\n" + followup.output, MAX_OUTPUT_BYTES), errOutput: keepTail(result.errOutput + followup.errOutput, MAX_ERR_BYTES), ms: Date.now() - started };
   }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
@@ -126,10 +180,10 @@ export function windowsCommandLineLength(file: string, argv: string[]): number {
   }, 0);
 }
 
-async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise<LocalRunResult> {
+async function runOnce(input: RunInput & { sessionArgs?: string[] }, accepted?: () => Promise<void>): Promise<LocalRunResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const args = [...(input.tools?.args ?? []), ...input.spec.promptArgs(input.prompt, {
+    const args = [...(input.tools?.args ?? []), ...(input.sessionArgs ?? []), ...input.spec.promptArgs(input.prompt, {
       model: input.model,
       effort: input.effort,
       allowedTools: input.allowedTools,
@@ -164,16 +218,25 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     input.signal?.addEventListener("abort", abort, { once: true });
     if (input.signal?.aborted) abort();
     let parserFailed = false;
-    let bytes = 0;
+    let liveBytes = 0;
+    let liveCapped = false;
     let thinkBytes = 0;
     let outBuf = "";
     let errBuf = "";
 
-    // Paused while a person decides on a tool request.
-    const deadline = new Deadline(MAX_RUN_MS, () => {
-      input.onEvent({ t: "notice", message: `Stopped after ${MAX_RUN_MS / 60_000} minutes.` });
+    // Stopped only when the agent goes quiet or runs past the overall cap;
+    // both are paused while a person decides on a tool request.
+    const watch = new RunWatch(runLimits(), reason => {
+      input.onEvent({ t: "notice", message: watch.describe(reason) });
       kill(child);
     });
+    const live = (event: AiRunEvent & { d: string }) => {
+      liveBytes += Buffer.byteLength(event.d);
+      if (liveBytes <= MAX_LIVE_BYTES) { input.onEvent(event); return; }
+      if (liveCapped) return;
+      liveCapped = true;
+      input.onEvent({ t: "notice", message: "This reply is very long, so live output is paused. The agent keeps working, and the end of its reply is kept." });
+    };
     const send = (message: unknown) => { if (child.stdin && !child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`); };
     if (interactive) {
       child.stdin?.on("error", () => { /* the agent exited; its close event reports it */ });
@@ -191,7 +254,7 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
         return;
       }
       try {
-        const answer = await deadline.hold(() => input.permissions!(describeToolUse(request)));
+        const answer = await watch.hold(() => input.permissions!(describeToolUse(request)));
         send(answer.allow ? allowResponse(message.request_id, request) : denyResponse(message.request_id, "The user declined this tool request in the chat."));
       } catch (cause) {
         send(denyResponse(message.request_id, `The request could not reach the user: ${cause instanceof Error ? cause.message : String(cause)}`));
@@ -199,30 +262,26 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     };
 
     const emitReply = (text: string) => {
-      if (bytes >= MAX_OUTPUT_BYTES) return;
-      bytes += Buffer.byteLength(text);
-      input.onEvent({ t: "out", d: text });
-      outBuf += text;
-      if (bytes >= MAX_OUTPUT_BYTES) {
-        input.onEvent({ t: "notice", message: "Output limit reached — the run was stopped." });
-        kill(child);
-      }
+      watch.activity();
+      live({ t: "out", d: text });
+      outBuf = keepTail(outBuf + text, MAX_OUTPUT_BYTES);
     };
     const emitThinking = (text: string) => {
+      watch.activity();
       if (thinkBytes >= MAX_THINK_BYTES) return;
       thinkBytes += Buffer.byteLength(text);
       input.onEvent({ t: "think", d: text });
     };
     const emitActivity = (text: string) => {
+      watch.activity();
       if (thinkBytes >= MAX_THINK_BYTES) return;
       thinkBytes += Buffer.byteLength(text);
       input.onEvent({ t: "act", d: text });
     };
     const emitErr = (chunk: string) => {
-      if (bytes >= MAX_OUTPUT_BYTES) return;
-      bytes += Buffer.byteLength(chunk);
-      input.onEvent({ t: "err", d: chunk });
-      errBuf += chunk;
+      watch.activity();
+      live({ t: "err", d: chunk });
+      errBuf = keepTail(errBuf + chunk, MAX_ERR_BYTES);
     };
 
     // stdout is either JSON events to decode (parser set) or the reply
@@ -230,6 +289,8 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
     // a trailing partial line is left for the next chunk.
     let lineBuf = "";
     const onStdout = (chunk: string) => {
+      // Any output is a sign of life, even a frame that shows nothing.
+      watch.activity();
       if (!parser) {
         emitReply(chunk);
         return;
@@ -273,7 +334,7 @@ async function runOnce(input: RunInput, accepted?: () => Promise<void>): Promise
       input.signal?.removeEventListener("abort", abort);
       try { await receipt; } catch { code = 1; }
       if (parserFailed) code = 1;
-      deadline.clear();
+      watch.clear();
       resolve({ code, output: outBuf, errOutput: errBuf, ms: Date.now() - startedAt });
     });
   });

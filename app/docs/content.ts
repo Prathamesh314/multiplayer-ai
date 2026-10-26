@@ -141,7 +141,7 @@ Use the same account in desktop and browser. A computer connected to one account
 3. Open **Your computers** from the workspace’s connection notice or computer icon.
 4. Confirm your computer is online. Select **Next: Set up AI** to check your installed tools.
 
-Keep the app running and the computer awake during tasks. Closing the browser does not move an active task to the server. If you want another teammate to continue, use [Handoff](/docs/handoff) and wait for the current turn to finish.`, screenshot: "computers" },
+Keep the app running while AI works. Tasks can run for hours: the computer is kept from sleeping while one runs (the display may still turn off), a dropped network connection does not stop it (it carries on and catches up when back), and it is only stopped if the agent goes quiet for 30 minutes or runs for 8 hours. Closing the browser does not stop or move an active task. Each chat continues its own session with the AI tool on that computer (Claude Code, Codex and Gemini CLI), so the agent remembers what it read, ran and decided in earlier turns, as in a terminal. On another computer, a chat starts a new session that is given the conversation so far. If you want another teammate to continue, use [Handoff](/docs/handoff) and wait for the current turn to finish.`, screenshot: "computers" },
       { id: "terminal-connection", title: "Use a terminal instead", body: `This path requires **Node.js 22 or newer**, npm/npx, Git, and your installed AI tool. It works without an application source checkout.
 
 1. In the browser, open **Your computers**. It opens on the **Terminal (npx)** steps, with a pairing code already created. (With a computer already connected, expand **Connect another computer** first.)

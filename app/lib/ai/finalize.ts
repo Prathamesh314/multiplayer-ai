@@ -42,7 +42,9 @@ export async function finalizeAgentRun(input: FinalizeInput): Promise<FinalizeRe
     const { rows: [role] } = await tx.query(`SELECT room_access_role($1, $2) AS role`, [input.sessionId, turn.driver_user_id]);
     if (!["owner", "editor"].includes(role?.role)) throw new ControlError("Execution access was revoked.", 403);
     const { rows: [job] } = await tx.query(`SELECT *, lease_expires_at > now() AS live FROM runner_jobs WHERE turn_id = $1`, [input.turnId]);
-    if (turn.execution_target === 'local' && job && !turn.completion && (job.status !== "claimed" || !job.live)) throw new ControlError("The runner lease expired. Recover control before retrying.");
+    // A lapsed lease alone is not a loss of control (the computer may have been
+    // offline); recovery fails the job, and that is what refuses a late result.
+    if (turn.execution_target === 'local' && job && !turn.completion && job.status !== "claimed") throw new ControlError("Control of this chat was recovered while the task ran. Its work was kept as a candidate.");
     if (turn.execution_target === 'server' && turn.execution_token && !turn.completion && new Date(turn.execution_lease_until).getTime() <= Date.now()) throw new ControlError("The executor lease expired. The candidate is preserved for review.");
     await closeTurnInputs(tx, input.turnId);
     const saved = turn.completion ?? { ...input, onError: undefined };

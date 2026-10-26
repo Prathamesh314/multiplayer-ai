@@ -1,4 +1,6 @@
 import { permissionAsker } from "./permissions";
+import { keepAwake } from "./keep-awake";
+import { ChatSessions } from "./chat-sessions";
 import { ATTACHMENT_ROOT, placeAttachments } from "./attachments";
 import { ActivityOutbox } from "./activity-outbox";
 import { prepareTools, secretNamesHere, writeSecret, SECRET_NAME } from "./agent-tools";
@@ -143,13 +145,18 @@ async function processJob(
     execution.abort();
   };
   stopTurn.set(job.turnId, stopRequested);
-  let renewedAt = Date.now(), renewing = false;
+  // An hours-long task must not stop because the computer went to sleep.
+  const releaseAwake = keepAwake();
+  let renewing = false;
   const leaseTimer = setInterval(() => {
     if (renewing) return;
     renewing = true;
     // The lease renewal also carries a stop the live signal may have missed.
-    void api.postEvents(job.turnId, []).then(result => { renewedAt = Date.now(); if (result.stop) stopRequested(); }).catch(cause => {
-      if (Date.now() - renewedAt > 40_000 || permanentRunnerFailure(cause)) execution.abort();
+    void api.postEvents(job.turnId, []).then(result => { if (result.stop) stopRequested(); }).catch(cause => {
+      // A network drop or sleep does not end the task: the agent keeps working
+      // and the lease is renewed when the server is back. Only a definite
+      // answer (control recovered, device revoked) stops it.
+      if (permanentRunnerFailure(cause)) execution.abort();
     }).finally(() => { renewing = false; });
   }, 15_000);
   const emit = (event: AiRunEvent) => {
@@ -182,6 +189,9 @@ async function processJob(
       const tools = await prepareTools(job.tools, spec.id, dataDir);
       for (const message of tools.notices) emit({ t: "notice", message });
       const snapshotTimer = setInterval(checkpoint, 30_000);
+      // This chat's session with the tool on this computer, resumed so the agent remembers earlier turns.
+      const sessions = ChatSessions.in(dataDir);
+      const previousSession = await sessions.get(job.runId, spec.id, workspace.path);
       let result;
       try { result = await runAgentLocally({
         spec,
@@ -193,6 +203,11 @@ async function processJob(
         signal: execution.signal,
         allowedTools: job.allowedTools,
         tools,
+        session: {
+          previous: previousSession,
+          resumePrompt: job.resumePrompt,
+          save: sessionId => { if (sessionId !== previousSession) log(`run ${job.runId}: ${previousSession ? "new" : "started"} ${spec.id} session`); void sessions.set(job.runId, { agentId: spec.id, sessionId, cwd: workspace.path }); },
+        },
         permissions: permissionAsker(api.permissions(job.turnId), job.allowedTools, {
           signal: execution.signal,
           onWaiting: request => emit({ t: "notice", message: `Waiting for you to allow in the chat: ${request.title}` }),
@@ -220,6 +235,7 @@ async function processJob(
     clearInterval(timer);
     clearInterval(leaseTimer);
     stopTurn.delete(job.turnId);
+    releaseAwake();
     stopSignal.signal.removeEventListener("abort", abortExecution);
     flush();
     await activity.deliver(api);

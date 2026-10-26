@@ -22,7 +22,7 @@ import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
 import { buildKnowledgeContext } from "../../../lib/knowledge";
-import { assembleAgentPrompt, MAX_PROMPT } from "../../../lib/ai/prompt";
+import { assembleAgentPrompt, MAX_PROMPT, maxUserPrompt, promptBudget } from "../../../lib/ai/prompt";
 import type { AgentRunJob, AiRunEvent } from "../../../lib/ai/run-events";
 import { subscribeRunEvents } from "../../../lib/ai/run-stream";
 import { hasOnlineDevice } from "../../../lib/runner/devices";
@@ -49,9 +49,13 @@ export const dynamic = "force-dynamic";
 /**
  * How long the response will wait on the member's runner before giving up. A
  * runner killed mid-run never emits `exit`, and this stream would otherwise
- * hang, so it is closed a little past the run cap.
+ * hang, so it is closed a little past the longest a task may run (8 hours by
+ * default, runner/permissions.ts). The run itself is unaffected either way:
+ * its result is saved and the chat shows it when it finishes.
  */
-const RUN_STREAM_TIMEOUT_MS = 11 * 60 * 1000;
+const RUN_STREAM_TIMEOUT_MS = (8 * 60 + 15) * 60 * 1000;
+/** A blank line every 20 s keeps proxies from closing a stream while the agent thinks quietly. */
+const KEEPALIVE_MS = 20_000;
 
 export type AiRunRequest = {
   sessionId: string;
@@ -159,8 +163,8 @@ async function handlePOST(request: Request) {
   // Like other assistants, a message may be just files.
   const prompt = typed || (attaching ? "Take a look at the attached files." : "");
   if (!prompt) return Response.json({ error: "Write a prompt first." }, { status: 400 });
-  if (prompt.length > MAX_PROMPT - 8000) {
-    return Response.json({ error: "Use at most 12,000 characters, leaving room for conversation context." }, { status: 413 });
+  if (prompt.length > maxUserPrompt(agent.id)) {
+    return Response.json({ error: `Use at most ${maxUserPrompt(agent.id).toLocaleString("en-US")} characters, leaving room for conversation context.` }, { status: 413 });
   }
 
   if (body.model != null && body.model !== "" && !validModelId(body.model)) return Response.json({ error: "Invalid model ID." }, { status: 400 });
@@ -421,21 +425,28 @@ async function handlePOST(request: Request) {
 
   const coDriven = await runHasOtherAuthors(run.id, result.user.id);
 
-  // Everything sent to the CLI travels as one argv string capped at MAX_PROMPT.
   // The context layers are woven and budgeted in assembleAgentPrompt (see
-  // app/lib/ai/prompt.ts), which the stored transcript is unaffected by — it
-  // keeps the full import regardless.
-  const agentPrompt = assembleAgentPrompt({
+  // app/lib/ai/prompt.ts), within what this tool can take (promptBudget); the
+  // stored transcript is unaffected by it and keeps the full import regardless.
+  const budget = promptBudget(agent.id);
+  const layers = {
     prompt: prompt + attachmentPromptBlock(files) + fileRefsPromptBlock(cleanFileRefs(body.fileRefs)),
     handle: coDriven ? result.user.handle : null,
     referencedContext,
-    conversationContext: await continuationContext(run.id),
     importedContext,
     repoContext,
     sharedMemory,
     structuredMemory: true,
     roomChatContext,
+    maxPrompt: budget,
+  };
+  const agentPrompt = assembleAgentPrompt({
+    ...layers,
+    conversationContext: await continuationContext(run.id, budget > MAX_PROMPT ? { messages: 200, perMessage: 20_000 } : undefined),
   });
+  // A computer that still has this chat's session with the tool resumes it,
+  // and the tool already remembers the conversation: it gets this instead.
+  const resumePrompt = body.runId ? assembleAgentPrompt(layers) : undefined;
 
   const promptTurn = await appendMessage({
     runId: run.id,
@@ -482,6 +493,7 @@ async function handlePOST(request: Request) {
     ...(isolated ? { isolation: "isolated" as const, chatBranch: chatBranchOf(run.id) } : {}),
     agentId: agent.id,
     agentPrompt,
+    ...(resumePrompt ? { resumePrompt } : {}),
     allowedTools: await allowedTools(run.id),
     ...(tools.length ? { tools } : {}),
     ...(files.length ? { attachments: files.map(({ id, path, size, sha256 }) => ({ id, path, size, sha256 })) } : {}),
@@ -519,12 +531,20 @@ function localStream(job: AgentRunJob, userId: string, waitingTools = 0): Readab
   let unsubscribe: (() => Promise<void>) | null = null;
   let timeout: ReturnType<typeof setTimeout> | null = null;
   let fallback: ReturnType<typeof setTimeout> | null = null;
+  let keepalive: ReturnType<typeof setInterval> | null = null;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Blank lines are skipped by the reader (lib/ai/client.ts).
+      keepalive = setInterval(() => {
+        if (closed) return;
+        try { controller.enqueue(encoder.encode("\n")); } catch { /* closed */ }
+      }, KEEPALIVE_MS);
+      keepalive.unref?.();
       const shutdown = () => {
         if (closed) return;
         closed = true;
+        if (keepalive) clearInterval(keepalive);
         if (timeout) clearTimeout(timeout);
         if (fallback) clearTimeout(fallback);
         void unsubscribe?.().catch(() => {});
@@ -592,6 +612,7 @@ function localStream(job: AgentRunJob, userId: string, waitingTools = 0): Readab
     },
     cancel() {
       closed = true;
+      if (keepalive) clearInterval(keepalive);
       if (timeout) clearTimeout(timeout);
       if (fallback) clearTimeout(fallback);
       void unsubscribe?.().catch(() => {});

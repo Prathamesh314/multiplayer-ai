@@ -53,7 +53,7 @@ async function handlePOST(request: Request, context: RouteContext<"/api/runner/r
     return Response.json({ error: "Expected a valid exit code." }, { status: 400 });
   }
   const code = typeof body.code === "number" ? body.code : null;
-  const output = typeof body.output === "string" ? body.output.slice(0, MAX_OUTPUT_BYTES) : "";
+  const output = typeof body.output === "string" ? body.output.slice(-MAX_OUTPUT_BYTES) : "";
   const errOutput = typeof body.errOutput === "string" ? body.errOutput.slice(0, MAX_ERR_BYTES) : "";
   const ms = Math.max(0, Number(body.ms) || 0);
 

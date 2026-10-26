@@ -75,3 +75,21 @@ the runner's data folder, readable only by you.
 
 For local development the workspace address can be `http://localhost:3000`.
 Use your deployed HTTPS workspace address when connecting another computer.
+
+## Long tasks
+
+A task runs as long as the agent keeps working, for hours if needed. It is
+stopped only when the agent produces no output for `RUNNER_IDLE_MINUTES`
+(default 30) or after `RUNNER_MAX_RUN_MINUTES` in all (default 480); time
+spent waiting for you to answer a tool request counts towards neither. While a
+task runs, the runner keeps the computer from sleeping (macOS `caffeinate`,
+Windows `SetThreadExecutionState`, Linux `systemd-inhibit`). If the network
+drops, the agent keeps working and the runner catches up when it is back; a
+computer silent for 30 minutes is given up on and its work kept for review.
+
+Each chat continues its own session with the AI tool on this computer (Claude
+Code `--resume`, Codex `thread/resume`, Gemini CLI `--resume`), recorded in
+`chat-sessions.json` in the runner's data folder, so the agent remembers
+earlier turns. A chat whose session is not on this computer starts a new one,
+given the conversation so far.
+

@@ -17,8 +17,25 @@
  * memory because it is the more directly actionable of the two for code edits.
  */
 
-/** Hard cap on the whole argv string; also the validation limit in the route. */
+/** Hard cap for tools that take the prompt on the command line (Windows allows 32,767 characters). */
 export const MAX_PROMPT = 20_000;
+/**
+ * Tools that take the prompt on stdin or through their session protocol
+ * (Claude Code, Codex) have no command-line limit: their context window is the
+ * limit, so a long chat keeps much more of its history and context.
+ */
+export const MAX_SESSION_PROMPT = 400_000;
+const SESSION_AGENTS = new Set(["claude", "codex"]);
+
+/** How much the whole prompt may hold for this tool. */
+export function promptBudget(agentId: string): number {
+  return SESSION_AGENTS.has(agentId) ? MAX_SESSION_PROMPT : MAX_PROMPT;
+}
+
+/** How long a typed message may be, leaving room for the conversation's context. */
+export function maxUserPrompt(agentId: string): number {
+  return SESSION_AGENTS.has(agentId) ? 200_000 : MAX_PROMPT - 8000;
+}
 
 /** Slack left for the wrapper tags and truncation notices around each block. */
 const OVERHEAD = 120;

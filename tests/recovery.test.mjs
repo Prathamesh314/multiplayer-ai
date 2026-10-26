@@ -58,12 +58,17 @@ test('durable recovery: crashes, fresh leases, saved completions, late writers a
       assert.equal((await state(x.id)).execution_target,'local');
       assert.equal((await f.first('SELECT status FROM runner_jobs WHERE turn_id=$1',[x.id])).status,'queued');
     });
-    await t.test('expired desktop lease closes queued inputs and preserves uncertain delivery',async()=>{
+    await t.test('a computer gone for 30 minutes is given up on: queued inputs close and uncertain delivery is kept',async()=>{
       const x=await make('running','local');
       await f.db.query(`INSERT INTO runner_jobs(run_id,turn_id,user_id,payload,status,lease_expires_at)
         VALUES ($1,$2,$3,$4,'claimed',now()-interval '1 second')`,[x.run,x.id,f.alice,JSON.stringify(x.job)]);
       for(const status of ['queued','delivering'])await f.db.query(`INSERT INTO agent_run_inputs(id,run_id,turn_id,user_id,control_version,body,status)
         VALUES ($1,$2,$3,$4,0,'Follow-up instruction',$5)`,[randomUUID(),x.run,x.id,f.alice,status]);
+      // A network drop or sleep: the computer keeps the task and carries on when back.
+      await recoverAgentTurns();
+      assert.equal((await state(x.id)).status,'running','a lapsed lease alone does not fail the task');
+      await f.db.query(`UPDATE runner_jobs SET lease_expires_at=now()-interval '31 minutes' WHERE turn_id=$1`,[x.id]);
+      await f.db.query(`UPDATE agent_turns SET recovery_after=now()-interval '1 second' WHERE id=$1`,[x.id]);
       await recoverAgentTurns();
       assert.ok((await state(x.id)).input_closed_at);
       assert.equal((await state(x.id)).result.uncertain,true);
