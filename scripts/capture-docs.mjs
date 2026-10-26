@@ -128,7 +128,7 @@ try{
   await evaluate('window.__model.extraAgents=undefined');
   await button('Room guide');await button('Connect your computer');await eventually(()=>evaluate('document.body.innerText.includes("Alice’s Mac")'),'computers');await capture('computers');await closeDialog();
   await button('Briefing');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Accepted decisions")'),'briefing');await capture('briefing');await closeDialog();
-  await button('Activity & checkpoints');await eventually(()=>evaluate('document.body.innerText.includes("No uploaded checkpoints yet")'),'history');await capture('history');await closeDialog();
+  await button('Activity');await eventually(()=>evaluate('document.body.innerText.includes("No uploaded checkpoints yet")'),'history');await capture('history');await closeDialog();
   await button('Room guide');await button('Review room memory');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Show quantity errors")'),'memory');
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.includes('Show quantity errors')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Source evidence")'),'memory evidence');await capture('memory');await closeDialog();
   await button('Share chat');await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),'share chat');await type('dialog input[type=email]','teammate@example.test');await capture('share-chat');await closeDialog();
@@ -137,12 +137,15 @@ try{
   await button('Handoff');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Offer handoff")'),'handoff');
   await capture('handoff');await closeDialog();
   await button('Assign Tasks');await capture('tasks');await closeDialog();
-  await button('Teammate review');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Request teammate review")'),'review');await capture('reviews');await closeDialog();
-  await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Feedback')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Please check delivery errors")'),'feedback');await capture('feedback');await closeDialog();
+  // Teammate review and Feedback are under the chat nav's More.
+  const fromMore=async label=>{await click('nav[aria-label="Chat"] button[aria-haspopup="menu"]');await eventually(()=>evaluate(`[...document.querySelectorAll('nav[aria-label="Chat"] [role=menuitem]')].some(b=>b.textContent.startsWith(${JSON.stringify(label)}))`),label+' in More');await evaluate(`[...document.querySelectorAll('nav[aria-label="Chat"] [role=menuitem]')].find(b=>b.textContent.startsWith(${JSON.stringify(label)})).click()`);};
+  await fromMore('Teammate review');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Request teammate review")'),'review');await capture('reviews');await closeDialog();
+  await fromMore('Feedback');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Please check delivery errors")'),'feedback');await capture('feedback');await closeDialog();
   await terminalSession();await capture('terminal');
   await evaluate(`window.__model.runs[0].status='running';window.__model.emit('run.started')`);
   await delay(500);await click('button[title^="Plan the checkout flow ·"]');
-  await eventually(()=>evaluate('document.body.innerText.includes("Queue message")'),'running message queue');
+  // While the agent works the empty box offers Stop; typing turns it into Queue message.
+  await eventually(()=>evaluate('!!document.querySelector(\'textarea[aria-label="Message working agent"]\')'),'running message queue');
   await type('textarea[aria-label="Message working agent"]','Also check the keyboard focus after a validation error.');await button('Queue message');
   await eventually(()=>evaluate('document.body.innerText.includes("Also check the keyboard focus")'),'queued instruction');await capture('queued-messages');
   if(b.errors.length)throw Error(b.errors.join('\n'));
