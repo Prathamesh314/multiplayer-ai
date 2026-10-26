@@ -2,7 +2,7 @@
 import type { PermissionMode } from "../../lib/ai/runs";
 import { readApprovalMode, rememberApprovalMode } from "../../lib/ai/approval-mode";
 import type { MentionFile } from "../../lib/ai/file-mentions";
-import { LiveAvatars } from "../presence/LiveAvatars";
+import { Avatar, LiveAvatars } from "../presence/LiveAvatars";
 import { agentForChat, preferredAgent, rememberChoice, savedPicks } from "../../lib/ai/composer-choice";
 import { isChangeSummary } from "../../lib/ai/change-summary";
 import { openUserStream } from "../../lib/events/shared-client";
@@ -1159,9 +1159,7 @@ export function AiPanel({
           <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onDetach={() => run.current?.cancel()} onStop={() => stopRun(localRunIdRef.current)} />
         </div>
       ) : entered && !enteredIsMine ? (
-        <>
-        <div className="border-t border-vs-border p-3 text-sm text-vs-muted">You’re watching {entered.driverName}’s chat. Accept a handoff to continue here, or <button className="text-vs-accent underline" onClick={() => onForkEntered(entered)}>fork a new chat</button>.</div>
-        </>
+        <WatchingComposer run={entered} driver={members.find(member => member.userId === entered.driverUserId)} canFork={canRun} onFork={() => onForkEntered(entered)} />
       ) : entered && (running || ["running", "queued"].includes(entered.status)) ? (
         // The queue below shows the working card and takes follow-ups.
         null
@@ -1214,6 +1212,42 @@ export function AiPanel({
         onDetach={running ? () => run.current?.cancel() : undefined} onStop={enteredIsMine && canRun ? () => stopRun(entered.id) : undefined}
         moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
+  );
+}
+
+/**
+ * Where the message box would be on someone else's chat: only its driver
+ * messages the AI, so it says whose chat this is and offers what you can do,
+ * fork it into a chat of your own, in the place you'd look to type.
+ */
+function WatchingComposer({ run, driver, canFork, onFork }: { run: AgentRun; driver?: SessionMember; canFork: boolean; onFork: () => void }) {
+  const name = run.driverName || driver?.displayName || "A teammate";
+  const firstName = name.trim().split(/\s+/)[0];
+  return (
+    <div className="ai-composer shrink-0">
+      <section aria-label={`Watching ${name}’s chat`} className="mx-auto w-full max-w-4xl rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm">
+        <div className="flex min-h-14 items-start gap-3">
+          <Avatar person={{ userId: run.driverUserId, displayName: name, avatarUrl: driver?.avatarUrl ?? (run.driverUserId === run.startedBy ? run.startedByAvatarUrl : null) }} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-vs-fg">You’re watching {name}’s chat</p>
+            <p className="mt-0.5 text-xs leading-5 text-vs-muted">
+              Only {firstName} can message the AI here. {canFork
+                ? <>Fork it to carry on in a chat of your own with this conversation as its context, or ask {firstName} to hand it off to you.</>
+                : <>You have read-only access to this room.</>}
+            </p>
+          </div>
+        </div>
+        {canFork && (
+          <div className="ai-composer-footer mt-3 flex items-center gap-2 border-t border-vs-border pt-2">
+            <span className="text-[11px] text-vs-muted">A handoff offered to you appears under Handoff.</span>
+            <button type="button" onClick={onFork} title={`A new chat that imports ${name}’s conversation`}
+              className="ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-vs-accent px-3 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vs-accent">
+              <GitBranchIcon className="h-3.5 w-3.5" />Fork chat
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
