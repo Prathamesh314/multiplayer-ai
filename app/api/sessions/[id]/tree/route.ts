@@ -2,6 +2,7 @@ import { withApiLimit } from "../../../../lib/http/api-limit";
 import { access, denied } from "../../../../lib/session/auth";
 import { repositoryContext } from "../../../../lib/session/repository-context";
 import { listCommittedTree } from "../../../../lib/session/repo";
+import { liveSnapshot } from "../../../../lib/session/changes";
 import type { TreeResponse } from "../../../../lib/session/types";
 import type { TreeNode } from "../../../../lib/types";
 
@@ -15,8 +16,11 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
   if (refusal || !result) return refusal!;
   const repo = await repositoryContext(result.session, request, result.user.id);
   if (repo instanceof Response) return repo;
-  const root = await listCommittedTree(repo.ref, repo.rootName, repo.headSha);
+  // While an agent works here, the files as it has them now, like Changes.
+  const live = await liveSnapshot(result.session.id, repo, result.user.id);
+  const root = await listCommittedTree(repo.ref, repo.rootName, live?.snapshot_sha ?? repo.headSha);
   return Response.json({ rootName: repo.rootName, root, headSha: repo.headSha,
+    ...(live ? { live: { runId: live.run_id, title: live.title, sha: live.snapshot_sha } } : {}),
     sessionBranch: repo.sessionBranch, ...totalsOf(root) } satisfies TreeResponse,
   { headers: { "cache-control": "no-store" } });
 }

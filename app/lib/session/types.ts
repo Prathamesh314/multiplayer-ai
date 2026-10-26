@@ -164,7 +164,9 @@ export type SeedResponse = {
 export type TreeResponse = {
   rootName: string;
   root: TreeNode;
+  /** The room head. While an agent works, `root` is its latest checkpoint instead (`live`). */
   headSha: string;
+  live?: { runId: string; title: string | null; sha: string };
   sessionBranch: string;
   files: number;
   bytes: number;
@@ -176,6 +178,8 @@ export type FileResponse = {
   size: number;
   truncated: boolean;
   binary: boolean;
+  /** The running chat changing this file; `text` is its latest checkpoint. */
+  live?: { runId: string; title: string | null };
 };
 
 /** A file that differs from the session's seed commit. Status is git's letter. */

@@ -329,6 +329,8 @@ Both actions operate on the selected repository. They do not push to GitHub or c
     sections: [
       { id: "files", title: "Browse and edit files", body: `Open **All files** in the top-right panel, use **Find a file or folder…** to filter the tree, expand a folder, and select a file. Its contents open in the centre viewer. Open files use tabs so you can return to the conversation or switch files.
 
+While an AI agent works, **All files** and **Changes** follow its latest checkpoint, about every 30 seconds, so new and edited files appear as it writes them. A file the agent is changing opens read-only with a note, and becomes editable when its turn finishes.
+
 Text files can be edited when you have write access. The editor saves changes through the workspace. Wait for saving to finish and address any error before navigating away. Binary or oversized content may be shown with a limitation message rather than an editable document.
 
 Teammate avatars and editing indicators help you see who is present and working on a file; they are not exclusive editing locks.

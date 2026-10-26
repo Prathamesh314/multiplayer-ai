@@ -1,5 +1,5 @@
 import { queryOne } from "../db/client";
-import { committedChanges, diffFilesBare, diffPath } from "./repo";
+import { committedChanges, diffFilesBare, diffPath, readCommittedBytes } from "./repo";
 import type { ChangedFile, ChangesResponse } from "./types";
 
 type LiveSnapshot = { snapshot_sha: string; captured_at: Date; run_id: string; title: string | null };
@@ -13,7 +13,7 @@ type Repository = { ref: string; baseSha: string; headSha: string };
  * the current head counts: its checkpoint holds everything committed here
  * plus its own work in progress. Parallel chats have their own Changes view.
  */
-export async function liveSnapshot(sessionId: string, repo: Repository, viewerId: string) {
+export async function liveSnapshot(sessionId: string, repo: Pick<Repository, "ref" | "headSha">, viewerId: string) {
   return queryOne<LiveSnapshot>(
     `SELECT s.snapshot_sha, s.captured_at, r.id AS run_id, r.title
        FROM workspace_snapshots s
@@ -48,4 +48,18 @@ export async function roomChanges(sessionId: string, repo: Repository, viewerId:
 export async function roomChangeDiff(sessionId: string, repo: Repository, viewerId: string, path: string): Promise<string> {
   const live = await liveSnapshot(sessionId, repo, viewerId);
   return diffPath(repo.ref, repo.baseSha, live?.snapshot_sha ?? repo.headSha, path);
+}
+
+/**
+ * One file as the room sees it now: from the working chat's latest checkpoint
+ * while an agent works on this repository, so All files matches Changes.
+ * `live` is set when the agent has changed the file from the room head.
+ */
+export async function roomFile(sessionId: string, repo: Pick<Repository, "ref" | "headSha">, viewerId: string, path: string) {
+  const snapshot = await liveSnapshot(sessionId, repo, viewerId);
+  const bytes = await readCommittedBytes(repo.ref, snapshot?.snapshot_sha ?? repo.headSha, path);
+  if (!snapshot || !bytes) return { bytes, live: null };
+  const committed = await readCommittedBytes(repo.ref, repo.headSha, path);
+  const changed = !committed || !committed.equals(bytes);
+  return { bytes, live: changed ? { runId: snapshot.run_id, title: snapshot.title } : null };
 }

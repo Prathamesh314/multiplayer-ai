@@ -140,6 +140,25 @@ try {
   await evaluate(`${row}.click()`);
   await eventually(async () => (await navLabels()).includes("Changes"), "back to the parallel chat");
 
+  // While an agent works, All files follows its latest checkpoint as Changes does:
+  // a file it adds appears, opens read-only with a note, and is editable once the turn ends.
+  const explorerHas = name => evaluate(`[...document.querySelectorAll('aside[aria-label="Repository explorer"] button')].some(b=>b.getAttribute('aria-label')==="File: ${name}")`);
+  assert.equal(await explorerHas("live.ts"), false);
+  await evaluate(`(() => { const m = window.__model; m.repos[0].added = ["live.ts"]; m.files["live.ts"] = "export const live = true;";
+    m.liveFiles = { "live.ts": { runId: "${"3".repeat(8)}-3333-4333-8333-333333333333", title: "Parallel login fix" } };
+    m.changes = { changes: [{ path: "live.ts", status: "A", added: 1, removed: 0 }], head: "e".repeat(40), totals: { files: 1, added: 1, removed: 0 },
+      live: { runId: "33333333-3333-4333-8333-333333333333", title: "Parallel login fix", capturedAt: Date.now() } };
+    m.emit("run.activity", { runId: "33333333-3333-4333-8333-333333333333" }); })()`);
+  await eventually(() => explorerHas("live.ts"), "the agent's new file in All files");
+  await evaluate(`document.querySelector('aside[aria-label="Repository explorer"] button[aria-label="File: live.ts"]').click()`);
+  await eventually(() => evaluate(`document.querySelector('.room-file-document [role="status"]')?.textContent.includes("The AI is changing this file in “Parallel login fix”")`), "live file note");
+  assert.equal(await evaluate(`document.querySelector('.room-file-document textarea')?.readOnly`), true, "read-only while the agent changes it");
+  await writeFile(join(tmpdir(), "multiplayer-live-file.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 100, width: 1440, height: 320, scale: 1 } })).data, "base64"));
+  await evaluate(`(() => { const m = window.__model; m.liveFiles = {}; m.changes = { ...m.changes, head: "f".repeat(40), live: null }; m.emit("run.finished", { runId: "33333333-3333-4333-8333-333333333333" }); })()`);
+  await eventually(() => evaluate(`document.querySelector('.room-file-document textarea')?.readOnly === false`), "editable once the turn ends");
+  await evaluate(`(() => { const m = window.__model; m.repos[0].added = []; m.changes = undefined; })()`);
+  await evaluate(`${row}.click()`);
+
   // Review its changes.
   await button("Changes");
   const dialog = `document.querySelector('dialog[open]')`;

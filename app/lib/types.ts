@@ -54,7 +54,12 @@ export type FileContent = {
   size: number;
   truncated: boolean;
   binary: boolean;
+  /** Set while an agent is changing this file: the chat doing it. The text is its latest checkpoint. */
+  live?: LiveEdit;
 };
+
+/** A running chat whose agent is changing a file right now. */
+export type LiveEdit = { runId: string; title: string | null };
 
 /** Reads one file by its path relative to the scanned root. */
 export type ReadFile = (path: string) => Promise<FileContent | null>;
