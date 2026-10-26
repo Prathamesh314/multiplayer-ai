@@ -74,7 +74,7 @@ export function TopBar({
         title="Back to projects"
         className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-1.5 text-xs font-semibold text-vs-fg transition hover:bg-vs-hover"
       >
-        <LogoMark className="h-3.5 w-3.5 text-vs-fg" />
+        <LogoMark className="h-[18px] w-[18px]" />
         <span className="whitespace-nowrap">
           multicode<span className="text-vs-muted">-ai</span>
         </span>

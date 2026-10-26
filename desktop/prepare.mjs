@@ -1,5 +1,4 @@
 import { build } from "esbuild";
-import sharp from "sharp";
 import { mkdir, readFile, writeFile, copyFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,8 +26,8 @@ await mkdir(target, { recursive: true });
 const options = { bundle: true, platform: "node", format: "cjs", target: "node22", metafile: true, sourcemap: false, legalComments: "eof" };
 const main = await build({ ...options, entryPoints: [join(root, "desktop", "main.js")], outfile: join(target, "main.js"), external: ["electron", "next/dist/bin/next"] });
 const runner = await build({ ...options, entryPoints: [join(root, "runner", "index.ts")], outfile: join(target, "runner.cjs") });
-for (const file of ["preload.js", "setup-preload.js", "setup.html", "setup.css", "setup.js"]) await copyFile(join(root, "desktop", file), join(target, file));
-await sharp(join(root, "desktop", "icon.svg")).png().toFile(join(target, "icon.png"));
+// icon.png is built from the brand mark by scripts/brand-icons.mjs.
+for (const file of ["preload.js", "setup-preload.js", "setup.html", "setup.css", "setup.js", "icon.png"]) await copyFile(join(root, "desktop", file), join(target, file));
 // The release this build becomes (its folder name on the website, e.g.
 // preview-<commit>-<run>), so the app can tell when the website has a newer one.
 const releaseId = /^[A-Za-z0-9._-]{1,100}$/.test(process.env.DESKTOP_BUILD_ID ?? "") ? process.env.DESKTOP_BUILD_ID : "";
