@@ -14,7 +14,7 @@
 
 import { UpdateComputerHelp } from "./UpdateComputerHelp";
 import { runnerCommand } from "../../lib/runner/package";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchComputerConnection, mintPairingCode, revokeDevice } from "../../lib/runner/client";
 import type { RunnerDevice } from "../../lib/runner/client";
 import { relativeTime } from "../../lib/format";
@@ -28,7 +28,9 @@ type Method = "desktop" | "terminal";
 export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onSetUpAi?: () => void }) {
   const connection = useComputerConnection();
   const { devices } = connection;
-  const [method, setMethod] = useState<Method>("desktop");
+  // In a browser the terminal steps come first, with the pairing code ready;
+  // inside the desktop app, connecting this computer through the app does.
+  const [method, setMethod] = useState<Method>(() => desktopBridge()?.pairComputer ? "desktop" : "terminal");
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<"pair" | "start" | null>(null);
@@ -48,6 +50,19 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
   }, [pairing, paired, expired]);
 
   const desktop = !!desktopBridge()?.pairComputer;
+  // With no computer connected, the terminal steps open with their pairing code:
+  // made once, as soon as the connection check says so (an expired one is
+  // renewed with Get new code). With one connected, they wait, folded under
+  // Connect another computer, and the code is made when that opens.
+  const codeRequested = useRef(false);
+  const status = connection.status;
+  useEffect(() => {
+    // Not while checking, connected, or unable to check (that error shows instead).
+    if (codeRequested.current || method !== "terminal" || !["not-connected", "offline", "update"].includes(status)) return;
+    codeRequested.current = true;
+    void startPairing("terminal");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
   const connected = connection.status === "connected";
   const newOneConnected = !!paired && paired.online && paired.version === "2";
   const tray = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "menu bar" : "system tray";
@@ -104,7 +119,9 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
   const connect = (
     <section aria-label="Connect a computer" className="space-y-4">
       <div role="tablist" aria-label="How to connect" className="grid grid-cols-2 gap-1 rounded-xl border border-vs-border bg-vs-editor p-1 text-[12.5px] font-medium">
-        {([["desktop", desktop ? "This app" : "Desktop app", " (easiest)", ComputerIcon], ["terminal", "Terminal", " (npx)", TerminalIcon]] as const).map(([id, label, hint, Icon]) => (
+        {(desktop
+          ? [["desktop", "This app", " (easiest)", ComputerIcon], ["terminal", "Terminal", " (npx)", TerminalIcon]] as const
+          : [["terminal", "Terminal", " (npx)", TerminalIcon], ["desktop", "Desktop app", "", ComputerIcon]] as const).map(([id, label, hint, Icon]) => (
           <button key={id} type="button" role="tab" aria-selected={method === id} onClick={() => {
             setMethod(id);
             // The terminal steps open with their pairing code ready; once a code exists,
@@ -261,7 +278,8 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
 
       {/* Connected: connecting another computer is still there, folded away. */}
       {connected && !pairing ? (
-        <details className="group rounded-xl border border-vs-border">
+        <details className="group rounded-xl border border-vs-border"
+          onToggle={event => { if (event.currentTarget.open && method === "terminal" && !pairing && !busy) void startPairing("terminal"); }}>
           <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] font-medium text-vs-fg">Connect another computer<ChevronIcon className="h-3.5 w-3.5 text-vs-muted transition-transform group-open:rotate-90" /></summary>
           <div className="border-t border-vs-border p-4">{connect}</div>
         </details>
