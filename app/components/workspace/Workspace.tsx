@@ -164,6 +164,14 @@ export function Workspace({
   // The room's agent runs, and which one is open in the chat (null = new run).
   const { runs, refresh: refreshRuns } = useRoomRuns(session.id);
   const [enteredRun, setEnteredRun] = useState<AgentRun | null>(null);
+  // The chat the member last opened. A reply about another chat that was
+  // still loading when they switched (its handoff state, say) must not open
+  // that chat again over the one they chose.
+  const openingRunId = useRef<string | null>(null);
+  const openRun = useCallback((run: AgentRun | null) => {
+    openingRunId.current = run?.id ?? null;
+    setEnteredRun(run);
+  }, []);
   const [handoffInbox, setHandoffInbox] = useState<{ id: string; runId: string; title: string | null; sender: string }[]>([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -240,7 +248,7 @@ export function Workspace({
           const { run } = await fetchRun(session.id, linkedRun);
           if (cancelled) return;
           remembered = run.repoId;
-          setEnteredRun(run);
+          openRun(run);
           setShowChat(true);
           setMobilePane("chat");
         } catch {
@@ -259,7 +267,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session.id, session.repo]);
+  }, [session.id, session.repo, openRun]);
 
   async function openImportPicker() {
     if (!window.showDirectoryPicker) {
@@ -294,7 +302,7 @@ export function Workspace({
   const startNewRun = () => {
     setShowChat(true);
     setMobilePane("chat");
-    setEnteredRun(null);
+    openRun(null);
     setForkFromRunId(null);
   };
 
@@ -322,7 +330,7 @@ export function Workspace({
     void fetchRoomRepos(session.id).then((list) => {
       setRoomRepos(list);
       if (selectedRepoRef.current && !list.some((item) => item.id === selectedRepoRef.current)) {
-        setEnteredRun(null);
+        openRun(null);
         void selectRepository(null);
       }
     }).catch(() => {});
@@ -335,7 +343,7 @@ export function Workspace({
   }
   async function removeRepository(id: string) {
     if (selectedRepoRef.current === id && !await selectRepository(null)) throw new Error("Save or resolve your edits before deleting this repository.");
-    if (enteredRun?.repoId === id) setEnteredRun(null);
+    if (enteredRun?.repoId === id) openRun(null);
     await deleteRoomRepo(session.id, id);
     setRoomRepos(await fetchRoomRepos(session.id));
     refreshRuns();
@@ -359,7 +367,7 @@ export function Workspace({
     }
     void selectRepository(run.repoId).then(selected => {
       if (!selected) return;
-      setEnteredRun(null);
+      openRun(null);
       setForkFromRunId(run.id);
       setShowChat(true);
       setMobilePane("chat");
@@ -468,7 +476,7 @@ export function Workspace({
         if (!selected) return;
         setMobilePane("files");
         setShowChat(true);
-        setEnteredRun(null);
+        openRun(null);
         if (skipped.length > 0) {
           setError(`${skipped.length} file(s) were too large or unusable and were left out of the import.`);
         }
@@ -479,11 +487,12 @@ export function Workspace({
         setImportingRepo(false);
         setImportProgress(null);
       }
-  }, [session.id, selectRepository]);
+  }, [session.id, selectRepository, openRun]);
 
   async function enterRun(target: AgentRun) {
+    openingRunId.current = target.id;
     if (await selectRepository(target.repoId)) {
-      setEnteredRun(target);
+      openRun(target);
       setShowChat(true);
       setMobilePane("chat");
     }
@@ -1062,7 +1071,7 @@ export function Workspace({
         onAdded={async (added, empty) => {
           setRoomRepos(previous => [...previous.filter(item => item.id !== added.id), added]);
           if (!await selectRepository(added.id)) throw new Error("Repository added. Close this dialog and save your edits before opening it from the sidebar.");
-          setEnteredRun(null); setForkFromRunId(null); setShowChat(true);
+          openRun(null); setForkFromRunId(null); setShowChat(true);
           setMobilePane(empty ? "chat" : "files"); setAddRepositoryOpen(false);
         }} />}
       {error && hasRepo && <div role="alert" className="flex shrink-0 items-start gap-3 border-b border-vs-danger/25 bg-vs-danger/10 px-4 py-2 text-sm text-vs-danger"><span className="min-w-0 flex-1 break-words">{error}</span><button className="shrink-0 underline" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -1186,7 +1195,10 @@ export function Workspace({
                         entered={enteredRun}
                         isOwner={session.myRole === "owner"}
                         onRunsChanged={refreshRuns}
-                        onEntered={target => { if (target.repoId === selectedRepoRef.current) setEnteredRun(target); }}
+                        onEntered={target => {
+                          // The chat on screen, or one this panel just started; never one you left.
+                          if (target.repoId === selectedRepoRef.current && (openingRunId.current === null || openingRunId.current === target.id)) openRun(target);
+                        }}
                         forkFromRunId={forkFromRunId}
                         onForkFromChange={setForkFromRunId}
                         onForkEntered={startFork}

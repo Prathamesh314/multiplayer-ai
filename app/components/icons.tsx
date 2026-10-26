@@ -411,3 +411,45 @@ export function EyeIcon({ className, off }: IconProps & { off?: boolean }) {
     </svg>
   );
 }
+
+export function BriefingIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path d="M4 2.25h5.5L12.5 5.25v8a.75.75 0 01-.75.75h-7.5a.75.75 0 01-.75-.75V3a.75.75 0 01.75-.75z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M6 8h4M6 10.75h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ActivityIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path d="M1.75 8h2.5l1.75-4.5 3.5 9 1.75-4.5h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function CommentIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <path d="M8 13.25c3.18 0 5.75-2.24 5.75-5s-2.57-5-5.75-5-5.75 2.24-5.75 5c0 1.17.46 2.25 1.24 3.1L3 13.5l2.62-.85c.72.38 1.53.6 2.38.6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function CopyIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={`${base} ${className ?? ""}`}>
+      <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10.75 3.5V3.25a1 1 0 00-1-1h-6.5a1 1 0 00-1 1v6.5a1 1 0 001 1h.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function MoreIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={`${base} ${className ?? ""}`}>
+      <circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" />
+    </svg>
+  );
+}

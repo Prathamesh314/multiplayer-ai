@@ -749,8 +749,8 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     })()` });
     await recipient.navigate(`${server}/s/${roomId}?run=${chat.id}`);
     await eventually(()=>recipient.evaluate('typeof window.__releaseInitialHistory === "function"'),"initial history response held");
-    await eventually(()=>recipient.evaluate('document.body.textContent.includes("Activity & checkpoints")'),"workspace history controls");
-    await recipient.click("Activity & checkpoints");
+    await eventually(()=>recipient.evaluate(`!!Array.from(document.querySelectorAll('nav[aria-label="Chat"] button')).find(b=>b.textContent.trim()==="Activity")`),"workspace history in the chat's nav");
+    await recipient.click("Activity");
     await eventually(()=>recipient.evaluate('!!document.querySelector(\'dialog[aria-label="Synchronized workspace history"]\')'),"history opens during its initial request");
     await recipient.evaluate('window.__releaseInitialHistory(); delete window.__releaseInitialHistory');
     await eventually(()=>recipient.evaluate(`document.querySelector('button[aria-label="Code checkpoint"]')?.disabled === false`),"uploaded checkpoint visible");

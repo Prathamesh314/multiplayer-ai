@@ -94,8 +94,46 @@ try {
   assert.equal(await evaluate(`${bobRow}.querySelector('.rounded-full')?.textContent`), "BS", "a teammate's chat shows theirs");
   await writeFile(join(tmpdir(), "multiplayer-chat-owners.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 420, height: 500, scale: 2 } })).data, "base64"));
 
-  // Review its changes.
+  // The chat's nav: its views, the rarer ones under More, then its actions.
   await evaluate(`${row}.click()`);
+  const nav = `document.querySelector('nav[aria-label="Chat"]')`;
+  const navLabels = () => evaluate(`Array.from(${nav}?.querySelectorAll('button') ?? []).map(b=>b.textContent.trim()).filter(Boolean)`);
+  await eventually(async () => (await navLabels()).includes("Changes"), "chat nav");
+  assert.deepEqual(await navLabels(), ["Chat", "Briefing", "Activity", "Changes", "Providers", "More", "Ask first", "Copy", "New chat"]);
+  assert.equal(await evaluate(`${nav}.querySelector('[aria-current="true"]')?.textContent.trim()`), "Chat", "the conversation is the current view");
+  await writeFile(join(tmpdir(), "multiplayer-chat-nav.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 1440, height: 260, scale: 1 } })).data, "base64"));
+  // On a wide screen every label shows.
+  await send("Emulation.setDeviceMetricsOverride", { width: 2200, height: 900, deviceScaleFactor: 1, mobile: false });
+  await eventually(() => evaluate(`getComputedStyle(Array.from(${nav}.querySelectorAll('button')).find(b=>b.textContent.trim()==="Providers").lastElementChild).position === "static"`), "labels in a wide panel");
+  await writeFile(join(tmpdir(), "multiplayer-chat-nav-wide.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 100, width: 2200, height: 140, scale: 1 } })).data, "base64"));
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  // The fixture's chat has one unread feedback: More says so before it is opened.
+  assert.equal(await evaluate(`${nav}.querySelector('button[aria-haspopup="menu"]').getAttribute('aria-label')`), "More: 1 waiting");
+  await evaluate(`${nav}.querySelector('button[aria-haspopup="menu"]').click()`);
+  await eventually(() => evaluate(`!!${nav}.querySelector('[role="menu"]')`), "More menu");
+  assert.deepEqual(await evaluate(`Array.from(${nav}.querySelectorAll('[role="menuitem"]')).map(b=>b.textContent.trim())`), ["Feedback1", "Teammate review", "Fork this chat"]);
+  await writeFile(join(tmpdir(), "multiplayer-chat-nav-more.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 1440, height: 420, scale: 1 } })).data, "base64"));
+  await evaluate(`Array.from(${nav}.querySelectorAll('[role="menuitem"]')).find(b=>b.textContent.includes("Teammate review")).click()`);
+  await eventually(() => evaluate(`document.querySelector('dialog[open]')?.getAttribute('aria-label') === "Teammate review"`), "teammate review from More");
+  assert.equal(await evaluate(`${nav}.querySelector('[aria-current="true"]')?.getAttribute('aria-label') ?? ${nav}.querySelector('button[aria-haspopup="menu"]').className.includes("bg-vs-accent")`), true, "More shows that one of its views is open");
+  await evaluate(`document.querySelector('button[aria-label="Close Teammate review"]').click()`);
+  // Each view opens from the nav and marks itself current while open.
+  for (const [label, dialogTitle] of [["Activity", "Synchronized workspace history"], ["Briefing", "Conversation briefing"]]) {
+    await eventually(() => evaluate(`!document.querySelector('dialog[open]')`), "previous dialog closed");
+    await button(label, nav);
+    await eventually(() => evaluate(`document.querySelector('dialog[open]')?.getAttribute('aria-label') === ${JSON.stringify(dialogTitle)}`), `${label} dialog`);
+    assert.equal(await evaluate(`${nav}.querySelector('[aria-current="true"]')?.textContent.trim()`), label);
+    await evaluate(`document.querySelector('button[aria-label="Close ${dialogTitle}"]').click()`);
+  }
+  await eventually(() => evaluate(`${nav}.querySelector('[aria-current="true"]')?.textContent.trim() === "Chat"`), "back to the conversation");
+  // A teammate's chat offers Fork instead of New.
+  await evaluate(`${bobRow}.click()`);
+  await eventually(async () => (await navLabels()).includes("Fork chat"), "fork a teammate's chat");
+  // Straight back, while the teammate's chat is still loading: it must not pull you back to it.
+  await evaluate(`${row}.click()`);
+  await eventually(async () => (await navLabels()).includes("Changes"), "back to the parallel chat");
+
+  // Review its changes.
   await button("Changes");
   const dialog = `document.querySelector('dialog[open]')`;
   await eventually(() => evaluate(`${dialog}?.innerText.includes("2 commits ahead of the room · 1 behind")`), "branch summary");

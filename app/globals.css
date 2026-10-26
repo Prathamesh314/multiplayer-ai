@@ -157,18 +157,15 @@ body {
 .room-toolbar { min-height: 64px; }
 .room-toolbar-actions > button, .room-toolbar-actions > div > button { min-height: 34px; border-radius: 8px; }
 .room-main { container-type: inline-size; }
-.ai-chat-header { padding: 16px 20px 10px; }
+.ai-chat-header { padding: 16px 20px 8px; }
+.ai-chat-nav { padding: 0 14px 6px; }
 .ai-composer { padding: 12px 20px 16px; }
 .ai-composer-footer { flex-wrap: wrap; row-gap: 8px; }
 .ai-composer textarea { min-width: 0; line-height: 1.55; font-size: 12px; }
 .room-explorer-panel { background: var(--vs-panel); }
-/* The header carries the chat's reference actions, so it needs its own, wider
-   threshold: give the title a line of its own before the actions crowd it. */
-@container (max-width: 720px) {
-  .ai-chat-header > div:first-child { flex-basis: 100%; }
-}
 @container (max-width: 560px) {
-  .ai-chat-header { flex-wrap: wrap; padding: 12px; }
+  .ai-chat-header { padding: 12px 12px 6px; }
+  .ai-chat-nav { padding: 0 6px 4px; }
   .ai-composer { padding: 10px 12px; }
 }
 @media (max-width: 767px) {
@@ -256,7 +253,8 @@ body {
 .session-workspace .room-main { display: flex; min-width: 360px; }
 .session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }
 .session-workspace .session-panels { min-height: 0; }
-.session-workspace .ai-chat-header { padding: 6px 16px; gap: 6px; }
+.session-workspace .ai-chat-header { padding: 6px 16px 4px; gap: 6px; }
+.session-workspace .ai-chat-nav { padding: 0 10px 4px; }
 .session-workspace .ai-chat-header h2 { font-size: 12px; font-weight: 400; }
 .session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 10px; }
 .session-workspace .ai-composer { padding: 10px 20px 14px; }

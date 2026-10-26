@@ -189,7 +189,15 @@ try {
   await click('[role="option"][value="remove"]');
   await eventually(()=>evaluate('!document.querySelector("dialog").innerText.includes("guest@example.test")'),"guest access removed");
   await button('Done');
-  await button('Feedback · 1 unread');
+  // Feedback is under the chat nav's More, which shows what is waiting there.
+  const openFeedback = async unread => {
+    const more = `nav[aria-label="Chat"] button[aria-label="More: ${unread} waiting"]`, item = `nav[aria-label="Chat"] [role="menuitem"][aria-label="Feedback, ${unread} unread"]`;
+    await eventually(()=>evaluate(`!!document.querySelector(${JSON.stringify(more)})`),`More with ${unread} waiting`);
+    await click(more);
+    await eventually(()=>evaluate(`!!document.querySelector(${JSON.stringify(item)})`),`Feedback, ${unread} unread`);
+    await click(item);
+  };
+  await openFeedback(1);
   await eventually(()=>evaluate('document.querySelector("dialog").innerText.includes("Please check delivery errors.")'),'guest feedback in the workspace');
   await type('#conversation-feedback','I will check that before handing off.');
   await evaluate('window.__model.failFeedback=true');await button('Post reply');
@@ -199,7 +207,7 @@ try {
   await eventually(()=>evaluate('document.querySelector("#conversation-feedback").value===""&&document.querySelector("dialog").innerText.includes("I will check that before handing off.")'),'direct host reply');
   await click('button[aria-label="Close Conversation feedback"]');
   await evaluate('for(let i=0;i<60;i++)window.__model.feedback.push({id:crypto.randomUUID(),seq:window.__model.feedback.length+1,body:"Earlier feedback "+i,authorName:"Guest",createdAt:new Date().toISOString()});document.dispatchEvent(new Event("visibilitychange"))');
-  await button('Feedback · 60 unread');
+  await openFeedback(60);
   await button('Load earlier feedback');
   await eventually(()=>evaluate('window.__model.feedbackRead===62'),'read loaded feedback history');
   await evaluate('for(let i=0;i<65;i++)window.__model.feedback.push({id:crypto.randomUUID(),seq:window.__model.feedback.length+1,body:"New burst "+i,authorName:"Guest",createdAt:new Date().toISOString()});document.dispatchEvent(new Event("visibilitychange"))');

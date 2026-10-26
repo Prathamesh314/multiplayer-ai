@@ -9,8 +9,16 @@ import { ComposerPicker } from "./ComposerPicker";
 type Turn = { id: string; status: string; syncedAt: string | null; sequence: number };
 type History = { turns: Turn[]; snapshots: SavedCheckpoint[]; selectedSnapshotId: string | null };
 const button = "rounded-lg border border-vs-border px-3 py-1.5 text-xs hover:bg-vs-hover disabled:opacity-50";
-export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: string | null }) {
-  const [open, setOpen] = useState(false), [data, setData] = useState<History | null>(null), [error, setError] = useState("");
+/**
+ * The chat's synchronized activity and checkpoints, opened from the chat's
+ * nav. It keeps itself current while closed, so `onStatus` can tell the nav
+ * when activity last synced and whether a checkpoint is chosen for next turn.
+ */
+export function WorkspaceHistory({ run, userId, open, onClose, onStatus }: {
+  run: AgentRun; userId: string | null; open: boolean; onClose: () => void;
+  onStatus?: (status: { hint: string; checkpointSelected: boolean }) => void;
+}) {
+  const [data, setData] = useState<History | null>(null), [error, setError] = useState("");
   const [turn, setTurn] = useState(""), [after, setAfter] = useState(0), [activity, setActivity] = useState<AiRunEvent[]>([]);
   const [snapshot, setSnapshot] = useState<SavedCheckpoint | null>(null), [changes, setChanges] = useState<{ path: string; status: string }[]>([]), [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,17 +69,19 @@ export function WorkspaceHistory({ run, userId }: { run: AgentRun; userId: strin
   }
   const synced = data?.turns.find(item => item.syncedAt)?.syncedAt;
   const syncLabel = synced ? `Activity synced ${new Date(synced).toLocaleTimeString()}` : "No activity synced yet";
+  const checkpointSelected = !!data?.selectedSnapshotId;
+  useEffect(() => {
+    onStatus?.({ hint: `Activity & checkpoints · ${syncLabel}${checkpointSelected ? " · Checkpoint selected for next turn" : ""}`, checkpointSelected });
+  }, [onStatus, syncLabel, checkpointSelected]);
+  // Read on opening even if an older request is pending. The generation check
+  // keeps that older response from replacing the fresh result.
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(timer);
+  }, [open, refresh]);
   return <>
-    <button className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg" title={`${syncLabel}${data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}`} onClick={() => {
-      setOpen(true);
-      // Read on opening even if an older request is pending. The generation
-      // check keeps that older response from replacing the fresh result.
-      void refresh();
-    }}>
-      {data?.selectedSnapshotId && <span className="h-1.5 w-1.5 rounded-full bg-vs-accent" aria-label="Checkpoint selected for next turn" />}
-      Activity & checkpoints
-    </button>
-    {open && <Modal title="Synchronized workspace history" description="Available even when the driver’s computer is offline. Only uploaded changes appear here." onClose={() => setOpen(false)}>
+    {open && <Modal title="Synchronized workspace history" description="Available even when the driver’s computer is offline. Only uploaded changes appear here." onClose={onClose}>
       <div className="max-h-[65vh] space-y-4 overflow-y-auto">
         <p role="status" className="text-xs text-vs-muted">{syncLabel}{data?.selectedSnapshotId ? " · Checkpoint selected for next turn" : ""}</p>
         <div className="space-y-2"><h3 className="font-semibold">Activity</h3>

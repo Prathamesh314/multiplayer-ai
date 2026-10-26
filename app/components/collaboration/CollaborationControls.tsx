@@ -8,13 +8,27 @@ import { ReviewPanel } from "./ReviewPanel";
 import { useResource } from "./useResource";
 import { GuestAccess } from "./GuestAccess";
 
-export function CollaborationControls({runId,userId}:{runId:string;userId:string}) {
+export type CollaborationTab='feedback'|'reviews';
+
+/** Which collaboration view a shared link asks to open: `?collaboration=feedback`. */
+export function linkedCollaborationTab():CollaborationTab|null{
+  if(typeof window==='undefined')return null;
+  const tab=new URLSearchParams(window.location.search).get('collaboration');
+  return tab==='feedback'||tab==='reviews'?tab:null;
+}
+
+/**
+ * A chat's feedback and teammate reviews, opened from the chat's nav. It keeps
+ * the counts current while closed and reports them, so the nav can show what
+ * is waiting.
+ */
+export function CollaborationControls({runId,userId,tab,onTab,onCounts}:{runId:string;userId:string;tab:CollaborationTab|null;onTab:(tab:CollaborationTab|null)=>void;onCounts?:(counts:{unread:number;reviews:number})=>void}) {
   const {data,refresh}=useResource<{items:InboxItem[]}>(`/api/collaboration/inbox?runId=${runId}`);
-  const [tab,setTab]=useState<'feedback'|'reviews'|null>(()=>typeof window!=='undefined'&&['feedback','reviews'].includes(new URLSearchParams(window.location.search).get('collaboration')??'')?new URLSearchParams(window.location.search).get('collaboration') as 'feedback'|'reviews':null);
   const counts=data?.items[0];
+  const unread=counts?.unread??0, reviews=counts?.reviews??0;
+  useEffect(()=>{onCounts?.({unread,reviews});},[onCounts,unread,reviews]);
+  const setTab=onTab;
   return <>
-    <button type="button" onClick={()=>setTab('feedback')} className="rounded-lg px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover">Feedback{counts?.unread?` · ${counts.unread} unread`:''}</button>
-    <button type="button" onClick={()=>setTab('reviews')} className="rounded-lg px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover">Teammate review{counts?.reviews?` · ${counts.reviews}`:''}</button>
     {tab&&<Modal title={tab==='feedback'?'Conversation feedback':'Teammate review'} onClose={()=>setTab(null)} width="max-w-2xl">
       <div className="flex gap-2" role="group" aria-label="Collaboration view"><GhostButton onClick={()=>setTab('feedback')}>Feedback</GhostButton><GhostButton onClick={()=>setTab('reviews')}>Reviews</GhostButton></div>
       {tab==='feedback'?<FeedbackPanel key={runId} runId={runId} onRead={refresh}/>:<ReviewPanel key={runId} runId={runId} userId={userId}/>}
