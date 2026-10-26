@@ -1,7 +1,7 @@
 import { enqueueChatInput, cancelChatInput, consumeChatInput, listChatInputs } from "../app/lib/ai/input-queue.ts";
 import { persistActivity, activityPage } from "../app/lib/runner/activity.ts";
 import { saveCheckpoint, listCheckpoints, getCheckpoint } from "../app/lib/runner/checkpoints.ts";
-import { liveSnapshot, roomChanges, roomChangeDiff } from "../app/lib/session/changes.ts";
+import { liveSnapshot, roomChanges, roomChangeDiff, roomFile } from "../app/lib/session/changes.ts";
 import { archiveStoredRepo, withStoredRepo } from "../app/lib/storage/git-cache.ts";
 import { ActivityOutbox } from "../runner/activity-outbox.ts";
 import { objectText } from "../app/lib/git/objects.ts";
@@ -510,10 +510,17 @@ try {
     assert.deepEqual(live.totals,{files:1,added:1,removed:0});
     assert.equal(live.live?.runId,target.id); assert.equal(live.head,captured.snapshotSha);
     assert.match(await roomChangeDiff(roomId,repo,alice,"unfinished.txt"),/^\+available offline$/m);
+    // All files reads the same checkpoint: the agent's new file is there and
+    // marked as being changed; a file it has not touched is not.
+    const created = await roomFile(roomId,repo,alice,"unfinished.txt");
+    assert.equal(created.bytes?.toString(),"available offline"); assert.equal(created.live?.runId,target.id);
+    const untouched = await roomFile(roomId,repo,alice,"shared.txt");
+    assert.ok(untouched.bytes); assert.equal(untouched.live,null);
     // A checkpoint from an older room head would hide later commits, so it is not used.
     assert.equal(await liveSnapshot(roomId,{...repo,headSha:"f".repeat(40)},alice),null);
     await failTurn(job.turnId,"Laptop switched off");
     assert.equal((await roomChanges(roomId,repo,alice)).live,null);
+    assert.deepEqual(await roomFile(roomId,repo,alice,"unfinished.txt"),{bytes:null,live:null},"back to the room head once the turn ends");
   });
   await test("cold Git archives restore every ref and pinned repositories cannot be evicted", async () => {
     process.env.STORAGE_COLD_GIT="1";

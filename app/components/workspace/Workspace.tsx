@@ -203,6 +203,9 @@ export function Workspace({
   const activeRepository = chatRepoId ? roomRepos.find(item => item.id === chatRepoId) : repo;
   const hasRepo = !!activeRepository && activeRepository.seededAt !== null;
   const roomChanges = useRoomChanges(hasRepo ? session.id : undefined, chatRepoId, result?.git.commit);
+  // While an agent works, its latest checkpoint: All files and open files
+  // follow it as Changes does, and settle on the room head when it finishes.
+  const liveHead = roomChanges.data?.live ? roomChanges.data.head : null;
   // Tabs showing their diff instead of their code, per repository ("repo\0path").
   const [diffTabs, setDiffTabs] = useState<Set<string>>(() => new Set());
   const diffKey = (path: string) => `${chatRepoId ?? ""}\0${path}`;
@@ -726,7 +729,7 @@ export function Workspace({
     return () => {
       cancelled = true;
     };
-  }, [session, repo, hasRepo, chatRepoId, treeRevision, refreshOpenBuffers]);
+  }, [session, repo, hasRepo, chatRepoId, treeRevision, liveHead, refreshOpenBuffers]);
 
   async function openPicker() {
     if (!window.showDirectoryPicker) {
@@ -804,6 +807,7 @@ export function Workspace({
         size: content?.size ?? 0,
         binary: content?.binary ?? false,
         truncated: content?.truncated ?? false,
+        live: content?.live,
         loading: false,
         error: content ? undefined : fileError ?? "This file is no longer available. Refresh the explorer.",
       }),
@@ -891,6 +895,7 @@ export function Workspace({
           original: content.text,
           text: content.text,
           size: content.size,
+          live: content.live,
         });
       });
     },

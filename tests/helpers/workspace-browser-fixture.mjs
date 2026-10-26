@@ -115,7 +115,8 @@ export function installFixtures() {
         return json({headSha:"c".repeat(40),conflict:false});
       }
       const text=state.files[u.searchParams.get("path")] ?? "Original file contents";
-      return json({text,size:text.length,truncated:false,binary:false});
+      const live=state.liveFiles?.[u.searchParams.get("path")];
+      return json({text,size:text.length,truncated:false,binary:false,...(live?{live}:{})});
     }
     if(path.endsWith("/activity")) return json({ok:true});
     if(path.endsWith("/publish") || path.endsWith("/sync")) return json({ok:true,sha:"b".repeat(40)});

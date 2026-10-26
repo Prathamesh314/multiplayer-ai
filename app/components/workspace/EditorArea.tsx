@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import type { LiveEdit } from "../../lib/types";
 import { humanBytes } from "../../lib/format";
 import { languageOf } from "../../lib/language";
 import { fetchChangeDiff } from "../../lib/session/remote";
@@ -24,6 +25,8 @@ export type Buffer = {
   truncated: boolean;
   loading: boolean;
   error?: string;
+  /** An agent is changing this file now; shown live and read-only until its turn ends. */
+  live?: LiveEdit;
 };
 
 type EditorAreaProps = {
@@ -239,6 +242,15 @@ export function EditorArea({
               </div>
             )}
 
+            {active.live && (
+              <p role="status" className="flex items-center gap-2 border-b border-vs-border bg-vs-accent/10 px-3 py-1.5 text-sm text-vs-fg">
+                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-vs-accent motion-reduce:animate-none" aria-hidden />
+                <span>
+                  The AI is changing this file{active.live.title ? <> in “{active.live.title}”</> : null}. You’re seeing its latest
+                  checkpoint; you can edit the file when that turn finishes.
+                </span>
+              </p>
+            )}
             {active.truncated && (
               <p className="border-b border-vs-border bg-vs-warn/10 px-3 py-1.5 text-sm text-vs-fg">
                 Showing the first 2 MB of a {humanBytes(active.size)} file.
@@ -248,7 +260,8 @@ export function EditorArea({
               key={activePath}
               fileName={baseName(activePath!)}
               text={active.text}
-              readOnly={readOnly || active.truncated}
+              readOnly={readOnly || active.truncated || !!active.live}
+              viewOnly={readOnly}
               remote={editing.get(activePath!) ?? []}
               onChange={(text) => onChange(activePath!, text)}
               onCaretChange={onCaretChange}

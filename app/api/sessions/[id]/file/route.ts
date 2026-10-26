@@ -4,7 +4,8 @@ import { ensureRepoContext } from "../../../../lib/knowledge/repo-context";
 import { access, canWrite, denied, forbidden } from "../../../../lib/session/auth";
 import { safeRelativePath } from "../../../../lib/session/paths";
 import { repositoryContext } from "../../../../lib/session/repository-context";
-import { mergeSave, readCommittedBytes } from "../../../../lib/session/repo";
+import { mergeSave } from "../../../../lib/session/repo";
+import { roomFile } from "../../../../lib/session/changes";
 import { setRoomRepoHeadSha } from "../../../../lib/session/roomRepos";
 import { setHeadSha } from "../../../../lib/session/store";
 
@@ -23,7 +24,7 @@ async function handleGET(request: Request, context: Context) {
   const path = safeRelativePath(url.searchParams.get("path"));
   if (!path) return Response.json({ error: "Invalid file path." }, { status: 400 });
   try {
-    const bytes = await readCommittedBytes(repo.ref, repo.headSha, path);
+    const { bytes, live } = await roomFile(result.session.id, repo, result.user.id, path);
     if (!bytes) return Response.json({ error: "File not found, or symbolic links cannot be opened." }, { status: 404 });
     if (url.searchParams.get("raw") === "1") return new Response(new Uint8Array(bytes), {
       headers: { "content-type": "application/octet-stream", "cache-control": "no-store" },
@@ -31,7 +32,7 @@ async function handleGET(request: Request, context: Context) {
     const binary = bytes.subarray(0, 4096).includes(0);
     const limit = 2 * 1024 * 1024;
     return Response.json({ path, text: binary ? "" : bytes.subarray(0, limit).toString("utf8"),
-      binary, size: bytes.length, truncated: bytes.length > limit }, { headers: { "cache-control": "no-store" } });
+      binary, size: bytes.length, truncated: bytes.length > limit, ...(live ? { live } : {}) }, { headers: { "cache-control": "no-store" } });
   } catch (cause) {
     return Response.json({ error: cause instanceof Error ? cause.message : "Could not read this file." }, { status: 422 });
   }

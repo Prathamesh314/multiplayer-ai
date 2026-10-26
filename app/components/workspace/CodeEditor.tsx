@@ -16,6 +16,8 @@ type CodeEditorProps = {
   fileName: string;
   text: string;
   readOnly?: boolean;
+  /** Read-only because of the member's access (says so), not for a reason shown elsewhere. */
+  viewOnly?: boolean;
   onChange: (text: string) => void;
   onCaretChange: (caret: Caret) => void;
   /** Other people currently in this file, with their caret positions. */
@@ -26,6 +28,7 @@ export function CodeEditor({
   fileName,
   text,
   readOnly,
+  viewOnly = readOnly,
   onChange,
   onCaretChange,
   remote = [],
@@ -62,7 +65,7 @@ export function CodeEditor({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-vs-editor">
-      {readOnly && (
+      {readOnly && viewOnly && (
         <p className="border-b border-vs-border bg-vs-hover px-3 py-1.5 text-sm text-vs-muted">
           Read-only — you have view access to this session.
         </p>

@@ -373,6 +373,8 @@ export async function scanSession(session: Session, repoId: string | null = null
         size: body.size,
         truncated: body.truncated,
         binary: body.binary,
+        // Always present, so a refresh clears it once the agent is done.
+        live: body.live,
       };
     },
     readBytes: async (path) => {
