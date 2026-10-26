@@ -159,7 +159,7 @@ export function installFixtures() {
       return json({run,messages:[{role:"user",body:"Review the repository and explain how the session works."},{role:"assistant",body:"## Session workspace\n\nThe repository is ready. Use `executeAgentRun` to start an agent turn.\n\n### Next steps\n\nSelect a file to inspect its contents, or continue the conversation."}]});
     }
     if(path==="/api/tasks"&&init.method==="POST"){(state.taskPosts??=[]).push(JSON.parse(init.body));return json({ok:true,runId:state.runs[0]?.id??null});}
-    if(path==="/api/tasks")return json({tasks:[],members:state.taskMembers??[],hasMore:false});
+    if(path==="/api/tasks")return json({tasks:(state.tasks??[]).filter(task=>!u.searchParams.get("runId")||task.runId===u.searchParams.get("runId")),members:state.taskMembers??[],hasMore:false});
     if(path.endsWith("/handoffs"))return json({offers:[]});
     if(path.endsWith("/messages"))return json({messages:[]});
     if(path.endsWith("/forkable-runs"))return json({runs:[]});

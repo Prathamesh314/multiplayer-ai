@@ -40,6 +40,7 @@ import {
   CheckIcon,
   CommentIcon,
   CopyIcon,
+  TasksIcon,
   UsersIcon,
   ChevronIcon,
   CloseIcon,
@@ -202,6 +203,15 @@ export function AiPanel({
   // chat: by run id, so switching chats never shows the old one's. A shared
   // `?collaboration=` link opens on the first chat shown (run id null).
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  // The chat's tasks open from the nav, by chat; its badge counts those still to do.
+  const [tasksFor, setTasksFor] = useState<string | null>(null);
+  const [taskCount, setTaskCount] = useState<{ runId: string; count: number } | null>(null);
+  const enteredId = entered?.id ?? null;
+  // Stable per chat, so the counter's effect doesn't re-run on every render.
+  const countTasks = useCallback((count: number) => {
+    if (!enteredId) return;
+    setTaskCount(previous => previous?.runId === enteredId && previous.count === count ? previous : { runId: enteredId, count });
+  }, [enteredId]);
   const [historyStatus, setHistoryStatus] = useState<{ hint: string; checkpointSelected: boolean } | null>(null);
   const [collaboration, setCollaboration] = useState<{ runId: string | null; tab: CollaborationTab } | null>(() => {
     const tab = linkedCollaborationTab();
@@ -971,13 +981,15 @@ export function AiPanel({
   // a dialog or popover over the conversation, so "Chat" is current otherwise.
   const openCollaboration = entered && collaboration && (collaboration.runId ?? entered.id) === entered.id ? collaboration.tab : null;
   const activeView = showProviders ? "providers" : !entered ? "chat"
-    : briefingOpen ? "briefing" : historyFor === entered.id ? "activity" : branchOpen ? "changes" : openCollaboration ?? "chat";
-  const closeViews = () => { setShowProviders(false); setBriefingOpen(false); setHistoryFor(null); setBranchOpen(false); setCollaboration(null); };
+    : briefingOpen ? "briefing" : historyFor === entered.id ? "activity" : tasksFor === entered.id ? "tasks" : branchOpen ? "changes" : openCollaboration ?? "chat";
+  const closeViews = () => { setShowProviders(false); setBriefingOpen(false); setHistoryFor(null); setTasksFor(null); setBranchOpen(false); setCollaboration(null); };
+  const tasksToDo = entered && taskCount?.runId === entered.id ? taskCount.count : 0;
   const navItems: ChatNavItem[] = [
     { id: "chat", label: "Chat", icon: <ChatIcon className="h-3.5 w-3.5" />, onSelect: () => { closeViews(); onShowConversation?.(); } },
     ...(entered ? [
-      { id: "briefing", label: "Briefing", hint: "A starting point for joining the work", icon: <BriefingIcon className="h-3.5 w-3.5" />, onSelect: () => setBriefingOpen(true) },
-      { id: "activity", label: "Activity", hint: historyStatus?.hint ?? "Activity & checkpoints", dot: historyStatus?.checkpointSelected, icon: <ActivityIcon className="h-3.5 w-3.5" />, onSelect: () => setHistoryFor(entered.id) },
+      { id: "briefing", label: "Briefing", minor: true, hint: "A starting point for joining the work", icon: <BriefingIcon className="h-3.5 w-3.5" />, onSelect: () => setBriefingOpen(true) },
+      { id: "activity", label: "Activity", minor: true, hint: historyStatus?.hint ?? "Activity & checkpoints", dot: historyStatus?.checkpointSelected, icon: <ActivityIcon className="h-3.5 w-3.5" />, onSelect: () => setHistoryFor(entered.id) },
+      ...(myUserId ? [{ id: "tasks", label: "Tasks", hint: "Tasks assigned from this chat with #", badge: tasksToDo, badgeLabel: "to do", icon: <TasksIcon className="h-3.5 w-3.5" />, onSelect: () => setTasksFor(entered.id) }] : []),
       ...(entered.isolation === "isolated" ? [{ id: "changes", label: "Changes", accent: true, hint: "Review this parallel chat's changes and merge them into the room", icon: <GitBranchIcon className="h-3.5 w-3.5" />, onSelect: () => setBranchOpen(true) }] : []),
     ] : []),
     { id: "providers", label: "Providers", minor: true, hint: "AI providers on your computer", popover: true, anchor: setProvidersButton, icon: <SparkleIcon className="h-3.5 w-3.5" />, onSelect: () => setShowProviders(previous => !previous) },
@@ -1025,6 +1037,12 @@ export function AiPanel({
           ? <ChatNavAction primary icon={<PlusIcon className="h-3.5 w-3.5" />} label="New chat" title="Start a new chat in this repository" onClick={onNewRun} />
           : <ChatNavAction primary icon={<GitBranchIcon className="h-3.5 w-3.5" />} label="Fork chat" title={`Fork ${entered.startedByName}'s chat: a new chat that imports its context`} onClick={() => onForkEntered(entered)} />}
       </>} />
+      {entered && myUserId && <TaskPanel key={`task-count-${entered.id}`} countOnly userId={myUserId} sessionId={sessionId} runId={entered.id} refreshVersion={taskRevision}
+        onCount={countTasks} />}
+      {entered && myUserId && tasksFor === entered.id && <Modal title="Chat tasks" width="max-w-2xl"
+        description="Work assigned to teammates from this chat. Type # in the message box to assign another." onClose={() => setTasksFor(null)}>
+        <TaskPanel key={`tasks-${entered.id}`} bare userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} refreshVersion={taskRevision} />
+      </Modal>}
       {entered && <WorkspaceHistory key={`history-${entered.id}`} run={entered} userId={myId} open={historyFor === entered.id} onClose={() => setHistoryFor(null)} onStatus={setHistoryStatus} />}
       {entered && myUserId && <CollaborationControls key={`collaboration-${entered.id}`} runId={entered.id} userId={myUserId}
         tab={collaboration && (collaboration.runId ?? entered.id) === entered.id ? collaboration.tab : null}
@@ -1121,7 +1139,6 @@ export function AiPanel({
             {historyFailed && entered && <button type="button" onClick={() => void loadRun(entered)} className="font-medium underline">Try again</button>}
           </p>
         )}
-        {entered && myUserId && <div className="mx-auto max-w-4xl px-3"><TaskPanel key={entered.id} userId={myUserId} sessionId={sessionId} runId={entered.id} canAssign={canRun} showAssignAction={false} hideWhenEmpty refreshVersion={taskRevision} /></div>}
       </div>
       {awayFromLatest && hasConversation && (
         <button

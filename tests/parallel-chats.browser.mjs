@@ -42,6 +42,8 @@ function seedParallelChat() {
     createdAt: Date.now() - 60000, startedAt: Date.now() - 60000, endedAt: Date.now() - 30000, archivedAt: null,
     isolation: "isolated", forkSha: sha("a"), headSha: sha("c"), mergeState: "open", mergedSha: null, mergedAt: null };
   state.runs.push(run);
+  state.tasks = [{ id: "task-1", runId: run.id, sessionId: "modelroomabc", roomName: "Model room", chatTitle: run.title, createdBy: "alice", creatorName: "Alice",
+    assigneeId: "bob", assigneeName: "Bob Stone", assigneeHandle: "bob", body: "Add tests for the login fix", status: "open", createdAt: new Date().toISOString() }];
   // A teammate's ordinary chat in the same repository, to tell whose chat is whose.
   state.runs.push({ ...run, id: "44444444-4444-4444-8444-444444444444", startedBy: "bob", startedByName: "Bob Stone", driverUserId: "bob", driverName: "Bob Stone",
     title: "Bob's API cleanup", addedLines: null, removedLines: null, resultSha: null, isolation: "shared", forkSha: null, headSha: null, mergeState: null });
@@ -99,7 +101,8 @@ try {
   const nav = `document.querySelector('nav[aria-label="Chat"]')`;
   const navLabels = () => evaluate(`Array.from(${nav}?.querySelectorAll('button') ?? []).map(b=>b.textContent.trim()).filter(Boolean)`);
   await eventually(async () => (await navLabels()).includes("Changes"), "chat nav");
-  assert.deepEqual(await navLabels(), ["Chat", "Briefing", "Activity", "Changes", "Providers", "More", "Ask first", "Copy", "New chat"]);
+  await eventually(async () => (await navLabels()).includes("Tasks1"), "count of tasks still to do");
+  assert.deepEqual(await navLabels(), ["Chat", "Briefing", "Activity", "Tasks1", "Changes", "Providers", "More", "Ask first", "Copy", "New chat"]);
   assert.equal(await evaluate(`${nav}.querySelector('[aria-current="true"]')?.textContent.trim()`), "Chat", "the conversation is the current view");
   await writeFile(join(tmpdir(), "multiplayer-chat-nav.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 1440, height: 260, scale: 1 } })).data, "base64"));
   // On a wide screen every label shows.
@@ -117,6 +120,13 @@ try {
   await eventually(() => evaluate(`document.querySelector('dialog[open]')?.getAttribute('aria-label') === "Teammate review"`), "teammate review from More");
   assert.equal(await evaluate(`${nav}.querySelector('[aria-current="true"]')?.getAttribute('aria-label') ?? ${nav}.querySelector('button[aria-haspopup="menu"]').className.includes("bg-vs-accent")`), true, "More shows that one of its views is open");
   await evaluate(`document.querySelector('button[aria-label="Close Teammate review"]').click()`);
+  // The chat's tasks are under Tasks, with how many are still to do, not in the conversation.
+  assert.equal(await evaluate(`!!document.querySelector('.ai-chat-header ~ * section[aria-label="Chat tasks"], [role="log"] section[aria-label="Chat tasks"]')`), false);
+  assert.equal(await evaluate(`${nav}.querySelector('button[aria-label="Tasks, 1 to do"]') !== null`), true);
+  await evaluate(`${nav}.querySelector('button[aria-label="Tasks, 1 to do"]').click()`);
+  await eventually(() => evaluate(`document.querySelector('dialog[open][aria-label="Chat tasks"]')?.innerText.includes("Add tests for the login fix")`), "tasks dialog");
+  await writeFile(join(tmpdir(), "multiplayer-chat-tasks.png"), Buffer.from((await send("Page.captureScreenshot", { clip: { x: 0, y: 0, width: 1440, height: 620, scale: 1 } })).data, "base64"));
+  await evaluate(`document.querySelector('button[aria-label="Close Chat tasks"]').click()`);
   // Each view opens from the nav and marks itself current while open.
   for (const [label, dialogTitle] of [["Activity", "Synchronized workspace history"], ["Briefing", "Conversation briefing"]]) {
     await eventually(() => evaluate(`!document.querySelector('dialog[open]')`), "previous dialog closed");
