@@ -5,7 +5,7 @@ import styles from "./marketing.module.css";
  * site header, the docs header, the mobile menu and the footer — four places
  * that must never drift to different invite codes.
  */
-export const DISCORD_INVITE = "https://discord.gg/tyWvY8KE";
+export const DISCORD_INVITE = "https://discord.gg/GadEtMdnNG";
 
 export function DiscordIcon({ className }: { className?: string }) {
   return (
