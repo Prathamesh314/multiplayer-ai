@@ -243,14 +243,17 @@ test("agents started by an npx runner get the member's environment, not npm's (n
   const saved = { prefix: process.env.npm_config_prefix, init: process.env.INIT_CWD };
   process.env.npm_config_prefix = "/opt/homebrew";
   process.env.INIT_CWD = "/somewhere";
+  // Its own variable: on Windows a copy of the environment keeps the real key's case (Path, not PATH).
+  process.env.MULTICODE_TEST_KEPT = "kept";
   try {
     const env = agentEnv("codex");
     assert.equal(env.npm_config_prefix, undefined);
     assert.equal(env.INIT_CWD, undefined);
-    assert.equal(env.PATH, process.env.PATH, "the rest is passed through");
+    assert.equal(env.MULTICODE_TEST_KEPT, "kept", "the rest is passed through");
   } finally {
     if (saved.prefix === undefined) delete process.env.npm_config_prefix; else process.env.npm_config_prefix = saved.prefix;
     if (saved.init === undefined) delete process.env.INIT_CWD; else process.env.INIT_CWD = saved.init;
+    delete process.env.MULTICODE_TEST_KEPT;
   }
 });
 
