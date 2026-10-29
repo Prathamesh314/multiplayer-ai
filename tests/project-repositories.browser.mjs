@@ -363,6 +363,11 @@ try {
   await eventually(()=>evaluate('document.querySelector(".human-message")?.textContent.includes("Review the repository")'),"saved chat opens without a computer");
   assert.ok(await evaluate('document.querySelector(".conversation-transcript").getBoundingClientRect().height > 100'),"offline setup does not hide the conversation");
   assert.ok(await evaluate('document.querySelector(\'button[aria-label="Send message"]\').disabled'),"AI execution needs a computer");
+  // Said where you type, with the way back: why sending is off, and what still works.
+  assert.ok(await evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Connect your computer to send messages") && document.querySelector(".ai-composer [role=status]").innerText.includes("Reading and reviewing work without it")'),"the message box says why it is off");
+  await evaluate('[...document.querySelectorAll(".ai-composer button")].find(b=>b.textContent.trim()==="Connect computer").click()');
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog button[aria-label="Copy pair command"]\')'),"its action opens the connection steps");
+  await click('button[aria-label="Close Your computers"]');
   await evaluate(`window.__model.orgOnline=[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true},{userId:"bob",handle:"bob",displayName:"Bob Builder",avatarUrl:null,isSelf:false},{userId:"carol",handle:"carol",displayName:"Carol Diaz",avatarUrl:null,isSelf:false}]`);
   await click('button[title="Back to projects"]');
   await eventually(()=>evaluate('location.pathname==="/workspace" && !!document.querySelector("main h1")'),"workspace overview");
@@ -404,14 +409,34 @@ try {
     await writeFile(join(tmpdir(),`multiplayer-computer-setup-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   }
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  // A team still getting started: one guide with one next step, instead of a second connection prompt.
+  await evaluate('localStorage.clear();window.__model.onboarding={projects:1,codeAdded:true,members:1,pendingInvites:0,projectTeammate:false,myTasks:0,taskPeople:0};window.dispatchEvent(new Event("focus"))');
+  await eventually(()=>evaluate('document.querySelector(\'[data-step][aria-current="step"]\')?.dataset.step==="computer"'),"the guide's next step is connecting a computer");
+  assert.ok(await evaluate('document.querySelector("#guide-heading").closest("section").textContent.includes("2 of 6 done")'),"progress is counted");
+  assert.ok(await evaluate('document.querySelector(\'[data-step="computer"]\').innerText.includes("No computer connected yet.") && document.querySelector(\'[data-step="computer"]\').innerText.includes("One signed-in tool is enough")'),"says why, and that one tool is enough");
+  assert.equal(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\')'),null,"no second, competing connection prompt");
+  assert.equal(await evaluate('[...document.querySelectorAll("main button")].filter(b=>/Connect computer|New project/.test(b.textContent)&&b.checkVisibility()).map(b=>`${b.textContent.trim()}:${b.className.includes("bg-vs-accent")?"primary":"secondary"}`).join("|")'),"New project:secondary|Connect computer:primary","the guide holds the one setup action; the header's steps back");
+  for (const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`the guide fits at ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-guide-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await button("Hide guide");
+  await eventually(()=>evaluate('!document.querySelector("#guide-heading") && !!document.querySelector(\'[aria-label="Computer connection"]\')'),"hidden guide brings the connection status back");
+  assert.equal(await evaluate('localStorage.getItem("multicode.guide.hidden:org:alice")'),"1","hiding is remembered in this browser");
+  await evaluate('localStorage.clear();window.__model.onboarding=undefined');
   await button("Open my room");
   await eventually(()=>evaluate('location.pathname==="/s/modelroomabc" && !!document.querySelector(\'button[title^="Queue context A ·"]\')'),"room opens without a computer");
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate('!!document.querySelector(".human-message")'),"history remains readable");
   await evaluate('window.__model.devices=[{id:"computer-1",userId:"alice",name:"Alice’s Mac",version:"2",online:false,lastSeenAt:Date.now()-60000}];window.__model.emitDevices()');
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="offline"'),"previously connected computer is offline");
+  await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Your computer is offline")'),"the message box says the computer is offline, with Reconnect");
   await button("Reconnect computer");
   await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
+  assert.ok(await evaluate('document.querySelector("dialog").innerText.includes("Offline · last connected 1 minute ago")'),"the last connection is a real time");
+  assert.ok(await evaluate('!/years? ago/.test(document.querySelector("dialog").innerText) && document.querySelector("dialog").innerText.includes("closed, paused or asleep")'),"no impossible time; says what offline can mean");
   await click('button[aria-label="Close Your computers"]');
   await evaluate('window.__model.devices[0].online=true;window.__model.aiReady=false;window.__model.emitDevices()');
   await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Set up an AI tool to start")'),"connected computer needs AI setup, said in the message box"); 
@@ -661,6 +686,31 @@ try {
   await send("Page.reload",{});
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"reloaded");await delay(500);
   assert.equal(await evaluate('!!document.querySelector(\'section[aria-label="Desktop update"]\')'),false,"closed stays closed until the app restarts");
+  // Someone with no team yet, invited to one: joining it is the one primary action.
+  await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.__model.orgs=[];window.__model.invitations=[{id:"invite-1",orgId:"org-2",orgName:"Northwind",orgSlug:"northwind",role:"member",invitedByName:"Bob Builder",createdAt:1,expiresAt:Date.now()+86400000}];`});
+  await send("Page.navigate",{url:base+"/workspace"});
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent==="You’ve been invited to a team"'),"an invitation leads the first screen");
+  const firstScreen=()=>evaluate('[...document.querySelectorAll("main button")].filter(b=>b.checkVisibility()).map(b=>`${b.textContent.trim()}:${b.className.includes("bg-vs-accent")?"primary":"secondary"}`).join("|")');
+  assert.equal(await firstScreen(),"Join Northwind:primary|Create your own team:secondary");
+  assert.ok(await evaluate('document.querySelector("main").innerText.includes("Bob Builder invited you as a member.") && document.querySelector("main").innerText.includes("A team admin then adds you to the projects")'),"says who invited them, and what joining gives");
+  // Nothing competes with that choice: no computer setup, no empty task list.
+  assert.equal(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\')'),null,"no computer prompt before there is a team");
+  assert.equal(await evaluate('/My tasks/.test(document.body.innerText)'),false,"no empty task list for someone new");
+  // Brand new, no invitation: create a team, or join one.
+  await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.__model.invitations=[];`});
+  await send("Page.navigate",{url:base+"/workspace"});
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent==="Start with your team"'),"a new person's first screen");
+  assert.equal(await firstScreen(),"Create your team:primary|Join an existing team:secondary");
+  assert.ok(await evaluate('document.querySelector("main").innerText.includes("A team is your organization in Multicode")'),"says what a team is");
+  for (const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`the first screen fits at ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-first-screen-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await evaluate(`[...document.querySelectorAll("main button")].find(b=>b.textContent.trim()==="Create your team").click()`);
+  await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Your team (organization) holds your projects")'),"creating a team says what it is");
+  await evaluate(`[...document.querySelectorAll("dialog button")].find(b=>b.textContent.trim()==="Cancel").click()`);
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

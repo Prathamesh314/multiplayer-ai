@@ -1,17 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { CurrentUser } from "../../lib/auth/types";
 import { canManageOrg, type Org } from "../../lib/org/types";
 import { addProjectMember, listRooms } from "../../lib/project/client";
 import type { Project } from "../../lib/project/types";
-import { ChevronIcon, GitBranchIcon, PlusIcon, SparkleIcon, SpinnerIcon, UsersIcon } from "../icons";
+import { ChevronIcon, GitBranchIcon, PlusIcon, SpinnerIcon, UsersIcon } from "../icons";
 import { ErrorNote, GhostButton, PrimaryButton, inputClass } from "../ui/Modal";
 import { type useHandoffInbox } from "../collaboration/HandoffInbox";
 import { ActionQueue } from "./ActionQueue";
 import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { OrgOnlineNow } from "../presence/OrgOnlineNow";
 import type { ComputerConnection } from "../ai/useComputerConnection";
+import { GettingStarted, HowItFits, useOnboarding } from "./GettingStarted";
 
 type Props = {
   computerConnection: ComputerConnection;
@@ -29,10 +30,28 @@ type Props = {
   onOpenRoom: (id: string) => void;
   /** Handoffs waiting for you and sent by you (one live source with the sidebar's count). */
   handoffs: ReturnType<typeof useHandoffInbox>;
+  /** Changes when a dialog closes, so the guide sees an invitation or member just added. */
+  guideRevision?: number;
 };
 
-export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer, handoffs }: Props) {
+/** Your room in a project (joining it first as an org admin who was never added); throws what to tell you. */
+async function myRoomIn(org: Org, project: Project, me: CurrentUser): Promise<string> {
+  // Org owners and admins can see a project they were never added to; joining gives them a room in it.
+  if (project.isMember === false && project.myRole === "manager") await addProjectMember(org.slug, project.slug, me.id, "manager");
+  const rooms = await listRooms(org.slug, project.slug);
+  const room = project.myRole === "viewer" ? rooms[0] : rooms.find((candidate) => candidate.ownerId === me.id);
+  if (!room) throw new Error(project.myRole === "viewer" ? "No rooms are available to view yet. Ask a project manager for access." : "Your room isn't ready yet. Try again, or ask a project manager for help.");
+  return room.id;
+}
+
+export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer, handoffs, guideRevision = 0 }: Props) {
   const [search, setSearch] = useState("");
+  const progress = useOnboarding(org.slug, `${projects?.length ?? -1}:${guideRevision}`);
+  // Whether the guide is showing, and whether it holds the computer connection as a step to come.
+  const [guideShown, setGuideShown] = useState(false);
+  const [guideConnects, setGuideConnects] = useState(false);
+  const onGuideVisible = useCallback((visible: boolean) => setGuideShown(visible), []);
+  const onGuideConnects = useCallback((covers: boolean) => setGuideConnects(covers), []);
   const visible = projects?.filter((project) =>
     project.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
@@ -42,10 +61,10 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12 lg:py-10">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Team workspace</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Team</p>
             <h1 className="font-display mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{org.name}</h1>
             <p className="mt-2 max-w-xl text-xs leading-5 text-vs-muted">
-              Open a project to continue your work, or start something new with your team.
+              {guideShown ? "Follow the steps below to get your team working together." : "Open a project to continue your work, or start something new with your team."}
             </p>
           </div>
           <div className="flex flex-col items-end gap-3">
@@ -53,14 +72,21 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
             <OrgOnlineNow slug={org.slug} orgId={org.id} onInvite={canManageOrg(org.myRole) ? onInvite : undefined} />
             {canManageOrg(org.myRole) && (
               <div className="flex flex-wrap gap-2">
-                <GhostButton onClick={onInvite}><UsersIcon className="h-3.5 w-3.5" /> Invite team</GhostButton>
-                <PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> New project</PrimaryButton>
+                <GhostButton onClick={onInvite}><UsersIcon className="h-3.5 w-3.5" /> Invite to team</GhostButton>
+                {/* While the guide shows the next step, it holds the one primary button. */}
+                {guideShown ? <GhostButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> New project</GhostButton>
+                  : <PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> New project</PrimaryButton>}
               </div>
             )}
           </div>
         </header>
 
-        <ComputerConnectionNotice bar connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />
+        {/* The guide has its own connection step; a failed check stays visible either way. */}
+        {(!guideConnects || computerConnection.status === "error") && <ComputerConnectionNotice bar connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />}
+
+        {me && <GettingStarted org={org} userId={me.id} progress={progress} connection={computerConnection} projects={projects}
+          onNewProject={onNewProject} onInvite={onInvite} onManageMembers={onManageMembers} onConnectComputer={onConnectComputer} onSetUpAi={onConnectAi}
+          onOpenRoom={async (project) => onOpenRoom(await myRoomIn(org, project, me))} onVisible={onGuideVisible} onCoversConnection={onGuideConnects} />}
 
         {me && <ActionQueue key={me.id} userId={me.id} handoffs={handoffs} />}
 
@@ -84,9 +110,9 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
               <GitBranchIcon className="mx-auto h-6 w-6 text-vs-muted" />
               <h3 className="mt-3 text-sm font-semibold">Great work starts with a project</h3>
               <p className="mx-auto mt-1.5 max-w-md text-xs leading-5 text-vs-muted">
-                {canManageOrg(org.myRole) ? "Create a team project, then start a conversation or add a repository inside it." : "Ask an organisation admin to add you to a project so you can get started."}
+                {canManageOrg(org.myRole) ? "A project holds your team’s code and rooms. Create one, then add a repository or start a conversation in your room." : "Ask a team admin to add you to a project. It appears here as soon as they do."}
               </p>
-              {canManageOrg(org.myRole) && <div className="mt-4 flex justify-center"><PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> Create your first project</PrimaryButton></div>}
+              {canManageOrg(org.myRole) && !guideShown && <div className="mt-4 flex justify-center"><PrimaryButton onClick={onNewProject}><PlusIcon className="h-3.5 w-3.5" /> Create your first project</PrimaryButton></div>}
             </div>
           ) : visible?.length === 0 ? (
             <div role="status" className="rounded-xl border border-vs-border p-6 text-center text-xs text-vs-muted">
@@ -100,28 +126,7 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
           )}
         </section>
 
-        <section className="workspace-welcome mt-6 rounded-2xl border border-vs-border p-5 sm:p-6" aria-labelledby="workflow-heading">
-          <div className="flex items-center gap-2 text-xs font-medium text-vs-muted">
-            <SparkleIcon className="h-3.5 w-3.5 text-vs-accent" /> From your first prompt to a team result
-          </div>
-          <h2 id="workflow-heading" className="font-display mt-2 text-sm font-semibold tracking-tight">Start with AI. Pick it up together.</h2>
-          <p className="mt-1.5 max-w-2xl text-xs leading-5 text-vs-muted">A project is your team’s shared home. Open it to find your workspace, repositories, and conversations.</p>
-          <details open={projects?.length === 0} className="mt-3">
-            <summary className="cursor-pointer rounded-lg py-1.5 text-xs font-medium text-vs-fg">How this workspace works</summary>
-          <ol className="mt-2.5 grid gap-3 text-xs sm:grid-cols-3">
-            {[
-              ["Connect your computer", "Open the desktop app and sign in with this account. Keep it running while AI works."],
-              ["Open your project", "Open your room, add your code, and set up an AI tool on your computer."],
-              ["Start a chat", "Describe a task, review the changes, and hand off to a teammate when you need to."],
-            ].map(([title, body], index) => (
-              <li key={title} className="flex gap-2.5 rounded-xl border border-vs-border bg-vs-editor/60 p-3">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-vs-border bg-vs-editor text-[11px] text-vs-muted">{index + 1}</span>
-                <div><p className="font-medium">{title}</p><p className="mt-1 leading-5 text-vs-muted">{body}</p></div>
-              </li>
-            ))}
-          </ol>
-          </details>
-        </section>
+        <HowItFits open={projects?.length === 0 && !guideShown} />
 
       </div>
     </main>
@@ -132,18 +137,13 @@ function ProjectCard({ project, org, me, onManageMembers, onConnections, onOpenR
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Org owners and admins can see a project they were never added to; joining gives them a room in it.
   const joining = project.isMember === false && project.myRole === "manager";
   async function openRoom() {
     if (opening || !me) return;
     setOpening(true);
     setError(null);
     try {
-      if (joining) await addProjectMember(org.slug, project.slug, me.id, "manager");
-      const rooms = await listRooms(org.slug, project.slug);
-      const room = project.myRole === "viewer" ? rooms[0] : rooms.find((candidate) => candidate.ownerId === me.id);
-      if (!room) throw new Error(project.myRole === "viewer" ? "No rooms are available to view yet. Ask a project manager for access." : "Your room isn't ready yet. Try again, or ask a project manager for help.");
-      onOpenRoom(room.id);
+      onOpenRoom(await myRoomIn(org, project, me));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not open your room.");
     } finally {

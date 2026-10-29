@@ -14,11 +14,11 @@ import { InstallCommands } from "./components/marketing/InstallCommands";
 import { screenshots } from "./docs/screenshots";
 
 export const metadata: Metadata = {
-  title: "Multicode AI — Great software is a team sport.",
-  description: "Bring your team, code, and AI agents into one shared workspace. Build together with Claude Code, Codex, and Gemini. Discover Multicode AI for desktop and web.",
+  title: "Multicode AI — A shared coding room for your team and AI agents",
+  description: "Work together with Claude Code, Codex or Gemini in one room, review the room’s changes as a team, and publish them to your project when they’re ready.",
   openGraph: {
-    title: "Multicode AI — Build something great. Together.",
-    description: "Your people. Your AI agents. One shared workspace.",
+    title: "Multicode AI — A shared coding room for your team and AI agents",
+    description: "Work together, review the room’s changes, and publish when ready.",
     type: "website",
   },
 };
@@ -62,6 +62,8 @@ const questions = [
   ["What is Multicode AI?", "A collaborative coding workspace for people and AI agents. Bring repositories into a project, work together in rooms, and connect selected Slack or Discord channels for shared context. AI conversations, task assignment, and code review stay together."],
   ["Which AI agents can I use?", "Multicode AI supports Claude Code, Codex, and Gemini through their local command-line tools. Install and sign in to the tools you want to use. Your existing provider account and usage limits apply."],
   ["Where does my code run?", "On a paired computer through the local runner. The desktop app includes the runner; Git and your chosen AI CLI are separate prerequisites. Code and collaboration data are synced with your connected workspace server, so the app needs a network connection."],
+  ["What does Multicode AI store, and who can see it?", "The workspace server stores your team’s projects, rooms, chats and the code you add to them, as Git repositories, so teammates with access can review them in a browser. AI tasks run on your own computer through your AI tool’s sign-in: Multicode AI never receives those credentials, and nobody else’s prompts run on your computer. Your AI provider processes prompts under its own terms. Only people you add to a project, or share a room or chat with, can open it."],
+  ["Do I need all of the AI tools?", "No. One signed-in tool is enough, such as Claude Code, Codex or Gemini. The app shows which tools each computer has ready, and teammates can each use their own."],
   ["How does working together affect my main branch?", "Each project room has its own Git branch. Build and review in the room, sync the latest project changes, and publish when you are ready to merge your work back. Conflicts are surfaced for review."],
   ["Can I use it in a browser?", "Yes. Open the web workspace to collaborate, review code, and follow conversations. Running AI tasks requires a paired computer with Git and an authenticated agent CLI. The desktop app brings the workspace and local runner together."],
 ];
@@ -90,6 +92,9 @@ export default function Home() {
   const available = platforms.some(platform => platform.downloads.some(download => download.href));
   const checksums = desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_CHECKSUMS_URL);
   const address = (process.env.AUTH_PUBLIC_URL || "https://multicode.in").replace(/\/$/, "");
+  // The supported first step: an account in the browser, then the in-app guide. The sign-up page
+  // itself says when new accounts need an invitation (this page is prerendered, so it can't).
+  const start = { href: "/login?mode=signup&next=%2Fworkspace", label: "Create your team" };
 
   return (
     <div className={styles.site}>
@@ -117,17 +122,14 @@ export default function Home() {
           <div className={styles.heroGrid} aria-hidden="true" />
           <div className={styles.heroContent}>
             <span className={styles.heroBrand}><Brand /></span>
-            <h1><span>Great software</span><span>is a team sport.</span></h1>
-            <p className={styles.heroLead}>Bring your team, your code, and your AI agents into one shared workspace. Build with Claude Code, Codex, or Gemini — together, in the same room.</p>
+            <h1><span>A shared coding room</span><span>for your team and AI agents.</span></h1>
+            <p className={styles.heroLead}>Work on the same code with your teammates and Claude Code, Codex or Gemini. Review what changed in your room together, and publish it to your project when it’s ready.</p>
             <div className={styles.heroActions}>
-              <a href="#download" className={styles.primaryButton}>Get Multicode AI <Arrow down /></a>
-              <Link href="/workspace" className={styles.secondaryButton}>Open workspace <Arrow /></Link>
+              <Link href={start.href} className={styles.primaryButton}>{start.label} <Arrow /></Link>
+              <a href="#download" className={styles.secondaryButton}>Download the desktop app <Arrow down /></a>
               <p className={styles.heroNote}>
-                “Every room gets its own Git branch, so an experiment never touches your project until the team publishes it.”
-                <span className={styles.heroNoteMeta}>
-                  <span className={styles.tinyAvatars}><i>A</i><i>S</i><i>✳</i></span>
-                  <span>Built for teams. Made for the way you code.</span>
-                </span>
+                Create an account in your browser. A short guide then takes you through your first project, connecting your computer, and inviting a teammate. Invited to a team? Open your invitation link instead.
+                <span className={styles.heroNoteMeta}>Already have an account? <Link href="/workspace">Sign in</Link></span>
               </p>
             </div>
           </div>
@@ -167,13 +169,14 @@ export default function Home() {
         <section id="how-it-works" className={`${styles.section} ${styles.workflow}`} aria-labelledby="workflow-title">
           <div className={styles.sectionHeading}>
             <p className={styles.kicker}>From “what if” to “shipped”</p>
-            <h2 id="workflow-title">Find your flow. Together.</h2>
-            <p>Three steps from an empty room to a reviewed change your team can publish.</p>
+            <h2 id="workflow-title">How a change gets made, together.</h2>
+            <p>Four steps from an invitation to a reviewed change in your project.</p>
           </div>
-          <div className={styles.steps}>{[
-            ["01", "Choose your starting point", "Open a project and start without files, or add a repository. Invite others to read and discuss the conversation in their browser."],
-            ["02", "Connect your AI", "To send prompts, connect your computer with Git and a signed-in AI tool. Keep it online while work runs, including conversations without files."],
-            ["03", "Make the next move", "Review a diff. Ask for a second opinion. Hand off a task. Publish your room’s changes when the team is ready."],
+          <div className={`${styles.steps} ${styles.steps4}`}>{[
+            ["01", "A teammate joins", "Invite people to your team and add them to a project. Each of you gets a room on its own Git branch, and can follow each other’s chats from a browser."],
+            ["02", "An agent does the work", "Describe a task in your room. Your AI tool runs on your own computer, with your own sign-in, and commits its changes to the room’s branch."],
+            ["03", "The team reviews", "Open the diff under Changes, ask a teammate to review it, or hand the chat to someone to finish with their own AI."],
+            ["04", "You publish when ready", "Publish the room’s changes to the project when the team agrees. Conflicts with newer project changes are shown for you to resolve first."],
           ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}</div>
         </section>
 
@@ -187,7 +190,7 @@ export default function Home() {
           <ExecutionRequirements className={styles.requirements} />
           <div className={styles.downloadFootnote}>
             <div>
-              <p>After installing, sign in with your account; your computer connects by itself.</p>
+              <p>After installing, sign in with your account; your computer connects by itself. Prefer a terminal? Connect with Node.js 22+ and <code>npx</code> from <strong>Your computers</strong> in the workspace.</p>
               {checksums && available && <a href={checksums}>Verify download checksums <Arrow /></a>}
             </div>
             <Link href="/workspace" className={styles.learnMore}>Get started in your browser <Arrow /></Link>
@@ -221,15 +224,15 @@ export default function Home() {
         <section className={styles.finalCta}>
           <span className={styles.brandMark} aria-hidden="true"><i /><i /><i /></span>
           <h2>Build something great.<br /><span>Together.</span></h2>
-          <Link href="/workspace" className={styles.primaryButton}>Open your workspace <Arrow /></Link>
-          <p>Good ideas deserve good company.</p>
+          <Link href={start.href} className={styles.primaryButton}>{start.label} <Arrow /></Link>
+          <p>Already on a team? <Link href="/workspace">Open your workspace</Link></p>
         </section>
       </main>
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
             <Link href="/" aria-label="Multicode AI home"><Brand /></Link>
-            <p>A shared space for your next big idea.</p>
+            <p>A shared coding room for your team and AI agents.</p>
           </div>
           <div className={styles.footerColumns}>
             <section>
@@ -239,6 +242,7 @@ export default function Home() {
                 <a href="#how-it-works">How it works</a>
                 <a href="#download">Downloads</a>
                 <a href="#faq">FAQ</a>
+                <Link href="/docs/prerequisites#your-data">Where your data lives</Link>
               </div>
             </section>
             <section>

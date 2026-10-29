@@ -21,7 +21,7 @@
  * Claude Code in print mode, it then reads the repository's own settings.
  */
 export function agentEnv(agentId?: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env = withoutLauncherEnv(process.env);
   for (const key of Object.keys(env)) {
     if (["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"].includes(key.toUpperCase())) delete env[key];
   }
@@ -29,4 +29,18 @@ export function agentEnv(agentId?: string): NodeJS.ProcessEnv {
   if (agentId === "codex-ollama" || agentId === "codex-lmstudio") delete env.CODEX_OSS_BASE_URL;
   if (agentId === "gemini") env.GEMINI_CLI_TRUST_WORKSPACE = "true";
   return env;
+}
+
+/**
+ * `env` without what npm adds to every process it starts: a runner launched with
+ * `npx` carries npm_config_prefix (and other npm_* settings) that the member's
+ * own shell never has. nvm refuses to load while npm_config_prefix is set, so a
+ * terminal or an agent's shell command would lose the member's Node setup. The
+ * member's own configuration is untouched: their shell profile and .npmrc are
+ * read again as usual. INIT_CWD is where npx was run, not where the work is.
+ */
+export function withoutLauncherEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { ...env };
+  for (const key of Object.keys(result)) if (key.startsWith("npm_") || key === "INIT_CWD") delete result[key];
+  return result;
 }

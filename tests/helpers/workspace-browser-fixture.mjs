@@ -63,8 +63,8 @@ export function installFixtures() {
       const comment={...JSON.parse(init.body),seq:state.feedback.length+1,authorName:'Alice',createdAt:new Date().toISOString()};state.feedback.push(comment);return json(comment);
     }
     if (path === "/api/auth/me") return json({user:{id:"alice",handle:"alice",displayName:"Alice",email:"alice@example.test"}});
-    if (path === "/api/orgs") return json({orgs:[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
-    if (path === "/api/invitations") return json({invitations:[]});
+    if (path === "/api/orgs") return json({orgs:state.orgs??[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
+    if (path === "/api/invitations") return json({invitations:state.invitations??[]});
     if (path.endsWith("/projects")) return json({projects:[{id:"project",slug:"project",name:"My project",orgId:"org",myRole:"manager",createdAt:1,archivedAt:null}]});
     if (path.endsWith("/rooms")) return json({sessions:[room]});
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
@@ -180,6 +180,8 @@ export function installFixtures() {
       return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
     }
     if(path === "/api/presence"){if(init.body)state.presenceRun=JSON.parse(init.body).runId??null;return json({intervalMs:20000,online:["alice"],viewers:state.presenceRun?(state.viewers??["alice"]):[]});}
+    // The getting-started guide stays away unless a check sets its progress.
+    if(path === "/api/orgs/team/onboarding")return json(state.onboarding??{});
     if(path === "/api/orgs/team/online")return json({people:state.orgOnline??[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true}]});
     if(path === "/api/runner/devices") {
       if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});

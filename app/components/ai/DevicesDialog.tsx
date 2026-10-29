@@ -239,8 +239,9 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
         <div className="space-y-1">
           <h3 className="text-[14px] font-semibold">{connection.status === "offline" ? "Bring your computer back online" : "Update your computer connection"}</h3>
           <p className="text-[12.5px] leading-5 text-vs-muted">{connection.status === "offline"
-            ? "Open the desktop app, or run the start command again on that computer."
+            ? `It is closed, paused or asleep. Open the desktop app on it (paused: choose Resume runner from its icon in the ${tray}), or run the start command below again in a terminal there. It shows as connected here within a few seconds.`
             : "Your computer’s app or runner is older than this workspace. Install the latest version, then reconnect."}</p>
+          {connection.status === "offline" && <p className="text-[12px] leading-5 text-vs-muted">Until then you can still read chats, browse files, review changes and invite teammates.</p>}
         </div>
       )}
 
@@ -262,7 +263,7 @@ export function DevicesDialog({ onClose, onSetUpAi }: { onClose: () => void; onS
                     {device.online
                       ? device.version !== "2" || !device.supportsPermissions ? "Update needed" : "Connected"
                       : device.lastSeenAt
-                        ? `Offline · last connected ${relativeTime(device.lastSeenAt)}`
+                        ? `Offline${relativeTime(device.lastSeenAt / 1000) ? ` · last connected ${relativeTime(device.lastSeenAt / 1000)}` : ""}`
                         : "Paired · not connected yet"}
                     {device.git === "missing" ? <span className="text-vs-danger"> · Git missing</span> : device.git ? ` · Git ${device.git}` : ""}
                     {device.platform ? ` · ${device.platform}` : ""}

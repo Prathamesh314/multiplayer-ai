@@ -68,7 +68,7 @@ export function InstallCommands({ site, available, downloads }: { site: string; 
       <div className={styles.installHead}>
         <div>
           <p className={styles.pickerKicker}>Install with one command</p>
-          <p className={styles.installLead}>Installs and opens Multicode AI, with no security warnings. Every file is checked against its published checksum first.</p>
+          <p className={styles.installLead}>Installs and opens Multicode AI. Every file is checked against its published checksum first. The preview app isn’t code-signed yet; installing from the terminal skips the one-time “unverified app” prompt a browser download shows.</p>
         </div>
       </div>
       <div role="tablist" aria-label="Your computer" className={styles.installTabs}>

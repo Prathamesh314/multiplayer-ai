@@ -38,6 +38,11 @@ Until releases are signed, macOS shows a one-time “Apple could not verify” p
 Your computer needs access to **https://multicode.in** and to the services used by your AI tool. A network that blocks streaming connections may interrupt live updates or computer pairing. Ask your network administrator about the workspace domain if connections repeatedly fail.
 
 Imported files are uploaded to the workspace, and authorised teammates can access shared content. Prompts and selected context may reach your AI provider. Use sample files for your first task and keep credentials out of shared messages and uploads.` },
+      { id: "your-data", title: "Where your data lives", body: `- **On the workspace server:** your team, projects, rooms, chats, and the code you add to rooms, stored as Git repositories so teammates with access can review them in a browser.
+- **On your computer:** the worktrees your AI tasks run in, and your AI tools’ own sign-ins. Multicode AI never receives those credentials, and only the chats you start run on your computer.
+- **With your AI provider:** the prompts and context your AI tool sends, under that provider’s terms.
+
+Only people added to a project can open it; a room or chat link shares just that room or chat. Removing someone from a project or revoking a link ends their access.` },
       { id: "ready-check", title: "Check that you’re ready", body: `Before sending your first prompt, confirm:
 
 - You can sign in and open your project’s room.
@@ -53,7 +58,7 @@ Then follow [your first AI conversation](/docs/first-conversation).`, screenshot
     slug: "download-install", category: "Get started", title: "Download & install",
     description: "Install the desktop app on macOS, Windows, or Linux and connect it to your workspace.",
     sections: [
-      { id: "one-command", title: "Install with one command", body: `The quickest way, with no security warnings: open a terminal and run the command for your computer. It downloads the current release, checks it against the published SHA-256 checksums (and installs nothing if they differ), installs it and opens it. Run the same command again to update.
+      { id: "one-command", title: "Install with one command", body: `The quickest way, and it skips the one-time “unverified app” prompt (the preview app isn’t code-signed yet): open a terminal and run the command for your computer. It downloads the current release, checks it against the published SHA-256 checksums (and installs nothing if they differ), installs it and opens it. Run the same command again to update.
 
 | Computer | Where to run it | Command |
 | --- | --- | --- |
@@ -775,7 +780,10 @@ If the app marks a model unavailable, select an available model explicitly. If t
 Inspect **Activity & checkpoints** after an interrupted task. Unsynced local files are not available to teammates yet. If editing or publication conflicts, preserve your work and resolve the conflict before retrying.` },
       { id: "integrations-terminal", title: "A connection or terminal is unavailable", body: `For Slack/Discord, confirm the intended project, your management permission, server-side provider setup, and the bot’s channel access. Select supported public channels and save the sharing consent. Use **Refresh status** after authorising in the browser.
 
-For the terminal, see [terminal availability](/docs/terminal). Connecting an AI computer does not enable a remote shell in the hosted application.` },
+For the terminal, see [terminal availability](/docs/terminal). It opens on your connected computer, in the worktree of the chat you are viewing.
+
+- **“Opened your home folder”:** no AI task for that chat (or, outside a chat, for the room’s repository) has run on this computer yet, so there is no worktree to open. Open the terminal from inside the chat that ran, or run a task first. A parallel chat has its own worktree.
+- **“nvm is not compatible with the npm_config_prefix environment variable”:** the computer connection was started with \`npx\` by an older runner, which passed npm’s settings on to the shell. Update the runner (run the start command again), then open a new terminal. You don’t need to change your shell profile; for the current shell only, \`unset npm_config_prefix\` and then \`nvm use\` also works.` },
       { id: "report", title: "Give your administrator a useful report", body: `Include the action you tried, exact visible error, approximate time, desktop/browser version, and whether the computer/provider showed as connected. Share a screenshot with private conversation text and credentials removed.
 
 Describe what happened before retrying an unconfirmed instruction or recovery action. Do not include invitation tokens, provider credentials, verification codes, or the runner’s private configuration file.` },

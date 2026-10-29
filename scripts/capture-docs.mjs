@@ -99,7 +99,7 @@ try{
   await evaluate('document.querySelector("#worktrees-heading").scrollIntoView({block:"center"})');await capture('desktop-worktrees');
   await install(`(${teamFixtures.toString()})()`);
   await navigate('/workspace','document.body?.innerText.includes("Northstar Checkout")');await capture('workspace');
-  await button('Invite team');await capture('invite-team');await closeDialog();
+  await button('Invite to team');await capture('invite-team');await closeDialog();
   await button('Members');await eventually(()=>evaluate('document.body.innerText.includes("ADD FROM ORGANISATION")'),'project members');await capture('project-members');await closeDialog();
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Connections')).click()`);
   await eventually(()=>evaluate('document.body.innerText.includes("Northstar Slack")'),'connections');await capture('connections');

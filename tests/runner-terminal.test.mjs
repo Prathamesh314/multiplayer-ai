@@ -75,3 +75,24 @@ test("a member's shell gets a terminal environment without the runner's own vari
   assert.equal(env.PATH, "/usr/bin");
   for (const key of ["ELECTRON_RUN_AS_NODE", "GIT_DIR", "RUNNER_CONFIG"]) assert.equal(env[key], undefined, key);
 });
+
+test("a runner started with npx does not pass npm's settings to the member's shell (nvm refuses them)", () => {
+  const env = shellEnvironment({ PATH: "/usr/bin", HOME: "/home/alice", npm_config_prefix: "/opt/homebrew", npm_config_cache: "/c", npm_execpath: "/x/npm-cli.js",
+    npm_lifecycle_event: "npx", INIT_CWD: "/somewhere", NPM_CONFIG_REGISTRY: "https://registry.example", NVM_DIR: "/home/alice/.nvm" });
+  for (const key of ["npm_config_prefix", "npm_config_cache", "npm_execpath", "npm_lifecycle_event", "INIT_CWD"]) assert.equal(env[key], undefined, key);
+  assert.equal(env.NPM_CONFIG_REGISTRY, "https://registry.example", "a setting the member exported themselves stays");
+  assert.equal(env.NVM_DIR, "/home/alice/.nvm");
+  assert.equal(env.PATH, "/usr/bin");
+});
+
+test("without a worktree here, the notice says whether the chat or the room's repository has none, and what to do", async t => {
+  const reports = [];
+  const terminals = new TerminalHost(async report => { reports.push(report); }, async () => null, { python: null, shell: "/bin/sh" });
+  t.after(() => terminals.closeAll());
+  terminals.handle("terminal.open", { id: "chat-1", userId: "alice", cols: 80, rows: 24, repoRef: "room-a", runId: "00000000-0000-4000-8000-000000000001", isolated: true });
+  terminals.handle("terminal.open", { id: "room-1", userId: "alice", cols: 80, rows: 24, repoRef: "room-a", runId: null, isolated: false });
+  await eventually(() => reports.some(report => report.id === "chat-1" && report.notice) && reports.some(report => report.id === "room-1" && report.notice), "both notices");
+  const notice = id => reports.find(report => report.id === id && report.notice?.includes("Opened your home folder"))?.notice ?? "";
+  assert.match(notice("chat-1"), /^This chat has no worktree on this computer yet: its first AI task here creates one\./);
+  assert.match(notice("room-1"), /^This room’s repository has no worktree on this computer yet\. Open the terminal from a chat that has run here/);
+});

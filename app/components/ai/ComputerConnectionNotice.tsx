@@ -20,12 +20,12 @@ export function ComputerConnectionNotice({ connection, onConnect, onSetUpAi, com
     : failed ? "Couldn’t check your computer connection" : status === "offline" ? "Your computer is offline"
     : status === "update" ? "Update your desktop app to use AI" : "Connect your computer to use AI";
   const detail = connected ? `${computer?.name ?? "Your computer"} · Keep the desktop app or computer connection running while AI works.`
-    : failed ? error : status === "offline" ? "Open the desktop app and sign in with this account. If the connection is paused, resume it from the desktop menu."
+    : failed ? error : status === "offline" ? `${computer?.name ?? "Your computer"} is closed, paused or asleep. Open the desktop app on it (or resume it from the app’s menu), or run the start command again in its terminal.`
     : status === "update" ? "This computer is using an older connection. Install the latest desktop app, then sign in again."
-    : "AI tasks run on your computer. Connect it once to send messages and continue AI chats.";
+    : "AI tasks run on your computer, with your own AI tools. Connect it once to send messages and continue AI chats.";
 
   if (bar) {
-    const short = failed ? "Check your internet connection." : status === "offline" ? "Open the desktop app and sign in." : status === "update" ? "Install the latest desktop app."
+    const short = failed ? "Check your internet connection." : status === "offline" ? "Closed, paused or asleep. Reading and reviewing still work." : status === "update" ? "Install the latest desktop app."
       : "AI runs on your computer. Saved chats stay readable without it.";
     return (
       <section aria-label="Computer connection" data-status={status} className={`mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 rounded-xl border px-4 py-2.5 ${connected || pending ? "border-vs-border bg-vs-panel" : "border-vs-accent/40 bg-vs-accent/5"}`}>
@@ -58,7 +58,7 @@ export function ComputerConnectionNotice({ connection, onConnect, onSetUpAi, com
           <div className="min-w-0" role="status" aria-live="polite">
             <p className="text-sm font-semibold sm:text-base">{title}</p>
             {!pending && <p className="mt-1 break-words text-sm leading-5 text-vs-muted">{detail}</p>}
-            {!pending && !connected && <p className="mt-1 text-sm leading-5 text-vs-muted">You can still open saved chats and browse files.</p>}
+            {!pending && !connected && <p className="mt-1 text-sm leading-5 text-vs-muted">Without it you can still read chats, browse files, review changes and invite teammates.</p>}
           </div>
         </div>
         {!pending && <div className="flex shrink-0 flex-wrap items-center gap-2">

@@ -21,9 +21,19 @@ const DIVISIONS: [number, Intl.RelativeTimeFormatUnit][] = [
   [Infinity, "year"],
 ];
 
-export function relativeTime(unixSeconds: number): string {
+/** Past this, a timestamp in seconds is really milliseconds (it would be after the year 5138). */
+const MILLISECONDS_FROM = 1e11;
+
+/**
+ * "5 minutes ago" for a moment in seconds since the epoch. Never an impossible
+ * time: a millisecond value is read as one, a missing or invalid one gives "",
+ * and a moment slightly ahead of this clock (another computer's) is "now".
+ */
+export function relativeTime(unixSeconds: number | null | undefined): string {
+  if (typeof unixSeconds !== "number" || !Number.isFinite(unixSeconds) || unixSeconds <= 0) return "";
+  const seconds = unixSeconds >= MILLISECONDS_FROM ? unixSeconds / 1000 : unixSeconds;
   const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  let duration = unixSeconds - Date.now() / 1000;
+  let duration = Math.min(seconds - Date.now() / 1000, 0);
 
   for (const [amount, unit] of DIVISIONS) {
     if (Math.abs(duration) < amount) return formatter.format(Math.round(duration), unit);

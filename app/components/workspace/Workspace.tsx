@@ -1038,7 +1038,7 @@ export function Workspace({
       <TopBar
         onOpenGuide={() => setHelpDialog("guide")}
         session={session}
-        inviteLabel={enteredRun ? "Share chat" : "Invite"}
+        inviteLabel={enteredRun ? "Share chat" : "Share room"}
         onInvite={() => setInviteOpen(true)}
         onLeave={() => { void navigatePage("projects"); }}
         onNavigate={direction => { void navigatePage(direction); }}
@@ -1190,6 +1190,7 @@ export function Workspace({
                         }}
                         computerStatus={computerConnection.status}
                         onSetUpAi={() => setHelpDialog("providers")}
+                        onConnectComputer={() => setHelpDialog("devices")}
                         actionsHost={actionsHost}
                         onShowConversation={() => setShowChat(true)}
                         sessionId={session.id}

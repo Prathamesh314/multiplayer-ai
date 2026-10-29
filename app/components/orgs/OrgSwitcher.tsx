@@ -74,11 +74,11 @@ export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSe
   }, [orgs, query]);
   // Everything the arrow keys move through: organisations, then actions.
   const actions = [
-    ...(onSettings ? [{ id: "settings", label: "Organization settings", icon: <GearIcon className="h-4 w-4" />, run: onSettings }] : []),
+    ...(onSettings ? [{ id: "settings", label: "Team settings", icon: <GearIcon className="h-4 w-4" />, run: onSettings }] : []),
     ...(onAdmin ? [{ id: "admin", label: "Members & admin", icon: <ShieldIcon className="h-4 w-4" />, run: onAdmin }] : []),
-    ...(onInvite ? [{ id: "invite", label: "Invite people", icon: <UserPlusIcon className="h-4 w-4" />, run: onInvite }] : []),
-    { id: "create", label: "Create organization", icon: <PlusIcon className="h-4 w-4" />, run: onCreate },
-    { id: "join", label: "Join organization", icon: <UsersIcon className="h-4 w-4" />, run: onJoin },
+    ...(onInvite ? [{ id: "invite", label: "Invite to team", icon: <UserPlusIcon className="h-4 w-4" />, run: onInvite }] : []),
+    { id: "create", label: "Create team", icon: <PlusIcon className="h-4 w-4" />, run: onCreate },
+    { id: "join", label: "Join a team", icon: <UsersIcon className="h-4 w-4" />, run: onJoin },
   ];
   const ownActions = actions.filter((item) => ["settings", "admin", "invite"].includes(item.id));
   const otherActions = actions.filter((item) => !["settings", "admin", "invite"].includes(item.id));
@@ -141,7 +141,7 @@ export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSe
       <button
         ref={trigger}
         type="button"
-        aria-label="Switch organization"
+        aria-label="Switch team"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -151,24 +151,24 @@ export function OrgSwitcher({ orgs, activeSlug, onSelect, onCreate, onJoin, onSe
       >
         {active ? <OrgAvatar org={active} /> : <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-dashed border-vs-border text-vs-muted"><PlusIcon className="h-4 w-4" /></span>}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold leading-5 text-vs-fg">{active?.name ?? (orgs === null ? "Loading…" : "Choose an organization")}</span>
-          <span className="block truncate text-[11px] leading-4 text-vs-muted">{active ? `${ROLE[active.myRole]} · ${orgs!.length} organization${orgs!.length === 1 ? "" : "s"}` : "Create or join one"}</span>
+          <span className="block truncate text-[13px] font-semibold leading-5 text-vs-fg">{active?.name ?? (orgs === null ? "Loading…" : "Choose a team")}</span>
+          <span className="block truncate text-[11px] leading-4 text-vs-muted">{active ? `${ROLE[active.myRole]} · ${orgs!.length} team${orgs!.length === 1 ? "" : "s"}` : "Create or join one"}</span>
         </span>
         <ChevronsIcon className="h-4 w-4 shrink-0 text-vs-muted group-hover:text-vs-fg" />
       </button>
 
       {open && (
-        <div id={menuId} role="menu" aria-label="Organizations" onKeyDown={onMenuKey}
+        <div id={menuId} role="menu" aria-label="Teams" onKeyDown={onMenuKey}
           className="absolute left-0 top-full z-50 mt-1.5 w-[max(100%,272px)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl border border-vs-border bg-vs-panel p-1.5 shadow-[0_18px_48px_rgb(0_0_0_/_0.45)]">
           <label className="mb-1 flex items-center gap-2 rounded-lg border border-vs-border bg-vs-editor px-2.5 focus-within:border-vs-accent">
             <SearchIcon className="h-3.5 w-3.5 shrink-0 text-vs-muted" />
-            <input ref={search} aria-label="Search organizations" placeholder="Find an organization…" value={query}
+            <input ref={search} aria-label="Search teams" placeholder="Find a team…" value={query}
               onChange={(event) => { setQuery(event.target.value); setCursor(0); }}
               className="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] text-vs-fg outline-none placeholder:text-vs-muted" />
           </label>
           <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-vs-muted">Organizations</p>
           <div className="vs-scroll max-h-64 overflow-y-auto">
-            {matches.length === 0 && <p role="status" className="px-2 py-2 text-[13px] text-vs-muted">{orgs?.length ? "No organizations found. Try another name." : "You haven’t joined any organizations yet."}</p>}
+            {matches.length === 0 && <p role="status" className="px-2 py-2 text-[13px] text-vs-muted">{orgs?.length ? "No teams found. Try another name." : "You haven’t joined a team yet."}</p>}
             {matches.map((org, index) => {
               const current = org.slug === activeSlug;
               const position = (orgs ?? []).indexOf(org);

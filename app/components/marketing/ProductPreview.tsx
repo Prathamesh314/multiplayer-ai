@@ -5,7 +5,13 @@ import { screenshots } from "../../docs/screenshots";
 import { AppScreenshot } from "./AppScreenshot";
 import styles from "./marketing.module.css";
 
+// In the order work happens: a teammate joins, an agent works, the team reviews, then hands off or publishes.
 const views = [
+  {
+    ...screenshots["invite-team"],
+    label: "Invite your team",
+    caption: "Invite teammates to your team, then add them to a project to give them a room in it.",
+  },
   {
     ...screenshots.conversation,
     label: "AI conversations",
@@ -15,11 +21,6 @@ const views = [
     ...screenshots.changes,
     label: "Code & review",
     caption: "Your code, your teammates, and the changes to review. One shared room.",
-  },
-  {
-    ...screenshots.connections,
-    label: "Team context",
-    caption: "Bring selected Slack and Discord channels into your project’s shared context.",
   },
   {
     ...screenshots.handoff,
