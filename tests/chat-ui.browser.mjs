@@ -60,7 +60,7 @@ try {
   };
   const viewport=async(width,height=900)=>{await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:false});await delay(200);};
   const fits=async label=>assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"),label);
-  const orgAction=async label=>{await click('button[aria-label="Switch organization"]');await eventually(()=>evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].some(e=>e.textContent.trim()===${JSON.stringify(label)})`),label);await evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].find(e=>e.textContent.trim()===${JSON.stringify(label)}).click()`);await delay(80);};
+  const orgAction=async label=>{await click('button[aria-label="Switch team"]');await eventually(()=>evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].some(e=>e.textContent.trim()===${JSON.stringify(label)})`),label);await evaluate(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].find(e=>e.textContent.trim()===${JSON.stringify(label)}).click()`);await delay(80);};
   const escape=async()=>{await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});};
   const mouseClick=async selector=>{
     await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest'})`);
@@ -92,21 +92,21 @@ try {
   await evaluate('[...document.querySelectorAll("#handoffs button")].find(b=>b.textContent.trim()==="Decline").click()');
   await eventually(()=>evaluate('JSON.stringify(window.__chatFixture.handoffActions?.[0])===JSON.stringify({action:"decline",handoffId:"h-received",version:3}) && !document.querySelector("#handoffs").innerText.includes("Checkout polish")'),"declining sends the chat’s version and clears it");
   // One sidebar: the organisation switcher on top, the signed-in person at the bottom, no rail.
-  const switcher='button[aria-label="Switch organization"]';
+  const switcher='button[aria-label="Switch team"]';
   assert.equal(await evaluate('document.querySelector(\'nav[aria-label="Organisations"]\')'),null,"the organisation rail is gone");
   assert.ok(await evaluate(`document.querySelector('${switcher}').innerText.includes("Northstar Studio") && document.querySelector('${switcher}').innerText.includes("Owner")`),"the switcher names the organisation and your role");
   await click(switcher);
-  await eventually(()=>evaluate('document.activeElement?.getAttribute("aria-label") === "Search organizations"'),"organization search receives focus");
-  assert.equal(await evaluate('document.querySelector(\'[role=menu][aria-label="Organizations"] [role=menuitemradio][aria-checked="true"]\').title'),"Northstar Studio","the current organization is checked");
-  await type('input[aria-label="Search organizations"]','not-my-team');
-  await eventually(()=>evaluate('document.querySelector(\'[role=menu] [role=status]\')?.textContent.includes("No organizations found")'),"organization search empty result");
-  await type('input[aria-label="Search organizations"]','  sIdE pRoJeCtS  ');
+  await eventually(()=>evaluate('document.activeElement?.getAttribute("aria-label") === "Search teams"'),"organization search receives focus");
+  assert.equal(await evaluate('document.querySelector(\'[role=menu][aria-label="Teams"] [role=menuitemradio][aria-checked="true"]\').title'),"Northstar Studio","the current organization is checked");
+  await type('input[aria-label="Search teams"]','not-my-team');
+  await eventually(()=>evaluate('document.querySelector(\'[role=menu] [role=status]\')?.textContent.includes("No teams found")'),"organization search empty result");
+  await type('input[aria-label="Search teams"]','  sIdE pRoJeCtS  ');
   assert.equal(await evaluate('document.querySelectorAll("[role=menu] [role=menuitemradio]").length'),1);
   await screenshot('organization-switcher');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
   await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Side Projects"'),"search opens the selected organization");
-  assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Switch organization","selection returns focus to the switcher");
+  assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Switch team","selection returns focus to the switcher");
   assert.ok(await evaluate(`document.querySelector('${switcher}').innerText.includes("Member")`),"the role follows the organisation");
   // Ctrl/⌘+1…9 jump straight to an organisation.
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'1',code:'Digit1',windowsVirtualKeyCode:49,modifiers:2});
@@ -114,10 +114,10 @@ try {
   await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Northstar Studio"'),"keyboard shortcut switches organisations");
   // The current organisation's own actions live in the switcher, for those who manage it.
   await click(switcher);
-  assert.deepEqual(await evaluate('[...document.querySelectorAll("[role=menu][aria-label=Organizations] [role=menuitem]")].map(e=>e.textContent.trim())'),
-    ["Organization settings","Members & admin","Invite people","Create organization","Join organization"]);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("[role=menu][aria-label=Teams] [role=menuitem]")].map(e=>e.textContent.trim())'),
+    ["Team settings","Members & admin","Invite to team","Create team","Join a team"]);
   await escape();
-  await eventually(()=>evaluate('!document.querySelector("[role=menu]") && document.activeElement?.getAttribute("aria-label")==="Switch organization"'),"Escape closes the switcher and keeps focus");
+  await eventually(()=>evaluate('!document.querySelector("[role=menu]") && document.activeElement?.getAttribute("aria-label")==="Switch team"'),"Escape closes the switcher and keeps focus");
   // The signed-in person sits at the bottom of the same sidebar and opens the account menu.
   const account='[aria-label="Your account"]';
   assert.ok(await evaluate(`document.querySelector(${JSON.stringify(account)}).innerText.includes("Alex Chen")&&document.querySelector(${JSON.stringify(account)}).innerText.includes("@alex")`),"profile names the signed-in person");
@@ -134,9 +134,9 @@ try {
   await click('button[aria-label="Open navigation"]');
   await eventually(()=>evaluate('getComputedStyle(document.querySelector("#workspace-navigation")).display==="flex"'),"the drawer opens");
   await click(switcher);
-  await eventually(()=>evaluate('!!document.querySelector("[role=menu][aria-label=Organizations]")'),"mobile organization switcher");
+  await eventually(()=>evaluate('!!document.querySelector("[role=menu][aria-label=Teams]")'),"mobile organization switcher");
   await fits('organization switcher fits mobile');
-  assert.ok(await evaluate('(()=>{const r=document.querySelector("[role=menu][aria-label=Organizations]").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()'));
+  assert.ok(await evaluate('(()=>{const r=document.querySelector("[role=menu][aria-label=Teams]").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()'));
   await screenshot('organizations-mobile');
   await escape();
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#workspace-navigation")).display'),"flex","Escape in the switcher keeps the drawer open");
@@ -158,7 +158,7 @@ try {
   await viewport(320);
   await viewport(1440);
   console.log('PASS: organization switcher with search, roles, keyboard shortcuts and organisation actions; profile menu; phone drawer and mobile bounds.');
-  await orgAction('Organization settings');
+  await orgAction('Team settings');
   await eventually(()=>evaluate('!!document.querySelector("dialog[open] input[type=text]")'),"settings dialog");
   await type('dialog input[type=text]',"Northstar Studio");
   await viewport(390,620);
@@ -225,9 +225,9 @@ try {
   await eventually(()=>evaluate('!!document.querySelector("dialog[open] input")'),"new project dialog");
   await escape();
   await eventually(()=>evaluate('!document.querySelector("dialog")'),"Escape closes dialog");
-  await orgAction('Organization settings');
+  await orgAction('Team settings');
   await escape();
-  assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),"Switch organization","modal restores focus to the switcher");
+  assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),"Switch team","modal restores focus to the switcher");
   await viewport(390);
   await fits("project overview fits mobile");await screenshot("projects-mobile");
   await viewport(1440);

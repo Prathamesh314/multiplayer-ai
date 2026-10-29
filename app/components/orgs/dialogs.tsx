@@ -112,8 +112,8 @@ export function JoinOrgDialog({
 
   return (
     <Modal
-      title="Join an organisation"
-      description="Accept an invitation, or share your connect code with an admin."
+      title="Join an existing team"
+      description="Accept an invitation, paste an invite link, or give a team admin your connect code so they can add you."
       onClose={onClose}
       footer={<GhostButton onClick={onClose}>Close</GhostButton>}
     >
@@ -127,7 +127,7 @@ export function JoinOrgDialog({
           </div>
         ) : invitations.length === 0 ? (
           <p className="mt-1.5 text-[13px] text-vs-muted">
-            Nothing yet — ask a teammate to invite you.
+            None yet. Ask a team admin to invite you, or to add you with your connect code below.
           </p>
         ) : (
           <ul className="mt-1.5 space-y-1.5">
@@ -171,7 +171,7 @@ export function JoinOrgDialog({
       {connectCode && (
         <Field
           label="Your connect code"
-          hint="Share it with an org admin — they can add you directly."
+          hint="Send it to a team admin: they add you with it, and the invitation appears above."
         >
           <div className="mt-1.5 flex items-center gap-2">
             <code className="flex-1 rounded-md border border-vs-border bg-vs-editor px-3 py-2 font-mono text-[13px] text-vs-fg">
@@ -212,26 +212,26 @@ export function CreateOrgDialog({ onClose, onCreated }: { onClose: () => void; o
 
   return (
     <Modal
-      title="New organisation"
-      description="Invite your team and group your projects under it."
+      title="Create your team"
+      description="Your team (organization) holds your projects and the people you work with. You’ll be its owner, and can invite teammates next."
       onClose={onClose}
       footer={
         <>
           <GhostButton onClick={onClose}>Cancel</GhostButton>
           <PrimaryButton onClick={submit} disabled={busy || !name.trim()}>
-            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} Create
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null} {busy ? "Creating…" : "Create team"}
           </PrimaryButton>
         </>
       }
     >
       {error && <ErrorNote>{error}</ErrorNote>}
-      <Field label="Name" hint="You can change this later.">
+      <Field label="Team name" hint="Usually your company or group. You can change it later.">
         <input
           autoFocus
           className={inputClass}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && name.trim() && submit()}
+          onKeyDown={(e) => e.key === "Enter" && name.trim() && !busy && submit()}
           placeholder="Acme Robotics"
         />
       </Field>
@@ -266,12 +266,12 @@ export function CreateProjectDialog({
 
   return (
     <Modal title="New project"
-      description="Organize your team, rooms, and repositories. Start empty, then add as many repositories as your work needs."
+      description="A project is one product or codebase. You’re added to it with your own room; add teammates from its Members. Start empty, then add as many repositories as your work needs."
       onClose={onClose}
-      footer={<><GhostButton onClick={onClose}>Cancel</GhostButton><PrimaryButton onClick={submit} disabled={busy || !name.trim()}>{busy && <SpinnerIcon className="h-4 w-4" />} Create</PrimaryButton></>}
+      footer={<><GhostButton onClick={onClose}>Cancel</GhostButton><PrimaryButton onClick={submit} disabled={busy || !name.trim()}>{busy && <SpinnerIcon className="h-4 w-4" />} {busy ? "Creating…" : "Create project"}</PrimaryButton></>}
     >
       {error && <ErrorNote>{error}</ErrorNote>}
-      <Field label="Name">
+      <Field label="Project name">
         <input autoFocus className={inputClass} value={name} maxLength={80} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void submit(); }} placeholder="Customer platform" />
       </Field>
     </Modal>
@@ -309,7 +309,7 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
   return (
     <Modal
       title={`Invite to ${org.name}`}
-      description="Email a one-time link, or add someone by their connect code."
+      description="Add someone to your team with a one-time link, or with their connect code."
       onClose={onClose}
       footer={
         <>
@@ -322,6 +322,10 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
       }
     >
       {error && <ErrorNote>{error}</ErrorNote>}
+      <p className="rounded-xl border border-vs-border bg-vs-editor p-3 text-[12.5px] leading-5 text-vs-muted">
+        <strong className="font-medium text-vs-fg">What they get:</strong> a place in the team and its member list. They see a project, and get a room in it, once someone adds them to that project under <strong className="font-medium text-vs-fg">Members</strong>. Admins can also manage members and settings.
+        <span className="mt-1.5 block">To show one conversation to someone outside the team, use <strong className="font-medium text-vs-fg">Share chat</strong> in that chat instead.</span>
+      </p>
       <div className="flex gap-2">
         {(["email", "code"] as const).map((option) => (
           <button
@@ -375,12 +379,13 @@ export function InviteDialog({ org, onClose }: { org: Org; onClose: () => void }
         <div className="rounded-lg border border-vs-border bg-vs-editor p-3 text-sm">
           {result.startsWith("http") ? (
             <>
-              <p className="mb-1.5 text-vs-muted">Share this one-time link:</p>
+              <p className="mb-1.5 text-vs-muted">Invitation created. Send them this one-time link:</p>
               <CopyLink url={result} />
             </>
           ) : (
             <p className="text-vs-success">{result}</p>
           )}
+          <p className="mt-2 text-[12px] leading-5 text-vs-muted">Next: once they accept, add them to a project from its <strong className="font-medium text-vs-fg">Members</strong> so they can work in it.</p>
         </div>
       )}
     </Modal>

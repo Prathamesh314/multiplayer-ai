@@ -70,16 +70,16 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
 
   return (
     <Modal
-      title={`Invite to “${session.name}”`}
+      title={`Share room “${session.name}”`}
       description={
         isOwner
-          ? "Choose what a link grants before you create it. The role travels with the link, not with the URL."
-          : "Only the session owner can create share links."
+          ? "A link to this room: its files, chats and terminal. Choose what it grants before you create it."
+          : "Only the room’s owner can create share links."
       }
       onClose={onClose}
       footer={<GhostButton onClick={onClose}>Done</GhostButton>}
     >
-      {session.orgId && <p className="rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">These links share the entire room with existing organization members. To invite someone outside your team, open an AI chat first, then choose <strong className="text-vs-fg">Share chat</strong>. They’ll get access to that conversation only.</p>}
+      {session.orgId && <p className="rounded-xl border border-vs-border p-3 text-sm leading-6 text-vs-muted">Room links work for people already on your team: they see everything in this room. To add someone new, invite them to the team from the team overview. To show one conversation to anyone, even outside the team, open that chat and choose <strong className="text-vs-fg">Share chat</strong>: they get that conversation only.</p>}
       {isOwner && (
         <>
           <div>
