@@ -127,17 +127,12 @@
 .secondaryButton { border: 1px solid #ffffff33; color: #fff; }
 .secondaryButton:hover { background: #ffffff14; border-color: #ffffff59; }
 .heroNote {
-  grid-column: 1 / -1; margin-top: 4px; font-size: .875rem; font-style: italic;
+  grid-column: 1 / -1; margin-top: 4px; font-size: .875rem;
   line-height: 1.6; color: #ffffffb3; text-wrap: pretty;
 }
-.heroNoteMeta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .75rem; font-style: normal; }
-.tinyAvatars { display: inline-flex; }
-.tinyAvatars i {
-  width: 20px; height: 20px; margin-left: -6px; border-radius: 50%; font-style: normal;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #ffffff2b; background: #2a2522; color: #fff; font-size: .625rem; font-weight: 500;
-}
-.tinyAvatars i:first-child { margin-left: 0; }
+.heroNoteMeta { display: block; margin-top: 8px; font-size: .8125rem; }
+.heroNoteMeta a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.heroNoteMeta a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 2px; }
 
 /* ---------- Hero product shot ---------- */
 /* Aligned with the header container so the shot sits inside the page gutters
@@ -208,6 +203,8 @@
 .workflow { max-width: 72rem; border-top: 1px solid var(--line); }
 .steps { display: grid; grid-template-columns: 1fr; gap: 1px; margin-top: 8px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
 @media (min-width: 768px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 768px) { .steps4 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { .steps4 { grid-template-columns: repeat(4, 1fr); } }
 .steps article { background: var(--bg); padding: 24px; }
 .steps article > span { display: block; margin-bottom: 14px; font-family: var(--mono); font-size: .6875rem; letter-spacing: .05em; color: var(--muted-fg); }
 .steps h3 { font-size: .9375rem; }
@@ -295,6 +292,7 @@
 .finalCta h2 > span { color: #ffffffb3; }
 .finalCta > a { margin-top: 32px; justify-content: center; padding: 0 20px; box-shadow: 0 10px 25px -12px #0009; }
 .finalCta > p { margin-top: 16px; font-family: var(--mono); font-size: .75rem; color: #ffffff8c; }
+.finalCta > p a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- Footer ---------- */
 .footer { border-top: 1px solid var(--line); background: var(--muted); font-family: var(--mono); padding: 56px 24px 48px; }
