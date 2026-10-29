@@ -11,6 +11,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { withoutLauncherEnv } from "../app/lib/ai/env";
 
 /** Bridges a PTY to stdio; fd 3 carries `{"cols":n,"rows":n}` lines for resizes. */
 const PTY_HELPER = String.raw`
@@ -103,7 +104,7 @@ export function defaultShell(platform = process.platform, env = process.env): st
 
 /** This computer's environment for a member's shell, minus what only the runner process needs. */
 export function shellEnvironment(env = process.env): NodeJS.ProcessEnv {
-  const result: NodeJS.ProcessEnv = { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" };
+  const result: NodeJS.ProcessEnv = { ...withoutLauncherEnv(env), TERM: "xterm-256color", COLORTERM: "truecolor" };
   for (const key of Object.keys(result)) {
     // The desktop app runs the runner as Electron-as-Node; a shell inheriting
     // that would break Electron apps (editors) started from it.
@@ -162,7 +163,8 @@ export class TerminalHost {
     this.sessions.set(open.id, session);
     const notices = [
       directory ? `Terminal · ${directory.label}`
-        : open.repoRef ? "No worktree for this chat on this computer yet (the first AI turn here creates it). Opened your home folder."
+        : open.repoRef && open.runId ? "This chat has no worktree on this computer yet: its first AI task here creates one. Opened your home folder."
+        : open.repoRef ? "This room’s repository has no worktree on this computer yet. Open the terminal from a chat that has run here (a parallel chat has its own), or run an AI task first. Opened your home folder."
         : "Terminal · home folder",
       ...(this.python ? [] : ["Basic terminal: full-screen programs and Tab completion need Python 3 on this computer."]),
     ];
