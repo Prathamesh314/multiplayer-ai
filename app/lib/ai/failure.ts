@@ -12,6 +12,11 @@ export type ToolInfo = { name: string; signIn?: string };
 
 const RULES: { test: RegExp; say: (tool: ToolInfo) => string }[] = [
   {
+    // Newer Gemini CLI refuses untrusted folders; current runners trust the task's folder.
+    test: /not running in a trusted (?:directory|folder)|GEMINI_CLI_TRUST_WORKSPACE/i,
+    say: tool => `${tool.name} wouldn’t start because this task’s folder isn’t marked as trusted. Update Multicode AI on this computer (install the latest desktop app, or restart the connection command) and try again: it trusts the task’s folder for you.`,
+  },
+  {
     test: /self[- ]signed certificate|unable to (?:get|verify) (?:local )?issuer certificate|UNABLE_TO_GET_ISSUER_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|CERT_HAS_EXPIRED|certificate has expired|SELF_SIGNED_CERT/i,
     say: tool => `${tool.name} couldn’t make a secure connection to its AI service: a certificate on your network isn’t trusted. This is usually antivirus or a company proxy inspecting HTTPS. Allow ${tool.name} in your antivirus, or ask your IT team for their certificate.`,
   },

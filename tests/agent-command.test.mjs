@@ -233,3 +233,14 @@ Attempt 2 failed. Retrying with backoff... Error: exception TypeError: fetch fai
   assert.deepEqual(splitFailure(stored), { message: explainFailure(offline, gemini), log: offline.trim() });
   assert.equal(splitFailure("Finished in 3.1s"), null);
 });
+
+test("Gemini runs headless in the task's worktree without an interactive trust prompt", () => {
+  assert.equal(agentEnv("gemini").GEMINI_CLI_TRUST_WORKSPACE, "true");
+  assert.equal(agentEnv("claude").GEMINI_CLI_TRUST_WORKSPACE, process.env.GEMINI_CLI_TRUST_WORKSPACE, "only Gemini is given it");
+});
+
+test("an old runner's Gemini trust refusal reads as: update the app", async () => {
+  const { explainFailure } = await import("../app/lib/ai/failure.ts");
+  const raw = "Gemini CLI is not running in a trusted directory. To proceed, either use `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment variable, or trust this directory in interactive mode.";
+  assert.match(explainFailure(raw, { name: "Gemini CLI", signIn: "gemini" }), /^Gemini CLI wouldn’t start because this task’s folder isn’t marked as trusted\. Update Multicode AI/);
+});
