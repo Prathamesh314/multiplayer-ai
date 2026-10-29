@@ -12,7 +12,6 @@ import { desktopDownloadUrl } from "./lib/desktop-downloads";
 import { DesktopHomeRedirect } from "./components/marketing/DesktopHomeRedirect";
 import { InstallCommands } from "./components/marketing/InstallCommands";
 import { screenshots } from "./docs/screenshots";
-import { signupMode } from "./lib/auth/admission";
 
 export const metadata: Metadata = {
   title: "Multicode AI — A shared coding room for your team and AI agents",
@@ -93,12 +92,9 @@ export default function Home() {
   const available = platforms.some(platform => platform.downloads.some(download => download.href));
   const checksums = desktopDownloadUrl(process.env.DESKTOP_DOWNLOAD_CHECKSUMS_URL);
   const address = (process.env.AUTH_PUBLIC_URL || "https://multicode.in").replace(/\/$/, "");
-  // The one first step this deployment really offers: an open sign-up, an invited one, or none.
-  const signup = signupMode();
-  const start = signup === "closed"
-    ? { href: "/workspace", label: "Open your workspace", next: "New accounts are closed right now. Already have one? Your team’s projects are waiting." }
-    : { href: "/login?mode=signup&next=%2Fworkspace", label: "Create your team",
-        next: `${signup === "invite" ? "During the beta, a new account needs an invitation. " : ""}Create an account in your browser, then a short guide takes you through your first project, connecting your computer, and inviting a teammate.` };
+  // The supported first step: an account in the browser, then the in-app guide. The sign-up page
+  // itself says when new accounts need an invitation (this page is prerendered, so it can't).
+  const start = { href: "/login?mode=signup&next=%2Fworkspace", label: "Create your team" };
 
   return (
     <div className={styles.site}>
@@ -132,7 +128,7 @@ export default function Home() {
               <Link href={start.href} className={styles.primaryButton}>{start.label} <Arrow /></Link>
               <a href="#download" className={styles.secondaryButton}>Download the desktop app <Arrow down /></a>
               <p className={styles.heroNote}>
-                {start.next}
+                Create an account in your browser. A short guide then takes you through your first project, connecting your computer, and inviting a teammate. Invited to a team? Open your invitation link instead.
                 <span className={styles.heroNoteMeta}>Already have an account? <Link href="/workspace">Sign in</Link></span>
               </p>
             </div>
