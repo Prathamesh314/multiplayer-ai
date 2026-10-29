@@ -1,3 +1,4 @@
+import type { OrgOnboarding } from "./onboarding";
 import { NotSignedIn } from "../session/client";
 import type {
   CreateOrgRequest,
@@ -44,6 +45,14 @@ export async function fetchOrgUsage(slug: string): Promise<OrgUsage | null> {
   const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/usage`, { cache: "no-store" });
   if (!response.ok) return null;
   return (await response.json()) as OrgUsage;
+}
+
+/** Your getting-started progress in this team; null when it can't be read (the guide then stays out of the way). */
+export async function fetchOrgOnboarding(slug: string): Promise<OrgOnboarding | null> {
+  const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/onboarding`, { cache: "no-store" });
+  if (!response.ok) return null;
+  const body = (await response.json()) as Partial<OrgOnboarding>;
+  return typeof body.projects === "number" && typeof body.members === "number" ? body as OrgOnboarding : null;
 }
 
 export async function fetchOrgMembers(slug: string): Promise<OrgMember[]> {

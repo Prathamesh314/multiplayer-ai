@@ -180,6 +180,8 @@ export function installFixtures() {
       return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
     }
     if(path === "/api/presence"){if(init.body)state.presenceRun=JSON.parse(init.body).runId??null;return json({intervalMs:20000,online:["alice"],viewers:state.presenceRun?(state.viewers??["alice"]):[]});}
+    // The getting-started guide stays away unless a check sets its progress.
+    if(path === "/api/orgs/team/onboarding")return json(state.onboarding??{});
     if(path === "/api/orgs/team/online")return json({people:state.orgOnline??[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true}]});
     if(path === "/api/runner/devices") {
       if(state.deviceFailure)return new Response("Temporary upstream error",{status:502});

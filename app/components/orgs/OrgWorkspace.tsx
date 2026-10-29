@@ -58,7 +58,6 @@ import { initials } from "./parts";
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
-import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { useComputerConnection, type ComputerConnection } from "../ai/useComputerConnection";
 import { TaskPanel } from "../tasks/TaskPanel";
 import chatStyles from "../chat/chat.module.css";
@@ -95,6 +94,9 @@ export function OrgWorkspace() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
   const [projectsRevision, setProjectsRevision] = useState(0);
+  // Bumped as each dialog closes: the getting-started guide rereads its progress.
+  const [guideRevision, setGuideRevision] = useState(0);
+  const closeDialog = useCallback(() => { setDialog(null); setGuideRevision((current) => current + 1); }, []);
 
   const reloadOrgs = useCallback(async () => {
     const list = await listMyOrgs();
@@ -139,7 +141,7 @@ export function OrgWorkspace() {
     window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
   }, [activeOrg]);
 
-  async function onAcceptInvite(id: string) {
+  async function onAcceptInvite(id: string): Promise<void> {
     const slug = await acceptInvitation(id);
     setInvitations((current) => current.filter((i) => i.id !== id));
     await reloadOrgs();
@@ -176,7 +178,7 @@ export function OrgWorkspace() {
     />
   );
   const noOrgNav = () => (
-    <p className="px-4 py-4 text-xs leading-5 text-vs-muted">{orgs === null ? "Loading organizations…" : "Create an organization or join your team to see its projects here."}</p>
+    <p className="px-4 py-4 text-xs leading-5 text-vs-muted">{orgs === null ? "Loading your teams…" : "Create a team or join one to see its projects here."}</p>
   );
 
   return (
@@ -201,6 +203,7 @@ export function OrgWorkspace() {
           key={activeOrg.slug}
           org={activeOrg}
           refreshVersion={projectsRevision}
+          guideRevision={guideRevision}
           me={me}
           invitations={invitations.filter((i) => i.orgSlug === activeOrg.slug)}
           onAcceptInvite={onAcceptInvite}
@@ -217,41 +220,43 @@ export function OrgWorkspace() {
       ) : (
         <WorkspaceShell title={orgs === null ? "Workspace" : "Get started"} switcher={switcher} userMenu={userMenu} nav={noOrgNav}>
         <div className="vs-scroll min-w-0 flex-1 overflow-y-auto p-5">
-          {me && <ComputerConnectionNotice connection={computerConnection} onConnect={() => setDialog({ kind: "devices" })} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
-          {me && <TaskPanel key={me.id} userId={me.id} />}
+          {/* A team comes first; connecting a computer is a later step of its guide. */}
           <EmptyState
             loading={orgs === null}
-            inviteCount={invitations.length}
+            invitations={invitations}
+            onAccept={onAcceptInvite}
             onCreate={() => setDialog({ kind: "createOrg" })}
             onJoin={() => setDialog({ kind: "joinOrg" })}
           />
+          {/* Tasks assigned to you from chats shared with you; nothing is shown while there are none. */}
+          {me && <div className="mx-auto w-full max-w-2xl"><TaskPanel key={me.id} userId={me.id} hideWhenEmpty /></div>}
         </div>
         </WorkspaceShell>
       )}
 
       {dialog?.kind === "createOrg" && (
         <CreateOrgDialog
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
           onCreated={async (org) => {
-            setDialog(null);
+            closeDialog();
             await reloadOrgs();
             setActiveSlug(org.slug);
           }}
         />
       )}
-      {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => setDialog(null)} onOpenDevices={() => setDialog({ kind: "devices" })} />}
+      {dialog?.kind === "connectAi" && <ConnectAiDialog onClose={() => closeDialog()} onOpenDevices={() => setDialog({ kind: "devices" })} />}
       {dialog?.kind === "agentTools" && (
-        <Modal title="Your AI tools" description="MCP servers and plugins for the agents in your chats." width="max-w-3xl" onClose={() => setDialog(null)}>
+        <Modal title="Your AI tools" description="MCP servers and plugins for the agents in your chats." width="max-w-3xl" onClose={() => closeDialog()}>
           <AgentToolsPanel scope="personal" base="/api/me/agent-tools" />
         </Modal>
       )}
-      {dialog?.kind === "devices" && <DevicesDialog onClose={() => setDialog(null)} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
+      {dialog?.kind === "devices" && <DevicesDialog onClose={() => closeDialog()} onSetUpAi={() => setDialog({ kind: "connectAi" })} />}
       {dialog?.kind === "joinOrg" && (
         <JoinOrgDialog
           connectCode={connectCode}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
           onJoined={async (slug) => {
-            setDialog(null);
+            closeDialog();
             await reloadOrgs();
             setActiveSlug(slug);
             setInvitations(await listPendingInvitations());
@@ -259,13 +264,13 @@ export function OrgWorkspace() {
         />
       )}
       {dialog?.kind === "invite" && (
-        <InviteDialog org={dialog.org} onClose={() => setDialog(null)} />
+        <InviteDialog org={dialog.org} onClose={() => closeDialog()} />
       )}
       {dialog?.kind === "orgAdmin" && (
         <OrgAdminDialog
           org={dialog.org}
           me={me}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
           onManageProject={(project) =>
             setDialog({ kind: "projectMembers", org: dialog.org, project })
           }
@@ -274,9 +279,9 @@ export function OrgWorkspace() {
       {dialog?.kind === "orgSettings" && (
         <OrgSettingsDialog
           org={dialog.org}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
           onUpdated={async () => {
-            setDialog(null);
+            closeDialog();
             await reloadOrgs();
           }}
         />
@@ -284,9 +289,9 @@ export function OrgWorkspace() {
       {dialog?.kind === "createProject" && (
         <CreateProjectDialog
           org={dialog.org}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
           onCreated={() => {
-            setDialog(null);
+            closeDialog();
             setProjectsRevision((current) => current + 1);
           }}
         />
@@ -296,7 +301,7 @@ export function OrgWorkspace() {
           org={dialog.org}
           project={dialog.project}
           me={me}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
         />
       )}
       {dialog?.kind === "roomSettings" && (
@@ -305,7 +310,7 @@ export function OrgWorkspace() {
           project={dialog.project}
           room={dialog.room}
           me={me}
-          onClose={() => setDialog(null)}
+          onClose={() => closeDialog()}
         />
       )}
     </div>
@@ -462,6 +467,7 @@ function OrgPanel({
   onConnectComputer,
   org,
   refreshVersion,
+  guideRevision,
   me,
   invitations,
   onAcceptInvite,
@@ -478,6 +484,7 @@ function OrgPanel({
   onConnectComputer: () => void;
   org: Org;
   refreshVersion: number;
+  guideRevision: number;
   me: CurrentUser | null;
   invitations: PendingInvitation[];
   onAcceptInvite: (id: string) => void;
@@ -631,6 +638,7 @@ function OrgPanel({
           onConnections={project=>{setConnectionProject(project.id);setConnectionsOpen(true);}}
           handoffs={handoffs}
           onOpenRoom={onOpenRoom}
+          guideRevision={guideRevision}
         />
       )}
     </WorkspaceShell>
@@ -753,45 +761,65 @@ function ProjectRow({
 
 function EmptyState({
   loading,
-  inviteCount,
+  invitations,
+  onAccept,
   onCreate,
   onJoin,
 }: {
   loading: boolean;
-  inviteCount: number;
+  invitations: PendingInvitation[];
+  onAccept: (id: string) => Promise<void>;
   onCreate: () => void;
   onJoin: () => void;
 }) {
+  const [accepting, setAccepting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function accept(id: string) {
+    setAccepting(id);
+    setError(null);
+    try { await onAccept(id); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn’t accept the invitation. Please try again."); setAccepting(null); }
+  }
   return (
-    <main className="vs-scroll grid min-w-0 flex-1 place-items-center overflow-y-auto p-5 sm:p-8">
+    <main className="grid min-w-0 place-items-center py-4 sm:py-10">
       {loading ? (
-        <SpinnerIcon className="h-5 w-5 text-vs-muted" />
+        <p role="status" className="flex items-center gap-2 text-xs text-vs-muted"><SpinnerIcon className="h-4 w-4" /> Loading your teams…</p>
       ) : (
         <div className="workspace-welcome w-full max-w-2xl rounded-2xl border border-vs-border p-5 sm:p-9">
-          <SparkleIcon className="mb-4 h-6 w-6 text-vs-muted" />
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to multicode-ai</p>
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Build together, from the first prompt.</h1>
-          <p className="mt-2 text-xs leading-5 text-vs-muted">
-            Start a task with AI, share the conversation, and let a teammate pick up where you left off.
-            First, create an organisation—a home for your team’s projects—or join an existing one.
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-vs-muted">Welcome to Multicode AI</p>
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">{invitations.length ? "You’ve been invited to a team" : "Start with your team"}</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-vs-muted">
+            A team is your organization in Multicode: the people you work with and the projects you share. Inside a project, each of you gets a room where you and your AI agents work on the code, then review and publish it together.
           </p>
-          <Link href="/shared" className="mt-4 inline-block rounded-lg border border-vs-border px-3 py-2 text-sm text-vs-accent">Open chats shared with me</Link>
-          <ol className="mt-5 grid gap-2.5 text-xs sm:grid-cols-3">
-            {["Create your team’s home", "Add a project and its code", "Build, review, and hand off"].map((step, index) => <li key={step} className="rounded-xl border border-vs-border bg-vs-editor/60 p-2.5"><span className="mb-1.5 block text-[11px] font-semibold text-vs-accent">0{index + 1}</span>{step}</li>)}
-          </ol>
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            <PrimaryButton onClick={onCreate}>
-              <PlusIcon className="h-3.5 w-3.5" /> New organisation
-            </PrimaryButton>
-            <GhostButton onClick={onJoin}>
-              <UserPlusIcon className="h-3.5 w-3.5" /> Join an organisation
-              {inviteCount > 0 && (
-                <span className="rounded-full bg-vs-accent px-1.5 text-[10px] font-semibold text-vs-accent-fg">
-                  {inviteCount}
-                </span>
-              )}
-            </GhostButton>
+          {invitations.length > 0 && (
+            <ul aria-label="Invitations" className="mt-5 space-y-2">
+              {invitations.map((invite) => (
+                <li key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-vs-accent/40 bg-vs-accent/10 p-3.5">
+                  <p className="min-w-0 text-sm leading-5"><strong className="font-semibold">{invite.orgName}</strong><span className="block text-xs text-vs-muted">{invite.invitedByName} invited you as {invite.role === "admin" ? "an admin" : "a member"}.</span></p>
+                  <PrimaryButton disabled={accepting !== null} onClick={() => void accept(invite.id)}>
+                    {accepting === invite.id && <SpinnerIcon className="h-3.5 w-3.5" />} Join {invite.orgName}
+                  </PrimaryButton>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
+          <div className="mt-6 flex flex-wrap items-center gap-2.5">
+            {invitations.length ? (
+              <GhostButton onClick={onCreate}><PlusIcon className="h-3.5 w-3.5" /> Create your own team</GhostButton>
+            ) : (
+              <>
+                <PrimaryButton onClick={onCreate}><PlusIcon className="h-3.5 w-3.5" /> Create your team</PrimaryButton>
+                <GhostButton onClick={onJoin}><UserPlusIcon className="h-3.5 w-3.5" /> Join an existing team</GhostButton>
+              </>
+            )}
           </div>
+          <p className="mt-3 text-xs leading-5 text-vs-muted">
+            {invitations.length ? "Joining puts you in the team. A team admin then adds you to the projects you work on." : "Creating a team makes you its owner: you then add a project, connect your computer and invite teammates, one step at a time. Joining needs an invite link or your connect code."}
+          </p>
+          <p className="mt-4 border-t border-vs-border pt-4 text-xs leading-5 text-vs-muted">
+            Someone shared a single chat with you instead? <Link href="/shared" className="text-vs-accent underline underline-offset-4">Open chats shared with me</Link>
+          </p>
         </div>
       )}
     </main>

@@ -404,6 +404,23 @@ try {
     await writeFile(join(tmpdir(),`multiplayer-computer-setup-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
   }
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  // A team still getting started: one guide with one next step, instead of a second connection prompt.
+  await evaluate('localStorage.clear();window.__model.onboarding={projects:1,codeAdded:true,members:1,pendingInvites:0,projectTeammate:false,myTasks:0,taskPeople:0};window.dispatchEvent(new Event("focus"))');
+  await eventually(()=>evaluate('document.querySelector(\'[data-step][aria-current="step"]\')?.dataset.step==="computer"'),"the guide's next step is connecting a computer");
+  assert.ok(await evaluate('document.querySelector("#guide-heading").closest("section").textContent.includes("2 of 6 done")'),"progress is counted");
+  assert.ok(await evaluate('document.querySelector(\'[data-step="computer"]\').innerText.includes("No computer connected yet.") && document.querySelector(\'[data-step="computer"]\').innerText.includes("One signed-in tool is enough")'),"says why, and that one tool is enough");
+  assert.equal(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\')'),null,"no second, competing connection prompt");
+  assert.equal(await evaluate('[...document.querySelectorAll("main button")].filter(b=>/Connect computer|New project/.test(b.textContent)&&b.checkVisibility()).map(b=>`${b.textContent.trim()}:${b.className.includes("bg-vs-accent")?"primary":"secondary"}`).join("|")'),"New project:secondary|Connect computer:primary","the guide holds the one setup action; the header's steps back");
+  for (const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`the guide fits at ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-guide-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await button("Hide guide");
+  await eventually(()=>evaluate('!document.querySelector("#guide-heading") && !!document.querySelector(\'[aria-label="Computer connection"]\')'),"hidden guide brings the connection status back");
+  assert.equal(await evaluate('localStorage.getItem("multicode.guide.hidden:org:alice")'),"1","hiding is remembered in this browser");
+  await evaluate('localStorage.clear();window.__model.onboarding=undefined');
   await button("Open my room");
   await eventually(()=>evaluate('location.pathname==="/s/modelroomabc" && !!document.querySelector(\'button[title^="Queue context A ·"]\')'),"room opens without a computer");
   await click('button[title^="Queue context A ·"]');
@@ -412,6 +429,8 @@ try {
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="offline"'),"previously connected computer is offline");
   await button("Reconnect computer");
   await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
+  assert.ok(await evaluate('document.querySelector("dialog").innerText.includes("Offline · last connected 1 minute ago")'),"the last connection is a real time");
+  assert.ok(await evaluate('!/years? ago/.test(document.querySelector("dialog").innerText) && document.querySelector("dialog").innerText.includes("closed, paused or asleep")'),"no impossible time; says what offline can mean");
   await click('button[aria-label="Close Your computers"]');
   await evaluate('window.__model.devices[0].online=true;window.__model.aiReady=false;window.__model.emitDevices()');
   await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Set up an AI tool to start")'),"connected computer needs AI setup, said in the message box"); 
