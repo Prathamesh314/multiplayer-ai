@@ -49,6 +49,7 @@ import {
   GitBranchIcon,
   PlusIcon,
   SparkleIcon,
+  ComputerIcon,
   SpinnerIcon,
   TerminalIcon,
   ShieldIcon,
@@ -71,6 +72,8 @@ import type { ComputerStatus } from "../ai/useComputerConnection";
 type AiPanelProps = {
   computerStatus: ComputerStatus;
   onSetUpAi: () => void;
+  /** Opens Your computers, from the message box while no computer is connected. */
+  onConnectComputer?: () => void;
   actionsHost?: HTMLDivElement | null;
   onShowConversation?: () => void;
   sessionId: string;
@@ -164,6 +167,7 @@ export function AiPanel({
   onOpenChat,
   computerStatus,
   onSetUpAi,
+  onConnectComputer,
   actionsHost,
   onShowConversation,
   sessionId,
@@ -1220,7 +1224,9 @@ export function AiPanel({
           attachTo={sessionId}
           files={files}
           // Said where you type rather than as a strip across the chat.
-          notice={needsAiSetup ? <SetUpAiNotice onSetUp={onSetUpAi} /> : undefined}
+          notice={needsAiSetup ? <SetUpAiNotice onSetUp={onSetUpAi} />
+            : computerUnavailable && canRun && computerStatus !== "checking" ? <ConnectComputerNotice status={computerStatus} onConnect={onConnectComputer} />
+            : undefined}
         />
         </>
       )}
@@ -1891,7 +1897,7 @@ function EmptyState({
         <p className="mt-1.5 max-w-sm text-xs leading-5 text-vs-muted">
           {ready
             ? hasFiles ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed. You can also ask AI to build something from scratch.`
-            : computerUnavailable ? "Use the computer connection button above to get started. You can open your saved conversations and browse files while your computer is offline."
+            : computerUnavailable ? "AI runs on your computer, so connect it from the message box below. Until then you can read saved chats, browse files and review changes."
             : "Set up an AI tool on your computer, then choose it in the message box. Your saved conversations and files are available now."}
         </p>
       </div>
@@ -2022,6 +2028,30 @@ function StatusDot({ ok }: { ok: boolean }) {
 }
 
 /** The composer's top row when no AI tool is set up on the connected computer. */
+/** Where you'd type while no computer can run AI: why sending is off, and the way back. */
+function ConnectComputerNotice({ status, onConnect }: { status: ComputerStatus; onConnect?: () => void }) {
+  const [title, detail, action] = status === "offline" ? ["Your computer is offline", "It is closed, paused or asleep. Reconnect it to send this message.", "Reconnect"]
+    : status === "update" ? ["Update your computer’s connection", "Its app or runner is older than this workspace. Update it to send messages.", "Update"]
+    : status === "error" ? ["Couldn’t check your computer", "Check your internet connection, then try again.", "Check again"]
+    : ["Connect your computer to send messages", "AI runs on your computer with your own AI tools. Reading and reviewing work without it.", "Connect computer"];
+  return (
+    <div role="status" className="flex items-center gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vs-accent/12 text-vs-accent">
+        <ComputerIcon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12.5px] font-medium text-vs-fg">{title}</p>
+        <p className="text-[11.5px] leading-4 text-vs-muted">{detail}</p>
+      </div>
+      {onConnect && (
+        <button type="button" onClick={onConnect} className="shrink-0 whitespace-nowrap rounded-lg bg-vs-accent px-3 py-1.5 text-xs font-medium text-vs-accent-fg transition hover:opacity-90">
+          {action}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SetUpAiNotice({ onSetUp }: { onSetUp?: () => void }) {
   return (
     <div role="status" className="flex items-center gap-3">
