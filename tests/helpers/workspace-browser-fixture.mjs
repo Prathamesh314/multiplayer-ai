@@ -63,8 +63,8 @@ export function installFixtures() {
       const comment={...JSON.parse(init.body),seq:state.feedback.length+1,authorName:'Alice',createdAt:new Date().toISOString()};state.feedback.push(comment);return json(comment);
     }
     if (path === "/api/auth/me") return json({user:{id:"alice",handle:"alice",displayName:"Alice",email:"alice@example.test"}});
-    if (path === "/api/orgs") return json({orgs:[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
-    if (path === "/api/invitations") return json({invitations:[]});
+    if (path === "/api/orgs") return json({orgs:state.orgs??[{id:"org",slug:"team",name:"Alice’s workspace",myRole:"owner",createdAt:1}]});
+    if (path === "/api/invitations") return json({invitations:state.invitations??[]});
     if (path.endsWith("/projects")) return json({projects:[{id:"project",slug:"project",name:"My project",orgId:"org",myRole:"manager",createdAt:1,archivedAt:null}]});
     if (path.endsWith("/rooms")) return json({sessions:[room]});
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});

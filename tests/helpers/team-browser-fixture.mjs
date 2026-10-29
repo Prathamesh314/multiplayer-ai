@@ -58,6 +58,8 @@ export function installFixtures() {
     if (path === "/api/orgs/northstar/settings") { Object.assign(org, JSON.parse(init.body)); return json(org); }
     if (path === "/api/invitations") return json({invitations:[]});
     if ((init.method ?? "GET") === "GET" && ["/api/collaboration/inbox", "/api/collaboration/access-requests"].includes(path)) return json({items:[],hasMore:false});
+    // Established teams: everything done, so the getting-started guide never shows.
+    if (path.endsWith("/onboarding")) return json({projects:2,codeAdded:true,members:3,pendingInvites:0,projectTeammate:true,myTasks:4,taskPeople:3});
     if (path.endsWith("/usage")) return json({concurrency:{used:0,limit:3},monthly:{used:0,limit:null}});
     if (path.endsWith("/projects")) return json({projects:[{id:"checkout",orgId:org.id,slug:"checkout",name:"Northstar Checkout",source:"local",githubRepo:null,defaultBranch:"main",upstreamUrl:null,myRole:"manager",createdAt:0,archivedAt:null}]});
     if (path.endsWith("/rooms")) return json({sessions:[{id:"alex-room",name:"Checkout · Alex",ownerId:"alex",visibility:"public"},{id:"priya-room",name:"Checkout · Priya",ownerId:"priya",visibility:"public"}]});

@@ -108,7 +108,8 @@ export function guideSteps({ org, progress, connection, aiReady, firstProject, o
       id: "computer",
       title: "Connect your computer and one AI tool",
       why: "AI tasks run on your computer, with your own Claude Code, Codex or Gemini sign-in. One signed-in tool is enough. Reading, reviewing and inviting work without it.",
-      done: computerReady,
+      // Once you've finished a task it has been done; whether it's online now is the status bar's job.
+      done: computerReady || progress.myTasks > 0,
       state: connection.status === "checking" ? "Checking your computer…"
         : connection.status === "error" ? "Couldn’t check your computer. Check your internet connection."
         : connection.status === "offline" ? `${connection.computer?.name ?? "Your computer"} is offline: closed, paused or asleep.`
@@ -148,7 +149,7 @@ export function guideSteps({ org, progress, connection, aiReady, firstProject, o
   return steps;
 }
 
-export function GettingStarted({ org, userId, progress, connection, projects, onNewProject, onInvite, onOpenRoom, onManageMembers, onConnectComputer, onSetUpAi, onVisible }: {
+export function GettingStarted({ org, userId, progress, connection, projects, onNewProject, onInvite, onOpenRoom, onManageMembers, onConnectComputer, onSetUpAi, onVisible, onCoversConnection }: {
   org: Org;
   userId: string;
   progress: OrgOnboarding | null;
@@ -161,8 +162,10 @@ export function GettingStarted({ org, userId, progress, connection, projects, on
   onManageMembers: (project: Project) => void;
   onConnectComputer: () => void;
   onSetUpAi: () => void;
-  /** Whether the guide is showing, so the page can drop prompts it repeats. */
+  /** Whether the guide is showing, so the page can step its own buttons back. */
   onVisible?: (visible: boolean) => void;
+  /** Whether the guide shows connecting as a step to come, so the page can drop its own prompt for it. */
+  onCoversConnection?: (covers: boolean) => void;
 }) {
   const aiReady = useAiReady(connection);
   const [hidden, setHidden] = useState(() => {
@@ -175,7 +178,9 @@ export function GettingStarted({ org, userId, progress, connection, projects, on
   const done = steps.filter(step => step.done).length;
   const current = steps.find(step => !step.done) ?? null;
   const visible = !!progress && !hidden && current !== null;
+  const covers = visible && steps.some(step => step.id === "computer" && !step.done);
   useEffect(() => { onVisible?.(visible); }, [visible, onVisible]);
+  useEffect(() => { onCoversConnection?.(covers); }, [covers, onCoversConnection]);
   if (!visible) return null;
 
   async function run(step: Step) {

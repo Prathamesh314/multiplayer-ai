@@ -680,6 +680,31 @@ try {
   await send("Page.reload",{});
   await eventually(()=>evaluate('!!document.body && !!window.__model'),"reloaded");await delay(500);
   assert.equal(await evaluate('!!document.querySelector(\'section[aria-label="Desktop update"]\')'),false,"closed stays closed until the app restarts");
+  // Someone with no team yet, invited to one: joining it is the one primary action.
+  await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.__model.orgs=[];window.__model.invitations=[{id:"invite-1",orgId:"org-2",orgName:"Northwind",orgSlug:"northwind",role:"member",invitedByName:"Bob Builder",createdAt:1,expiresAt:Date.now()+86400000}];`});
+  await send("Page.navigate",{url:base+"/workspace"});
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent==="You’ve been invited to a team"'),"an invitation leads the first screen");
+  const firstScreen=()=>evaluate('[...document.querySelectorAll("main button")].filter(b=>b.checkVisibility()).map(b=>`${b.textContent.trim()}:${b.className.includes("bg-vs-accent")?"primary":"secondary"}`).join("|")');
+  assert.equal(await firstScreen(),"Join Northwind:primary|Create your own team:secondary");
+  assert.ok(await evaluate('document.querySelector("main").innerText.includes("Bob Builder invited you as a member.") && document.querySelector("main").innerText.includes("A team admin then adds you to the projects")'),"says who invited them, and what joining gives");
+  // Nothing competes with that choice: no computer setup, no empty task list.
+  assert.equal(await evaluate('document.querySelector(\'[aria-label="Computer connection"]\')'),null,"no computer prompt before there is a team");
+  assert.equal(await evaluate('/My tasks/.test(document.body.innerText)'),false,"no empty task list for someone new");
+  // Brand new, no invitation: create a team, or join one.
+  await send("Page.addScriptToEvaluateOnNewDocument",{source:`window.__model.invitations=[];`});
+  await send("Page.navigate",{url:base+"/workspace"});
+  await eventually(()=>evaluate('document.querySelector("main h1")?.textContent==="Start with your team"'),"a new person's first screen");
+  assert.equal(await firstScreen(),"Create your team:primary|Join an existing team:secondary");
+  assert.ok(await evaluate('document.querySelector("main").innerText.includes("A team is your organization in Multicode")'),"says what a team is");
+  for (const width of [1440,390]) {
+    await send("Emulation.setDeviceMetricsOverride",{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(200);
+    assert.ok(await evaluate('document.documentElement.scrollWidth <= innerWidth'),`the first screen fits at ${width}`);
+    await writeFile(join(tmpdir(),`multiplayer-first-screen-${width}.png`),Buffer.from((await send("Page.captureScreenshot")).data,"base64"));
+  }
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await evaluate(`[...document.querySelectorAll("main button")].find(b=>b.textContent.trim()==="Create your team").click()`);
+  await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Your team (organization) holds your projects")'),"creating a team says what it is");
+  await evaluate(`[...document.querySelectorAll("dialog button")].find(b=>b.textContent.trim()==="Cancel").click()`);
   assert.deepEqual(errors,[]);
   assert.deepEqual(await evaluate("window.__model.unknown"),[]);
   console.log("PASS: conversation-space creation, retry and duplicate errors, conversation starters, computer onboarding, offline chat access, connection and AI discovery recovery, back/forward save protection, chat drafts, repositories, queue routing, desktop/mobile layouts.");

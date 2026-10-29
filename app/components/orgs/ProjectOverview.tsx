@@ -47,8 +47,11 @@ async function myRoomIn(org: Org, project: Project, me: CurrentUser): Promise<st
 export function ProjectOverview({ computerConnection, org, me, projects, error, onRetry, onNewProject, onInvite, onManageMembers, onConnections, onOpenRoom, onConnectAi, onConnectComputer, handoffs, guideRevision = 0 }: Props) {
   const [search, setSearch] = useState("");
   const progress = useOnboarding(org.slug, `${projects?.length ?? -1}:${guideRevision}`);
+  // Whether the guide is showing, and whether it holds the computer connection as a step to come.
   const [guideShown, setGuideShown] = useState(false);
+  const [guideConnects, setGuideConnects] = useState(false);
   const onGuideVisible = useCallback((visible: boolean) => setGuideShown(visible), []);
+  const onGuideConnects = useCallback((covers: boolean) => setGuideConnects(covers), []);
   const visible = projects?.filter((project) =>
     project.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
@@ -79,11 +82,11 @@ export function ProjectOverview({ computerConnection, org, me, projects, error, 
         </header>
 
         {/* The guide has its own connection step; a failed check stays visible either way. */}
-        {(!guideShown || computerConnection.status === "error") && <ComputerConnectionNotice bar connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />}
+        {(!guideConnects || computerConnection.status === "error") && <ComputerConnectionNotice bar connection={computerConnection} onConnect={onConnectComputer} onSetUpAi={onConnectAi} />}
 
         {me && <GettingStarted org={org} userId={me.id} progress={progress} connection={computerConnection} projects={projects}
           onNewProject={onNewProject} onInvite={onInvite} onManageMembers={onManageMembers} onConnectComputer={onConnectComputer} onSetUpAi={onConnectAi}
-          onOpenRoom={async (project) => onOpenRoom(await myRoomIn(org, project, me))} onVisible={onGuideVisible} />}
+          onOpenRoom={async (project) => onOpenRoom(await myRoomIn(org, project, me))} onVisible={onGuideVisible} onCoversConnection={onGuideConnects} />}
 
         {me && <ActionQueue key={me.id} userId={me.id} handoffs={handoffs} />}
 

@@ -118,6 +118,9 @@ test("the guide shows one next step for each state, with an action that fits it"
   assert.match(next(list).state, /An invitation is waiting to be accepted/);
   assert.equal(next(list).action.label, "Invite a teammate");
 
+  // Having finished a task, an offline computer is a status to fix, not a setup step to repeat.
+  assert.equal(steps("owner", { projects: 1, codeAdded: true, myTasks: 1 }, "offline").find(step => step.id === "computer").done, true);
+
   // Starting without files counts as having started: a finished task means code isn't blocking.
   assert.equal(steps("owner", { projects: 1, myTasks: 1 }).find(step => step.id === "code").done, true);
 

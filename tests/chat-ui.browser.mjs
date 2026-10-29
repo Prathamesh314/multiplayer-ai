@@ -112,6 +112,7 @@ try {
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'1',code:'Digit1',windowsVirtualKeyCode:49,modifiers:2});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'1',code:'Digit1',windowsVirtualKeyCode:49,modifiers:2});
   await eventually(()=>evaluate('document.querySelector("main h1")?.textContent === "Northstar Studio"'),"keyboard shortcut switches organisations");
+  assert.equal(await evaluate('document.querySelector("#guide-heading")'),null,"a team already working together never sees the getting-started guide");
   // The current organisation's own actions live in the switcher, for those who manage it.
   await click(switcher);
   assert.deepEqual(await evaluate('[...document.querySelectorAll("[role=menu][aria-label=Teams] [role=menuitem]")].map(e=>e.textContent.trim())'),
