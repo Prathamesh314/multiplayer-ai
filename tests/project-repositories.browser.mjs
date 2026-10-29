@@ -363,6 +363,11 @@ try {
   await eventually(()=>evaluate('document.querySelector(".human-message")?.textContent.includes("Review the repository")'),"saved chat opens without a computer");
   assert.ok(await evaluate('document.querySelector(".conversation-transcript").getBoundingClientRect().height > 100'),"offline setup does not hide the conversation");
   assert.ok(await evaluate('document.querySelector(\'button[aria-label="Send message"]\').disabled'),"AI execution needs a computer");
+  // Said where you type, with the way back: why sending is off, and what still works.
+  assert.ok(await evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Connect your computer to send messages") && document.querySelector(".ai-composer [role=status]").innerText.includes("Reading and reviewing work without it")'),"the message box says why it is off");
+  await evaluate('[...document.querySelectorAll(".ai-composer button")].find(b=>b.textContent.trim()==="Connect computer").click()');
+  await eventually(()=>evaluate('!!document.querySelector(\'dialog button[aria-label="Copy pair command"]\')'),"its action opens the connection steps");
+  await click('button[aria-label="Close Your computers"]');
   await evaluate(`window.__model.orgOnline=[{userId:"alice",handle:"alice",displayName:"Alice",avatarUrl:null,isSelf:true},{userId:"bob",handle:"bob",displayName:"Bob Builder",avatarUrl:null,isSelf:false},{userId:"carol",handle:"carol",displayName:"Carol Diaz",avatarUrl:null,isSelf:false}]`);
   await click('button[title="Back to projects"]');
   await eventually(()=>evaluate('location.pathname==="/workspace" && !!document.querySelector("main h1")'),"workspace overview");
@@ -427,6 +432,7 @@ try {
   await eventually(()=>evaluate('!!document.querySelector(".human-message")'),"history remains readable");
   await evaluate('window.__model.devices=[{id:"computer-1",userId:"alice",name:"Alice’s Mac",version:"2",online:false,lastSeenAt:Date.now()-60000}];window.__model.emitDevices()');
   await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="offline"'),"previously connected computer is offline");
+  await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Your computer is offline")'),"the message box says the computer is offline, with Reconnect");
   await button("Reconnect computer");
   await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
   assert.ok(await evaluate('document.querySelector("dialog").innerText.includes("Offline · last connected 1 minute ago")'),"the last connection is a real time");
