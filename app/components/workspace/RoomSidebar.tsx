@@ -197,11 +197,12 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
       <div
         key={run.id}
         className={`group flex w-full min-w-0 items-center gap-1 rounded-lg pr-1 transition ${
-          active ? "bg-vs-active" : "hover:bg-vs-hover"
+          active ? "bg-vs-active shadow-[inset_2px_0_0_var(--vs-accent)]" : "hover:bg-vs-hover"
         }`}
       >
         <button
           type="button"
+          aria-current={active ? "page" : undefined}
           onClick={() => onEnter(run)}
           onDoubleClick={() => {
             if (self && !archived) {
@@ -216,11 +217,12 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
         >
           <ChatOwner run={run} owner={owner} />
           <RunTitle runId={run.id} title={run.title ?? `${run.agentId} run`} />
+          {RUN_STATUS[run.status] && <span className="sr-only">, {RUN_STATUS[run.status]}</span>}
           <DiffStat added={run.addedLines} removed={run.removedLines} />
           <BranchChip run={run} />
         </button>
 
-        <div className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
+        <div className="room-chat-actions hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
           <IconButton
             onClick={() => copyPath(run)}
             title={`Copy chat path (@${roomName}/…) to reference it from another room`}
@@ -318,6 +320,9 @@ export function RoomSidebar({ sessionId, roomName, members, myUserId, runs, repo
   );
 }
 
+/** What a chat row's ring or dot means, said to a screen reader. */
+const RUN_STATUS: Partial<Record<AgentRun["status"], string>> = { running: "AI working", queued: "waiting to start", failed: "last task failed" };
+
 /**
  * A chat's name in the list, cross-faded when it changes — so the row a
  * freshly started chat occupies visibly settles on its name rather than
@@ -346,7 +351,7 @@ function IconButton({
       onClick={onClick}
       title={title}
       aria-label={label}
-      className="shrink-0 rounded p-1 text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg"
     >
       {children}
     </button>
@@ -407,6 +412,9 @@ function ChatOwner({ run, owner }: { run: AgentRun; owner: ChatOwnerInfo }) {
       <Avatar person={owner} size="xs" />
       {run.status === "running" && (
         <span className="absolute -inset-[3px] animate-spin rounded-full border-2 border-vs-warn border-t-transparent motion-reduce:animate-none" />
+      )}
+      {run.status === "queued" && (
+        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-vs-muted ring-2 ring-vs-panel" />
       )}
       {run.status === "failed" && (
         <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-vs-danger ring-2 ring-vs-panel" />

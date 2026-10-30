@@ -110,7 +110,7 @@ export function ExplorerPanel({
             </TabButton>
             <TabButton active={view === "changes"} onClick={() => setView("changes")}>
               Changes
-              {changeCount > 0 && <span className="tabular-nums text-vs-muted">{changeCount}</span>}
+              {changeCount > 0 && <span className="rounded-full bg-vs-accent/15 px-1.5 tabular-nums text-vs-accent">{changeCount}</span>}
               {changes?.live ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-vs-accent" title="An agent is changing files" /> : null}
             </TabButton>
           </div>

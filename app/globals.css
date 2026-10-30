@@ -154,8 +154,7 @@ body {
 .presence-pop { animation: presence-pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
 @media (prefers-reduced-motion: reduce) { .presence-pop { animation: none; } }
 
-.room-toolbar { min-height: 64px; }
-.room-toolbar-actions > button, .room-toolbar-actions > div > button { min-height: 34px; border-radius: 8px; }
+.room-toolbar { min-height: 48px; }
 .room-main { container-type: inline-size; }
 .ai-chat-header { padding: 16px 20px 8px; }
 .ai-chat-nav { padding: 0 14px 6px; }
@@ -167,10 +166,6 @@ body {
   .ai-chat-header { padding: 12px 12px 6px; }
   .ai-chat-nav { padding: 0 6px 4px; }
   .ai-composer { padding: 10px 12px; }
-}
-@media (max-width: 767px) {
-  .room-toolbar-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
-  .room-toolbar-actions > * { flex-shrink: 0; }
 }
 
 /* Fields use their existing border (or the wrapper's focus-within border),
@@ -246,22 +241,26 @@ body {
 /* Session layout; colors come from the shared workspace palette above. Sized
    to Conductor's density — small text, tight chrome, little wasted padding. */
 .session-workspace { font-size: 12px; }
-.session-workspace .room-toolbar { min-height: 32px; padding: 3px 10px; gap: 6px; }
-.session-workspace .room-toolbar-actions { width: auto; gap: 3px; }
-.session-workspace .room-toolbar-actions > button { min-height: 22px; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
-.session-workspace .room-sidebar { display: flex; width: clamp(190px, 14vw, 270px); max-width: 24%; flex: none; }
-.session-workspace .room-main { display: flex; min-width: 360px; }
-.session-workspace .room-explorer-panel { display: flex; min-width: 330px; max-width: 42%; flex: 0 1 auto; background: var(--vs-editor); }
+.session-workspace .room-toolbar { min-height: 44px; }
+/* Three columns only where they fit; below that one pane at a time, chosen
+   from Room views, so the conversation is never squeezed or scrolled sideways. */
+@media (min-width: 1024px) {
+  .session-workspace .room-sidebar { width: clamp(200px, 15vw, 260px); max-width: 24%; flex: none; }
+  .session-workspace .room-main { min-width: 360px; }
+  .session-workspace .room-explorer-panel { min-width: 300px; max-width: 40%; flex: 0 1 auto; }
+}
+.session-workspace .room-explorer-panel { background: var(--vs-editor); }
 .session-workspace .session-panels { min-height: 0; }
 .session-workspace .ai-chat-header { padding: 6px 16px 4px; gap: 6px; }
 .session-workspace .ai-chat-nav { padding: 0 10px 4px; }
 .session-workspace .ai-chat-header h2 { font-size: 12px; font-weight: 400; }
 .session-workspace .ai-chat-header > div:first-child > div { margin-top: 2px; font-size: 10px; }
 .session-workspace .ai-composer { padding: 10px 20px 14px; }
-.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 14px; background: var(--vs-chrome); }
+.session-workspace .ai-composer > div > .rounded-2xl { border-radius: 14px; background: var(--vs-chrome); border-color: color-mix(in srgb, var(--vs-fg) 30%, var(--vs-editor)); transition: border-color 140ms ease; }
+.session-workspace .ai-composer > div > .rounded-2xl:focus-within { border-color: var(--vs-accent); }
 .session-workspace .ai-composer textarea { font-size: 14px; line-height: 1.6; min-height: 80px; }
 .session-workspace .ai-composer-footer { border-top: 0; margin-top: 12px; }
-.session-workspace .ai-composer button[aria-label="Send message"] { width: 26px; height: 26px; border-radius: 7px; }
+.session-workspace .ai-composer button[aria-label="Send message"] { width: 32px; height: 32px; border-radius: 9px; }
 /* The reading surface is deliberately larger than the surrounding chrome.
    Toolbars and sidebars stay at 11–12px because they are glanced at; a long
    agent answer is *read*, and 12px prose with tight leading is what made this
@@ -277,9 +276,6 @@ body {
 .session-workspace .room-editor-layout > [role="tablist"] > div { border-right: 0; border-top: 0; }
 .session-workspace .room-editor-layout > [role="tablist"] > div:has([aria-selected="true"]) { border-bottom: 2px solid var(--vs-accent); background: transparent; }
 @media (max-width: 1023px) {
-  .session-workspace .room-sidebar { width: 200px !important; max-width: none; flex: 0 0 200px; }
-  .session-workspace .room-explorer-panel { width: 350px !important; max-width: none; flex: 0 0 350px; }
-  .session-workspace .room-main { flex: 1 0 360px; }
   .session-workspace .ai-composer { padding: 10px; }
   .session-workspace .conversation-transcript { padding-inline: 16px; }
 }
@@ -395,3 +391,8 @@ body {
 .md-callout-warning { --md-tone: var(--md-warning); }
 .md-callout-caution { --md-tone: var(--md-caution); }
 .md-callout-title { color: var(--md-tone); }
+
+/* Chat rows reveal their actions on hover; a touch screen has no hover, so they stay shown. */
+@media (hover: none) {
+  .room-chat-actions { display: flex; }
+}

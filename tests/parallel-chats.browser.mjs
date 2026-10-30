@@ -197,6 +197,9 @@ try {
 
   // The terminal opens on the member's computer, in the chat's worktree.
   const terminalHeader = `document.querySelector('button[aria-label="New terminal"]')?.closest('header')`;
+  // An idle terminal starts collapsed; it opens when asked for.
+  assert.equal(await evaluate(`!!${terminalHeader}`), false, "the terminal starts collapsed");
+  await evaluate(`document.querySelector('button[title="Open a terminal (Ctrl+\`)"]').click()`);
   await eventually(() => evaluate(`!!${terminalHeader}`), "terminal panel");
   await eventually(() => evaluate(`document.body.innerText.includes("Terminal disabled in browser fixture")`), "terminal without a computer explains why");
   await evaluate(`window.__model.terminal={enabled:true,location:"computer",device:"Alice’s Mac",cwd:"",shell:"",platform:""}`);
@@ -224,6 +227,19 @@ try {
   assert.equal(runRequest.isolation, "isolated");
   assert.equal(runRequest.repoId, "frontendabcd");
   assert.equal(runRequest.runId, undefined, "a parallel chat is a new chat");
+
+  // The terminal comes back as it was left: open after a reload, collapsed once closed.
+  const reload = async () => {
+    await evaluate("window.__beforeReload = true");
+    await send("Page.reload");
+    await eventually(() => evaluate("!window.__beforeReload && !!window.__model && document.body.innerText.includes('Parallel login fix')"), "room reloads");
+  };
+  await reload();
+  await eventually(() => evaluate(`!!${terminalHeader}`), "an open terminal stays open after a reload");
+  await evaluate(`document.querySelector('button[aria-label="Close terminal"]').click()`);
+  await reload();
+  await delay(500);
+  assert.equal(await evaluate(`!!${terminalHeader}`), false, "a closed terminal stays closed after a reload");
 
   assert.deepEqual(errors, []);
   assert.deepEqual(await evaluate("window.__model.unknown"), []);

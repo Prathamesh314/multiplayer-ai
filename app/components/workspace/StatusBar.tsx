@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { humanBytes, humanCount } from "../../lib/format";
 import type { ScanResult } from "../../lib/types";
 import { GitBranchIcon } from "../icons";
@@ -31,6 +32,10 @@ export function StatusBar({
   onReconnect,
 }: StatusBarProps) {
   const git = result?.git;
+  // Before the first connection the room is connecting, not reconnecting.
+  const [connectedOnce, setConnectedOnce] = useState(live);
+  if (live && !connectedOnce) setConnectedOnce(true);
+  const liveLabel = live ? "Live" : connectedOnce ? "Reconnecting…" : "Connecting…";
 
   return (
     <footer className="flex h-6 shrink-0 items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-vs-border bg-vs-chrome px-2.5 text-[10px] text-vs-muted sm:text-[11px]">
@@ -46,19 +51,22 @@ export function StatusBar({
       {headSha && (
         <span className="flex items-center gap-1.5">
           <span
+            role="status"
             title={
               live
                 ? "Connected — changes from other people appear as they are saved."
-                : "Reconnecting. Changes made elsewhere will not appear until this recovers."
+                : connectedOnce ? "Reconnecting. Changes made elsewhere will not appear until this recovers."
+                : "Connecting to the room’s live updates."
             }
             className="flex items-center gap-1.5"
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${live ? "bg-vs-success" : "bg-vs-warn"}`}
+              aria-hidden
+              className={`h-1.5 w-1.5 rounded-full transition-colors ${live ? "bg-vs-success" : connectedOnce ? "bg-vs-warn" : "bg-vs-muted"}`}
             />
-            {live ? "live" : "reconnecting"}
+            {liveLabel}
           </span>
-          {!live && (
+          {!live && connectedOnce && (
             <button
               type="button"
               onClick={onReconnect}

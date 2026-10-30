@@ -180,7 +180,7 @@ export function Composer({
   const [highlight, setHighlight] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const caretRef = useRef(0);
-  const [pendingCaret, setPendingCaret] = useState<number | null>(null);
+  const [pendingCaret, setPendingCaret] = useState<[number, number] | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<MentionPerson | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [taskMessage, setTaskMessage] = useState("");
@@ -195,7 +195,9 @@ export function Composer({
       const next = draft.trim() ? `${draft}\n\n${text}` : text;
       setDraft(next);
       setMention(null);
-      setPendingCaret(next.length);
+      // A "[describe it]" blank is selected, so typing replaces it; otherwise the caret goes to the end.
+      const start = next.length - text.length, open = text.indexOf("["), close = text.indexOf("]", open);
+      setPendingCaret(open >= 0 && close > open ? [start + open, start + close + 1] : [next.length, next.length]);
     },
   }), [draft]);
 
@@ -208,7 +210,7 @@ export function Composer({
   useEffect(() => {
     if (pendingCaret == null || !taRef.current) return;
     taRef.current.focus();
-    taRef.current.setSelectionRange(pendingCaret, pendingCaret);
+    taRef.current.setSelectionRange(...pendingCaret);
     setPendingCaret(null);
   }, [pendingCaret, draft]);
 
@@ -330,7 +332,7 @@ export function Composer({
     setDraft(next);
     const caret = at + insert.length;
     caretRef.current = caret;
-    setPendingCaret(caret);
+    setPendingCaret([caret, caret]);
     return caret;
   }
 
