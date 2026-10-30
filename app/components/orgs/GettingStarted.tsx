@@ -84,26 +84,7 @@ export function guideSteps({ org, progress, connection, aiReady, firstProject, o
   const openRoom = firstProject ? { label: "Open my room", run: () => onOpenRoom(firstProject) } : undefined;
   const computerReady = connection.status === "connected" && aiReady === true;
   const steps: Step[] = [
-    manager ? {
-      id: "project",
-      title: "Create a project",
-      why: "A project holds your team’s code. Everyone on it gets a room of their own, with its own Git branch, so nobody’s experiment touches the project until it is published.",
-      done: progress.projects > 0,
-      action: { label: "Create a project", run: onNewProject },
-    } : {
-      id: "project",
-      title: "Get added to a project",
-      why: "A team admin adds you to a project. You then get your own room in it, where you and your AI agents work.",
-      done: progress.projects > 0,
-      state: "Ask a team admin to add you from the project’s Members. This page updates when they do.",
-    },
-    {
-      id: "code",
-      title: "Add your code",
-      why: "Agents work on the code in your room. Add a repository or a folder from your computer, or start without files to plan or brainstorm.",
-      done: progress.codeAdded || progress.myTasks > 0,
-      action: openRoom,
-    },
+    // First, because everything after it (opening a room, running a task) needs it to send anything to AI.
     {
       id: "computer",
       title: "Connect your computer and one AI tool",
@@ -120,6 +101,26 @@ export function guideSteps({ org, progress, connection, aiReady, firstProject, o
         : connection.status === "connected" ? { label: "Set up AI", run: onSetUpAi }
         : connection.status === "checking" ? undefined
         : { label: connection.status === "offline" ? "Reconnect computer" : connection.status === "update" ? "Update computer" : "Connect computer", run: onConnectComputer },
+    },
+    manager ? {
+      id: "project",
+      title: "Create a project",
+      why: "A project holds your team’s code. Everyone on it gets a room of their own, with its own Git branch, so nobody’s experiment touches the project until it is published.",
+      done: progress.projects > 0,
+      action: { label: "Create a project", run: onNewProject },
+    } : {
+      id: "project",
+      title: "Get added to a project",
+      why: "A team admin adds you to a project. You then get your own room in it, where you and your AI agents work.",
+      done: progress.projects > 0,
+      state: "Ask a team admin to add you from the project’s Members. This page updates when they do.",
+    },
+    {
+      id: "code",
+      title: "Open your room and add your code",
+      why: "Your room is your own space in the project, on its own Git branch. Open it and add a repository or a folder from your computer for agents to work on, or start without files to plan or brainstorm.",
+      done: progress.codeAdded || progress.myTasks > 0,
+      action: openRoom,
     },
     {
       id: "task",

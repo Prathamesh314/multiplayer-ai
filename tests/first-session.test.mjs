@@ -89,9 +89,17 @@ const next = list => list.find(step => !step.done);
 test("the guide shows one next step for each state, with an action that fits it", () => {
   // A brand-new owner: create a project first.
   let list = steps("owner", {});
-  assert.deepEqual(list.map(step => step.id), ["project", "code", "computer", "task", "invite", "together"]);
+  assert.deepEqual(list.map(step => step.id), ["computer", "project", "code", "task", "invite", "together"]);
+  assert.equal(next(list).id, "computer", "connecting your computer comes first");
+  assert.equal(next(list).action.label, "Connect computer");
+  // Connected and an AI tool signed in: create a project, then open your room.
+  list = steps("owner", {}, "connected", true);
   assert.equal(next(list).id, "project");
   assert.equal(next(list).action.label, "Create a project");
+  list = steps("owner", { projects: 1 }, "connected", true);
+  assert.equal(next(list).id, "code");
+  assert.equal(next(list).title, "Open your room and add your code");
+  assert.equal(next(list).action.label, "Open my room");
 
   // Project made, code added, computer offline: reconnect, with the reason.
   list = steps("owner", { projects: 1, codeAdded: true }, "offline");
@@ -130,10 +138,12 @@ test("the guide shows one next step for each state, with an action that fits it"
 
 test("a member who joined sees how to get into a project, and no invite step they can't take", () => {
   const list = steps("member", { members: 4 });
-  assert.deepEqual(list.map(step => step.id), ["project", "code", "computer", "task", "together"]);
-  assert.equal(next(list).title, "Get added to a project");
-  assert.equal(next(list).action, undefined);
-  assert.match(next(list).state, /Ask a team admin to add you/);
+  assert.deepEqual(list.map(step => step.id), ["computer", "project", "code", "task", "together"]);
+  assert.equal(next(list).id, "computer");
+  const waiting = next(steps("member", { members: 4 }, "connected", true));
+  assert.equal(waiting.title, "Get added to a project");
+  assert.equal(waiting.action, undefined);
+  assert.match(waiting.state, /Ask a team admin to add you/);
 });
 
 test("times are never impossible: milliseconds, missing, invalid and future values", () => {

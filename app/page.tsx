@@ -128,7 +128,7 @@ export default function Home() {
               <Link href={start.href} className={styles.primaryButton}>{start.label} <Arrow /></Link>
               <a href="#download" className={styles.secondaryButton}>Download the desktop app <Arrow down /></a>
               <p className={styles.heroNote}>
-                Create an account in your browser. A short guide then takes you through your first project, connecting your computer, and inviting a teammate. Invited to a team? Open your invitation link instead.
+                Create an account in your browser. A short guide then takes you through connecting your computer, your first project, and inviting a teammate. Invited to a team? Open your invitation link instead.
                 <span className={styles.heroNoteMeta}>Already have an account? <Link href="/workspace">Sign in</Link></span>
               </p>
             </div>

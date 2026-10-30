@@ -815,7 +815,7 @@ function EmptyState({
             )}
           </div>
           <p className="mt-3 text-xs leading-5 text-vs-muted">
-            {invitations.length ? "Joining puts you in the team. A team admin then adds you to the projects you work on." : "Creating a team makes you its owner: you then add a project, connect your computer and invite teammates, one step at a time. Joining needs an invite link or your connect code."}
+            {invitations.length ? "Joining puts you in the team. A team admin then adds you to the projects you work on." : "Creating a team makes you its owner: you then connect your computer, add a project and invite teammates, one step at a time. Joining needs an invite link or your connect code."}
           </p>
           <p className="mt-4 border-t border-vs-border pt-4 text-xs leading-5 text-vs-muted">
             Someone shared a single chat with you instead? <Link href="/shared" className="text-vs-accent underline underline-offset-4">Open chats shared with me</Link>
