@@ -53,13 +53,12 @@ import { useRoomRuns } from "./useRoomRuns";
 import { useRoomChanges } from "./useRoomChanges";
 import { TerminalPanel } from "./TerminalPanel";
 import { AddRepositoryDialog } from "./AddRepositoryDialog";
-import { TopBar } from "./TopBar";
+import { RoomViews, TopBar } from "./TopBar";
 import { usePeople } from "./usePeople";
 import { WelcomeView } from "./WelcomeView";
 import { RoomGuide, type RoomGuideAction } from "./RoomGuide";
 import { ConnectAiDialog } from "../ai/ConnectAiDialog";
 import { DevicesDialog } from "../ai/DevicesDialog";
-import { ComputerConnectionNotice } from "../ai/ComputerConnectionNotice";
 import { useComputerConnection } from "../ai/useComputerConnection";
 import { MemoryDialog } from "./MemoryDialog";
 
@@ -70,6 +69,20 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 const noopSubscribe = () => () => {};
 const hasPicker = () => !!window.showDirectoryPicker;
 const noPicker = () => false;
+
+// Whether the terminal is open, and how tall, is this browser's preference:
+// a reload brings it back as it was. Read on mount, which is safe because the
+// workspace only renders on the client, after the room has loaded.
+const TERMINAL_KEY = "multicode.terminal";
+function storedTerminal(): { open: boolean; height: number } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TERMINAL_KEY) ?? "null") as { open?: unknown; height?: unknown } | null;
+    const height = typeof saved?.height === "number" && saved.height >= 140 && saved.height <= 600 ? saved.height : 360;
+    return { open: saved?.open === true, height };
+  } catch {
+    return { open: false, height: 360 };
+  }
+}
 
 export function Workspace({
   session: initialSession,
@@ -153,12 +166,18 @@ export function Workspace({
 
   const [teamChatWidth, setTeamChatWidth] = useState(260);
   const [showChat, setShowChat] = useState(true);
-  const [rightWidth, setRightWidth] = useState(520);
-  const [terminalOpen, setTerminalOpen] = useState(true);
+  // The conversation gets the most room; files sit beside it, narrower.
+  const [rightWidth, setRightWidth] = useState(400);
+  // An idle terminal stays out of the way until someone asks for it, and
+  // stays open across reloads once they have.
+  const [terminalOpen, setTerminalOpen] = useState(() => storedTerminal().open);
   const [mobilePane, setMobilePane] = useState<"chat" | "files" | "team">("chat");
   const [showTeam, setShowTeam] = useState(true);
   const [helpDialog, setHelpDialog] = useState<"guide" | "providers" | "devices" | null>(null);
-  const [terminalHeight, setTerminalHeight] = useState(360);
+  const [terminalHeight, setTerminalHeight] = useState(() => storedTerminal().height);
+  useEffect(() => {
+    try { localStorage.setItem(TERMINAL_KEY, JSON.stringify({ open: terminalOpen, height: terminalHeight })); } catch {}
+  }, [terminalOpen, terminalHeight]);
   // Live team-chat messages arriving over the session event stream.
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);
   // The room's agent runs, and which one is open in the chat (null = new run).
@@ -1047,7 +1066,12 @@ export function Workspace({
         branch={result?.git.branch ?? null}
         isGit={!!result?.git.isGit}
         terminalOpen={terminalOpen}
-        onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
+        onToggleTerminal={() => {
+          const next = !terminalOpen;
+          setTerminalOpen(next);
+          // On a small screen the terminal is under Files.
+          if (next && window.matchMedia("(max-width: 1023px)").matches) setMobilePane("files");
+        }}
         onOpenFolder={openPicker}
         canOpenFolder={!hasRepo && !readOnly}
         members={people.members}
@@ -1060,8 +1084,10 @@ export function Workspace({
           if (fresh.state === "ready") setRepo(fresh.session.repo);
           setRoomRepos(repos); setTreeRevision(value => value + 1);
         }}
+        computer={computerConnection}
+        onOpenComputer={() => setHelpDialog("devices")}
       />
-      <ComputerConnectionNotice compact connection={computerConnection} onConnect={() => setHelpDialog("devices")} onSetUpAi={() => setHelpDialog("providers")} />
+      <RoomViews pane={mobilePane} onPane={pane => { if (pane === "team") setShowTeam(true); setMobilePane(pane); }} changeCount={roomChanges.data?.changes.length ?? 0} hasFiles={hasRepo} />
       {helpDialog === "guide" && <RoomGuide hasRepo={hasRepo} readOnly={readOnly} onClose={() => setHelpDialog(null)} onAction={navigateGuide} />}
       {helpDialog === "providers" && <ConnectAiDialog onClose={() => setHelpDialog(null)} onOpenDevices={() => setHelpDialog("devices")} />}
       {helpDialog === "devices" && <DevicesDialog onClose={() => setHelpDialog(null)} onSetUpAi={() => setHelpDialog("providers")} />}
@@ -1143,7 +1169,7 @@ export function Workspace({
 
         {!hasRepo ? (
           // Start without files or import a repository before opening the workspace.
-          <div className="flex min-h-0 flex-1 flex-col bg-vs-editor">
+          <div className={`min-h-0 flex-1 flex-col bg-vs-editor ${mobilePane === "team" ? "hidden" : "flex"} lg:flex`}>
             <WelcomeView
               readOnly={readOnly}
               dragging={dragging}
@@ -1217,6 +1243,7 @@ export function Workspace({
                         onImportRepo={() => openAddRepository()}
                         importingRepo={importingRepo}
                         importFailed={importFailed}
+                        hasChanges={(roomChanges.data?.changes.length ?? 0) > 0}
                       />
                   ),
                 }}
@@ -1285,17 +1312,21 @@ export function Workspace({
                 <>
                   <RowResizer height={terminalHeight} onResize={setTerminalHeight} min={140} max={600} />
                   <div style={{ height: terminalHeight, maxHeight: "60%" }} className="flex min-h-0 shrink-0">
-                    <div className="flex min-h-0 w-full flex-col"><TerminalPanel onClose={() => setTerminalOpen(false)} context={{ sessionId: session.id, runId: enteredRun?.id ?? null, repoId: chatRepoId ?? null }} /></div>
+                    <div className="flex min-h-0 w-full flex-col"><TerminalPanel onClose={() => setTerminalOpen(false)} context={{ sessionId: session.id, runId: enteredRun?.id ?? null, repoId: chatRepoId ?? null }}
+                      computerStatus={computerConnection.status} onConnectComputer={() => setHelpDialog("devices")} /></div>
                   </div>
                 </>
               ) : (
                 <button
                   type="button"
+                  aria-expanded={false}
                   onClick={() => setTerminalOpen(true)}
-                  className="flex shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
+                  title="Open a terminal (Ctrl+`)"
+                  className="flex min-h-9 shrink-0 items-center gap-2 border-t border-vs-border bg-vs-panel px-3 py-1.5 text-[12px] text-vs-muted transition hover:text-vs-fg"
                 >
                   <TerminalIcon className="h-3.5 w-3.5" />
                   Terminal
+                  <span className="ml-auto text-[11px] text-vs-muted">A shell on your computer</span>
                 </button>
               )}
             </div>

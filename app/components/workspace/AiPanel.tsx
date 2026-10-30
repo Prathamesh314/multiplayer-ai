@@ -126,6 +126,8 @@ type AiPanelProps = {
   importingRepo: boolean;
   /** True when the last import ended badly; a held prompt goes back to the composer. */
   importFailed?: boolean;
+  /** Whether the selected repository has changes to review; asking AI to review none is not offered. */
+  hasChanges?: boolean;
   /** Omitted when embedded as the center Chat tab, where there is no X to show. */
   onClose?: () => void;
 };
@@ -191,6 +193,7 @@ export function AiPanel({
   onImportRepo,
   importingRepo,
   importFailed = false,
+  hasChanges = true,
   onClose,
 }: AiPanelProps) {
   const [assignOpen, setAssignOpen] = useState(false);
@@ -973,6 +976,8 @@ export function AiPanel({
       void fetchRun(sessionId, result.runId).then(({ run }) => onEntered?.(run)).catch(() => {});
     }
   }
+  // A parallel chat's changes are on its own branch, not in the room's Changes.
+  const reviewable = hasChanges || (entered?.isolation === "isolated" && !!(entered.addedLines || entered.removedLines));
   const liveTitle = entered && renamedTitle?.runId === entered.id ? renamedTitle.title : entered?.title;
   const chatTitle = liveTitle ?? (entered ? "Agent run" : "New chat");
   const repoLabel = enteredRepoLabel ?? repoOptions.find(option => option.id === (entered ? entered.repoId ?? "" : repoId ?? ""))?.label;
@@ -1054,7 +1059,8 @@ export function AiPanel({
       {actionsHost && createPortal(<>
         <button type="button" disabled={!canRun} onClick={() => setAssignOpen(true)} className="rounded px-2 py-1.5 text-xs text-vs-muted hover:bg-vs-hover disabled:opacity-40">Assign Tasks</button>
         {entered ? <HandoffPanel key={`handoff-${entered.id}`} compact run={entered} userId={myId} canEdit={canRun} isOwner={isOwner} onUpdated={updated => onEntered?.(updated)} /> : <button type="button" disabled title="Start a chat before handing it off" className="rounded px-2 py-1.5 text-xs text-vs-muted opacity-40">Handoff</button>}
-        <button type="button" disabled={!ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))} title="Ask AI to draft a code review; this does not request teammate approval" onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Ask AI to review</button>
+        <button type="button" disabled={!reviewable || !ready || running || !!entered && (!enteredIsMine || ["running", "queued"].includes(entered.status))}
+          title={reviewable ? "Ask AI to draft a code review; this does not request teammate approval" : "Nothing to review yet: there are no changes in this repository"} onClick={() => { onShowConversation?.(); composer.current?.insertPrompt("Review the changes in this repository for bugs and regressions. Explain your findings with file references before changing any files."); }} className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-vs-accent hover:bg-vs-hover disabled:opacity-40"><EyeIcon className="h-3 w-3" />Ask AI to review</button>
       </>, actionsHost)}
       {assignOpen && <Modal title="Assign Tasks" description="Type # and choose a teammate, then describe the task. You can also do this straight from the chat box." onClose={() => setAssignOpen(false)}>
         <Composer key={entered?.id ?? "new"} placeholder="#teammate Describe the task…" disabled onSend={() => {}} people={taskPeople} onAssignTask={assignChatTask} narrow />
@@ -1130,6 +1136,7 @@ export function AiPanel({
         ) : (
           <EmptyState
             ready={ready}
+            canRun={canRun}
             hasFiles={hasFiles}
             computerUnavailable={computerUnavailable}
             agentName={active?.name ?? null}
@@ -1861,59 +1868,64 @@ function SystemLine({ text, waiting, source, onOpenChat }: {
 // Empty state & history
 // ---------------------------------------------------------------------------
 
-const EXAMPLES = [
-  "Explain what this project does",
-  "Review this project for bugs. Explain your findings before changing files.",
-  "Suggest a small improvement and a step-by-step plan. Wait for my approval before editing.",
+/** Starters fill the message box for you to finish; nothing is sent until you press Send. */
+const STARTERS = [
+  { label: "Understand this repository", prompt: "Explain what this repository does: its main parts, how they fit together, and where I should start reading." },
+  { label: "Build a feature", prompt: "I want to build a feature: [describe it]. Ask me any questions you need, then propose a plan. Wait for my approval before editing files." },
+  { label: "Fix a bug", prompt: "Help me fix a bug: [what happens, and what should happen instead]. Find the cause and explain it before changing any files." },
+];
+const STARTERS_WITHOUT_FILES = [
+  { label: "Brainstorm an idea", prompt: "Help me brainstorm an idea. Ask me what I have in mind first." },
+  { label: "Learn something new", prompt: "Help me understand a topic. Ask me what I would like to learn about." },
+  { label: "Help me write", prompt: "Help me write something. Ask me what I am writing and who it is for." },
 ];
 
 function EmptyState({
   ready,
+  canRun,
   hasFiles,
   computerUnavailable,
   agentName,
   onExample,
 }: {
   ready: boolean;
+  canRun: boolean;
   hasFiles: boolean;
   computerUnavailable: boolean;
   agentName: string | null;
   onExample: (prompt: string) => void;
 }) {
-  const examples = hasFiles ? EXAMPLES.map((prompt, index) => ({ prompt, label: ["Understand this project", "Review potential bugs", "Plan an improvement"][index] })) : [
-    { label: "Brainstorm an idea", prompt: "Help me brainstorm an idea. Ask me what I have in mind first." },
-    { label: "Learn something new", prompt: "Help me understand a topic. Ask me what I would like to learn about." },
-    { label: "Help me write", prompt: "Help me write something. Ask me what I am writing and who it is for." },
-  ];
+  const starters = hasFiles ? STARTERS : STARTERS_WITHOUT_FILES;
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-8 text-center">
       <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-vs-accent/10 text-vs-accent">
         <SparkleIcon className="h-[18px] w-[18px]" />
       </span>
       <div>
-        <p className="text-sm font-medium text-vs-fg">
-          {ready ? hasFiles ? "What would you like to build?" : "What would you like to talk about?" : computerUnavailable ? "Connect your computer to start chatting" : "Set up AI to start chatting"}
-        </p>
-        <p className="mt-1.5 max-w-sm text-xs leading-5 text-vs-muted">
-          {ready
-            ? hasFiles ? `${agentName} can explore this repository and help you make changes. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed. You can also ask AI to build something from scratch.`
-            : computerUnavailable ? "AI runs on your computer, so connect it from the message box below. Until then you can read saved chats, browse files and review changes."
-            : "Set up an AI tool on your computer, then choose it in the message box. Your saved conversations and files are available now."}
+        <h2 className="text-[15px] font-medium text-vs-fg">
+          {!canRun ? "Nothing here yet" : ready ? hasFiles ? "What should we work on?" : "What would you like to talk about?" : computerUnavailable ? "Connect your computer to send messages" : "Set up AI to send messages"}
+        </h2>
+        <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-5 text-vs-muted">
+          {!canRun ? "When someone with edit access starts a chat, it appears in the list of chats."
+            : ready
+            ? hasFiles ? `${agentName} can explore this repository and make changes with you. Start with one clear task, then review the result in Changes.` : `Ask ${agentName} a question, brainstorm ideas, or get help writing. No files are needed.`
+            : computerUnavailable ? "AI runs on your computer. You can write your first message now and send it once your computer is connected."
+            : "Set up an AI tool on your computer, then choose it in the message box. You can write your first message now."}
         </p>
       </div>
-      {ready && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
-          {examples.map((example) => (
+      {canRun && (
+        <div className="flex w-full max-w-sm flex-col gap-1.5" role="group" aria-label="Starters">
+          {starters.map((starter) => (
             <button
-              key={example.label}
+              key={starter.label}
               type="button"
-              onClick={() => onExample(example.prompt)}
-              className="rounded-lg border border-vs-border px-2.5 py-1.5 text-left text-xs text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
+              onClick={() => onExample(starter.prompt)}
+              className="min-h-9 rounded-lg border border-vs-border px-3 py-2 text-left text-[13px] text-vs-fg transition hover:border-vs-accent hover:bg-vs-hover"
             >
-              {example.label}
+              {starter.label}
             </button>
           ))}
-          <p className="mt-1 text-[11px] leading-4 text-vs-muted">Choose a starter, edit your message, then Send. Selecting a starter does not run AI.</p>
+          <p className="mt-1 text-[11.5px] leading-4 text-vs-muted">A starter fills in the message box for you to finish. Nothing is sent until you press Send.</p>
         </div>
       )}
     </div>

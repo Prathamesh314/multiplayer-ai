@@ -85,9 +85,9 @@ async function closeDialog(){
     await delay(150);if(!await evaluate('!!document.querySelector("dialog[open]")'))break;
   }
 }
-/** Open the terminal panel (it starts open) and wait for its scripted session. */
+/** Open the terminal panel (it starts collapsed) and wait for its scripted session. */
 async function terminalSession(){
-  if(!await evaluate(`!!document.querySelector('button[aria-label="Close terminal"]')`))await click('button[aria-label="Toggle terminal (Ctrl+Shift+Z)"]');
+  if(!await evaluate(`!!document.querySelector('button[aria-label="Close terminal"]')`))await click('button[title="Open a terminal (Ctrl+`)"]');
   await eventually(()=>evaluate('document.body.innerText.includes("3 passed")'),'terminal session');
   await delay(250);
 }
@@ -124,12 +124,12 @@ try{
     {id:'claude',name:'Claude Code',vendor:'Anthropic',blurb:'Reads and edits files, runs commands, works across the whole repo.',installed:true,auth:null,models:{choices:[{id:'',label:'Auto'}],source:'Sample',checkedAt:1,refreshedAt:1,stale:false},install:{command:'npm install -g @anthropic-ai/claude-code',signIn:'claude auth login',docs:'https://docs.claude.com'}},
     {id:'gemini',name:'Gemini CLI',vendor:'Google',blurb:'Large-context agent for reading and changing a codebase.',installed:true,auth:{loggedIn:false,method:null,email:null,plan:null},install:{command:'npm install -g @google/gemini-cli',signIn:'gemini',docs:'https://github.com/google-gemini/gemini-cli'}},
     {id:'opencode',name:'OpenCode',vendor:'Many providers',blurb:'Coding agents through configured providers.',installed:false,auth:null,install:{command:'npm install -g opencode-ai',signIn:'opencode auth login',docs:'https://opencode.ai/docs/providers/'}}]`);
-  await button('Room guide');await button('Set up AI');await eventually(()=>evaluate('document.body.innerText.includes("2 of 4 AI tools ready")'),'provider setup');await capture('providers');await closeDialog();
+  await click('button[aria-label="More room actions"]');await button('Room guide');await button('Set up AI');await eventually(()=>evaluate('document.body.innerText.includes("2 of 4 AI tools ready")'),'provider setup');await capture('providers');await closeDialog();
   await evaluate('window.__model.extraAgents=undefined');
-  await button('Room guide');await button('Connect your computer');await eventually(()=>evaluate('document.body.innerText.includes("Alice’s Mac")'),'computers');await capture('computers');await closeDialog();
+  await click('button[aria-label="More room actions"]');await button('Room guide');await button('Connect your computer');await eventually(()=>evaluate('document.body.innerText.includes("Alice’s Mac")'),'computers');await capture('computers');await closeDialog();
   await button('Briefing');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Accepted decisions")'),'briefing');await capture('briefing');await closeDialog();
   await button('Activity');await eventually(()=>evaluate('document.body.innerText.includes("No uploaded checkpoints yet")'),'history');await capture('history');await closeDialog();
-  await button('Room guide');await button('Review room memory');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Show quantity errors")'),'memory');
+  await click('button[aria-label="More room actions"]');await button('Room guide');await button('Review room memory');await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Show quantity errors")'),'memory');
   await evaluate(`Array.from(document.querySelectorAll('dialog button')).find(b=>b.textContent.includes('Show quantity errors')).click()`);await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Source evidence")'),'memory evidence');await capture('memory');await closeDialog();
   await button('Share chat');await eventually(()=>evaluate('!!document.querySelector("dialog input[type=email]")'),'share chat');await type('dialog input[type=email]','teammate@example.test');await capture('share-chat');await closeDialog();
   await evaluate(`window.__model.invitations=[{id:'sample-invite',email:'teammate@example.test',role:'commenter',createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+604800000).toISOString(),acceptedAt:new Date().toISOString(),revokedAt:null}]`);

@@ -289,9 +289,11 @@ Inside a room, expand **Repositories & chats** groups and select a conversation.
       { id: "room-layout", title: "The four room panels", body: `- **Left:** repositories, conversation spaces, AI chats, and teammate navigation.
 - **Centre:** the active AI conversation or file contents. The chat header carries **Briefing**, **Activity & checkpoints**, and **Providers**, so the conversation itself stays prompts, replies, and tool calls.
 - **Top right:** **All files** and **Changes**, with task assignment, handoff, and AI review actions.
-- **Bottom right:** the terminal panel, when opened. Interactive shell availability depends on the environment.
+- **Bottom right:** the terminal. It stays collapsed until you open it: select **Terminal** under the files, or press Ctrl+\`.
 
-Drag the panel dividers to resize the workspace. Each area scrolls independently. On smaller windows, some controls wrap or panels collapse; use their visible controls to reopen them. **Room guide** offers a short walkthrough.
+The room toolbar shows the room and repository, who is in the room (a green dot means online), and your computer: a green dot with its name when it is connected, or **Computer offline** / **No computer** when AI can’t run. Select it to manage your computers. **Share room** (or **Share chat** inside a chat) is the main action; **More** holds **Room guide**, the terminal, and on small screens **Get latest** and **Publish**.
+
+Drag the panel dividers to resize the workspace. Each area scrolls independently. On a phone or narrow window the room shows one area at a time: switch between **Conversation**, **Files** and **Chats** just under the toolbar. **Room guide** (under **More**) offers a short walkthrough.
 
 **See who is here.** Like collaborators in a shared document, the faces at the top right of a chat are the teammates who have that chat open right now. They appear and leave as people open or switch chats; hover a face for the name, or select the faces for the full list. On the project overview, **Online now** shows everyone in your organisation who has Multicode AI open.`, screenshot: "conversation" },
       { id: "visibility", title: "Public and private rooms", body: `A **public** project room is visible to members of that project; it is not publicly accessible on the internet. A **private** room requires explicit room access.
@@ -362,7 +364,7 @@ If the driver’s computer went offline, [Activity & checkpoints](/docs/history)
     sections: [
       { id: "hosted", title: "A terminal on your computer", body: `The terminal panel opens a shell **on your connected computer**, like your AI tasks: in the worktree of the chat you are viewing, with your own tools, Git setup and signed-in AI command-line tools. It works the same from the browser and the desktop app; the website only relays keystrokes and output.
 
-The panel header names the computer, for example **Your computer · Alice’s Mac**. Each tab stays in the worktree it opened in: a parallel chat’s own worktree, otherwise the room’s. Open a chat and select **+** for a terminal in that chat’s worktree. If that chat has not run on this computer yet, the terminal opens in your home folder and says so; its worktree is created by the first AI task there.
+Open it with **Terminal** below the files (or Ctrl+\`); it starts collapsed so it stays out of the way until you need it, and after a reload it is open or closed (and as tall) as you left it in this browser. If it can’t open, it says why (for example **No computer connected** or **Your computer is offline**) and offers **Connect computer** and **Check again**; nothing is run for you. The panel header names the computer, for example **Your computer · Alice’s Mac**. Each tab stays in the worktree it opened in: a parallel chat’s own worktree, otherwise the room’s. Open a chat and select **+** for a terminal in that chat’s worktree. If that chat has not run on this computer yet, the terminal opens in your home folder and says so; its worktree is created by the first AI task there.
 
 If no computer is connected, the panel says so. Open the desktop app or [start the runner](/docs/connect-computer), then select **Check again**. A reloaded page reattaches to a running shell for about a minute.`, screenshot: "terminal" },
       { id: "local", title: "Full terminal, privacy and turning it off", body: `Full-screen programs, colours and Tab completion use a real terminal through Python 3, which is present wherever Git’s developer tools are installed on macOS and on most Linux systems. Without it, and on Windows for now, the terminal is a basic shell and says so.
@@ -458,7 +460,7 @@ The initial briefing is assembled from recorded activity. It distinguishes AI-re
 Concurrent edits can require a refresh. Review the current evidence before saving again.
 
 Only the chat host can publish a briefing and its evidence to guests using the explicit sharing checkbox. Inspect it first: evidence may include workspace decisions or saved-change details.` },
-      { id: "memory", title: "Review room memory", body: `Select **Room guide** in the room toolbar, then **Review room memory**. Select a record and inspect **Source evidence**, **Open source chat**, related memories, and review history.
+      { id: "memory", title: "Review room memory", body: `Select **More**, then **Room guide** in the room toolbar, then **Review room memory**. Select a record and inspect **Source evidence**, **Open source chat**, related memories, and review history.
 
 Completed conversations can create historical episodes. An approved episode records that an exchange happened; it does not certify every AI assertion. Facts and procedures need review before they become approved guidance.
 

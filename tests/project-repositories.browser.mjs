@@ -358,7 +358,9 @@ try {
   }
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await evaluate('window.__model.devices=[];window.__model.runs.forEach(run=>run.status="completed");window.__model.emit("run.finished",{runId:window.__model.runs[0].id,status:"completed"});window.__model.emitDevices()');
-  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="not-connected"'),"no computer explanation");
+  // The room header says so in one chip; the message box says what to do.
+  await eventually(()=>evaluate('document.querySelector("[data-computer-status]")?.dataset.computerStatus==="not-connected"'),"no computer explanation");
+  assert.equal(await evaluate('!!document.querySelector(\'[aria-label="Computer connection"]\')'),false,"no full-width banner over the room");
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate('document.querySelector(".human-message")?.textContent.includes("Review the repository")'),"saved chat opens without a computer");
   assert.ok(await evaluate('document.querySelector(".conversation-transcript").getBoundingClientRect().height > 100'),"offline setup does not hide the conversation");
@@ -431,9 +433,10 @@ try {
   await click('button[title^="Queue context A ·"]');
   await eventually(()=>evaluate('!!document.querySelector(".human-message")'),"history remains readable");
   await evaluate('window.__model.devices=[{id:"computer-1",userId:"alice",name:"Alice’s Mac",version:"2",online:false,lastSeenAt:Date.now()-60000}];window.__model.emitDevices()');
-  await eventually(()=>evaluate('document.querySelector(\'[aria-label="Computer connection"]\')?.dataset.status==="offline"'),"previously connected computer is offline");
+  await eventually(()=>evaluate('document.querySelector("[data-computer-status]")?.dataset.computerStatus==="offline"'),"previously connected computer is offline");
+  assert.match(await evaluate('document.querySelector("[data-computer-status]").getAttribute("aria-label")'),/^Computer offline\. Manage computers$/,"the header chip says offline");
   await eventually(()=>evaluate('document.querySelector(".ai-composer [role=status]")?.innerText.includes("Your computer is offline")'),"the message box says the computer is offline, with Reconnect");
-  await button("Reconnect computer");
+  await evaluate('[...document.querySelectorAll(".ai-composer button")].find(b=>b.textContent.trim()==="Reconnect").click()');
   await eventually(()=>evaluate('document.querySelector("dialog")?.innerText.includes("Bring your computer back online")'),"reconnection help");
   assert.ok(await evaluate('document.querySelector("dialog").innerText.includes("Offline · last connected 1 minute ago")'),"the last connection is a real time");
   assert.ok(await evaluate('!/years? ago/.test(document.querySelector("dialog").innerText) && document.querySelector("dialog").innerText.includes("closed, paused or asleep")'),"no impossible time; says what offline can mean");
@@ -452,7 +455,7 @@ try {
   await evaluate(`(()=>{const m=window.__model;m.devices[0].platform="win32";m.devices[0].git="2.47.1";m.extraAgents=[
     {id:"claude",name:"Claude Code",vendor:"Anthropic",blurb:"Reads and edits files.",installed:true,auth:{loggedIn:false,method:null,email:null,plan:null},install:{command:"npm install -g @anthropic-ai/claude-code",signIn:"claude auth login",docs:"https://docs.claude.com"}},
     {id:"ollama",name:"Ollama",vendor:"Local",blurb:"Local models.",installed:false,auth:null,install:{command:"brew install ollama",alternative:"Download the installer from ollama.com",docs:"https://ollama.com"}}];m.emitDevices();})()`);
-  await button("Room guide");await button("Set up AI");
+  await click('button[aria-label="More room actions"]');await button("Room guide");await button("Set up AI");
   await eventually(()=>evaluate('document.querySelectorAll(\'dialog[open] ul[aria-label="AI tools"] li\').length===3'),"every AI tool listed");
   const rows=await evaluate(`[...document.querySelectorAll('dialog[open] ul[aria-label="AI tools"] li')].map(li=>li.innerText)`);
   assert.match(rows[0],/Codex[\s\S]*Ready/);
@@ -464,7 +467,7 @@ try {
   await click('button[aria-label="Close Set up AI"]');
   // Without Git nothing can run: Set up AI says so first, with the command for that computer.
   await evaluate('(()=>{const m=window.__model;m.devices[0].git="missing";m.emitDevices();})()');
-  await button("Room guide");await button("Set up AI");
+  await click('button[aria-label="More room actions"]');await button("Room guide");await button("Set up AI");
   await eventually(()=>evaluate('!!document.querySelector(\'dialog[open] section[aria-label="Git is missing"]\')'),"Git missing explained");
   assert.ok(await evaluate('document.querySelector(\'dialog[open] section[aria-label="Git is missing"]\').innerText.includes("winget install --id Git.Git")'),"the Windows install command");
   assert.ok(await evaluate('document.querySelector(\'dialog[open] section[aria-label="Connected computer"]\').innerText.includes("Git missing")'));
@@ -611,7 +614,7 @@ try {
   await evaluate('window.__model.devices[0].supportsPermissions=false;window.__model.emitDevices()');
   await delay(400);
   assert.equal(await evaluate(`!!document.querySelector('section[aria-label="Update your computer’s app"]')`),false,"no warning in the chat");
-  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Manage computers").click()`);
+  await click('button[data-computer-status]');
   await eventually(()=>evaluate(`!!document.querySelector('dialog[open] section[aria-label="Update your computer’s app"]') && document.querySelector("dialog[open]").innerText.includes("Update needed")`),"update steps in Your computers");
   await evaluate(`[...document.querySelectorAll('dialog[open] [role=tab]')].find(t=>t.textContent==="Runner in a terminal").click()`);
   assert.match(await evaluate(`document.querySelector('dialog[open] section[aria-label="Update your computer’s app"] code').textContent`),/^npx --yes --package="http:\/\/127\.0\.0\.1:\d+\/downloads\/multicode-ai-runner\.tgz\?v=[0-9a-f]{12}" multicode-ai-runner start$/,"the command fetches the current runner");
@@ -622,7 +625,7 @@ try {
   await eventually(()=>evaluate('!document.querySelector("dialog[open]")'),"Your computers closes");
   // Pairing from a terminal is two commands. After the first, the computer is paired but not
   // connected: a checklist with step 2 to do, nothing green. Green only once it connects.
-  await evaluate(`[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Manage computers").click()`);
+  await click('button[data-computer-status]');
   // With a computer connected, connecting another is folded away.
   await eventually(()=>evaluate(`[...document.querySelectorAll("dialog[open] details summary")].some(s=>s.textContent.includes("Connect another computer"))`),"connect another computer");
   await evaluate(`[...document.querySelectorAll("dialog[open] details summary")].find(s=>s.textContent.includes("Connect another computer")).click()`);

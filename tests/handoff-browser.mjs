@@ -491,19 +491,22 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
     await sql(`UPDATE runner_devices SET revoked_at = now() WHERE id = $1`, [catalogDevice]);
     console.log("  ok live model-picker updates, new and retired models, per-user catalog isolation, and unavailable-model refusal");
     const beforeStarter = (await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count;
-    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === "Understand this project")'), "starter prompts ready");
-    await recipient.click("Understand this project");
-    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value === "Explain what this project does"'), "starter fills composer without sending");
+    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === "Understand this repository")'), "starter prompts ready");
+    await recipient.click("Understand this repository");
+    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value.startsWith("Explain what this repository does")'), "starter fills composer without sending");
     assert.equal(await recipient.evaluate('document.activeElement === document.querySelector(".room-main textarea")'), true, "Starter focuses editable draft");
-    await recipient.click("Review potential bugs");
-    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value.includes("Explain what this project does\\n\\nReview this project")'), "starter preserves existing draft");
+    await recipient.click("Fix a bug");
+    await eventually(() => recipient.evaluate('document.querySelector(".room-main textarea")?.value.includes("where I should start reading.\\n\\nHelp me fix a bug: [")'), "starter preserves existing draft");
+    // Its blank is selected, so typing replaces it.
+    assert.equal(await recipient.evaluate('(() => { const t = document.querySelector(".room-main textarea"); return t.value.slice(t.selectionStart, t.selectionEnd); })()'), "[what happens, and what should happen instead]");
     assert.equal((await sql(`SELECT count(*)::int AS count FROM agent_turns`)).rows[0].count, beforeStarter, "Starter prompts never submit a model turn");
     const chatScreenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
     await writeFile(join(tmpdir(), "ux-room-chat.png"), Buffer.from(chatScreenshot.data, "base64"));
+    await recipient.evaluate('document.querySelector(\'button[aria-label="More room actions"]\').click()');
     await recipient.click("Room guide");
     await eventually(() => recipient.evaluate('document.querySelector("dialog")?.textContent.includes("Review before sharing changes")'), "room guide explains workflow");
     await recipient.click("Open AI chat");
-    await eventually(() => recipient.evaluate('!document.querySelector("dialog") && document.querySelector(".room-main textarea")?.value.includes("Explain what this project does")'), "guide navigation preserves chat draft");
+    await eventually(() => recipient.evaluate('!document.querySelector("dialog") && document.querySelector(".room-main textarea")?.value.includes("Explain what this repository does")'), "guide navigation preserves chat draft");
     console.log("  ok guided navigation and editable, non-submitting starter prompts preserve drafts");
     for (const view of [sender]) {
       await eventually(() => view.evaluate("Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Browser handoff'))"), "chat listing");
@@ -553,6 +556,7 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       await recipient.command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
       await delay(300);
       assert.equal(await recipient.evaluate("document.documentElement.scrollWidth <= innerWidth"), true, `No ${name} overflow`);
+      await recipient.evaluate('document.querySelector(\'button[aria-label="More room actions"]\').click()');
       await recipient.click("Room guide");
       await eventually(() => recipient.evaluate('document.querySelector("dialog")?.open'), `${name} guide opens`);
       assert.equal(await recipient.evaluate('document.querySelector("dialog").getBoundingClientRect().width <= innerWidth'), true, `${name} guide fits viewport`);
