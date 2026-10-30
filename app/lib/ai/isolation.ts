@@ -10,8 +10,3 @@
  */
 export type RunIsolation = "shared" | "isolated";
 export type MergeState = "open" | "merged" | "discarded";
-
-/** Off unless the operator opts in; shared chats are unaffected either way. */
-export function parallelChatsEnabled(): boolean {
-  return process.env.PARALLEL_CHATS === "1";
-}

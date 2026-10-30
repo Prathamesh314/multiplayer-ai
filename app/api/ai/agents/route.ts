@@ -3,7 +3,6 @@ import { query } from "../../../lib/db/client";
 import { localRunnersEnabled } from "../../../lib/runner/jobs";
 import { currentUser } from "../../../lib/auth/tokens";
 import { AGENTS, type ModelInventory, type AgentStatus, type AgentsResponse } from "../../../lib/ai/catalog";
-import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +60,6 @@ async function handleGET() {
       agents,
       canRun: localIds.size > 0,
       reason: localIds.size > 0 ? null : gitMissing ? "Install Git on your computer, then restart the Multicode AI app or runner." : "Connect your computer, then install and sign in to an AI tool on it.",
-      parallelChats: parallelChatsEnabled(),
     } satisfies AgentsResponse,
     { headers: { "cache-control": "no-store" } },
   );

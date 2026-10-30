@@ -23,6 +23,17 @@ async function count(sql: string, params: unknown[]): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** Whether this person has an ordinary (shared) chat working in this room. */
+export async function hasWorkingSharedChat(sessionId: string, userId: string): Promise<boolean> {
+  const mine = await count(
+    `SELECT count(*)::int AS n FROM agent_runs
+      WHERE session_id = $1 AND started_by = $2 AND status = 'running' AND isolation = 'shared'
+        AND started_at > now() - interval '${STALE}'`,
+    [sessionId, userId],
+  );
+  return mine >= 1;
+}
+
 /**
  * Decides whether a run may start. Period limits count accepted execution
  * turns, including continuations. This is a preflight for friendly
@@ -40,16 +51,11 @@ export async function checkRunAllowed(params: {
   const { orgId, projectId, sessionId, userId, isNewRun } = params;
 
   // One live shared run per person per room: shared chats work on the same
-  // branch, so a second would race the first. Parallel chats are the way to
-  // run several at once. This is a correctness rule, not a capacity cap.
+  // branch, so a second would race the first. The run route opens a new chat
+  // as parallel instead when one is working; this is a correctness rule, not a
+  // capacity cap.
   if (isNewRun && params.isolation !== "isolated") {
-    const mine = await count(
-      `SELECT count(*)::int AS n FROM agent_runs
-        WHERE session_id = $1 AND started_by = $2 AND status = 'running' AND isolation = 'shared'
-          AND started_at > now() - interval '${STALE}'`,
-      [sessionId, userId],
-    );
-    if (mine >= 1) {
+    if (await hasWorkingSharedChat(sessionId, userId)) {
       return {
         ok: false,
         limit: "room",

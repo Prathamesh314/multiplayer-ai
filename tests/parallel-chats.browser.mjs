@@ -33,7 +33,6 @@ async function eventually(task, label) {
 /** One parallel chat with changes to review, its branch state, a diff, and the server's next answers. */
 function seedParallelChat() {
   const state = window.__model, sha = c => c.repeat(40);
-  state.parallelChats = true;
   state.repos.push({ id: "frontendabcd", sessionId: "modelroomabc", rootName: "frontend", projectRepositoryId: "11111111-1111-4111-8111-111111111111",
     headSha: sha("b"), baseSha: sha("a"), seededAt: 1, createdAt: 1, createdBy: "alice" });
   const run = { id: "33333333-3333-4333-8333-333333333333", sessionId: "modelroomabc", repoId: "frontendabcd", startedBy: "alice", startedByName: "Alice",

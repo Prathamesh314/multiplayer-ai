@@ -8,17 +8,20 @@ person can run several agents against the same repository at once. It is
 reviewed and merged when it is ready. Members' guide: **Run chats in
 parallel** at `/docs/parallel-chats` in the app (source: `app/docs/content.ts`).
 
-## Enabling
+## Starting one
 
-| Setting | Where | Effect |
+Parallel chats are always available; there is no server setting. A new chat is
+parallel when the composer's **⑂ Parallel** is on, or automatically when the
+person already has an ordinary chat working in that room (the run route checks
+`hasWorkingSharedChat` in `app/lib/ai/usage.ts`), so starting another chat is
+never refused for being busy.
+
+| Requirement | Where | Effect |
 |---|---|---|
-| `PARALLEL_CHATS=1` | web process (`.env`, or `.env.production` for Compose) | New chats may be opened as parallel. The composer shows **⑂ Parallel** (reported by `/api/ai/agents` as `parallelChats`). |
 | Runner with `supportsIsolatedChats` | members' computers | Current desktop app / `multicode-ai-runner`. Older runners never claim a parallel chat's turn; the run route answers "update the desktop app" instead. |
 | `--parallel` / `RUNNER_MAX_PARALLEL` / `maxParallel` | runner, optional | Caps the turns one computer runs at once, if its owner wants a cap. |
 
-Turning the flag off only stops *new* parallel chats. Existing ones keep
-working, and can still be reviewed, merged, updated and discarded, so no work is
-stranded. Migration `053_isolated_chats.sql` is additive and registered as
+Migration `053_isolated_chats.sql` is additive and registered as
 rollback-compatible: an older release ignores the columns and treats every chat
 as shared. Merge or discard parallel chats before rolling back, because the older
 release continues them on the room branch.
@@ -46,7 +49,8 @@ release continues them on the room branch.
 Every turn runs on the member's own computer, so nothing caps how many run at
 once. `reserveTurn` takes the org advisory lock. Shared chats keep "one running
 per person per room", because they share the room branch; parallel chats do not
-hold the room slot. Hourly and monthly limits apply to every turn.
+hold the room slot, and a new chat opened while that slot is taken is opened as
+parallel instead. Hourly and monthly limits apply to every turn.
 `checkRunAllowed` mirrors this for friendly errors before anything is created.
 The old `run_concurrency_limit` and `parallel_chats_per_user` columns are no
 longer read.

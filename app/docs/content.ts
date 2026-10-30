@@ -478,9 +478,9 @@ Background indexing or optional extraction may be pending. The memory dialog sho
 
 Use parallel chats to try alternatives side by side, or to split independent tasks across agents. Each one's work reaches the room only when someone merges it.
 
-Parallel chats are available when the workspace administrator has turned them on. If you don't see **Parallel** in the composer, they are off for this workspace.` },
+You never have to wait for a chat to finish before starting another. If one of your chats is still working when you start a new one in the same room, the new one becomes a parallel chat automatically.` },
       { id: "start", title: "Start a parallel chat", body: `1. Choose the repository and select **New chat**.
-2. In the composer, turn on **⑂ Parallel**. It stays on for your next new chat, so you can start several in a row.
+2. In the composer, turn on **⑂ Parallel**. It stays on for your next new chat, so you can start several in a row. You can skip this while another of your chats is working: the new one runs in parallel anyway.
 3. Write the task and send it.
 
 The setting applies when a chat starts; an existing chat keeps the kind it was started as. Your [connected computer](/docs/connect-computer) needs the current desktop app or runner. An older one is asked to update instead of running the chat. There is no limit on how many parallel chats run at once: each runs on your computer, with your own AI account. Your workspace's hourly and monthly limits still apply.` },
