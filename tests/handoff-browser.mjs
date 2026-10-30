@@ -568,10 +568,15 @@ export async function browserChecks({ sql, directory, databaseUrl, redisUrl, ali
       const screenshot = await recipient.command("Page.captureScreenshot", { format: "png" });
       await writeFile(join("/tmp", `handoff-room-${name}.png`), Buffer.from(screenshot.data, "base64"));
     }
+    // A phone shows one area at a time: the files are under Room views.
+    await recipient.evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="Room views"] button\')).find(button => button.textContent.startsWith("Files")).click()');
     await eventually(() => recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\')?.checkVisibility()'), "mobile return to explorer");
     await recipient.evaluate('document.querySelector(\'button[aria-label="File: src/checkout.ts"]\').click()');
     await eventually(() => recipient.evaluate('document.querySelector(".room-file-document")?.checkVisibility()'), "mobile file editor");
     await recipient.reload();
+    // A reopened room starts on the conversation; its files are one tap away.
+    await eventually(() => recipient.evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="Room views"] button\')).some(button => button.textContent.startsWith("Files"))'), "room views after reload");
+    await recipient.evaluate('Array.from(document.querySelectorAll(\'nav[aria-label="Room views"] button\')).find(button => button.textContent.startsWith("Files")).click()');
     await eventually(() => recipient.evaluate(`sessionStorage.getItem('room-repository:${roomId}') === ${JSON.stringify(imported.id)} && document.querySelector('button[aria-label="File: src/checkout.ts"]')?.checkVisibility()`), "reopened room restores imported repository and visible files");
     console.log("  ok persistent explorer, folder-path search, refresh, mobile navigation, and repository restoration");
     const uploadStarted = performance.now();
