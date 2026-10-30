@@ -14,7 +14,7 @@ import { createRun, getRun } from "../app/lib/ai/runs.ts";
 import { reserveTurn, prepareTurn } from "../app/lib/ai/turns.ts";
 import { claimTurn, commitOnComputer } from "./helpers/runner-turn.mjs";
 import { finalizeAgentRun } from "../app/lib/ai/finalize.ts";
-import { checkRunAllowed } from "../app/lib/ai/usage.ts";
+import { checkRunAllowed, hasWorkingSharedChat } from "../app/lib/ai/usage.ts";
 import { createRepo, finishSeed, writeSeedBatch, readCommittedBytes,
   createChatBranch, chatBranchOf, headSha } from "../app/lib/session/repo.ts";
 import { attachRepo } from "../app/lib/session/store.ts";
@@ -173,6 +173,9 @@ try {
     const second = await createRun({ sessionId: roomId, startedBy: bob, agentId: "codex", baseSha: fork });
     const turn = await runTurn(first, bob, { file: "a.txt", text: "shared\n", baseSha: fork });
     await assert.rejects(reserveTurn(second.id, bob, randomUUID(), 0), /still working/);
+    // So the run route opens Bob's next new chat here as parallel instead of refusing it.
+    assert.equal(await hasWorkingSharedChat(roomId, bob), true);
+    assert.equal(await hasWorkingSharedChat(roomId, alice), false);
     // Bob's isolated chats are not blocked by his running shared chat.
     const parallel = await createRun({ sessionId: roomId, startedBy: bob, agentId: "codex", baseSha: fork, isolation: "isolated" });
     const parallelTurn = await runTurn(parallel, bob, { file: "b.txt", text: "bob parallel\n", baseSha: fork });

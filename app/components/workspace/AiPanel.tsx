@@ -226,9 +226,9 @@ export function AiPanel({
   });
   const [collaborationCounts, setCollaborationCounts] = useState({ unread: 0, reviews: 0 });
   const [copied, setCopied] = useState(false);
-  // Whether this server runs chats on their own branches, and whether the next
-  // new chat should. Off by default: an ordinary chat works on the room branch.
-  const [parallelChats, setParallelChats] = useState(false);
+  // Whether the next new chat works on a branch of its own. Off by default: an
+  // ordinary chat works on the room branch, and the server opens a new chat as
+  // parallel anyway while another of this person's chats is working.
   const [parallel, setParallel] = useState(false);
   const [planMode, setPlanMode] = useState(false);
   const composer = useRef<ComposerHandle>(null);
@@ -530,7 +530,6 @@ export function AiPanel({
       setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
-      setParallelChats(response.parallelChats);
       // Pre-select a ready agent, so the common case is one click: the one this
       // member last used on this device, else Codex, else the first installed.
       if (!connectedRef.current) {
@@ -613,7 +612,6 @@ export function AiPanel({
       setAgentsError(null);
       setServerCanRun(response.canRun);
       setBlockedReason(response.reason);
-      setParallelChats(response.parallelChats);
     } catch { setServerCanRun(false); setAgentsError("We couldn’t check your AI tools. Check your internet connection and try again."); }
     finally { setRefreshing(false); }
   }
@@ -723,7 +721,7 @@ export function AiPanel({
         forkFromRunId: forkFromRun,
         contextRefs,
         repoId: repoForRun,
-        isolation: !continuing && parallel && parallelChats ? "isolated" : undefined,
+        isolation: !continuing && parallel ? "isolated" : undefined,
         attachmentIds: attachments.length ? attachments.map((file) => file.id) : undefined,
         permissionMode: approvalMode,
         fileRefs: fileRefs.length ? fileRefs : undefined,
@@ -928,7 +926,7 @@ export function AiPanel({
         <button type="button" aria-pressed={effort === "low"} disabled={!efforts.some(option => option.id === "low")} title="Fast Mode uses low reasoning effort when the selected model supports it" onClick={() => setEffort(effort === "low" ? "" : "low")} className="composer-control composer-toggle">ϟ Fast</button>
         <button type="button" aria-pressed={planMode} title="Ask for a plan before making changes" onClick={() => setPlanMode(value => !value)} className="composer-control composer-toggle">Plan</button>
         {!entered && approvalsPicker}
-        {!entered && parallelChats && (
+        {!entered && (
           <button type="button" aria-pressed={parallel} onClick={() => setParallel(value => !value)}
             title="Work on a branch of its own, so this chat can run alongside your others. Review and merge it into the room when it's ready."
             className="composer-control composer-toggle">⑂ Parallel</button>

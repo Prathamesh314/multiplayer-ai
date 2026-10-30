@@ -17,7 +17,7 @@ import {
   runHasOtherAuthors,
 } from "../../../lib/ai/runs";
 import { draftRunTitle, refineRunTitle, MAX_TITLE } from "../../../lib/ai/titles";
-import { checkRunAllowed } from "../../../lib/ai/usage";
+import { checkRunAllowed, hasWorkingSharedChat } from "../../../lib/ai/usage";
 import { forkRunMemory, listForkableRuns } from "../../../lib/ai/memory";
 import type { ForkableRun } from "../../../lib/ai/memory";
 import { buildReferencedContext, extractRunIds } from "../../../lib/ai/context";
@@ -35,7 +35,6 @@ import {
 import { events } from "../../../lib/events";
 import { resolveRepository } from "../../../lib/session/repository-context";
 import { chatBranchOf } from "../../../lib/session/repo";
-import { parallelChatsEnabled } from "../../../lib/ai/isolation";
 import { allowedTools, setRunPermissionMode } from "../../../lib/ai/permissions";
 import { pendingToolCount, toolsForRun } from "../../../lib/ai/agent-tools";
 import { AttachmentError, attachmentFiles, attachmentPromptBlock, bindAttachments, sendableAttachments } from "../../../lib/ai/attachments";
@@ -208,17 +207,21 @@ async function handlePOST(request: Request) {
   if (body.isolation != null && body.isolation !== "isolated" && body.isolation !== "shared") {
     return Response.json({ error: "Invalid chat isolation." }, { status: 400 });
   }
-  const isolated = run ? run.isolation === "isolated" : body.isolation === "isolated";
+  // A new chat opened while one of this person's ordinary chats is still
+  // working becomes a parallel chat, on a branch of its own: as many chats run
+  // at once as the person starts. Only one ordinary chat per room can work at a
+  // time, because ordinary chats share the room's branch.
+  const busy = !run && body.isolation !== "isolated" && await hasWorkingSharedChat(sessionId, result.user.id);
+  const isolated = run ? run.isolation === "isolated" : body.isolation === "isolated" || busy;
   if (run?.mergeState === "discarded") {
     return Response.json({ error: "This parallel chat was discarded. Reopen it to continue." }, { status: 409 });
-  }
-  if (isolated && !run && !parallelChatsEnabled()) {
-    return Response.json({ error: "Parallel chats are not enabled on this server." }, { status: 400 });
   }
   // An older runner keeps one worktree per room repository and cannot hold a
   // chat's own branch; it would never claim this turn.
   if (isolated && !await hasOnlineDevice(result.user.id, agent.id, runOptions.model, runOptions.effort, false, true)) {
-    return Response.json({ error: "Update the desktop app to run parallel chats, then send your message again.", code: "runner_update_required" }, { status: 409 });
+    return Response.json({ error: busy
+      ? "Your other chat in this room is still working. Update the desktop app to run chats in parallel, or wait for it to finish."
+      : "Update the desktop app to run parallel chats, then send your message again.", code: "runner_update_required" }, { status: 409 });
   }
 
   // Which repo the chat works on. A continued run keeps the repo it started
