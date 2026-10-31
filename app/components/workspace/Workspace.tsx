@@ -50,6 +50,7 @@ import { RowResizer } from "./RowResizer";
 import { StatusBar } from "./StatusBar";
 import { RoomSidebar } from "./RoomSidebar";
 import { useRoomRuns } from "./useRoomRuns";
+import { ChatStore, draftKey } from "./chatStore";
 import { useRoomChanges } from "./useRoomChanges";
 import { TerminalPanel } from "./TerminalPanel";
 import { AddRepositoryDialog } from "./AddRepositoryDialog";
@@ -182,15 +183,40 @@ export function Workspace({
   const [incoming, setIncoming] = useState<ChatMessage[]>([]);
   // The room's agent runs, and which one is open in the chat (null = new run).
   const { runs, refresh: refreshRuns } = useRoomRuns(session.id);
-  const [enteredRun, setEnteredRun] = useState<AgentRun | null>(null);
+  const [openedRun, setOpenedRun] = useState<AgentRun | null>(null);
+  // The open chat as the room's list has it now, so its status (working,
+  // finished, handed off) never lags what the sidebar shows.
+  const enteredRun = useMemo(() => {
+    if (!openedRun) return null;
+    const listed = runs.find(run => run.id === openedRun.id);
+    return listed && listed.controlVersion >= openedRun.controlVersion ? listed : openedRun;
+  }, [runs, openedRun]);
+  // Every chat of the room in this tab, so each keeps its own conversation and
+  // live turn while another is shown. A new chat has a draft key until sent.
+  const [chats] = useState(() => new ChatStore());
+  useEffect(() => () => chats.dispose(), [chats]);
+  const [newChatKey, setNewChatKey] = useState(draftKey);
+  const chatKey = enteredRun?.id ?? newChatKey;
+  const chatKeyRef = useRef(chatKey);
+  useEffect(() => { chatKeyRef.current = chatKey; }, [chatKey]);
   // The chat the member last opened. A reply about another chat that was
   // still loading when they switched (its handoff state, say) must not open
   // that chat again over the one they chose.
   const openingRunId = useRef<string | null>(null);
   const openRun = useCallback((run: AgentRun | null) => {
     openingRunId.current = run?.id ?? null;
-    setEnteredRun(run);
+    if (run) chatKeyRef.current = run.id; // at once, not after the next render
+    setOpenedRun(run);
   }, []);
+  // The open chat is in the address, so a reload or a copied link reopens it.
+  // Written only once a linked chat has been read on arrival.
+  const linkRead = useRef(false);
+  useEffect(() => {
+    if (!linkRead.current) return;
+    const url = new URL(window.location.href);
+    if (enteredRun) url.searchParams.set("run", enteredRun.id); else url.searchParams.delete("run");
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, "", url);
+  }, [enteredRun?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [handoffInbox, setHandoffInbox] = useState<{ id: string; runId: string; title: string | null; sender: string }[]>([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -264,6 +290,7 @@ export function Workspace({
         setMobilePane("chat");
         window.history.replaceState(null, "", window.location.pathname);
       }
+      linkRead.current = true;
       if (linkedRun) {
         try {
           if (!isUUID(linkedRun)) throw new Error("Invalid chat link.");
@@ -285,7 +312,7 @@ export function Workspace({
         setChatRepoId(remembered);
         setResult(null);
       }
-    }).catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load imported repositories."); });
+    }).catch(cause => { linkRead.current = true; if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load imported repositories."); });
     return () => {
       cancelled = true;
     };
@@ -321,9 +348,16 @@ export function Workspace({
 
   // Open a fresh chat with nothing carried over. The repo selection is kept —
   // staying in the codebase you were just working in is the common case.
+  //
+  // An unsent new chat is returned to with its message as left; once it has
+  // been sent it is a chat of its own, and this opens another.
   const startNewRun = () => {
     setShowChat(true);
     setMobilePane("chat");
+    const draft = chats.get(newChatKey);
+    const key = draft.turns.length || draft.sending || draft.runId ? draftKey() : newChatKey;
+    setNewChatKey(key);
+    chatKeyRef.current = key;
     openRun(null);
     setForkFromRunId(null);
   };
@@ -1225,11 +1259,15 @@ export function Workspace({
                         viewers={viewers}
                         myUserId={myUserId}
                         entered={enteredRun}
+                        chats={chats}
+                        chatKey={chatKey}
                         isOwner={session.myRole === "owner"}
                         onRunsChanged={refreshRuns}
-                        onEntered={target => {
-                          // The chat on screen, or one this panel just started; never one you left.
-                          if (target.repoId === selectedRepoRef.current && (openingRunId.current === null || openingRunId.current === target.id)) openRun(target);
+                        onEntered={target => { if (target.id === openingRunId.current) openRun(target); }}
+                        onStarted={(key, target) => {
+                          // Only while that new chat is still the one on screen: a
+                          // slow start never pulls you out of the chat you went to.
+                          if (chatKeyRef.current === key && target.repoId === selectedRepoRef.current) openRun(target);
                         }}
                         forkFromRunId={forkFromRunId}
                         onForkFromChange={setForkFromRunId}

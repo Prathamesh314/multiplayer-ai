@@ -131,6 +131,13 @@ export type ComposerHandle = { insertPrompt: (text: string) => void };
 /** A file in the composer: uploading, uploaded (has `sent`), or failed. */
 type PendingAttachment = { key: string; name: string; size: number; progress: number; sent?: MessageAttachment; error?: string; cancel: AbortController };
 
+/**
+ * Unsent text and uploaded files, per chat, for this tab: switching to another
+ * chat and back finds the message as it was left. Uploads still in progress
+ * are not kept.
+ */
+const savedDrafts = new Map<string, { text: string; attached: PendingAttachment[] }>();
+
 export function Composer({
   inputRef,
   placeholder,
@@ -155,6 +162,8 @@ export function Composer({
   files = NO_FILES,
   /** A short heads-up shown as the top row of the box, e.g. what to set up before sending. */
   notice,
+  /** Keeps the unsent message under this key while another chat is shown. */
+  draftKey,
 }: {
   inputRef?: Ref<ComposerHandle>;
   placeholder: string;
@@ -169,13 +178,20 @@ export function Composer({
   onAssignTask?: (person: MentionPerson, body: string) => Promise<void>;
   files?: MentionFile[];
   notice?: React.ReactNode;
+  draftKey?: string;
 }) {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [attachmentError, setAttachmentError] = useState("");
-  const [attached, setAttached] = useState<PendingAttachment[]>([]);
+  const [attached, setAttached] = useState<PendingAttachment[]>(() => (draftKey && savedDrafts.get(draftKey)?.attached) || []);
   const readingAttachment = attached.some((file) => !file.sent && !file.error);
   const [dragging, setDragging] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => (draftKey && savedDrafts.get(draftKey)?.text) || "");
+  useEffect(() => {
+    if (!draftKey) return;
+    const kept = attached.filter(file => file.sent);
+    if (draft || kept.length) savedDrafts.set(draftKey, { text: draft, attached: kept });
+    else savedDrafts.delete(draftKey);
+  }, [draftKey, draft, attached]);
   const [mention, setMention] = useState<MentionState | null>(null);
   const [highlight, setHighlight] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);

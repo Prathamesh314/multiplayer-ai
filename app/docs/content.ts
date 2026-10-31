@@ -407,7 +407,7 @@ A fork is not automatically a new repository branch: chats in the same room repo
       { id: "organise", title: "Rename, archive, or reference a chat", body: `Hover a chat row to reveal its available actions. **Rename** changes its title. **Archive this chat** moves an eligible chat out of the active list; expand **Archived** and use **Restore this chat** to bring it back. Management actions depend on who drives the chat and its current state.
 
 **Copy chat path** copies a room/chat reference for use in another conversation. It is a context reference, not a guest invitation and not a way to grant access. Use Share chat when someone outside the room needs to read it.` },
-      { id: "during-work", title: "While a task is running", body: `Follow the streamed response and expand available activity. **Queue message** lets the driver add instructions while work is active. **Detach**, when shown, detaches the view; do not assume that closing the view stops the underlying task.
+      { id: "during-work", title: "While a task is running", body: `Follow the streamed response and expand available activity. **Queue message** lets the driver add instructions while work is active. You can open another chat, or start a new one, while this one works: it keeps working and keeps its output, and the sidebar shows when it finishes. Only **Stop** stops the agent, and only in the chat it is in.
 
 Read [queued instructions](/docs/queued-messages) for provider-specific timing, and [history and checkpoints](/docs/history) for recovery after a disconnect.` },
     ],

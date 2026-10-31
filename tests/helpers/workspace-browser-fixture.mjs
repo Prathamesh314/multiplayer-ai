@@ -176,7 +176,15 @@ export function installFixtures() {
     // Runs are not executed in the fixture: the request is recorded, then refused.
     if(path === "/api/ai/run") {
       // state.runEvents scripts a live run: NDJSON events, {wait:ms} pauses; the stream then stays open (still working).
-      if(state.runEvents){const events=state.runEvents,encoder=new TextEncoder();return new Response(new ReadableStream({async start(controller){for(const event of events){if(event.wait){await new Promise(resolve=>setTimeout(resolve,event.wait));continue;}controller.enqueue(encoder.encode(JSON.stringify(event)+"\n"));}}}),{headers:{"content-type":"application/x-ndjson"}});}
+      // state.runScripts scripts one run per request, in order: {until:name} waits for state.release[name],
+      // {addRun:run} adds the chat to the room's list, and {close:true} ends the stream.
+      const script=(state.runScripts??[]).shift()??state.runEvents;
+      if(script){const encoder=new TextEncoder();return new Response(new ReadableStream({async start(controller){for(const event of script){
+        if(event.wait){await new Promise(resolve=>setTimeout(resolve,event.wait));continue;}
+        if(event.until){while(!state.release?.[event.until])await new Promise(resolve=>setTimeout(resolve,25));continue;}
+        if(event.addRun){state.runs.unshift(event.addRun);continue;}
+        if(event.close){controller.close();return;}
+        controller.enqueue(encoder.encode(JSON.stringify(event)+"\n"));}}}),{headers:{"content-type":"application/x-ndjson"}});}
       return new Response(JSON.stringify({error:"Runs are not executed in the browser fixture."}),{status:503,headers:{"content-type":"application/json"}});
     }
     if(path === "/api/presence"){if(init.body)state.presenceRun=JSON.parse(init.body).runId??null;return json({intervalMs:20000,online:["alice"],viewers:state.presenceRun?(state.viewers??["alice"]):[]});}

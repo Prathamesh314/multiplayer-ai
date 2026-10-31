@@ -22,7 +22,6 @@ import {
   fetchMentionTargets,
   runAgent,
   type ForkableRun,
-  type RunHandle,
 } from "../../lib/ai/client";
 import type { AgentRun } from "../../lib/ai/runs";
 import { fetchRun } from "../../lib/ai/runs-client";
@@ -61,6 +60,7 @@ import { WorkspaceHistory } from "./WorkspaceHistory";
 import { HandoffPanel } from "./HandoffPanel";
 import { ChatBranchPanel } from "./ChatBranchPanel";
 import { useTitleTransition } from "./useTitleTransition";
+import { useChat, type ChatStore, type Turn } from "./chatStore";
 import { TaskPanel } from "../tasks/TaskPanel";
 import { BriefingCard } from "../collaboration/BriefingCard";
 import { CollaborationControls, linkedCollaborationTab, type CollaborationTab } from "../collaboration/CollaborationControls";
@@ -88,14 +88,19 @@ type AiPanelProps = {
   myUserId: string | null;
   /** The run whose conversation is shown; null = composing a fresh one. */
   entered: AgentRun | null;
+  /** Every chat of this room in this tab: what each one shows and whether it is sending. */
+  chats: ChatStore;
+  /** The chat shown: the entered run's id, or the new chat's draft key. */
+  chatKey: string;
   /** Reload the room's runs after this tab starts one. */
   onRunsChanged: () => void;
-  /**
-   * A run this tab just started, so the parent can make it the entered run —
-   * that is what keeps follow-up prompts in the same chat instead of opening a
-   * new one each time.
-   */
+  /** The entered run changed here (a handoff answered, say). */
   onEntered?: (run: AgentRun) => void;
+  /**
+   * New chat `key` became `run`. The parent shows it only if that new chat is
+   * still the one on screen, so a slow start never pulls you out of another.
+   */
+  onStarted?: (key: string, run: AgentRun) => void;
   /**
    * The chat whose context the next new run will import into its AI memory, or
    * null for none. Controlled by the parent so the sidebar/header "Fork"
@@ -132,39 +137,6 @@ type AiPanelProps = {
   onClose?: () => void;
 };
 
-/** One line of the conversation, whether streamed live or read from history. */
-type Turn = {
-  id: string;
-  role: "user" | "agent" | "system";
-  text: string;
-  /** Files sent with a user message. */
-  attachments?: MessageAttachment[];
-  author?: string | null;
-  agentName?: string | null;
-  /** True while the agent is still writing into this turn. */
-  streaming?: boolean;
-  /** Live reasoning trace (Claude's thinking) — ephemeral, not stored. */
-  thinking?: string;
-  /** Tool steps as they happen, e.g. "Read app/x.ts" — ephemeral, not stored. */
-  activities?: string[];
-  /** Epoch ms this agent turn began, for the live elapsed timer. */
-  startedAt?: number;
-  /** A failed run: what went wrong in one sentence, and the tool's output as its log. */
-  failure?: { message: string; log: string };
-  /** A notice that opens another chat: "Imported context from …" links to its source. */
-  source?: { sessionId: string; runId: string };
-  /**
-   * The run's stderr, live. Nothing the AI emits is hidden from the chat: the
-   * log is always openable under the turn, and surfaces expanded when the run
-   * fails — that's where the reason lives.
-   */
-  errText?: string;
-  /** Set from the exit event when the run ended non-zero. */
-  failed?: boolean;
-  /** A live "waiting for your computer" line, removed once the agent starts. */
-  waiting?: boolean;
-};
-
 export function AiPanel({
   onOpenChat,
   computerStatus,
@@ -179,8 +151,11 @@ export function AiPanel({
   viewers = [],
   myUserId,
   entered,
+  chats,
+  chatKey,
   onRunsChanged,
   onEntered,
+  onStarted,
   forkFromRunId,
   onForkFromChange,
   onForkEntered,
@@ -288,11 +263,13 @@ export function AiPanel({
     return () => { controller.abort(); stream.close(); document.removeEventListener("visibilitychange", load); };
   }, [sessionId]);
 
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [historyFailed, setHistoryFailed] = useState(false);
-  const run = useRef<RunHandle | null>(null);
+  // The chat on screen. Its turns, errors and sending state live in the room's
+  // chat store, so a turn keeps streaming into its own chat while another is shown.
+  const chat = useChat(chats, chatKey);
+  const { turns, error, historyFailed } = chat;
+  const running = chat.sending;
+  const setTurnsOf = (key: string, change: (turns: Turn[]) => Turn[]) => chats.update(key, state => ({ ...state, turns: change(state.turns) }));
+  const setError = (message: string | null) => chats.update(chatKey, state => state.error === message ? state : { ...state, error: message });
   /** Stop the agent running this chat's turn (the person running it only). */
   const stopRun = useCallback(async (runId: string | null) => {
     if (!runId) throw new Error("The task is still starting. Try again in a moment.");
@@ -301,7 +278,8 @@ export function AiPanel({
   }, [sessionId]);
   const scroller = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
-  const historyGeneration = useRef(0);
+  // Per chat, so a slow load of one chat never lands over a newer load of it.
+  const historyGeneration = useRef(new Map<string, number>());
   const uid = () => `t${(turnSeq.current += 1)}`;
 
   // Reliable even in a public room (no roster row to carry isSelf); falls back
@@ -353,10 +331,9 @@ export function AiPanel({
   const liveTurnStart = [...turns].reverse().find((turn) => turn.role === "agent" && turn.streaming)?.startedAt ?? null;
 
   // Refs the live event handlers read, so the one-time subscription below never
-  // closes over stale state.
+  // closes over stale state. Whether this tab is sending a chat, or drove its
+  // last turn, is read from the chat store.
   const enteredRef = useRef<AgentRun | null>(null);
-  const localRunIdRef = useRef<string | null>(null); // the run this tab is streaming
-  const lastLocalRunIdRef = useRef<string | null>(null); // the last run this tab drove to a finish
   const liveTurnIdRef = useRef<string | null>(null); // the agent turn being followed
   useEffect(() => {
     enteredRef.current = entered;
@@ -376,21 +353,24 @@ export function AiPanel({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, entered]);
+  }, [sessionId, entered?.id, entered?.status]);
 
-  /** Load a run's stored conversation into the panel. */
+  /** Load a run's stored conversation into its chat. */
   async function loadRun(target: AgentRun) {
-    const generation = ++historyGeneration.current;
-    pinned.current = true; // a chat opens at its latest message
-    setError(null);
-    setHistoryFailed(false);
-    liveTurnIdRef.current = null;
+    const generation = (historyGeneration.current.get(target.id) ?? 0) + 1;
+    historyGeneration.current.set(target.id, generation);
+    const current = () => historyGeneration.current.get(target.id) === generation;
+    if (enteredRef.current?.id === target.id) {
+      pinned.current = true; // a chat opens at its latest message
+      liveTurnIdRef.current = null;
+    }
+    chats.update(target.id, state => ({ ...state, error: null, historyFailed: false }));
     const agentName = agents?.find((a) => a.id === target.agentId)?.name ?? target.agentId;
-    setTurns([]);
     try {
       const { messages, forkedFrom } = await fetchRun(sessionId, target.id);
       const source = forkedFrom ?? undefined;
-      if (generation !== historyGeneration.current || enteredRef.current?.id !== target.id) return;
+      // A turn this tab started meanwhile streams into the chat; keep it.
+      if (!current() || chats.get(target.id).sending) return;
       // Every stored turn shows — replies, notices, warnings, errors, the
       // changed-files record. The old blanket drop of system turns on
       // completed runs guarded against a stderr transcript being stored on
@@ -426,17 +406,17 @@ export function AiPanel({
       // Steps with no reply after them (a cancelled or still-syncing turn) are
       // still worth showing on their own.
       if (pendingSteps.length) restored.push({ id: uid(), role: "agent", text: "", activities: pendingSteps, author: null, agentName });
-      setTurns(restored);
+      chats.update(target.id, state => ({ ...state, turns: restored, runId: target.id, drove: false }));
     } catch {
-      if (generation !== historyGeneration.current) return;
-      setHistoryFailed(true);
-      setError("We couldn’t load this chat. Check your internet connection and try again. You don’t need a connected computer to read saved messages.");
+      if (!current()) return;
+      chats.update(target.id, state => ({ ...state, historyFailed: true,
+        error: "We couldn’t load this chat. Check your internet connection and try again. You don’t need a connected computer to read saved messages." }));
     }
   }
 
   /** Append a live output chunk to the agent turn of a run we are following. */
-  function appendFollowChunk(chunk: string) {
-    setTurns((prev) => {
+  function appendFollowChunk(runId: string, chunk: string) {
+    setTurnsOf(runId, (prev) => {
       const next = [...prev];
       if (liveTurnIdRef.current === null) {
         const tid = uid();
@@ -456,19 +436,19 @@ export function AiPanel({
     });
   }
 
-  // The conversation follows whichever run is entered: load its stored turns,
-  // or clear to compose a fresh one. Deferred so no state is set in the effect body.
+  // The conversation follows whichever chat is shown: an opened run reloads its
+  // stored turns, and a new chat shows its own draft. Deferred so no state is
+  // set in the effect body.
   //
-  // The exception is a run this tab just started: it is entered so follow-ups
-  // continue it, but its output is already streaming into `turns` locally, so
-  // reloading from the store here would wipe the live tail. Skip it.
+  // The exception is a chat this tab is sending: its output is already
+  // streaming into its turns here, so reloading would wipe the live tail.
   useEffect(() => {
     liveTurnIdRef.current = null;
+    pinned.current = true;
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      if (entered && entered.id !== localRunIdRef.current) void loadRun(entered);
-      else if (!entered) { historyGeneration.current += 1; setTurns([]); }
+      if (entered && !chats.get(entered.id).sending) void loadRun(entered);
     });
     return () => {
       cancelled = true;
@@ -481,18 +461,18 @@ export function AiPanel({
   useEffect(() => {
     const stream = openSessionStream(sessionId, {
       onRunOutput: (event) => {
-        if (event.runId === localRunIdRef.current) return; // our own run streams locally
-        if (enteredRef.current?.id !== event.runId) return; // not the run in view
+        if (chats.get(event.runId).sending) return; // our own turn streams locally
+        if (enteredRef.current?.id !== event.runId) return; // not the run in view; it reloads when opened
         if (event.stream !== "out") return; // stderr is internal processing, not shown
-        appendFollowChunk(event.chunk);
+        appendFollowChunk(event.runId, event.chunk);
       },
       onRunTurn: (event) => {
-        if (event.runId === localRunIdRef.current && !event.inputId) return;
+        if (chats.get(event.runId).sending && !event.inputId) return;
         if (enteredRef.current?.id !== event.runId) return;
         // A prompt from the runner shows immediately; agent output arrives via
         // run.output and is reconciled on finish, so it is not appended here.
         if (event.role === "user") {
-          setTurns((prev) => [
+          setTurnsOf(event.runId, (prev) => [
             ...prev,
             { id: uid(), role: "user", text: event.body, attachments: event.attachments, author: event.authorName ?? "Prompt" },
           ]);
@@ -507,11 +487,8 @@ export function AiPanel({
         // live tail (which may have started mid-run). Only for a run driven by
         // someone else — one we drove locally is already fully rendered.
         const current = enteredRef.current;
-        if (
-          current?.id === event.runId &&
-          event.runId !== localRunIdRef.current &&
-          event.runId !== lastLocalRunIdRef.current
-        ) {
+        const local = chats.get(event.runId);
+        if (current?.id === event.runId && !local.sending && !local.drove) {
           liveTurnIdRef.current = null;
           void loadRun(current);
         }
@@ -660,8 +637,11 @@ export function AiPanel({
     }
     if (!connected || running || !ready || (entered && (!enteredIsMine || ["running", "queued"].includes(entered.status)))) return;
     if (!modelAvailable || !effortAvailable) { setError("Choose an available model and reasoning effort before sending."); return; }
-    setRunning(true);
-    setError(null);
+    // Everything below lands in the chat this was sent from, by its key, even
+    // after another chat is opened or a new one started.
+    const key = chatKey;
+    chats.update(key, state => ({ ...state, sending: true, drove: false, error: null }));
+    const setTurns = (change: (turns: Turn[]) => Turn[]) => setTurnsOf(key, change);
 
     // Continue your own run — including one that already finished, so a
     // follow-up keeps the same chat instead of opening a new one every time.
@@ -671,13 +651,11 @@ export function AiPanel({
     const agentId = connected;
     const agentName = agents?.find((a) => a.id === agentId)?.name ?? agentId;
 
-    // Claim the run as ours *before* the request. When continuing, the room
-    // broadcasts this run's prompt and output back to us, and those can arrive
-    // ahead of the local stream's "start" event — without this, they'd slip
-    // past the own-run guard in the realtime handlers and render a second time.
-    // A fresh run's id isn't known until "start", but it isn't entered yet
-    // either, so its broadcasts are already ignored until then.
-    if (continuing) localRunIdRef.current = continuing;
+    // A continued chat is keyed by its run id, so it is marked as sending
+    // *before* the request: the room broadcasts its prompt and output back to
+    // us, and those can arrive ahead of the local stream's "start" event. A new
+    // chat's id isn't known until "start", but it isn't entered yet either, so
+    // its broadcasts are already ignored until then.
 
     // A fork pick only ever applies to the fresh run it was made for.
     const forkFromRun = continuing ? undefined : forkFromRunId || undefined;
@@ -709,7 +687,8 @@ export function AiPanel({
     // its run started with (the server enforces the same).
     const repoForRun = continuing ? undefined : repoId || undefined;
 
-    run.current = runAgent(
+    let exited = false;
+    const handle = runAgent(
       {
         sessionId,
         agentId,
@@ -729,7 +708,7 @@ export function AiPanel({
       {
         onEvent: (event) => {
           if (event.t === "start") {
-            localRunIdRef.current = event.runId; // so the room broadcast of our own run is ignored
+            chats.started(key, event.runId); // a new chat now answers to its run id too
             setTurns((prev) => [
               ...prev.filter((turn) => !turn.waiting),
               {
@@ -743,10 +722,10 @@ export function AiPanel({
             ]);
             onRunsChanged(); // the new run shows in the sidebar
             // Enter a freshly opened run so the next prompt continues it rather
-            // than starting yet another. (A continuation is already entered.)
-            if (!continuing && onEntered) {
+            // than starting yet another, if it is still the chat on screen.
+            if (!continuing && onStarted) {
               void fetchRun(sessionId, event.runId)
-                .then(({ run }) => onEntered(run))
+                .then(({ run }) => onStarted(key, run))
                 .catch(() => {});
             }
           } else if (event.t === "out") {
@@ -807,6 +786,7 @@ export function AiPanel({
               ? { id: uid(), role: "system", text: "Waiting for your computer to start…", waiting: true }
               : { id: uid(), role: "system", text: event.message }]);
           } else if (event.t === "exit") {
+            exited = true;
             const failed = event.code !== 0;
             const summary = failed
               ? `Run failed after ${(event.ms / 1000).toFixed(1)}s${event.code !== null ? ` (exit ${event.code})` : ""}`
@@ -823,18 +803,21 @@ export function AiPanel({
             });
           }
         },
-        onError: setError,
+        onError: message => chats.update(key, state => ({ ...state, error: message })),
         onDone: () => {
-          setRunning(false);
-          // Remember the run we just drove, so the room's run.finished broadcast
-          // does not reload it over our own already-rendered output (which
-          // includes the local "Finished in…" summary).
-          lastLocalRunIdRef.current = localRunIdRef.current;
-          localRunIdRef.current = null;
+          // A turn that reported its exit was driven here to its end, so the
+          // room's run.finished broadcast doesn't reload it over our own output
+          // (which includes the local "Finished in…" summary). A stream that
+          // closed before then is only a lost connection, not a finished agent:
+          // the chat goes back to following the run, and reloads its history.
+          chats.update(key, state => ({ ...state, sending: false, handle: null, drove: exited }));
+          const runId = chats.get(key).runId;
+          if (!exited && runId && enteredRef.current?.id === runId) void loadRun(enteredRef.current);
           onRunsChanged();
         },
       },
     );
+    chats.update(key, state => state.sending ? { ...state, handle } : state);
   }
 
   const active = agents?.find((agent) => agent.id === connected) ?? null;
@@ -971,7 +954,8 @@ export function AiPanel({
     if (!entered && openChat) {
       // Saving a human task creates its source chat, without starting the AI.
       // A failed follow-up read must not turn a saved task into a failed send.
-      void fetchRun(sessionId, result.runId).then(({ run }) => onEntered?.(run)).catch(() => {});
+      const key = chatKey;
+      void fetchRun(sessionId, result.runId).then(({ run }) => onStarted?.(key, run)).catch(() => {});
     }
   }
   // A parallel chat's changes are on its own branch, not in the room's Changes.
@@ -1182,7 +1166,7 @@ export function AiPanel({
       {running && !entered ? (
         // A brand-new chat before it is entered: the same working card, no queue yet.
         <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2">
-          <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onDetach={() => run.current?.cancel()} onStop={() => stopRun(localRunIdRef.current)} />
+          <WorkingStatus agentName={active?.name ?? "Agent"} since={liveTurnStart} onStop={() => stopRun(chat.runId)} />
         </div>
       ) : entered && !enteredIsMine ? (
         <WatchingComposer run={entered} driver={members.find(member => member.userId === entered.driverUserId)} canFork={canRun} onFork={() => onForkEntered(entered)} />
@@ -1207,7 +1191,8 @@ export function AiPanel({
         )}
         <Composer
           inputRef={composer}
-          key={`${entered?.id ?? "new"}:${repoId ?? "default"}`}
+          key={`${chatKey}:${repoId ?? "default"}`}
+          draftKey={chatKey}
           disabled={!ready || !modelAvailable || !effortAvailable}
           tall
           narrow
@@ -1237,7 +1222,7 @@ export function AiPanel({
       )}
       {entered && <QueuedMessages key={`queue-${entered.id}`} sessionId={sessionId} runId={entered.id} version={entered.controlVersion} active={running || ["running", "queued"].includes(entered.status)} canSend={!!enteredIsMine && canRun} agentId={entered.agentId}
         agentName={agents?.find((agent) => agent.id === entered.agentId)?.name ?? entered.agentId} startedAt={entered.startedAt} workingSince={liveTurnStart}
-        onDetach={running ? () => run.current?.cancel() : undefined} onStop={enteredIsMine && canRun ? () => stopRun(entered.id) : undefined}
+        onStop={enteredIsMine && canRun ? () => stopRun(entered.id) : undefined}
         moveDraft={text => composer.current?.insertPrompt(text)} />}
     </aside>
   );
