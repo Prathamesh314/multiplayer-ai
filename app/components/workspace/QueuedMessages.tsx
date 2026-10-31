@@ -7,11 +7,11 @@ import { SendIcon, SpinnerIcon, StopIcon } from "../icons";
 /**
  * The agent's working state where the composer sits: one card, shaped like the
  * composer, with a quiet shimmering status and elapsed time instead of a
- * separate bar. `onDetach` stops following the run in this tab only; `onStop`
- * stops the agent itself (the person running the chat only).
+ * separate bar. Opening another chat leaves it working; `onStop` stops the
+ * agent itself (the person running the chat only).
  */
-export function WorkingStatus({ agentName, since, onDetach, onStop, children }: {
-  agentName: string; since: number | null; onDetach?: () => void; onStop?: () => Promise<void>; children?: React.ReactNode;
+export function WorkingStatus({ agentName, since, onStop, children }: {
+  agentName: string; since: number | null; onStop?: () => Promise<void>; children?: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-vs-border bg-vs-panel px-4 py-3 shadow-sm focus-within:border-vs-accent">
@@ -19,14 +19,8 @@ export function WorkingStatus({ agentName, since, onDetach, onStop, children }: 
         <span className="pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-vs-accent" />
         <span className="shimmer-text truncate font-medium">{agentName} is working</span>
         {since && <Elapsed since={since} />}
-        {onDetach && (
-          <button type="button" onClick={onDetach} title="Stop following here. The agent keeps working on your computer, and the chat shows its result."
-            className="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[12px] text-vs-muted transition hover:bg-vs-hover hover:text-vs-fg">
-            Detach
-          </button>
-        )}
         {/* With no message box (a new chat starting), Stop sits on the status line. */}
-        {onStop && !children && <span className={onDetach ? "" : "ml-auto"}><StopButton onStop={onStop} /></span>}
+        {onStop && !children && <span className="ml-auto"><StopButton onStop={onStop} /></span>}
       </div>
       {children}
     </div>
@@ -59,12 +53,10 @@ function Elapsed({ since }: { since: number }) {
   return <span className="shrink-0 tabular-nums text-[11.5px] text-vs-muted/80">{seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`}</span>;
 }
 
-export function QueuedMessages({ sessionId, runId, version, active, canSend, agentId, agentName, startedAt, workingSince = null, onDetach, onStop, moveDraft }: {
+export function QueuedMessages({ sessionId, runId, version, active, canSend, agentId, agentName, startedAt, workingSince = null, onStop, moveDraft }: {
   sessionId: string; runId: string; version: number; active: boolean; canSend: boolean; agentId: string; agentName: string; startedAt: number | null;
   /** When the current turn started, for its elapsed time; unknown for a watcher. */
   workingSince?: number | null;
-  /** Set while this tab follows the run's live stream. */
-  onDetach?: () => void;
   /** Stop the agent; offered in place of Queue message while the box is empty. */
   onStop?: () => Promise<void>;
   moveDraft(text: string): void;
@@ -134,7 +126,7 @@ export function QueuedMessages({ sessionId, runId, version, active, canSend, age
       {canSend && !active && ["failed", "unconfirmed"].includes(item.status) && <button className="shrink-0 text-[12px] text-vs-accent" onClick={() => moveDraft(item.body)}>Copy to message</button>}
     </li>)}</ul>}
     {!!delivered && <p className="px-1 text-[11.5px] text-vs-muted">{delivered} queued {delivered === 1 ? "message" : "messages"} accepted by the agent</p>}
-    {active && <WorkingStatus agentName={agentName} since={workingSince} onDetach={onDetach}>
+    {active && <WorkingStatus agentName={agentName} since={workingSince}>
       {canSend && <form onSubmit={event => { event.preventDefault(); void send(); }} className="mt-2.5">
         <div className="flex items-end gap-3">
           <textarea aria-label="Message working agent" placeholder="Queue a follow-up…" value={draft} maxLength={32000} readOnly={busy} rows={2}

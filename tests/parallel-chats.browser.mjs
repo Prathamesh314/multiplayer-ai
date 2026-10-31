@@ -227,6 +227,85 @@ try {
   assert.equal(runRequest.repoId, "frontendabcd");
   assert.equal(runRequest.runId, undefined, "a parallel chat is a new chat");
 
+  // Several chats at once. A starts but its computer is slow; New chat opens a
+  // usable composer straight away, B is sent and starts, and A's late start
+  // never pulls the view away from B. Each keeps its own output.
+  const chatA = "aaaaaaaa-0000-4000-8000-00000000000a", chatB = "bbbbbbbb-0000-4000-8000-00000000000b";
+  await evaluate(`(()=>{const s=window.__model,run=(id,title)=>({...s.runs[0],id,title,status:"running",isolation:"shared",mergeState:null,addedLines:null,removedLines:null,headSha:null,forkSha:null,createdAt:Date.now(),startedAt:Date.now(),endedAt:null});
+    s.release={};
+    s.messages={${JSON.stringify(chatA)}:[{role:"user",body:"Task A"},{role:"assistant",body:"Alpha output. Alpha done."}],${JSON.stringify(chatB)}:[{role:"user",body:"Task B"},{role:"assistant",body:"Bravo output."}]};
+    s.runScripts=[
+      [{until:"startA"},{addRun:run(${JSON.stringify(chatA)},"Task A")},{t:"start",agent:"codex",cwd:"/w",runId:${JSON.stringify(chatA)}},{t:"out",d:"Alpha output. "},{until:"finishA"},{t:"out",d:"Alpha done."},{t:"exit",code:0,ms:1200,headSha:null,committed:false},{close:true}],
+      [{addRun:run(${JSON.stringify(chatB)},"Task B")},{t:"start",agent:"codex",cwd:"/w",runId:${JSON.stringify(chatB)}},{t:"out",d:"Bravo output."},{until:"never"}],
+    ];})()`);
+  const conversation = `(document.querySelector('[data-scroller="conversation"]')?.innerText ?? "")`;
+  const typeAndSend = async text => {
+    await eventually(() => evaluate(`!!document.querySelector('.ai-composer textarea')`), "message box");
+    await evaluate(`(()=>{const el=document.querySelector('.ai-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(text)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await eventually(() => evaluate(`!!${sendButton} && !${sendButton}.disabled`), "send enabled");
+    await evaluate(`${sendButton}.click()`);
+  };
+  const runRequests = () => evaluate('window.__model.requests.filter(r=>r.path==="/api/ai/run").length');
+  const sent = await runRequests();
+  await evaluate(`document.querySelector('button[aria-label="New chat in frontend"]').click()`);
+  await eventually(() => evaluate(`${conversation}.trim()==="" || !${conversation}.includes("Add rate limiting")`), "a fresh chat after a failed send");
+  await typeAndSend("Task A");
+  await eventually(async () => await runRequests() === sent + 1, "A is sent");
+  await eventually(() => evaluate(`document.body.innerText.includes("is working")`), "A shows as working");
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==="Detach")`), false, "no Detach while a chat works");
+
+  await evaluate(`document.querySelector('button[aria-label="New chat in frontend"]').click()`);
+  await eventually(() => evaluate(`!!document.querySelector('.ai-composer textarea') && !${conversation}.includes("Task A")`), "New chat opens a usable message box while A starts");
+  await typeAndSend("Task B");
+  await eventually(() => evaluate(`${conversation}.includes("Bravo output.")`), "B streams");
+  await eventually(() => evaluate(`new URLSearchParams(location.search).get("run")===${JSON.stringify(chatB)}`), "B is in the address");
+
+  await evaluate("window.__model.release.startA = true");
+  await eventually(() => evaluate(`window.__model.requests.some(r=>r.path.endsWith(${JSON.stringify("/runs/" + chatA)}))`), "A starts late");
+  await delay(400);
+  assert.equal(await evaluate(`new URLSearchParams(location.search).get("run")`), chatB, "A's late start does not take the view from B");
+  assert.equal(await evaluate(`${conversation}.includes("Alpha")`), false, "A's output stays out of B");
+
+  const sidebarRow = title => `Array.from(document.querySelectorAll('aside[aria-label="Repositories and chats"] button')).find(b=>b.textContent.includes(${JSON.stringify(title)}))`;
+  await eventually(() => evaluate(`!!${sidebarRow("Task A")}`), "A in the sidebar");
+  await evaluate(`${sidebarRow("Task A")}.click()`);
+  await eventually(() => evaluate(`${conversation}.includes("Alpha output.") && !${conversation}.includes("Bravo")`), "A shows its own live output");
+  await evaluate(`${sidebarRow("Task B")}.click()`);
+  await eventually(() => evaluate(`${conversation}.includes("Bravo output.") && !${conversation}.includes("Alpha")`), "B still has its output");
+
+  // Stop is for the chat on screen only; A keeps going and finishes in the background.
+  await eventually(() => evaluate(`!!document.querySelector('button[aria-label="Stop"]')?.checkVisibility()`), "Stop on B");
+  await evaluate(`document.querySelector('button[aria-label="Stop"]').click()`);
+  await eventually(() => evaluate("window.__model.stops >= 1"), "B is asked to stop");
+  assert.equal(await evaluate(`window.__model.requests.filter(r=>r.path.endsWith("/stop")).map(r=>r.path).join()`).then(paths => paths.includes(chatB) && !paths.includes(chatA)), true, "only B is stopped");
+  await evaluate(`(()=>{const s=window.__model;s.runs.find(r=>r.id===${JSON.stringify(chatA)}).status="completed";s.release.finishA=true;})()`);
+  await eventually(() => evaluate(`!${sidebarRow("Task A")}.textContent.includes("AI working")`), "A's finish shows in the sidebar");
+  assert.equal(await evaluate(`new URLSearchParams(location.search).get("run")`), chatB, "finishing A does not switch chats");
+  await evaluate(`${sidebarRow("Task A")}.click()`);
+  await eventually(() => evaluate(`${conversation}.includes("Alpha done.")`), "A shows its finished reply");
+  await evaluate(`window.__model.runs.find(r=>r.id===${JSON.stringify(chatB)}).status="completed"`);
+
+  // An unsent message waits in its new chat while another chat is open.
+  await evaluate(`document.querySelector('button[aria-label="New chat in frontend"]').click()`);
+  await eventually(() => evaluate(`!!document.querySelector('.ai-composer textarea') && !${conversation}.includes("Alpha")`), "another new chat");
+  await evaluate(`(()=>{const el=document.querySelector('.ai-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"Half-written idea");el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await evaluate(`${sidebarRow("Task A")}.click()`);
+  await eventually(() => evaluate(`${conversation}.includes("Alpha done.")`), "back in A");
+  await evaluate(`document.querySelector('button[aria-label="New chat in frontend"]').click()`);
+  await eventually(() => evaluate(`document.querySelector('.ai-composer textarea')?.value==="Half-written idea"`), "the unsent message is still there");
+
+  // A dropped connection is not the agent finishing: the chat keeps showing it
+  // working, and reloads what was saved.
+  const chatC = "cccccccc-0000-4000-8000-00000000000c";
+  await evaluate(`(()=>{const s=window.__model;s.messages[${JSON.stringify(chatC)}]=[{role:"user",body:"Half-written idea"},{role:"assistant",body:"Charlie saved so far."}];
+    s.runScripts=[[{addRun:{...s.runs[0],id:${JSON.stringify(chatC)},title:"Task C",status:"running",isolation:"shared",mergeState:null,addedLines:null,removedLines:null,headSha:null,forkSha:null,startedAt:Date.now(),endedAt:null}},
+      {t:"start",agent:"codex",cwd:"/w",runId:${JSON.stringify(chatC)}},{t:"out",d:"Charlie live. "},{wait:300},{close:true}]];})()`);
+  await eventually(() => evaluate(`!!${sendButton} && !${sendButton}.disabled`), "send enabled");
+  await evaluate(`${sendButton}.click()`);
+  await eventually(() => evaluate(`${conversation}.includes("Charlie saved so far.")`), "a lost stream reloads the saved conversation");
+  assert.equal(await evaluate(`document.body.innerText.includes("is working")`), true, "and the chat still shows the agent working");
+  await evaluate(`window.__model.runs.find(r=>r.id===${JSON.stringify(chatC)}).status="completed"`);
+
   // The terminal comes back as it was left: open after a reload, collapsed once closed.
   const reload = async () => {
     await evaluate("window.__beforeReload = true");
@@ -242,7 +321,7 @@ try {
 
   assert.deepEqual(errors, []);
   assert.deepEqual(await evaluate("window.__model.unknown"), []);
-  console.log("PASS: parallel toggle, sidebar branch state, change review with line-numbered diffs, conflict-safe merge and agent resolution prompt.");
+  console.log("PASS: parallel toggle, several chats at once (no Detach, late starts keep the view, separate output, Stop per chat, drafts kept, lost streams reload), sidebar branch state, change review with line-numbered diffs, conflict-safe merge and agent resolution prompt.");
 } catch (error) {
   console.error(serverOutput.slice(-3000));
   throw error;
